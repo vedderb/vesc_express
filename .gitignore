@@ -1,0 +1,4 @@
+.project
+.settings
+build
+esp_idf_components

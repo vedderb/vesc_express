@@ -1,0 +1,284 @@
+/*
+	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+
+	This file is part of the VESC firmware.
+
+	The VESC firmware is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    The VESC firmware is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    */
+
+#include "terminal.h"
+#include "commands.h"
+#include "comm_can.h"
+#include "conf_general.h"
+#include <string.h>
+#include <stdio.h>
+#include <math.h>
+
+#include "esp_bt.h"
+#include "comm_ble.h"
+#include "comm_wifi.h"
+#include "nvs_flash.h"
+#include "esp_partition.h"
+#include "esp_ota_ops.h"
+#include "utils.h"
+
+// Settings
+#define FAULT_VEC_LEN						25
+#define CALLBACK_LEN						40
+
+// Private types
+typedef struct _terminal_callback_struct {
+	const char *command;
+	const char *help;
+	const char *arg_names;
+	void(*cbf)(int argc, const char **argv);
+} terminal_callback_struct;
+
+// Private variables
+static terminal_callback_struct callbacks[CALLBACK_LEN];
+static int callback_write = 0;
+
+const char* utils_hw_type_to_string(HW_TYPE hw) {
+	switch (hw) {
+	case HW_TYPE_VESC: return "HW_TYPE_VESC"; break;
+	case HW_TYPE_VESC_BMS: return "HW_TYPE_VESC_BMS"; break;
+	case HW_TYPE_CUSTOM_MODULE: return "HW_TYPE_CUSTOM_MODULE"; break;
+	default: return "FAULT_HARDWARE"; break;
+	}
+}
+
+void terminal_process_string(char *str) {
+	enum { kMaxArgs = 64 };
+	int argc = 0;
+	char *argv[kMaxArgs];
+
+	char *p2 = strtok(str, " ");
+	while (p2 && argc < kMaxArgs) {
+		argv[argc++] = p2;
+		p2 = strtok(0, " ");
+	}
+
+	if (argc == 0) {
+		commands_printf("No command received\n");
+		return;
+	}
+
+	for (int i = 0;i < callback_write;i++) {
+		if (callbacks[i].cbf != 0 && strcmp(argv[0], callbacks[i].command) == 0) {
+			callbacks[i].cbf(argc, (const char**)argv);
+			return;
+		}
+	}
+
+	if (strcmp(argv[0], "ping") == 0) {
+		commands_printf("pong\n");
+	} else if (strcmp(argv[0], "can_devs") == 0) {
+		commands_printf("CAN devices seen on the bus the past second:\n");
+//		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+//			can_status_msg *msg = comm_can_get_status_msg_index(i);
+//
+//			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < 1.0) {
+//				commands_printf("ID                 : %i", msg->id);
+//				commands_printf("RX Time            : %i", msg->rx_time);
+//				commands_printf("Age (milliseconds) : %.2f", (double)(UTILS_AGE_S(msg->rx_time) * 1000.0));
+//				commands_printf("RPM                : %.2f", (double)msg->rpm);
+//				commands_printf("Current            : %.2f", (double)msg->current);
+//				commands_printf("Duty               : %.2f\n", (double)msg->duty);
+//			}
+//		}
+	} else if (strcmp(argv[0], "hw_status") == 0) {
+		commands_printf("Firmware        : %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
+		commands_printf("Hardware        : %s", HW_NAME);
+
+		commands_printf("IDF Version     : %s", IDF_VER);
+
+		commands_printf("BLE MTU         : %d", comm_ble_mtu_now());
+		commands_printf("BLE Connected   : %d", comm_ble_is_connected());
+
+		esp_ip4_addr_t ip = comm_wifi_get_ip();
+		esp_ip4_addr_t ip_client = comm_wifi_get_ip_client();
+
+		commands_printf("WIFI IP         : " IPSTR, IP2STR(&ip));
+		commands_printf("WIFI Connected  : %d", comm_wifi_is_connected());
+		commands_printf("WIFI Connecting : %d", comm_wifi_is_connecting());
+		commands_printf("WIFI Client IP  : " IPSTR, IP2STR(&ip_client));
+		commands_printf("WIFI Client Con : %d", comm_wifi_is_client_connected());
+
+		nvs_stats_t s;
+		nvs_get_stats(NULL, &s);
+
+		commands_printf("NVS free        : %d", s.free_entries);
+		commands_printf("NVS ns cnt      : %d", s.namespace_count);
+		commands_printf("NVS tot         : %d", s.total_entries);
+		commands_printf("NVS used        : %d", s.used_entries);
+
+		const esp_partition_t *running = esp_ota_get_running_partition();
+		esp_app_desc_t running_app_info;
+		if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
+			commands_printf("App running ver : %s", running_app_info.version);
+			commands_printf("App running proj: %s", running_app_info.project_name);
+		}
+
+		const esp_partition_t *part  = esp_partition_find_first(
+				ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, "ota_0");
+
+		if (part) {
+			commands_printf("ota0 app addr   : %d", part->address);
+			commands_printf("ota0 app size   : %d", part->size);
+		} else {
+			commands_printf("ota0 partition not found");
+		}
+
+		part  = esp_partition_find_first(
+				ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "ota_1");
+
+		if (part) {
+			commands_printf("ota1 app addr   : %d", part->address);
+			commands_printf("ota1 app size   : %d", part->size);
+		} else {
+			commands_printf("ota1 partition not found");
+		}
+
+		commands_printf(" ");
+	} else if (strcmp(argv[0], "can_scan") == 0) {
+		bool found = false;
+		for (int i = 0;i < 254;i++) {
+			HW_TYPE hw_type;
+			if (comm_can_ping(i, &hw_type)) {
+				commands_printf("Found %s with ID: %d", utils_hw_type_to_string(hw_type), i);
+				found = true;
+			}
+		}
+
+		if (found) {
+			commands_printf("Done\n");
+		} else {
+			commands_printf("No CAN devices found\n");
+		}
+	} else if (strcmp(argv[0], "uptime") == 0) {
+		commands_printf("Uptime: %.2f s", (double)(utils_ms_tot() / 1000.0));
+	}
+
+	// The help command
+	else if (strcmp(argv[0], "help") == 0) {
+		commands_printf("Valid commands are:");
+		commands_printf("help");
+		commands_printf("  Show this help");
+
+		commands_printf("ping");
+		commands_printf("  Print pong here to see if the reply works");
+
+		commands_printf("can_devs");
+		commands_printf("  Prints all CAN devices seen on the bus the past second");
+
+		commands_printf("hw_status");
+		commands_printf("  Print some hardware status information.");
+
+		commands_printf("can_scan");
+		commands_printf("  Scan CAN-bus using ping commands, and print all devices that are found.");
+
+		commands_printf("uptime");
+		commands_printf("  Prints how many seconds have passed since boot.");
+
+		for (int i = 0;i < callback_write;i++) {
+			if (callbacks[i].cbf == 0) {
+				continue;
+			}
+
+			if (callbacks[i].arg_names) {
+				commands_printf("%s %s", callbacks[i].command, callbacks[i].arg_names);
+			} else {
+				commands_printf(callbacks[i].command);
+			}
+
+			if (callbacks[i].help) {
+				commands_printf("  %s", callbacks[i].help);
+			} else {
+				commands_printf("  There is no help available for this command.");
+			}
+		}
+
+		commands_printf(" ");
+	} else {
+		commands_printf("Invalid command: %s\n"
+				"type help to list all available commands\n", argv[0]);
+	}
+}
+
+/**
+ * Register a custom command  callback to the terminal. If the command
+ * is already registered the old command callback will be replaced.
+ *
+ * @param command
+ * The command name.
+ *
+ * @param help
+ * A help text for the command. Can be NULL.
+ *
+ * @param arg_names
+ * The argument names for the command, e.g. [arg_a] [arg_b]
+ * Can be NULL.
+ *
+ * @param cbf
+ * The callback function for the command.
+ */
+void terminal_register_command_callback(
+		const char* command,
+		const char *help,
+		const char *arg_names,
+		void(*cbf)(int argc, const char **argv)) {
+
+	int callback_num = callback_write;
+
+	for (int i = 0;i < callback_write;i++) {
+		// First check the address in case the same callback is registered more than once.
+		if (callbacks[i].command == command) {
+			callback_num = i;
+			break;
+		}
+
+		// Check by string comparison.
+		if (strcmp(callbacks[i].command, command) == 0) {
+			callback_num = i;
+			break;
+		}
+
+		// Check if the callback is empty (unregistered)
+		if (callbacks[i].cbf == 0) {
+			callback_num = i;
+			break;
+		}
+	}
+
+	callbacks[callback_num].command = command;
+	callbacks[callback_num].help = help;
+	callbacks[callback_num].arg_names = arg_names;
+	callbacks[callback_num].cbf = cbf;
+
+	if (callback_num == callback_write) {
+		callback_write++;
+		if (callback_write >= CALLBACK_LEN) {
+			callback_write = 0;
+		}
+	}
+}
+
+void terminal_unregister_callback(void(*cbf)(int argc, const char **argv)) {
+	for (int i = 0;i < callback_write;i++) {
+		if (callbacks[i].cbf == cbf) {
+			callbacks[i].cbf = 0;
+		}
+	}
+}
+
