@@ -336,7 +336,7 @@ bool log_init(void) {
 
 	sdmmc_card_t *card;
 	sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-	host.max_freq_khz = 40000;
+	host.max_freq_khz = 20000;
 
 	spi_bus_config_t bus_cfg = {
 			.mosi_io_num = SD_PIN_MOSI,

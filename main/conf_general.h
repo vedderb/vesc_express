@@ -25,9 +25,9 @@
 
 // Firmware version
 #define FW_VERSION_MAJOR			6
-#define FW_VERSION_MINOR			00
+#define FW_VERSION_MINOR			02
 // Set to 0 for building a release and iterate during beta test builds
-#define FW_TEST_VERSION_NUMBER		3
+#define FW_TEST_VERSION_NUMBER		0
 
 #if !defined(HW_SOURCE) && !defined(HW_HEADER)
 #define HW_HEADER					"hw_xp_t.h"

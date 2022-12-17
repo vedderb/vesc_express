@@ -124,10 +124,14 @@ void terminal_process_string(char *str) {
 		commands_printf("NVS used        : %d", s.used_entries);
 
 		const esp_partition_t *running = esp_ota_get_running_partition();
-		esp_app_desc_t running_app_info;
-		if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
-			commands_printf("App running ver : %s", running_app_info.version);
-			commands_printf("App running proj: %s", running_app_info.project_name);
+		if (running != NULL) {
+			esp_app_desc_t running_app_info;
+			if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
+				commands_printf("App running ver : %s", running_app_info.version);
+				commands_printf("App running proj: %s", running_app_info.project_name);
+			}
+		} else {
+			commands_printf("Could not get running partition.");
 		}
 
 		const esp_partition_t *part  = esp_partition_find_first(

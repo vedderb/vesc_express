@@ -115,7 +115,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		ind += 6;
 
 		send_buffer[ind++] = 0;
-		send_buffer[ind++] = 0;
+		send_buffer[ind++] = FW_TEST_VERSION_NUMBER;
 
 		send_buffer[ind++] = HW_TYPE_CUSTOM_MODULE;
 		send_buffer[ind++] = 1; // One custom config
@@ -385,7 +385,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		if (reply_func == comm_wifi_send_packet) {
 			send_buffer = wifi_buffer + 3;
-			send_size = sizeof(wifi_buffer) - 10;
+			send_size = sizeof(wifi_buffer) - 100;
 		}
 
 		char path_full[path_len + strlen("/sdcard/") + 1];
@@ -425,14 +425,25 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		if (reply_func == comm_wifi_send_packet) {
 			unsigned short crc = crc16(send_buffer, ind);
-			wifi_buffer[0] = 3;
-			wifi_buffer[1] = ind >> 8;
-			wifi_buffer[2] = ind & 0xFF;
-			ind += 3;
-			wifi_buffer[ind++] = (uint8_t)(crc >> 8);
-			wifi_buffer[ind++] = (uint8_t)(crc & 0xFF);
-			wifi_buffer[ind++] = 3;
-			comm_wifi_send_raw(wifi_buffer, ind);
+
+			if (ind > 255) {
+				wifi_buffer[0] = 3;
+				wifi_buffer[1] = ind >> 8;
+				wifi_buffer[2] = ind & 0xFF;
+				ind += 3;
+				wifi_buffer[ind++] = (uint8_t)(crc >> 8);
+				wifi_buffer[ind++] = (uint8_t)(crc & 0xFF);
+				wifi_buffer[ind++] = 3;
+				comm_wifi_send_raw(wifi_buffer, ind);
+			} else {
+				wifi_buffer[1] = 2;
+				wifi_buffer[2] = ind & 0xFF;
+				ind += 3;
+				wifi_buffer[ind++] = (uint8_t)(crc >> 8);
+				wifi_buffer[ind++] = (uint8_t)(crc & 0xFF);
+				wifi_buffer[ind++] = 3;
+				comm_wifi_send_raw(wifi_buffer + 1, ind - 1);
+			}
 		} else {
 			reply_func(send_buffer, ind);
 		}
