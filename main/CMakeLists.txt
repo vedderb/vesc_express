@@ -31,6 +31,6 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "config"
 "hwconf"
 "hwconf/trampa"
-"hwconf/other")
+"hwconf/lb")
 
 register_component()

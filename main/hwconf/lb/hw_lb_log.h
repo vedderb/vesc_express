@@ -17,18 +17,33 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_COMMANDS_H_
-#define MAIN_COMMANDS_H_
+#ifndef MAIN_HWCONF_LB_HW_LB_LOG_T_H_
+#define MAIN_HWCONF_LB_HW_LB_LOG_T_H_
 
-#include <stdint.h>
-#include <stdbool.h>
+#include "driver/gpio.h"
+
+#define HW_NAME						"LB Log"
+
+#define HW_INIT_HOOK()				hw_init()
+
+// CAN
+#define CAN_TX_GPIO_NUM				7
+#define CAN_RX_GPIO_NUM				6
+#define CAN_EN_GPIO_NUM				8
+
+// SD-card
+#define SD_PIN_MOSI					4
+#define SD_PIN_MISO					0
+#define SD_PIN_SCK					10
+#define SD_PIN_CS					3
+
+// UART
+#define UART_NUM					0
+#define UART_BAUDRATE				115200
+#define UART_TX						21
+#define UART_RX						20
 
 // Functions
-void commands_init(void);
-void commands_process_packet(unsigned char *data, unsigned int len,
-		void(*reply_func)(unsigned char *data, unsigned int len));
-void commands_send_packet(unsigned char *data, unsigned int len);
-void commands_send_packet_can_last(unsigned char *data, unsigned int len);
-int commands_printf(const char* format, ...);
+void hw_init(void);
 
-#endif /* MAIN_COMMANDS_H_ */
+#endif /* MAIN_HWCONF_LB_HW_LB_LOG_T_H_ */

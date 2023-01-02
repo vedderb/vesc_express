@@ -35,6 +35,9 @@
 
 //#define HW_HEADER					"hw_lb_if.h"
 //#define HW_SOURCE					"hw_lb_if.c"
+
+//#define HW_HEADER					"hw_lb_log.h"
+//#define HW_SOURCE					"hw_lb_log.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)

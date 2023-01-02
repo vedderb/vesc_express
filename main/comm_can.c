@@ -33,6 +33,7 @@
 #include "nmea.h"
 #include <string.h>
 
+#define RX_BUFFER_NUM				3
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
 
 // For double precision literals
@@ -45,7 +46,8 @@ static const twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX
 static SemaphoreHandle_t ping_sem;
 static SemaphoreHandle_t send_mutex;
 static volatile HW_TYPE ping_hw_last = HW_TYPE_VESC;
-static uint8_t rx_buffer[RX_BUFFER_SIZE];
+uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
+int rx_buffer_offset[RX_BUFFER_NUM];
 static unsigned int rx_buffer_last_id;
 
 // Private functions
@@ -57,8 +59,6 @@ static void send_packet_wrapper(unsigned char *data, unsigned int len) {
 
 static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) {
 	int32_t ind = 0;
-	unsigned int rxbuf_len;
-	unsigned int rxbuf_ind;
 	uint8_t crc_low;
 	uint8_t crc_high;
 	uint8_t commands_send;
@@ -68,61 +68,109 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 	if (id == 255 || id == backup.config.controller_id) {
 		switch (cmd) {
-		case CAN_PACKET_FILL_RX_BUFFER:
-			memcpy(rx_buffer + data8[0], data8 + 1, len - 1);
-			break;
+		case CAN_PACKET_FILL_RX_BUFFER: {
+			int buf_ind = 0;
+			int offset = data8[0];
+			data8++;
+			len--;
 
-		case CAN_PACKET_FILL_RX_BUFFER_LONG:
-			rxbuf_ind = (unsigned int)data8[0] << 8;
-			rxbuf_ind |= data8[1];
-			if (rxbuf_ind < RX_BUFFER_SIZE) {
-				memcpy(rx_buffer + rxbuf_ind, data8 + 2, len - 2);
+			for (int i = 0; i < RX_BUFFER_NUM;i++) {
+				if ((rx_buffer_offset[i]) == offset ) {
+					buf_ind = i;
+					break;
+				}
 			}
-			break;
 
-		case CAN_PACKET_PROCESS_RX_BUFFER:
+			memcpy(rx_buffer[buf_ind] + offset, data8, len);
+			rx_buffer_offset[buf_ind] += len;
+		} break;
+
+		case CAN_PACKET_FILL_RX_BUFFER_LONG: {
+			int buf_ind = 0;
+			int offset = (int)data8[0] << 8;
+			offset |= data8[1];
+			data8 += 2;
+			len -= 2;
+
+			for (int i = 0; i < RX_BUFFER_NUM;i++) {
+				if ((rx_buffer_offset[i]) == offset ) {
+					buf_ind = i;
+					break;
+				}
+			}
+
+			if ((offset + len) <= RX_BUFFER_SIZE) {
+				memcpy(rx_buffer[buf_ind] + offset, data8, len);
+				rx_buffer_offset[buf_ind] += len;
+			}
+		} break;
+
+		case CAN_PACKET_PROCESS_RX_BUFFER: {
 			ind = 0;
-			rx_buffer_last_id = data8[ind++];
+			unsigned int last_id = data8[ind++];
 			commands_send = data8[ind++];
-			rxbuf_len = (unsigned int)data8[ind++] << 8;
-			rxbuf_len |= (unsigned int)data8[ind++];
+
+			if (commands_send == 0) {
+				rx_buffer_last_id = last_id;
+			}
+
+			int rxbuf_len = (int)data8[ind++] << 8;
+			rxbuf_len |= (int)data8[ind++];
 
 			if (rxbuf_len > RX_BUFFER_SIZE) {
 				break;
 			}
 
+			int buf_ind = -1;
+			for (int i = 0; i < RX_BUFFER_NUM;i++) {
+				if ((rx_buffer_offset[i]) == rxbuf_len ) {
+					buf_ind = i;
+					break;
+				}
+			}
+
+			// Something is wrong, reset all buffers
+			if (buf_ind < 0) {
+				for (int i = 0; i < RX_BUFFER_NUM;i++) {
+					rx_buffer_offset[i] = 0;
+				}
+				break;
+			}
+
+			rx_buffer_offset[buf_ind] = 0;
+
 			crc_high = data8[ind++];
 			crc_low = data8[ind++];
 
-			if (crc16(rx_buffer, rxbuf_len)
+			if (crc16(rx_buffer[buf_ind], rxbuf_len)
 					== ((unsigned short) crc_high << 8
 							| (unsigned short) crc_low)) {
 
 				if (is_replaced) {
-					if (rx_buffer[0] == COMM_JUMP_TO_BOOTLOADER ||
-							rx_buffer[0] == COMM_ERASE_NEW_APP ||
-							rx_buffer[0] == COMM_WRITE_NEW_APP_DATA ||
-							rx_buffer[0] == COMM_WRITE_NEW_APP_DATA_LZO ||
-							rx_buffer[0] == COMM_ERASE_BOOTLOADER) {
+					if (rx_buffer[buf_ind][0] == COMM_JUMP_TO_BOOTLOADER ||
+							rx_buffer[buf_ind][0] == COMM_ERASE_NEW_APP ||
+							rx_buffer[buf_ind][0] == COMM_WRITE_NEW_APP_DATA ||
+							rx_buffer[buf_ind][0] == COMM_WRITE_NEW_APP_DATA_LZO ||
+							rx_buffer[buf_ind][0] == COMM_ERASE_BOOTLOADER) {
 						break;
 					}
 				}
 
 				switch (commands_send) {
 				case 0:
-					commands_process_packet(rx_buffer, rxbuf_len, send_packet_wrapper);
+					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, send_packet_wrapper);
 					break;
 				case 1:
-					commands_send_packet(rx_buffer, rxbuf_len);
+					commands_send_packet_can_last(rx_buffer[buf_ind], rxbuf_len);
 					break;
 				case 2:
-					commands_process_packet(rx_buffer, rxbuf_len, 0);
+					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, 0);
 					break;
 				default:
 					break;
 				}
 			}
-			break;
+		} break;
 
 		case CAN_PACKET_PROCESS_SHORT_BUFFER:
 			ind = 0;

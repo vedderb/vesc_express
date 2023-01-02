@@ -68,6 +68,7 @@ static esp_ota_handle_t update_handle = 0;
 
 // Function pointers
 static void(* volatile send_func)(unsigned char *data, unsigned int len) = 0;
+static void(* volatile send_func_can_fwd)(unsigned char *data, unsigned int len) = 0;
 
 // Private functions
 static bool rmtree(const char *path);
@@ -90,6 +91,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	len--;
 
 	send_func = reply_func;
+
+	if (!send_func_can_fwd) {
+		send_func_can_fwd = reply_func;
+	}
 
 	// Avoid calling invalid function pointer if it is null.
 	// commands_send_packet will make the check.
@@ -187,6 +192,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_FORWARD_CAN:
+		send_func_can_fwd = reply_func;
 		comm_can_send_buffer(data[0], data + 1, len - 1, 0);
 		break;
 
@@ -582,6 +588,21 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 void commands_send_packet(unsigned char *data, unsigned int len) {
 	if (send_func) {
 		send_func(data, len);
+	}
+}
+
+/**
+ * Send a packet using the last can fwd function.
+ *
+ * @param data
+ * The packet data.
+ *
+ * @param len
+ * The data length.
+ */
+void commands_send_packet_can_last(unsigned char *data, unsigned int len) {
+	if (send_func_can_fwd) {
+		send_func_can_fwd(data, len);
 	}
 }
 

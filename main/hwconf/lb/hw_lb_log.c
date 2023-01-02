@@ -17,18 +17,16 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_COMMANDS_H_
-#define MAIN_COMMANDS_H_
+#include "hw_lb_log.h"
 
-#include <stdint.h>
-#include <stdbool.h>
+void hw_init(void) {
+	    gpio_config_t io_conf = {};
+	    io_conf.intr_type = GPIO_INTR_DISABLE;
+	    io_conf.mode = GPIO_MODE_OUTPUT;
+	    io_conf.pin_bit_mask = ((1ULL << CAN_EN_GPIO_NUM));
+	    io_conf.pull_down_en = 0;
+	    io_conf.pull_up_en = 0;
+	    gpio_config(&io_conf);
 
-// Functions
-void commands_init(void);
-void commands_process_packet(unsigned char *data, unsigned int len,
-		void(*reply_func)(unsigned char *data, unsigned int len));
-void commands_send_packet(unsigned char *data, unsigned int len);
-void commands_send_packet_can_last(unsigned char *data, unsigned int len);
-int commands_printf(const char* format, ...);
-
-#endif /* MAIN_COMMANDS_H_ */
+	    gpio_set_level(CAN_EN_GPIO_NUM, 0);
+}
