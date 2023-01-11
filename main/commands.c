@@ -41,6 +41,8 @@
 #include "comm_wifi.h"
 #include "log.h"
 #include "nmea.h"
+#include "lispif.h"
+#include "flash_helper.h"
 
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
@@ -124,6 +126,15 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		send_buffer[ind++] = HW_TYPE_CUSTOM_MODULE;
 		send_buffer[ind++] = 1; // One custom config
+
+		send_buffer[ind++] = 0; // No phase filters
+		send_buffer[ind++] = 0; // No HW QML
+
+		if (flash_helper_code_size(CODE_IND_QML) > 0) {
+			send_buffer[ind++] = flash_helper_code_flags(CODE_IND_QML);
+		} else {
+			send_buffer[ind++] = 0;
+		}
 
 		reply_func(send_buffer, ind);
 	} break;
@@ -377,7 +388,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		static FILE *f_last = 0;
 		static int32_t f_last_offset = 0;
 		static int32_t f_last_size = 0;
-		static uint8_t wifi_buffer[8000];
+		static uint8_t wifi_buffer[4000];
 
 		int32_t ind = 0;
 		char *path = (char*)data + ind;
@@ -580,6 +591,84 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		reply_func(send_buffer, ind);
 	} break;
 
+	case COMM_LISP_SET_RUNNING:
+	case COMM_LISP_GET_STATS:
+	case COMM_LISP_REPL_CMD:
+	case COMM_LISP_STREAM_CODE: {
+		lispif_process_cmd(data - 1, len + 1, reply_func);
+		break;
+	}
+
+	case COMM_GET_QML_UI_APP:
+	case COMM_LISP_READ_CODE: {
+		int32_t ind = 0;
+
+		int32_t len_qml = buffer_get_int32(data, &ind);
+		int32_t ofs_qml = buffer_get_int32(data, &ind);
+
+		int code_type = CODE_IND_QML;
+		if (packet_id == COMM_LISP_READ_CODE) {
+			code_type = CODE_IND_LISP;
+		}
+
+		int32_t qmlui_len = flash_helper_code_size(code_type);
+
+		if (qmlui_len == 0) {
+			ind = 0;
+			uint8_t send_buffer[50];
+			send_buffer[ind++] = packet_id;
+			buffer_append_int32(send_buffer, 0, &ind);
+			buffer_append_int32(send_buffer, 0, &ind);
+			reply_func(send_buffer, ind);
+			break;
+		}
+
+		if ((len_qml + ofs_qml) > qmlui_len || len_qml > (PACKET_MAX_PL_LEN - 10)) {
+			break;
+		}
+
+		uint8_t *send_buffer_global = mempools_get_packet_buffer();
+		ind = 0;
+		send_buffer_global[ind++] = packet_id;
+		buffer_append_int32(send_buffer_global, qmlui_len, &ind);
+		buffer_append_int32(send_buffer_global, ofs_qml, &ind);
+		flash_helper_code_data(code_type, ofs_qml, send_buffer_global + ind, len_qml);
+		ind += len_qml;
+		reply_func(send_buffer_global, ind);
+		mempools_free_packet_buffer(send_buffer_global);
+	} break;
+
+	case COMM_QMLUI_ERASE:
+	case COMM_LISP_ERASE_CODE: {
+		if (packet_id == COMM_LISP_ERASE_CODE) {
+			lispif_restart(false, false);
+		}
+
+		bool flash_res = flash_helper_erase_code(packet_id == COMM_QMLUI_ERASE ? CODE_IND_QML : CODE_IND_LISP);
+
+		int32_t ind = 0;
+		uint8_t send_buffer[50];
+		send_buffer[ind++] = packet_id;
+		send_buffer[ind++] = flash_res ? 1 : 0;
+		reply_func(send_buffer, ind);
+	} break;
+
+	case COMM_QMLUI_WRITE:
+	case COMM_LISP_WRITE_CODE: {
+		int32_t ind = 0;
+		uint32_t qmlui_offset = buffer_get_uint32(data, &ind);
+
+		bool flash_res = flash_helper_write_code(packet_id == COMM_QMLUI_WRITE ? CODE_IND_QML : CODE_IND_LISP,
+				qmlui_offset, data + ind, len - ind);
+
+		ind = 0;
+		uint8_t send_buffer[50];
+		send_buffer[ind++] = packet_id;
+		send_buffer[ind++] = flash_res ? 1 : 0;
+		buffer_append_uint32(send_buffer, qmlui_offset, &ind);
+		reply_func(send_buffer, ind);
+	} break;
+
 	default:
 		break;
 	}
@@ -626,6 +715,84 @@ int commands_printf(const char* format, ...) {
 	xSemaphoreGive(print_mutex);
 
 	return len_to_print - 1;
+}
+
+int commands_printf_lisp(const char* format, ...) {
+	xSemaphoreTake(print_mutex, portMAX_DELAY);
+
+	va_list arg;
+	va_start (arg, format);
+	int len;
+
+	print_buffer[0] = COMM_LISP_PRINT;
+	len = vsnprintf(print_buffer + 1, (PRINT_BUFFER_SIZE - 1), format, arg);
+	va_end (arg);
+
+	int len_to_print = (len < (PRINT_BUFFER_SIZE - 1)) ? len + 1 : PRINT_BUFFER_SIZE;
+
+	if (len > 0) {
+		if (print_buffer[len_to_print - 1] == '\n') {
+			len_to_print--;
+		}
+
+		commands_send_packet((unsigned char*)print_buffer, len_to_print);
+	}
+
+	xSemaphoreGive(print_mutex);
+
+	return len_to_print - 1;
+}
+
+void commands_init_plot(char *namex, char *namey) {
+	int ind = 0;
+	uint8_t *send_buffer_global = mempools_get_packet_buffer();
+	send_buffer_global[ind++] = COMM_PLOT_INIT;
+	memcpy(send_buffer_global + ind, namex, strlen(namex));
+	ind += strlen(namex);
+	send_buffer_global[ind++] = '\0';
+	memcpy(send_buffer_global + ind, namey, strlen(namey));
+	ind += strlen(namey);
+	send_buffer_global[ind++] = '\0';
+	commands_send_packet(send_buffer_global, ind);
+	mempools_free_packet_buffer(send_buffer_global);
+}
+
+void commands_plot_add_graph(char *name) {
+	int ind = 0;
+	uint8_t *send_buffer_global = mempools_get_packet_buffer();
+	send_buffer_global[ind++] = COMM_PLOT_ADD_GRAPH;
+	memcpy(send_buffer_global + ind, name, strlen(name));
+	ind += strlen(name);
+	send_buffer_global[ind++] = '\0';
+	commands_send_packet(send_buffer_global, ind);
+	mempools_free_packet_buffer(send_buffer_global);
+}
+
+void commands_plot_set_graph(int graph) {
+	int ind = 0;
+	uint8_t buffer[2];
+	buffer[ind++] = COMM_PLOT_SET_GRAPH;
+	buffer[ind++] = graph;
+	commands_send_packet(buffer, ind);
+}
+
+void commands_send_plot_points(float x, float y) {
+	int32_t ind = 0;
+	uint8_t buffer[10];
+	buffer[ind++] = COMM_PLOT_DATA;
+	buffer_append_float32_auto(buffer, x, &ind);
+	buffer_append_float32_auto(buffer, y, &ind);
+	commands_send_packet(buffer, ind);
+}
+
+void commands_send_app_data(unsigned char *data, unsigned int len) {
+	int32_t index = 0;
+	uint8_t *send_buffer_global = mempools_get_packet_buffer();
+	send_buffer_global[index++] = COMM_CUSTOM_APP_DATA;
+	memcpy(send_buffer_global + index, data, len);
+	index += len;
+	commands_send_packet(send_buffer_global, index);
+	mempools_free_packet_buffer(send_buffer_global);
 }
 
 static bool rmtree(const char *path) {

@@ -1,5 +1,5 @@
 /*
-	Copyright 2016 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2023 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -15,19 +15,21 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
-#ifndef CRC_H_
-#define CRC_H_
+#ifndef FLASH_HELPER_H_
+#define FLASH_HELPER_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
-/*
- * Functions
- */
-unsigned short crc16(unsigned char *buf, unsigned int len);
-unsigned short crc16_with_init(unsigned char *buf, unsigned int len, unsigned short cksum);
-uint32_t crc32(uint32_t *buf, uint32_t len);
-void crc32_reset(void);
+#define CODE_IND_QML	0
+#define CODE_IND_LISP	1
 
-#endif /* CRC_H_ */
+bool flash_helper_erase_code(int ind);
+bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len);
+bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t len);
+uint32_t flash_helper_code_size(int ind);
+uint16_t flash_helper_code_flags(int ind);
+
+#endif /* FLASH_HELPER_H_ */

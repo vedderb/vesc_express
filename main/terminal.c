@@ -123,6 +123,10 @@ void terminal_process_string(char *str) {
 		commands_printf("NVS tot         : %d", s.total_entries);
 		commands_printf("NVS used        : %d", s.used_entries);
 
+		commands_printf("Heap free       : %d", esp_get_free_heap_size());
+		commands_printf("Heap free int.  : %d", esp_get_free_internal_heap_size());
+		commands_printf("Heap min        : %d", esp_get_minimum_free_heap_size());
+
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		if (running != NULL) {
 			esp_app_desc_t running_app_info;

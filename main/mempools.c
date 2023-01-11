@@ -18,6 +18,11 @@
     */
 
 #include "mempools.h"
+#include "packet.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 
 // Private types
 typedef struct {
@@ -28,6 +33,12 @@ typedef struct {
 // Private variables
 static conf_container_t m_confs[MEMPOOLS_CONF_NUM] = {{0}};
 static int m_conf_highest = 0;
+static uint8_t packet_buffer[PACKET_MAX_PL_LEN];
+static SemaphoreHandle_t packet_buffer_mutex;
+
+void mempools_init(void) {
+	packet_buffer_mutex = xSemaphoreCreateMutex();
+}
 
 main_config_t *mempools_alloc_conf(void) {
 	for (int i = 0;i < MEMPOOLS_CONF_NUM;i++) {
@@ -54,11 +65,9 @@ void mempools_free_conf(main_config_t *conf) {
 	}
 }
 
-
 int mempools_conf_highest(void) {
 	return m_conf_highest;
 }
-
 
 int mempools_conf_allocated_num(void) {
 	int res = 0;
@@ -70,3 +79,13 @@ int mempools_conf_allocated_num(void) {
 	return res;
 }
 
+uint8_t *mempools_get_packet_buffer(void) {
+	xSemaphoreTake(packet_buffer_mutex, portMAX_DELAY);
+	return packet_buffer;
+}
+
+void mempools_free_packet_buffer(uint8_t *buffer) {
+	if (buffer == packet_buffer) {
+		xSemaphoreGive(packet_buffer_mutex);
+	}
+}

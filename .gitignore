@@ -1,4 +1,6 @@
 .project
 .settings
+.cproject
 build
 esp_idf_components
+sdkconfig.old

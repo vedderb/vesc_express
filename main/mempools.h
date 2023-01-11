@@ -26,10 +26,15 @@
 #define MEMPOOLS_CONF_NUM				10
 
 // Functions
+void mempools_init(void);
+
 main_config_t *mempools_alloc_conf(void);
 void mempools_free_conf(main_config_t *conf);
 
 int mempools_conf_highest(void);
 int mempools_conf_allocated_num(void);
+
+uint8_t *mempools_get_packet_buffer(void);
+void mempools_free_packet_buffer(uint8_t *buffer);
 
 #endif /* MEMPOOLS_H_ */

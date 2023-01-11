@@ -35,6 +35,8 @@
 #include "nmea.h"
 #include "terminal.h"
 #include "main.h"
+#include "mempools.h"
+#include "lispif.h"
 
 #include <string.h>
 #include <sys/time.h>
@@ -91,6 +93,7 @@ void app_main(void) {
 		nvs_close(my_handle);
 	}
 
+	mempools_init();
 	commands_init();
 	comm_usb_init();
 	comm_can_init();
@@ -111,6 +114,8 @@ void app_main(void) {
 #ifdef HW_HAS_ADC
 	adc_init();
 #endif
+
+	lispif_init();
 
 	//	comm_uart_init();
 	ublox_init(false);

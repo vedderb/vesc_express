@@ -20,6 +20,8 @@
 #ifndef MAIN_HWCONF_OTHER_HW_LB_IF_H_
 #define MAIN_HWCONF_OTHER_HW_LB_IF_H_
 
+#define HW_INIT_HOOK()				hw_init()
+
 #include "adc.h"
 #include <math.h>
 
@@ -28,6 +30,10 @@
 // CAN
 #define CAN_TX_GPIO_NUM				7
 #define CAN_RX_GPIO_NUM				6
+
+// SHTC3
+#define SHTC3_SDA					3
+#define SHTC3_SCL					10
 
 // UART
 #define UART_NUM					0
@@ -49,7 +55,12 @@
 // CAN Status Messages
 #define HW_CAN_STATUS_ADC0			NTC_TEMP(NTC_RES(HW_ADC_CH0))
 #define HW_CAN_STATUS_ADC1			NTC_TEMP(NTC_RES(HW_ADC_CH1))
-#define HW_CAN_STATUS_ADC2			NTC_TEMP(NTC_RES(HW_ADC_CH2))
-#define HW_CAN_STATUS_ADC3			NTC_TEMP(NTC_RES(HW_ADC_CH3))
+#define HW_CAN_STATUS_ADC2			hw_hum_hum()
+#define HW_CAN_STATUS_ADC3			hw_hum_temp()
+
+// Functions
+void hw_init(void);
+float hw_hum_hum(void);
+float hw_hum_temp(void);
 
 #endif /* MAIN_HWCONF_OTHER_HW_LB_IF_H_ */

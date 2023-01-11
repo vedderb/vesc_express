@@ -1,5 +1,6 @@
 /*
 	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Joel Svensson    svenssonjoel@yahoo.se
 
 	This file is part of the VESC firmware.
 
@@ -15,26 +16,32 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
-#ifndef MAIN_COMMANDS_H_
-#define MAIN_COMMANDS_H_
+#ifndef LISPBM_LISPIF_H_
+#define LISPBM_LISPIF_H_
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include "lispbm.h"
 
 // Functions
-void commands_init(void);
-void commands_process_packet(unsigned char *data, unsigned int len,
+void lispif_init(void);
+void lispif_lock_lbm(void);
+void lispif_unlock_lbm(void);
+bool lispif_restart(bool print, bool load_code);
+void lispif_disable_all_events(void);
+void lispif_stop_lib(void);
+void* lispif_malloc(size_t size);
+void lispif_free(void *ptr);
+void lispif_process_cmd(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len));
-void commands_send_packet(unsigned char *data, unsigned int len);
-void commands_send_packet_can_last(unsigned char *data, unsigned int len);
-int commands_printf(const char* format, ...);
-int commands_printf_lisp(const char* format, ...);
-void commands_init_plot(char *namex, char *namey);
-void commands_plot_add_graph(char *name);
-void commands_plot_set_graph(int graph);
-void commands_send_plot_points(float x, float y);
-void commands_send_app_data(unsigned char *data, unsigned int len);
+void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext);
+void lispif_process_custom_app_data(unsigned char *data, unsigned int len);
+void lispif_set_ext_load_callback(void (*p_func)(void));
 
-#endif /* MAIN_COMMANDS_H_ */
+void lispif_load_vesc_extensions(void);
+bool lispif_vesc_dynamic_loader(const char *str, const char **code);
+
+#endif /* LISPBM_LISPIF_H_ */

@@ -26,4 +26,6 @@
 int32_t utils_ms_today(void);
 int64_t utils_ms_tot(void);
 
+#define UTILS_AGE_S(x)		((float)(xTaskGetTickCount() - x) / ((float)portTICK_PERIOD_MS * 1000.0))
+
 #endif /* MAIN_UTILS_H_ */
