@@ -138,26 +138,6 @@ void terminal_process_string(char *str) {
 			commands_printf("Could not get running partition.");
 		}
 
-		const esp_partition_t *part  = esp_partition_find_first(
-				ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, "ota_0");
-
-		if (part) {
-			commands_printf("ota0 app addr   : %d", part->address);
-			commands_printf("ota0 app size   : %d", part->size);
-		} else {
-			commands_printf("ota0 partition not found");
-		}
-
-		part  = esp_partition_find_first(
-				ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "ota_1");
-
-		if (part) {
-			commands_printf("ota1 app addr   : %d", part->address);
-			commands_printf("ota1 app size   : %d", part->size);
-		} else {
-			commands_printf("ota1 partition not found");
-		}
-
 		commands_printf(" ");
 	} else if (strcmp(argv[0], "can_scan") == 0) {
 		bool found = false;

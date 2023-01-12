@@ -388,7 +388,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		static FILE *f_last = 0;
 		static int32_t f_last_offset = 0;
 		static int32_t f_last_size = 0;
-		static uint8_t wifi_buffer[4000];
+		static uint8_t wifi_buffer[3000];
 
 		int32_t ind = 0;
 		char *path = (char*)data + ind;
