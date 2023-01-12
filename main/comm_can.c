@@ -229,8 +229,8 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 #define RXBUF_LEN			100
 static twai_message_t rx_buf[RXBUF_LEN];
-static int rx_write = 0;
-static int rx_read = 0;
+static volatile int rx_write = 0;
+static volatile int rx_read = 0;
 static SemaphoreHandle_t proc_sem;
 
 static void rx_task(void *arg) {

@@ -138,6 +138,8 @@ void terminal_process_string(char *str) {
 			commands_printf("Could not get running partition.");
 		}
 
+		commands_printf("Reset Reason    : %d", esp_reset_reason());
+
 		commands_printf(" ");
 	} else if (strcmp(argv[0], "can_scan") == 0) {
 		bool found = false;
