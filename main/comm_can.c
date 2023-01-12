@@ -31,6 +31,8 @@
 #include "packet.h"
 #include "commands.h"
 #include "nmea.h"
+#include "lispif.h"
+
 #include <string.h>
 
 #define RX_BUFFER_NUM				3
@@ -261,6 +263,8 @@ static void process_task(void *arg) {
 			if (rx_read >= RXBUF_LEN) {
 				rx_read = 0;
 			}
+
+			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
 
 			if (msg->extd) {
 				decode_msg(msg->identifier, msg->data, msg->data_length_code, false);

@@ -299,11 +299,9 @@ static lbm_value ext_bits_dec_int(lbm_value *args, lbm_uint argn) {
 
 // Events that will be sent to lisp if a handler is registered
 
-static volatile bool event_handler_registered = false;
 static volatile bool event_can_sid_en = false;
 static volatile bool event_can_eid_en = false;
 static volatile bool event_data_rx_en = false;
-static lbm_uint event_handler_pid;
 static lbm_uint sym_event_can_sid;
 static lbm_uint sym_event_can_eid;
 static lbm_uint sym_event_data_rx;
@@ -333,17 +331,6 @@ static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 	} else {
 		return ENC_SYM_EERROR;
 	}
-
-	return ENC_SYM_TRUE;
-}
-
-static lbm_value ext_register_event_handler(lbm_value *args, lbm_uint argn) {
-	if (argn != 1 || !lbm_is_number(args[0])) {
-		return ENC_SYM_EERROR;
-	}
-
-	event_handler_pid = lbm_dec_i(args[0]);
-	event_handler_registered = true;
 
 	return ENC_SYM_TRUE;
 }
@@ -608,7 +595,6 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("get-adc", ext_get_adc);
 	lbm_add_extension("systime", ext_systime);
 	lbm_add_extension("secs-since", ext_secs_since);
-	lbm_add_extension("event-register-handler", ext_register_event_handler);
 	lbm_add_extension("event-enable", ext_enable_event);
 	lbm_add_extension("send-data", ext_send_data);
 	lbm_add_extension("import", ext_empty);
@@ -654,11 +640,37 @@ void lispif_set_ext_load_callback(void (*p_func)(void)) {
 }
 
 void lispif_disable_all_events(void) {
-	event_handler_registered = false;
 	event_can_sid_en = false;
 	event_can_eid_en = false;
 
 	// Give thread a chance to stop
 	vTaskDelay(5 / portTICK_PERIOD_MS);
+}
+
+void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
+	if (!event_can_sid_en && !is_ext) {
+		return;
+	}
+
+	if (!event_can_eid_en && is_ext) {
+		return;
+	}
+
+	lbm_event_t e = {0};
+	e.type = LBM_EVENT_SYM_INT_ARRAY;
+	e.sym = is_ext ? sym_event_can_eid : sym_event_can_sid;
+	e.i = can_id;
+	lbm_event(e, data8, len);
+}
+
+void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
+	if (!event_data_rx_en) {
+		return;
+	}
+
+	lbm_event_t e = {0};
+	e.type = LBM_EVENT_SYM_ARRAY;
+	e.sym = sym_event_data_rx;
+	lbm_event(e, data, len);
 }
 

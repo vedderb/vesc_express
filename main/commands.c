@@ -669,6 +669,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		reply_func(send_buffer, ind);
 	} break;
 
+	case COMM_CUSTOM_APP_DATA:
+		lispif_process_custom_app_data(data, len);
+		break;
+
 	default:
 		break;
 	}
