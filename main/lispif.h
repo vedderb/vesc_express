@@ -32,8 +32,6 @@ void lispif_lock_lbm(void);
 void lispif_unlock_lbm(void);
 bool lispif_restart(bool print, bool load_code);
 void lispif_disable_all_events(void);
-void lispif_stop_lib(void);
-void* lispif_malloc(size_t size);
 void lispif_free(void *ptr);
 void lispif_process_cmd(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len));

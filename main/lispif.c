@@ -57,7 +57,6 @@ static int repl_cid = -1;
  * TODO:
  * - Math extensions?
  * - Events
- * - Imports
  * - Do not restart LBM after wdt reboot?
  */
 
@@ -579,7 +578,51 @@ bool lispif_restart(bool print, bool load_code) {
 		lispif_load_vesc_extensions();
 		lbm_set_dynamic_load_callback(lispif_vesc_dynamic_loader);
 
-		// TODO: Load imports here
+		// Load imports
+
+		int32_t position = 0;
+		while (position < code_len) {
+			uint8_t buf[1];
+
+			// TODO: Read more bytes at a time to make it faster
+			flash_helper_code_data(CODE_IND_LISP, position, buf, 1);
+			position++;
+
+			if (buf[0] == 0) {
+				break;
+			}
+		}
+
+		if (code_len > (position + 2)) {
+			uint8_t buf[120];
+			flash_helper_code_data(CODE_IND_LISP, position, buf, 2);
+			position += 2;
+
+			int32_t ind = 0;
+			uint16_t num_imports = buffer_get_uint16(buf, &ind);
+
+			if (num_imports > 0 && num_imports < 500) {
+				for (int i = 0;i < num_imports;i++) {
+					flash_helper_code_data(CODE_IND_LISP, position, buf, 120);
+
+					int name_len = strnlen((char*)buf, 100);
+					ind = name_len + 1;
+					int32_t offset = buffer_get_int32(buf, &ind);
+					int32_t len = buffer_get_int32(buf, &ind);
+					position += ind;
+
+					lbm_value res;
+					char *name = lbm_malloc(name_len + 1);
+					memcpy(name, buf, name_len + 1);
+
+					if (lbm_create_array(&res, LBM_TYPE_CHAR, len)) {
+						lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+						flash_helper_code_data(CODE_IND_LISP, offset, (uint8_t*)arr->data, len);
+						lbm_define(name, res);
+					}
+				}
+			}
+		}
 
 		if (load_code) {
 			if (print) {
@@ -595,23 +638,25 @@ bool lispif_restart(bool print, bool load_code) {
 			} else {
 				lbm_continue_eval();
 
-				int32_t written = 0;
+				position = 0;
 				int timeout = 1500;
-				while (written < code_len) {
+				bool null_found = false;
+
+				while (position < code_len) {
 					uint8_t buf[1];
 
 					// TODO: Read more bytes at a time to make it faster
-					flash_helper_code_data(CODE_IND_LISP, written, buf, 1);
+					flash_helper_code_data(CODE_IND_LISP, position, buf, 1);
 
 					if (buf[0] == 0) {
-						written = code_len;
+						null_found = true;
 						break;
 					}
 
 					int ch_res = lbm_channel_write(&buffered_string_tok, (char)buf[0]);
 
 					if (ch_res == CHANNEL_SUCCESS) {
-						written++;
+						position++;
 						timeout = 0;
 					} else if (ch_res == CHANNEL_READER_CLOSED) {
 						break;
@@ -634,7 +679,7 @@ bool lispif_restart(bool print, bool load_code) {
 					}
 				}
 
-				if (written != code_len && print) {
+				if ((!null_found && position != code_len) && print) {
 					commands_printf_lisp("Could not stream program from flash");
 				}
 			}
