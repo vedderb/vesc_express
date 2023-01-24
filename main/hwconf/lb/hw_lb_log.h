@@ -45,5 +45,6 @@
 
 // Functions
 void hw_init(void);
+void hw_clear_can_fault(void);
 
 #endif /* MAIN_HWCONF_LB_HW_LB_LOG_T_H_ */

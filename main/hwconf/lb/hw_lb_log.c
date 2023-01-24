@@ -18,6 +18,30 @@
     */
 
 #include "hw_lb_log.h"
+#include "terminal.h"
+#include "commands.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "esp_rom_gpio.h"
+#include "soc/gpio_sig_map.h"
+#include "rom/gpio.h"
+
+// Variables
+static int can_fault_cnt = 0;
+
+static void hw_task(void *arg) {
+	for (;;) {
+		hw_clear_can_fault();
+		vTaskDelay(5 / portTICK_PERIOD_MS);
+	}
+}
+
+static void terminal_custom_info(int argc, const char **argv) {
+	(void)argc; (void)argv;
+	commands_printf("CAN Fault Cnt: %d", can_fault_cnt);
+}
 
 void hw_init(void) {
 	    gpio_config_t io_conf = {};
@@ -28,5 +52,35 @@ void hw_init(void) {
 	    io_conf.pull_up_en = 0;
 	    gpio_config(&io_conf);
 
+	    xTaskCreatePinnedToCore(hw_task, "hw", 256, NULL, 6, NULL, tskNO_AFFINITY);
+
 	    gpio_set_level(CAN_EN_GPIO_NUM, 0);
+
+	    terminal_register_command_callback(
+	    		"custom_info",
+				"Print custom hw info.",
+				0,
+				terminal_custom_info);
+}
+
+void hw_clear_can_fault(void) {
+	for (int i = 0;i < 50;i++) {
+		vTaskDelay(1);
+		if (gpio_get_level(CAN_RX_GPIO_NUM) != 0) {
+			return;
+		}
+	}
+
+	esp_rom_gpio_connect_out_signal(CAN_TX_GPIO_NUM, SIG_GPIO_OUT_IDX, false, false);
+
+	for (int i = 0;i < 150;i++) {
+		gpio_set_level(CAN_TX_GPIO_NUM, 1);
+		vTaskDelay(1);
+		gpio_set_level(CAN_TX_GPIO_NUM, 0);
+		vTaskDelay(1);
+	}
+
+	can_fault_cnt++;
+
+	esp_rom_gpio_connect_out_signal(CAN_TX_GPIO_NUM, TWAI_TX_IDX, false, false);
 }
