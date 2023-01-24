@@ -642,9 +642,7 @@ void lispif_set_ext_load_callback(void (*p_func)(void)) {
 void lispif_disable_all_events(void) {
 	event_can_sid_en = false;
 	event_can_eid_en = false;
-
-	// Give thread a chance to stop
-	vTaskDelay(5 / portTICK_PERIOD_MS);
+	event_data_rx_en = false;
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
