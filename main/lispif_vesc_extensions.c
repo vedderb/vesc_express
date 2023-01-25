@@ -27,7 +27,7 @@
 
 #include "commands.h"
 #include "comm_can.h"
-#include "hw.h"
+#include "conf_general.h"
 #include "mempools.h"
 #include "log.h"
 #include "buffer.h"

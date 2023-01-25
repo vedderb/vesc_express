@@ -95,8 +95,10 @@ void app_main(void) {
 
 	mempools_init();
 	commands_init();
-	comm_usb_init();
 	comm_can_init();
+	comm_usb_init();
+
+	vTaskDelay(1);
 
 	if (backup.config.ble_mode != BLE_MODE_DISABLED) {
 		comm_ble_init();

@@ -364,9 +364,9 @@ void comm_can_init(void) {
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
 
+	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(rx_task, "can_rx", 1024, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(process_task, "can_proc", 4096, NULL, 8, NULL, tskNO_AFFINITY);
-	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
 }
 
 void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {

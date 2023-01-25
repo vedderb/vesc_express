@@ -47,4 +47,7 @@
 void hw_init(void);
 void hw_clear_can_fault(void);
 
+// Config Overrides
+#define CONF_BLE_NAME				"LbBMS"
+
 #endif /* MAIN_HWCONF_LB_HW_LB_LOG_T_H_ */

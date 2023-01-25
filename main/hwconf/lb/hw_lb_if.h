@@ -64,4 +64,7 @@ float hw_hum_hum(void);
 float hw_hum_temp(void);
 void hw_clear_can_fault(void);
 
+// Config Overrides
+#define CONF_BLE_NAME				"LbIf"
+
 #endif /* MAIN_HWCONF_OTHER_HW_LB_IF_H_ */

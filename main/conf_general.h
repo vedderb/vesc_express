@@ -20,7 +20,6 @@
 #ifndef MAIN_CONF_GENERAL_H_
 #define MAIN_CONF_GENERAL_H_
 
-#include "conf_default.h"
 #include "datatypes.h"
 
 // Firmware version
@@ -51,5 +50,6 @@
 #define HW_DEFAULT_ID				2
 
 #include "hw.h"
+#include "conf_default.h"
 
 #endif /* MAIN_CONF_GENERAL_H_ */
