@@ -85,7 +85,7 @@ static void terminal_test(int argc, const char **argv) {
 			commands_printf("Voltage div2: %d (raw: %d)", mv, raw);
 		}
 #endif
-#ifdef HW_ADC_CH0
+#if defined(HW_ADC_CH0) && defined(NTC_TEMP)
 		{
 			// v = (3.3 / (10k + r)) * r
 			// (10k + r) / r = 3.3 / v

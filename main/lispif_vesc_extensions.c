@@ -1,5 +1,5 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2023 Benjamin Vedder	benjamin@vedder.se
 	Copyright 2022 Joel Svensson    svenssonjoel@yahoo.se
 
 	This file is part of the VESC firmware.
@@ -18,6 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "main.h"
 #include "lispif.h"
 #include "lispbm.h"
 #include "extensions/array_extensions.h"
@@ -32,6 +33,12 @@
 #include "log.h"
 #include "buffer.h"
 #include "utils.h"
+
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include "esp_mac.h"
+#include "esp_now.h"
+#include "esp_crc.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -81,13 +88,27 @@ static lbm_value ext_get_adc(lbm_value *args, lbm_uint argn) {
 		lbm_int channel = lbm_dec_as_i32(args[0]);
 		if (channel == 0) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH0));
-		} else if (channel == 1) {
+		}
+
+#ifdef HW_ADC_CH1
+		else if (channel == 1) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH1));
-		} else if (channel == 2) {
+		}
+#endif
+
+#ifdef HW_ADC_CH2
+		else if (channel == 2) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH2));
-		} else if (channel == 3) {
+		}
+#endif
+
+#ifdef HW_ADC_CH3
+		else if (channel == 3) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH3));
-		} else {
+		}
+#endif
+
+		else {
 			return ENC_SYM_EERROR;
 		}
 	} else {
@@ -302,9 +323,11 @@ static lbm_value ext_bits_dec_int(lbm_value *args, lbm_uint argn) {
 static volatile bool event_can_sid_en = false;
 static volatile bool event_can_eid_en = false;
 static volatile bool event_data_rx_en = false;
+static volatile bool event_esp_now_rx_en = false;
 static lbm_uint sym_event_can_sid;
 static lbm_uint sym_event_can_eid;
 static lbm_uint sym_event_data_rx;
+static lbm_uint sym_event_esp_now_rx;
 
 static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 && argn != 2) {
@@ -328,6 +351,8 @@ static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 		event_can_eid_en = en;
 	} else if (name == sym_event_data_rx) {
 		event_data_rx_en = en;
+	} else if (name == sym_event_esp_now_rx) {
+		event_esp_now_rx_en = en;
 	} else {
 		return ENC_SYM_EERROR;
 	}
@@ -574,6 +599,189 @@ static lbm_value ext_plot_send_points(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// ESP NOW
+
+static bool esp_now_initialized = false;
+static lbm_cid esp_now_send_cid;
+static char *esp_init_msg = "ESP-NOW not initialized";
+
+static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
+	lbm_unblock_ctx(esp_now_send_cid, lbm_enc_i(status));
+}
+
+static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
+	(void)esp_now_info;
+
+	if (event_esp_now_rx_en) {
+		lbm_event_t e;
+		e.type = LBM_EVENT_SYM_ARRAY;
+		e.sym = sym_event_esp_now_rx;
+		lbm_event(e, (uint8_t*)data, data_len);
+	}
+}
+
+lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	if (backup.config.wifi_mode == WIFI_MODE_DISABLED && !esp_now_initialized) {
+		esp_netif_init();
+		esp_event_loop_create_default();
+		wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+		esp_wifi_init(&cfg);
+		esp_wifi_set_storage(WIFI_STORAGE_RAM);
+		esp_wifi_set_mode(WIFI_MODE_AP);
+
+		// Disable power save mode. Does not work with bluetooth.
+		if (backup.config.ble_mode == BLE_MODE_DISABLED) {
+			esp_wifi_set_ps(WIFI_PS_NONE);
+		}
+
+		esp_wifi_start();
+	}
+
+	if (!esp_now_initialized) {
+		if (esp_now_init() != ESP_OK) {
+			return ENC_SYM_EERROR;
+		}
+
+		esp_now_register_send_cb(espnow_send_cb);
+		esp_now_register_recv_cb(espnow_recv_cb);
+		esp_now_initialized = true;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
+	if (!esp_now_initialized) {
+		lbm_set_error_reason(esp_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	if (argn != 1 || !lbm_is_list(args[0])) {
+		return ENC_SYM_EERROR;
+	}
+
+	uint8_t addr[ESP_NOW_ETH_ALEN] = {255, 255, 255, 255, 255, 255};
+	int ind = 0;
+
+	lbm_value curr = args[0];
+	while (lbm_is_cons(curr)) {
+		lbm_value  arg = lbm_car(curr);
+
+		if (lbm_is_number(arg)) {
+			addr[ind++] = lbm_dec_as_u32(arg);
+		} else {
+			return ENC_SYM_TERROR;
+		}
+
+		if (ind == ESP_NOW_ETH_ALEN) {
+			break;
+		}
+
+		curr = lbm_cdr(curr);
+	}
+
+	esp_now_peer_info_t peer;
+	memset(&peer, 0, sizeof(peer));
+	peer.channel = 0; // Must be the same as the wifi-channel when using wifi. 0 means current channel.
+	peer.ifidx = ESP_IF_WIFI_AP;
+	peer.encrypt = false;
+	memcpy(peer.peer_addr, addr, ESP_NOW_ETH_ALEN);
+
+	esp_err_t res = esp_now_add_peer(&peer);
+
+	if (res == ESP_OK || res == ESP_ERR_ESPNOW_EXIST) {
+		return ENC_SYM_TRUE;
+	} else {
+		return ENC_SYM_EERROR;
+	}
+}
+
+lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
+	(void) args; (void) argn;
+
+	uint8_t mac[ESP_NOW_ETH_ALEN];
+	esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+
+	lbm_value addr = ENC_SYM_NIL;
+	for (int i = (ESP_NOW_ETH_ALEN - 1); i >= 0; i--) {
+		addr = lbm_cons(lbm_enc_i(mac[i]), addr);
+	}
+
+	return addr;
+}
+
+lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_EERROR;
+
+	if (!esp_now_initialized) {
+		lbm_set_error_reason(esp_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	if (argn != 2) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return res;
+	}
+
+	uint8_t peer[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	int ind = 0;
+
+	lbm_value curr = args[0];
+	while (lbm_is_cons(curr)) {
+		lbm_value  arg = lbm_car(curr);
+
+		if (lbm_is_number(arg)) {
+			peer[ind++] = lbm_dec_as_u32(arg);
+		} else {
+			return ENC_SYM_TERROR;
+		}
+
+		if (ind == ESP_NOW_ETH_ALEN) {
+			break;
+		}
+
+		curr = lbm_cdr(curr);
+	}
+
+	char *str = lbm_dec_str(args[1]);
+	if (str) {
+		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
+		esp_err_t send_res = esp_now_send(peer, (uint8_t*)str, (size_t)array->size);
+
+		if (send_res == ESP_OK) {
+			esp_now_send_cid = lbm_get_current_cid();
+			lbm_block_ctx_from_extension();
+			res = ENC_SYM_TRUE;
+		}
+	}
+
+	return res;
+}
+
+lbm_value ext_wifi_channel(lbm_value *args, lbm_uint argn) {
+	(void) args; (void) argn;
+
+	uint8_t chan = 0;
+	wifi_second_chan_t wifi_second_chan;
+	esp_wifi_get_channel(&chan, &wifi_second_chan);
+	return lbm_enc_i(chan);
+}
+
+lbm_value ext_esp_now_set_channel(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	if (!esp_now_initialized) {
+		lbm_set_error_reason(esp_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	int32_t chan = lbm_dec_as_i32(args[0]);
+	esp_wifi_set_channel(chan, WIFI_SECOND_CHAN_NONE);
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 	(void)args;(void)argn;
 	return ENC_SYM_TRUE;
@@ -583,6 +791,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_symbol_const("event-can-sid", &sym_event_can_sid);
 	lbm_add_symbol_const("event-can-eid", &sym_event_can_eid);
 	lbm_add_symbol_const("event-data-rx", &sym_event_data_rx);
+	lbm_add_symbol_const("event-esp-now-rx", &sym_event_esp_now_rx);
 
 	lbm_add_symbol_const("a01", &sym_res);
 	lbm_add_symbol_const("a02", &sym_loop);
@@ -624,6 +833,14 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("plot-add-graph", ext_plot_add_graph);
 	lbm_add_extension("plot-set-graph", ext_plot_set_graph);
 	lbm_add_extension("plot-send-points", ext_plot_send_points);
+
+	// ESP NOW
+	lbm_add_extension("esp-now-start", ext_esp_now_start);
+	lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
+	lbm_add_extension("esp-now-send", ext_esp_now_send);
+	lbm_add_extension("get-mac-addr", ext_get_mac_addr);
+	lbm_add_extension("wifi-get-chan", ext_wifi_channel);
+	lbm_add_extension("esp-now-set-chan", ext_esp_now_set_channel);
 
 	// Extension libraries
 	lbm_array_extensions_init();
