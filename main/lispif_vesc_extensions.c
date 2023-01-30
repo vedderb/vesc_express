@@ -606,7 +606,7 @@ static lbm_cid esp_now_send_cid;
 static char *esp_init_msg = "ESP-NOW not initialized";
 
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
-	lbm_unblock_ctx(esp_now_send_cid, lbm_enc_i(status));
+	lbm_unblock_ctx(esp_now_send_cid, status == ESP_NOW_SEND_SUCCESS ? ENC_SYM_TRUE : ENC_SYM_NIL);
 }
 
 static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
