@@ -274,6 +274,64 @@ static lbm_value ext_can_send_eid(lbm_value *args, lbm_uint argn) {
 	return ext_can_send(args, argn, true);
 }
 
+static lbm_value ext_can_current(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_NUMBER_ALL();
+
+	if (argn == 2) {
+		comm_can_set_current(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	} else if (argn == 3) {
+		comm_can_set_current_off_delay(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]), lbm_dec_as_float(args[2]));
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_current_rel(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_NUMBER_ALL();
+
+	if (argn == 2) {
+		comm_can_set_current_rel(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	} else if (argn == 3) {
+		comm_can_set_current_rel_off_delay(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]), lbm_dec_as_float(args[2]));
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_duty(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+	comm_can_set_duty(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_brake(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+	comm_can_set_current_brake(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_brake_rel(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+	comm_can_set_current_brake_rel(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_rpm(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+	comm_can_set_rpm(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_pos(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+	comm_can_set_pos(lbm_dec_as_i32(args[0]), lbm_dec_as_float(args[1]));
+	return ENC_SYM_TRUE;
+}
+
 // Bit operations
 
 /*
@@ -813,6 +871,14 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("can-send-sid", ext_can_send_sid);
 	lbm_add_extension("can-send-eid", ext_can_send_eid);
 	lbm_add_extension("can-cmd", ext_can_cmd);
+
+	lbm_add_extension("canset-current", ext_can_current);
+	lbm_add_extension("canset-current-rel", ext_can_current_rel);
+	lbm_add_extension("canset-duty", ext_can_duty);
+	lbm_add_extension("canset-brake", ext_can_brake);
+	lbm_add_extension("canset-brake-rel", ext_can_brake_rel);
+	lbm_add_extension("canset-rpm", ext_can_rpm);
+	lbm_add_extension("canset-pos", ext_can_pos);
 
 	// Bit operations
 	lbm_add_extension("bits-enc-int", ext_bits_enc_int);

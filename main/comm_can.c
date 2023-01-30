@@ -523,6 +523,96 @@ bool comm_can_ping(uint8_t controller_id, HW_TYPE *hw_type) {
 	return ret;
 }
 
+void comm_can_set_duty(uint8_t controller_id, float duty) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_int32(buffer, (int32_t)(duty * 100000.0), &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_DUTY << 8), buffer, send_index);
+}
+
+void comm_can_set_current(uint8_t controller_id, float current) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_int32(buffer, (int32_t)(current * 1000.0), &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT << 8), buffer, send_index);
+}
+
+void comm_can_set_current_off_delay(uint8_t controller_id, float current, float off_delay) {
+	int32_t send_index = 0;
+	uint8_t buffer[6];
+	buffer_append_int32(buffer, (int32_t)(current * 1000.0), &send_index);
+	buffer_append_float16(buffer, off_delay, 1e3, &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT << 8), buffer, send_index);
+}
+
+void comm_can_set_current_brake(uint8_t controller_id, float current) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_int32(buffer, (int32_t)(current * 1000.0), &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT_BRAKE << 8), buffer, send_index);
+}
+
+void comm_can_set_rpm(uint8_t controller_id, float rpm) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_int32(buffer, (int32_t)rpm, &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_RPM << 8), buffer, send_index);
+}
+
+void comm_can_set_pos(uint8_t controller_id, float pos) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_int32(buffer, (int32_t)(pos * 1000000.0), &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_POS << 8), buffer, send_index);
+}
+
+void comm_can_set_current_rel(uint8_t controller_id, float current_rel) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT_REL << 8), buffer, send_index);
+}
+
+void comm_can_set_current_rel_off_delay(uint8_t controller_id, float current_rel, float off_delay) {
+	int32_t send_index = 0;
+	uint8_t buffer[6];
+	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
+	buffer_append_float16(buffer, off_delay, 1e3, &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT_REL << 8), buffer, send_index);
+}
+
+void comm_can_set_current_brake_rel(uint8_t controller_id, float current_rel) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT_BRAKE_REL << 8), buffer, send_index);
+}
+
+void comm_can_set_handbrake(uint8_t controller_id, float current) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_float32(buffer, current, 1e3, &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT_HANDBRAKE << 8), buffer, send_index);
+}
+
+void comm_can_set_handbrake_rel(uint8_t controller_id, float current_rel) {
+	int32_t send_index = 0;
+	uint8_t buffer[4];
+	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
+	comm_can_transmit_eid(controller_id |
+			((uint32_t)CAN_PACKET_SET_CURRENT_HANDBRAKE_REL << 8), buffer, send_index);
+}
+
 static void update_baud(CAN_BAUD baudrate) {
 	switch (baudrate) {
 	case CAN_BAUD_125K: {
