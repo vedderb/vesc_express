@@ -22,7 +22,7 @@
 #include "driver/i2c.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
-#include "rom/gpio.h"
+#include "driver/gpio.h"
 
 #include "lispif.h"
 #include "lispbm.h"

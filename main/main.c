@@ -119,8 +119,10 @@ void app_main(void) {
 
 	lispif_init();
 
+#ifndef HW_OVERRIDE_UART
 	//	comm_uart_init();
 	ublox_init(false);
+#endif
 
 	terminal_register_command_callback(
 			"nmea_info",
