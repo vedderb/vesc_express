@@ -35,6 +35,7 @@
 
 #include <string.h>
 
+#ifdef CAN_TX_GPIO_NUM
 #define RX_BUFFER_NUM				3
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
 
@@ -354,7 +355,55 @@ static void status_task(void *arg) {
 	}
 }
 
+static void update_baud(CAN_BAUD baudrate) {
+	switch (baudrate) {
+	case CAN_BAUD_125K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_125KBITS();
+		t_config = t_config2;
+	} break;
+
+	case CAN_BAUD_250K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_250KBITS();
+		t_config = t_config2;
+	} break;
+
+	case CAN_BAUD_500K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_500KBITS();
+		t_config = t_config2;
+	} break;
+
+	case CAN_BAUD_1M: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_1MBITS();
+		t_config = t_config2;
+	} break;
+
+	case CAN_BAUD_10K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_10KBITS();
+		t_config = t_config2;
+	} break;
+
+	case CAN_BAUD_20K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_20KBITS();
+		t_config = t_config2;
+	} break;
+
+	case CAN_BAUD_50K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_50KBITS();
+		t_config = t_config2;
+	} break;
+
+	case CAN_BAUD_75K: {
+		// Invalid
+	} break;
+
+	default:
+		break;
+	}
+}
+#endif
+
 void comm_can_init(void) {
+#ifdef CAN_TX_GPIO_NUM
 	ping_sem = xSemaphoreCreateBinary();
 	proc_sem = xSemaphoreCreateBinary();
 	send_mutex = xSemaphoreCreateMutex();
@@ -367,9 +416,13 @@ void comm_can_init(void) {
 	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(rx_task, "can_rx", 1024, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(process_task, "can_proc", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+#endif
 }
 
 void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
+#ifndef CAN_TX_GPIO_NUM
+	return;
+#else
 	if (len > 8) {
 		len = 8;
 	}
@@ -388,9 +441,13 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 		twai_start();
 	}
 	xSemaphoreGive(send_mutex);
+#endif
 }
 
 void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
+#ifndef CAN_TX_GPIO_NUM
+	return;
+#else
 	if (len > 8) {
 		len = 8;
 	}
@@ -409,6 +466,7 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 		twai_start();
 	}
 	xSemaphoreGive(send_mutex);
+#endif
 }
 
 /**
@@ -508,6 +566,9 @@ void comm_can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len
  * True for success, false otherwise.
  */
 bool comm_can_ping(uint8_t controller_id, HW_TYPE *hw_type) {
+#ifndef CAN_TX_GPIO_NUM
+	return false;
+#else
 	uint8_t buffer[1];
 	buffer[0] = backup.config.controller_id;
 	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_PING << 8), buffer, 1);
@@ -521,6 +582,7 @@ bool comm_can_ping(uint8_t controller_id, HW_TYPE *hw_type) {
 	}
 
 	return ret;
+#endif
 }
 
 void comm_can_set_duty(uint8_t controller_id, float duty) {
@@ -611,50 +673,4 @@ void comm_can_set_handbrake_rel(uint8_t controller_id, float current_rel) {
 	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
 	comm_can_transmit_eid(controller_id |
 			((uint32_t)CAN_PACKET_SET_CURRENT_HANDBRAKE_REL << 8), buffer, send_index);
-}
-
-static void update_baud(CAN_BAUD baudrate) {
-	switch (baudrate) {
-	case CAN_BAUD_125K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_125KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_250K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_250KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_500K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_500KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_1M: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_1MBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_10K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_10KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_20K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_20KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_50K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_50KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_75K: {
-		// Invalid
-	} break;
-
-	default:
-		break;
-	}
 }
