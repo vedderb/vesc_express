@@ -25,10 +25,13 @@
 #include "lispbm.h"
 #include "mempools.h"
 #include "flash_helper.h"
+#include "conf_general.h"
 
 #define HEAP_SIZE				(2048 + 256 + 160)
+#ifndef LISP_MEM_SIZE
 #define LISP_MEM_SIZE			LBM_MEMORY_SIZE_16K
 #define LISP_MEM_BITMAP_SIZE	LBM_MEMORY_BITMAP_SIZE_16K
+#endif
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
 #define EXTENSION_STORAGE_SIZE	250
