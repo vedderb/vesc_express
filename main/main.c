@@ -44,6 +44,9 @@
 // Global variables
 volatile backup_data backup;
 
+// Private variables
+volatile static bool init_done = false;
+
 // Private functions
 static void terminal_nmea(int argc, const char **argv);
 static void terminal_ublox_reinit(int argc, const char **argv);
@@ -54,6 +57,11 @@ void app_main(void) {
 	tv.tv_sec = 0;
 	tv.tv_usec = 0;
 	settimeofday(&tv, NULL);
+
+#ifdef HW_EARLY_LBM_INIT
+	HW_INIT_HOOK();
+	lispif_init();
+#endif
 
 	esp_err_t ret = nvs_flash_init();
 	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -111,13 +119,14 @@ void app_main(void) {
 	nmea_init();
 	log_init();
 
-	HW_INIT_HOOK();
-
 #ifdef HW_HAS_ADC
 	adc_init();
 #endif
 
+#ifndef HW_EARLY_LBM_INIT
+	HW_INIT_HOOK();
 	lispif_init();
+#endif
 
 #ifndef HW_OVERRIDE_UART
 	//	comm_uart_init();
@@ -136,6 +145,8 @@ void app_main(void) {
 			0,
 			terminal_ublox_reinit);
 
+	init_done = true;
+
 	for (;;) {
 		vTaskDelay(5000 / portTICK_PERIOD_MS);
 	}
@@ -149,6 +160,10 @@ void main_store_backup_data(void) {
 	nvs_set_blob(my_handle, "backup", (void*)&backup, sizeof(backup_data));
 	nvs_commit(my_handle);
 	nvs_close(my_handle);
+}
+
+bool main_init_done(void) {
+	return init_done;
 }
 
 static void terminal_nmea(int argc, const char **argv) {

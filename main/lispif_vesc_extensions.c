@@ -678,7 +678,7 @@ static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_
 	}
 }
 
-lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED && !esp_now_initialized) {
@@ -710,7 +710,7 @@ lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	if (!esp_now_initialized) {
 		lbm_set_error_reason(esp_init_msg);
 		return ENC_SYM_EERROR;
@@ -756,7 +756,7 @@ lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	}
 }
 
-lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 	(void) args; (void) argn;
 
 	uint8_t mac[ESP_NOW_ETH_ALEN];
@@ -770,7 +770,7 @@ lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 	return addr;
 }
 
-lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_EERROR;
 
 	if (!esp_now_initialized) {
@@ -818,7 +818,7 @@ lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
-lbm_value ext_wifi_channel(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_wifi_channel(lbm_value *args, lbm_uint argn) {
 	(void) args; (void) argn;
 
 	uint8_t chan = 0;
@@ -827,7 +827,7 @@ lbm_value ext_wifi_channel(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(chan);
 }
 
-lbm_value ext_esp_now_set_channel(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_esp_now_set_channel(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
 	if (!esp_now_initialized) {
@@ -838,6 +838,11 @@ lbm_value ext_esp_now_set_channel(lbm_value *args, lbm_uint argn) {
 	int32_t chan = lbm_dec_as_i32(args[0]);
 	esp_wifi_set_channel(chan, WIFI_SECOND_CHAN_NONE);
 	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_main_init_done(lbm_value *args, lbm_uint argn) {
+	(void)args;(void)argn;
+	return main_init_done() ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
@@ -865,6 +870,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("event-enable", ext_enable_event);
 	lbm_add_extension("send-data", ext_send_data);
 	lbm_add_extension("import", ext_empty);
+	lbm_add_extension("main-init-done", ext_main_init_done);
 
 	// CAN-comands
 	lbm_add_extension("can-scan", ext_can_scan);
