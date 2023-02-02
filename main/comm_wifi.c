@@ -301,8 +301,9 @@ void comm_wifi_send_raw(unsigned char *buffer, unsigned int len) {
 }
 
 void comm_wifi_disconnect(void) {
-	if (m_sock) {
+	if (m_sock >= 0) {
 		shutdown(m_sock, 0);
 		close(m_sock);
+		m_sock = -1;
 	}
 }
