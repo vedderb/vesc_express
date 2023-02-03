@@ -668,13 +668,17 @@ static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status
 }
 
 static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
-	(void)esp_now_info;
-
 	if (event_esp_now_rx_en) {
+		int ind = 0;
+		uint8_t buffer[data_len + ESP_NOW_ETH_ALEN * 2];
+		memcpy(buffer + ind, esp_now_info->src_addr, ESP_NOW_ETH_ALEN); ind += ESP_NOW_ETH_ALEN;
+		memcpy(buffer + ind, esp_now_info->des_addr, ESP_NOW_ETH_ALEN); ind += ESP_NOW_ETH_ALEN;
+		memcpy(buffer + ind, data, data_len); ind += data_len;
+
 		lbm_event_t e;
 		e.type = LBM_EVENT_SYM_ARRAY;
 		e.sym = sym_event_esp_now_rx;
-		lbm_event(e, (uint8_t*)data, data_len);
+		lbm_event(e, buffer, ind);
 	}
 }
 
@@ -780,7 +784,7 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 
 	if (argn != 2) {
 		lbm_set_error_reason((char*)lbm_error_str_num_args);
-		return res;
+		return ENC_SYM_TERROR;
 	}
 
 	uint8_t peer[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
