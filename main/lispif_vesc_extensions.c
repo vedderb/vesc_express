@@ -660,11 +660,18 @@ static lbm_value ext_plot_send_points(lbm_value *args, lbm_uint argn) {
 // ESP NOW
 
 static bool esp_now_initialized = false;
-static lbm_cid esp_now_send_cid;
+static volatile lbm_cid esp_now_send_cid;
 static char *esp_init_msg = "ESP-NOW not initialized";
 
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
+	int timeout_cnt = 500;
+	lbm_pause_eval();
+	while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED && timeout_cnt > 0) {
+		vTaskDelay(1);
+		timeout_cnt--;
+	}
 	lbm_unblock_ctx(esp_now_send_cid, status == ESP_NOW_SEND_SUCCESS ? ENC_SYM_TRUE : ENC_SYM_NIL);
+	lbm_continue_eval();
 }
 
 static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
