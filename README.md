@@ -10,6 +10,20 @@ Instructions for how to set up the toolchain can be found here:
 **Note**  
 ESP-IDF version 5.0 or later is required for building this project.
 
+### Get Release 5.0
+
+The instructions linked above will install the master branch of ESP-IDF. To install the stable release you can navigate to the installation directory and use the following commands:
+
+```bash
+git fetch
+git checkout release/v5.0
+git pull
+git submodule update --init --recursive
+./install.sh esp32c3
+```
+
+At the moment the development is done using the stable 5.0-release.
+
 ## Compiling
 
 Once the toolchain is set up in the current path, the project can be built with
