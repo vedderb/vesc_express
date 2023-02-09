@@ -32,6 +32,7 @@
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "utils.h"
+#include "spi_flash_mmap.h"
 
 // Settings
 #define FAULT_VEC_LEN						25
@@ -126,6 +127,8 @@ void terminal_process_string(char *str) {
 		commands_printf("Heap free       : %d", esp_get_free_heap_size());
 		commands_printf("Heap free int.  : %d", esp_get_free_internal_heap_size());
 		commands_printf("Heap min        : %d", esp_get_minimum_free_heap_size());
+		commands_printf("mmap data free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_DATA));
+		commands_printf("mmap inst free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_INST));
 
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		if (running != NULL) {
