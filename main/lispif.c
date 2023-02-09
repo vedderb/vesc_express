@@ -544,7 +544,7 @@ bool lispif_restart(bool print, bool load_code) {
 			lbm_set_usleep_callback(sleep_callback);
 			lbm_set_printf_callback(commands_printf_lisp);
 			lbm_set_ctx_done_callback(done_callback);
-			xTaskCreatePinnedToCore(eval_thread, "lbm_eval", 3062, NULL, 6, NULL, tskNO_AFFINITY);
+			xTaskCreatePinnedToCore(eval_thread, "lbm_eval", 3072, NULL, 6, NULL, tskNO_AFFINITY);
 
 			lisp_thd_running = true;
 		} else {
