@@ -28,6 +28,9 @@ typedef struct {
 	bool check_done;
 	bool ok;
 	uint32_t size;
+	bool mmap_done;
+	const void *addr;
+	esp_partition_mmap_handle_t handle;
 } _code_checks;
 
 static _code_checks code_checks[2] = {0};
@@ -126,6 +129,35 @@ bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t le
 	}
 
 	return esp_partition_read(part, offset + 8, data, len) == ESP_OK;
+}
+
+const uint8_t *flash_helper_code_data_ptr(int ind) {
+	code_check(ind);
+
+	if (!code_checks[ind].ok) {
+		return NULL;
+	}
+
+	if (!code_checks[ind].mmap_done) {
+		const esp_partition_t *part = get_partition(ind);
+
+		if (!part) {
+			return NULL;
+		}
+
+		esp_err_t res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA,
+				&code_checks[ind].addr, &code_checks[ind].handle);
+
+		if (res == ESP_OK) {
+			code_checks[ind].mmap_done = true;
+		}
+	}
+
+	if (code_checks[ind].mmap_done) {
+		return (uint8_t*)code_checks[ind].addr + 8;
+	} else {
+		return NULL;
+	}
 }
 
 uint32_t flash_helper_code_size(int ind) {
