@@ -129,8 +129,11 @@ void app_main(void) {
 #endif
 
 #ifndef HW_OVERRIDE_UART
-	//	comm_uart_init();
+#ifdef HW_UART_COMM
+	comm_uart_init();
+#else
 	ublox_init(false);
+#endif
 #endif
 
 	terminal_register_command_callback(

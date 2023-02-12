@@ -32,6 +32,9 @@
 #define HW_HEADER					"hw_xp_t.h"
 #define HW_SOURCE					"hw_xp_t.c"
 
+//#define HW_HEADER					"hw_devkit_c3.h"
+//#define HW_SOURCE					"hw_devkit_c3.c"
+
 //#define HW_HEADER					"hw_lb_if.h"
 //#define HW_SOURCE					"hw_lb_if.c"
 
