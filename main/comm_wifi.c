@@ -42,7 +42,6 @@
 #define WIFI_FAIL_BIT			BIT1
 
 static EventGroupHandle_t s_wifi_event_group;
-static int s_retry_num = 0;
 static esp_ip4_addr_t ip = {0};
 static esp_ip4_addr_t ip_client = {0};
 static bool is_connecting = false;
@@ -119,18 +118,11 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 		is_connected = false;
 		LED_RED_OFF();
-		if (s_retry_num < 20) {
-			is_connecting = true;
-			esp_wifi_connect();
-			s_retry_num++;
-		} else {
-			xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-			is_connecting = false;
-		}
+		is_connecting = true;
+		esp_wifi_connect();
 	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
 		ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
 		ip = event->ip_info.ip;
-		s_retry_num = 0;
 		is_connecting = false;
 		is_connected = true;
 		LED_RED_ON();
