@@ -1,5 +1,5 @@
 /*
-    Copyright 2019 Joel Svensson        svenssonjoel@yahoo.se
+    Copyright 2023 Joel Svensson        svenssonjoel@yahoo.se
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -14,25 +14,21 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-/** \file fundamental.h
- *
- *  Implementation of the built in functions of the lispbm language (such as +, -, ... ).
- *
- */
 
-#ifndef _FUNDAMENTAL_H_
-#define _FUNDAMENTAL_H_
+#ifndef LOOP_EXTENSIONS_H_
+#define LOOP_EXTENSIONS_H_
 
-#include <eval_cps.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-  extern const fundamental_fun fundamental_table[];
-  bool struct_eq(lbm_value a, lbm_value b);
+
+extern const char *loop_extensions_dyn_load[4];
+
+bool lbm_loop_extensions_init(void);
+
 #ifdef __cplusplus
 }
 #endif
 #endif
-
-

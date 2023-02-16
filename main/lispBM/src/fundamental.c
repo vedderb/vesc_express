@@ -15,7 +15,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-
 #include <lbm_types.h>
 #include "symrepr.h"
 #include "stack.h"
@@ -26,7 +25,6 @@
 #include "env.h"
 #include "lbm_utils.h"
 #include "lbm_custom_type.h"
-#include "lbm_constants.h"
 
 #include <stdio.h>
 #include <math.h>
@@ -467,51 +465,38 @@ static void array_write(lbm_value *args, lbm_uint nargs, lbm_uint *result) {
 /* (array-create type size) */
 static void array_create(lbm_value *args, lbm_uint nargs, lbm_value *result) {
   *result = ENC_SYM_EERROR;
-  uint32_t n;
-  lbm_uint t_sym;
-
   if (nargs == 1 && lbm_is_number(args[0])) {
-    n = lbm_dec_as_u32(args[0]);
-    t_sym = SYM_TYPE_CHAR;
-  } else if (nargs == 2 &&
-             lbm_type_of(args[0]) == LBM_TYPE_SYMBOL &&
-             lbm_is_number(args[1])) {
-    n = lbm_dec_as_u32(args[1]);
-    t_sym = lbm_dec_sym(args[0]);
-  } else {
-    *result = ENC_SYM_TERROR;
-    return;
-  }
-
-  if (n > 0) {
-    switch(t_sym) {
-    case SYM_TYPE_CHAR: /* fall through */
-    case SYM_TYPE_BYTE:
-      lbm_heap_allocate_array(result, n, LBM_TYPE_BYTE);
-      break;
-    case SYM_TYPE_I32:
-      lbm_heap_allocate_array(result, n, LBM_TYPE_I32);
-      break;
-    case SYM_TYPE_U32:
-      lbm_heap_allocate_array(result, n, LBM_TYPE_U32);
-      break;
-    case SYM_TYPE_FLOAT:
-      lbm_heap_allocate_array(result, n, LBM_TYPE_FLOAT);
-      break;
-    case SYM_TYPE_I64:
-      lbm_heap_allocate_array(result, n, LBM_TYPE_I64);
-      break;
-    case SYM_TYPE_U64:
-      lbm_heap_allocate_array(result, n, LBM_TYPE_U64);
-      break;
-    case SYM_TYPE_DOUBLE:
-      lbm_heap_allocate_array(result, n, LBM_TYPE_DOUBLE);
-      break;
-    default:
-      break;
+    lbm_heap_allocate_array(result, lbm_dec_as_u32(args[0]), LBM_TYPE_BYTE);
+  } else if (nargs == 2) {
+    if (lbm_type_of(args[0]) == LBM_TYPE_SYMBOL &&
+        lbm_is_number(args[1])) {
+      switch(lbm_dec_sym(args[0])) {
+      case SYM_TYPE_CHAR: /* fall through */
+      case SYM_TYPE_BYTE:
+        lbm_heap_allocate_array(result, lbm_dec_as_u32(args[1]), LBM_TYPE_BYTE);
+        break;
+      case SYM_TYPE_I32:
+        lbm_heap_allocate_array(result, lbm_dec_as_u32(args[1]), LBM_TYPE_I32);
+        break;
+      case SYM_TYPE_U32:
+        lbm_heap_allocate_array(result, lbm_dec_as_u32(args[1]), LBM_TYPE_U32);
+        break;
+      case SYM_TYPE_FLOAT:
+        lbm_heap_allocate_array(result, lbm_dec_as_u32(args[1]), LBM_TYPE_FLOAT);
+        break;
+      case SYM_TYPE_I64:
+        lbm_heap_allocate_array(result, lbm_dec_as_u32(args[1]), LBM_TYPE_I64);
+        break;
+      case SYM_TYPE_U64:
+        lbm_heap_allocate_array(result, lbm_dec_as_u32(args[1]), LBM_TYPE_U64);
+        break;
+      case SYM_TYPE_DOUBLE:
+        lbm_heap_allocate_array(result, lbm_dec_as_u32(args[1]), LBM_TYPE_DOUBLE);
+        break;
+      default:
+        break;
+      }
     }
-  } else {
-    lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
   }
 }
 
@@ -598,15 +583,29 @@ static lbm_value fundamental_add(lbm_value *args, lbm_uint nargs, eval_context_t
 static lbm_value fundamental_sub(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   (void) ctx;
 
-  lbm_uint res = nargs == 0 ? lbm_enc_u(0) : args[0];
-  if (nargs == 1) {
-    res = negate(res);
-  } else {
-    for (lbm_uint i = 1; i < nargs; i ++) {
-      res = sub2(res, args[i]);
-      if (lbm_type_of(res) == LBM_TYPE_SYMBOL)
-        break;
-    }
+  lbm_uint res;
+
+  switch (nargs) {
+  case 0:
+      res = lbm_enc_u(0);
+      break;
+
+  case 1:
+      res = negate(args[0]);
+      break;
+
+  case 2:
+      res = sub2(args[0], args[1]);
+      break;
+
+  default:
+      res = args[0];
+      for (lbm_uint i = 1; i < nargs; i ++) {
+          res = sub2(res, args[i]);
+          if (lbm_type_of(res) == LBM_TYPE_SYMBOL)
+              break;
+      }
+      break;
   }
   return res;
 }
@@ -913,46 +912,32 @@ static lbm_value fundamental_cdr(lbm_value *args, lbm_uint nargs, eval_context_t
 
 static lbm_value fundamental_list(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   (void) ctx;
-  lbm_value result = lbm_heap_allocate_list(nargs);
-  if (lbm_is_cons(result)) {
-    lbm_value curr = result;
-    for (lbm_uint i = 0; i < nargs; i ++) {
-      lbm_set_car(curr, args[i]);
-      curr = lbm_cdr(curr);
-    }
+  lbm_value result = ENC_SYM_NIL;
+  for (lbm_uint i = 1; i <= nargs; i ++) {
+    result = lbm_cons(args[nargs-i], result);
+    if (lbm_type_of(result) == LBM_TYPE_SYMBOL)
+      break;
   }
   return result;
 }
 
 static lbm_value fundamental_append(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   (void) ctx;
-  if (nargs < 2) return ENC_SYM_TERROR;
-
+  if (nargs < 2) return(ENC_SYM_TERROR);
   lbm_value res = args[nargs-1];
-
   for (int i = (int)nargs -2; i >= 0; i --) {
-
     lbm_value curr = args[i];
     int n = 0;
     while (lbm_type_of(curr) == LBM_TYPE_CONS) {
       n++;
       curr = lbm_cdr(curr);
     }
-
     curr = args[i];
-
-    bool err = false;
     for (int j = n-1; j >= 0; j --) {
-      res = lbm_cons(index_list(curr,j), res);
-      if (lbm_is_symbol(res)) {
-        err = true;
-        break;
-      }
+      res = lbm_cons(index_list(curr,j),res);
     }
-    if(err) break;
   }
-
-  return res;
+  return(res);
 }
 
 static lbm_value fundamental_undefine(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
@@ -1491,102 +1476,96 @@ static lbm_value fundamental_range(lbm_value *args, lbm_uint nargs, eval_context
     return result;
   }
 
-  int num;
   if (end == start) return ENC_SYM_NIL;
   else if (end < start) {
+    int32_t tmp = end;
+    end = start;
+    start = tmp;
     rev = true;
-    num = start - end;
-  } else {
-    num = end - start;
   }
 
-  lbm_value r_list = lbm_heap_allocate_list((unsigned int)num);
-  if (lbm_is_cons(r_list)) {
-    lbm_value curr = r_list;
-    if (rev) {
-      for (int i = start-1; i >= end; i --) {
-        lbm_set_car(curr, lbm_enc_i(i));
-        curr = lbm_cdr(curr);
-      }
-    } else {
-      for (int i = start; i < end; i ++) {
-        lbm_set_car(curr, lbm_enc_i(i));
-        curr = lbm_cdr(curr);
-      }
-    }
+  int num = end - start;
+
+  if ((unsigned int)num > lbm_heap_num_free()) {
+    return ENC_SYM_MERROR;
   }
-  return r_list;
+
+  lbm_value r_list = ENC_SYM_NIL;
+  for (int i = end - 1; i >= start; i --) {
+    r_list = lbm_cons(lbm_enc_i(i), r_list);
+  }
+  return rev ? lbm_list_destructive_reverse(r_list) : r_list;
 }
 
-static lbm_value fundamental_reg_event_handler(lbm_value *args, lbm_uint argn, eval_context_t *ctx) {
-  (void)ctx;
-  if (argn != 1 || !lbm_is_number(args[0])) {
-    return ENC_SYM_EERROR;
+static lbm_value fundamental_reg_event_handler(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
+  (void) ctx;
+  if (nargs != 1 || !lbm_is_number(args[0])) {
+    return ENC_SYM_TERROR;
   }
 
   lbm_set_event_handler_pid((lbm_cid)lbm_dec_i(args[0]));
-  return ENC_SYM_TRUE;
+  return(ENC_SYM_TRUE);
 }
 
 const fundamental_fun fundamental_table[] =
-  { fundamental_add,
-    fundamental_sub,
-    fundamental_mul,
-    fundamental_div,
-    fundamental_mod,
-    fundamental_eq,
-    fundamental_numeq,
-    fundamental_lt,
-    fundamental_gt,
-    fundamental_leq,
-    fundamental_geq,
-    fundamental_not,
-    fundamental_gc,
-    fundamental_self,
-    fundamental_set_mailbox_size,
-    fundamental_cons,
-    fundamental_car,
-    fundamental_cdr,
-    fundamental_list,
-    fundamental_append,
-    fundamental_undefine,
-    fundamental_array_read,
-    fundamental_array_write,
-    fundamental_array_create,
-    fundamental_array_size,
-    fundamental_array_clear,
-    fundamental_symbol_to_string,
-    fundamental_string_to_symbol,
-    fundamental_symbol_to_uint,
-    fundamental_uint_to_symbol,
-    fundamental_set_car,
-    fundamental_set_cdr,
-    fundamental_set_ix,
-    fundamental_assoc,
-    fundamental_acons,
-    fundamental_set_assoc,
-    fundamental_cossa,
-    fundamental_ix,
-    fundamental_to_i,
-    fundamental_to_i32,
-    fundamental_to_u,
-    fundamental_to_u32,
-    fundamental_to_float,
-    fundamental_to_i64,
-    fundamental_to_u64,
-    fundamental_to_double,
-    fundamental_to_byte,
-    fundamental_shl,
-    fundamental_shr,
-    fundamental_bitwise_and,
-    fundamental_bitwise_or,
-    fundamental_bitwise_xor,
-    fundamental_bitwise_not,
-    fundamental_custom_destruct,
-    fundamental_type_of,
-    fundamental_list_length,
-    fundamental_range,
-    fundamental_num_not_eq,
-    fundamental_not_eq,
-    fundamental_reg_event_handler
+  {fundamental_add,
+   fundamental_sub,
+   fundamental_mul,
+   fundamental_div,
+   fundamental_mod,
+   fundamental_eq,
+   fundamental_not_eq,
+   fundamental_numeq,
+   fundamental_num_not_eq,
+   fundamental_lt,
+   fundamental_gt,
+   fundamental_leq,
+   fundamental_geq,
+   fundamental_not,
+   fundamental_gc,
+   fundamental_self,
+   fundamental_set_mailbox_size,
+   fundamental_cons,
+   fundamental_car,
+   fundamental_cdr,
+   fundamental_list,
+   fundamental_append,
+   fundamental_undefine,
+   fundamental_array_read,
+   fundamental_array_write,
+   fundamental_array_create,
+   fundamental_array_size,
+   fundamental_array_clear,
+   fundamental_symbol_to_string,
+   fundamental_string_to_symbol,
+   fundamental_symbol_to_uint,
+   fundamental_uint_to_symbol,
+   fundamental_set_car,
+   fundamental_set_cdr,
+   fundamental_set_ix,
+   fundamental_assoc,
+   fundamental_acons,
+   fundamental_set_assoc,
+   fundamental_cossa,
+   fundamental_ix,
+   fundamental_to_i,
+   fundamental_to_i32,
+   fundamental_to_u,
+   fundamental_to_u32,
+   fundamental_to_float,
+   fundamental_to_i64,
+   fundamental_to_u64,
+   fundamental_to_double,
+   fundamental_to_byte,
+   fundamental_shl,
+   fundamental_shr,
+   fundamental_bitwise_and,
+   fundamental_bitwise_or,
+   fundamental_bitwise_xor,
+   fundamental_bitwise_not,
+   fundamental_custom_destruct,
+   fundamental_type_of,
+   fundamental_list_length,
+   fundamental_range,
+   fundamental_reg_event_handler
   };
