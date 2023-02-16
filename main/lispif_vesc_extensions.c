@@ -804,6 +804,7 @@ static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 static void unblock_task(void *arg) {
 	(void)arg;
 	lbm_unblock_ctx_unboxed(esp_now_send_cid, ENC_SYM_NIL);
+	vTaskDelete(xTaskGetCurrentTaskHandle());
 }
 
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
