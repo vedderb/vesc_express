@@ -801,9 +801,12 @@ static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 	return addr;
 }
 
-static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_EERROR;
+static void unblock_task(void *arg) {
+	(void)arg;
+	lbm_unblock_ctx_unboxed(esp_now_send_cid, ENC_SYM_NIL);
+}
 
+static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	if (!esp_now_initialized) {
 		lbm_set_error_reason(esp_init_msg);
 		return ENC_SYM_EERROR;
@@ -837,16 +840,16 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	char *str = lbm_dec_str(args[1]);
 	if (str) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
+		esp_now_send_cid = lbm_get_current_cid();
+		lbm_block_ctx_from_extension();
 		esp_err_t send_res = esp_now_send(peer, (uint8_t*)str, (size_t)array->size);
 
-		if (send_res == ESP_OK) {
-			esp_now_send_cid = lbm_get_current_cid();
-			lbm_block_ctx_from_extension();
-			res = ENC_SYM_TRUE;
+		if (send_res != ESP_OK) {
+			xTaskCreatePinnedToCore(unblock_task, "unblock", 512, NULL, 8, NULL, tskNO_AFFINITY);
 		}
 	}
 
-	return res;
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_wifi_channel(lbm_value *args, lbm_uint argn) {

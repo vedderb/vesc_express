@@ -205,7 +205,11 @@ void comm_wifi_init(void) {
 			NULL,
 			&instance_got_ip);
 
-	esp_wifi_set_mode(WIFI_MODE_APSTA);
+	if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {
+		esp_wifi_set_mode(WIFI_MODE_AP);
+	} else {
+		esp_wifi_set_mode(WIFI_MODE_STA);
+	}
 
 	if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {
 		wifi_config_t wifi_config_ap = {
@@ -239,11 +243,10 @@ void comm_wifi_init(void) {
 		strcpy((char*)wifi_config.sta.password, (char*)backup.config.wifi_sta_key);
 
 		esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+		is_connecting = true;
 	}
 
 	esp_wifi_start();
-
-	is_connecting = true;
 
 	xTaskCreatePinnedToCore(tcp_task, "tcp_server", 4096, NULL, 8, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 2048, NULL, 8, NULL, tskNO_AFFINITY);

@@ -26,6 +26,7 @@
 #include <math.h>
 
 #include "esp_bt.h"
+#include "esp_wifi.h"
 #include "comm_ble.h"
 #include "comm_wifi.h"
 #include "nvs_flash.h"
@@ -115,6 +116,18 @@ void terminal_process_string(char *str) {
 		commands_printf("WIFI Connecting : %d", comm_wifi_is_connecting());
 		commands_printf("WIFI Client IP  : " IPSTR, IP2STR(&ip_client));
 		commands_printf("WIFI Client Con : %d", comm_wifi_is_client_connected());
+
+		uint8_t ch_primary;
+		wifi_second_chan_t ch_second;
+		esp_err_t ch_res = esp_wifi_get_channel(&ch_primary, &ch_second);
+
+		if (ch_res == ESP_OK) {
+			commands_printf("WIFI Channel    : %d", ch_primary);
+		} else if (ch_res == ESP_ERR_WIFI_NOT_INIT) {
+			commands_printf("WIFI Channel    : ESP_ERR_WIFI_NOT_INIT");
+		} else {
+			commands_printf("WIFI Channel    : error %d", ch_res);
+		}
 
 		nvs_stats_t s;
 		nvs_get_stats(NULL, &s);
