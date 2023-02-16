@@ -664,28 +664,48 @@ static volatile lbm_cid esp_now_send_cid;
 static char *esp_init_msg = "ESP-NOW not initialized";
 
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
-	int timeout_cnt = 500;
-	lbm_pause_eval();
-	while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED && timeout_cnt > 0) {
-		vTaskDelay(1);
-		timeout_cnt--;
-	}
-	lbm_unblock_ctx(esp_now_send_cid, status == ESP_NOW_SEND_SUCCESS ? ENC_SYM_TRUE : ENC_SYM_NIL);
-	lbm_continue_eval();
+	lbm_unblock_ctx_unboxed(esp_now_send_cid, status == ESP_NOW_SEND_SUCCESS ? ENC_SYM_TRUE : ENC_SYM_NIL);
 }
 
 static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
 	if (event_esp_now_rx_en) {
-		int ind = 0;
-		uint8_t buffer[data_len + ESP_NOW_ETH_ALEN * 2];
-		memcpy(buffer + ind, esp_now_info->src_addr, ESP_NOW_ETH_ALEN); ind += ESP_NOW_ETH_ALEN;
-		memcpy(buffer + ind, esp_now_info->des_addr, ESP_NOW_ETH_ALEN); ind += ESP_NOW_ETH_ALEN;
-		memcpy(buffer + ind, data, data_len); ind += data_len;
+		uint8_t *arr = lbm_malloc_reserve(data_len);
+		if (arr) {
+			memcpy(arr, data, data_len);
+			lbm_flat_value_t v;
 
-		lbm_event_t e;
-		e.type = LBM_EVENT_SYM_ARRAY;
-		e.sym = sym_event_esp_now_rx;
-		lbm_event(e, buffer, ind);
+			if (lbm_start_flatten(&v, 150)) {
+				f_cons(&v);
+				f_sym(&v, sym_event_esp_now_rx);
+
+				f_cons(&v);
+				for (int i = 0; i < 6; i++) {
+					f_cons(&v);
+					f_i(&v, esp_now_info->src_addr[i]);
+				}
+				f_sym(&v, SYM_NIL);
+
+				f_cons(&v);
+				for (int i = 0; i < 6; i++) {
+					f_cons(&v);
+					f_i(&v, esp_now_info->des_addr[i]);
+				}
+				f_sym(&v, SYM_NIL);
+
+				f_cons(&v);
+				f_lbm_array(&v, data_len, LBM_TYPE_BYTE, arr);
+
+				f_sym(&v, SYM_NIL);
+				lbm_finish_flatten(&v);
+
+				if (!lbm_event(&v)) {
+					lbm_free(arr);
+					lbm_free(v.buf);
+				}
+			} else {
+				lbm_free(arr);
+			}
+		}
 	}
 }
 
@@ -954,11 +974,26 @@ void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 		return;
 	}
 
-	lbm_event_t e = {0};
-	e.type = LBM_EVENT_SYM_INT_ARRAY;
-	e.sym = is_ext ? sym_event_can_eid : sym_event_can_sid;
-	e.i = can_id;
-	lbm_event(e, data8, len);
+	uint8_t *arr = lbm_malloc_reserve(len);
+
+	if (arr) {
+		memcpy(arr, data8, len);
+		lbm_flat_value_t v;
+		if (lbm_start_flatten(&v, 50)) {
+			f_cons(&v);
+			f_sym(&v, is_ext ? sym_event_can_eid : sym_event_can_sid);
+			f_cons(&v);
+			f_i32(&v, can_id);
+			f_lbm_array(&v, len, LBM_TYPE_BYTE, arr);
+			lbm_finish_flatten(&v);
+			if (!lbm_event(&v)) {
+				lbm_free(arr);
+				lbm_free(v.buf);
+			}
+		} else {
+			lbm_free(arr);
+		}
+	}
 }
 
 void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
@@ -966,9 +1001,23 @@ void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
 		return;
 	}
 
-	lbm_event_t e = {0};
-	e.type = LBM_EVENT_SYM_ARRAY;
-	e.sym = sym_event_data_rx;
-	lbm_event(e, data, len);
+	uint8_t *arr = lbm_malloc_reserve(len);
+
+	if (arr) {
+		memcpy(arr, data, len);
+		lbm_flat_value_t v;
+		if (lbm_start_flatten(&v, 30)) {
+			f_cons(&v);
+			f_sym(&v, sym_event_data_rx);
+			f_lbm_array(&v, len, LBM_TYPE_BYTE, arr);
+			lbm_finish_flatten(&v);
+			if (!lbm_event(&v)) {
+				lbm_free(arr);
+				lbm_free(v.buf);
+			}
+		} else {
+			lbm_free(arr);
+		}
+	}
 }
 
