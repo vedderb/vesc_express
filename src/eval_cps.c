@@ -804,19 +804,12 @@ static lbm_cid lbm_create_ctx_parent(lbm_value program, lbm_value env, lbm_uint 
 
   if (lbm_type_of(program) != LBM_TYPE_CONS) return -1;
 
-  lbm_uint ctx_alloc_size = sizeof(eval_context_t);
-  if (ctx_alloc_size % sizeof(lbm_uint) > 0) {
-    ctx_alloc_size = ctx_alloc_size / sizeof(lbm_uint) + 1;
-  } else {
-    ctx_alloc_size = ctx_alloc_size / sizeof(lbm_uint);
-  }
-
   eval_context_t *ctx = NULL;
-  ctx = (eval_context_t*)lbm_memory_allocate(ctx_alloc_size);
+  ctx = (eval_context_t*)lbm_malloc(sizeof(eval_context_t));
   if (ctx == NULL) {
     lbm_gc_mark_phase(2, program, env);
     gc();
-    ctx = (eval_context_t*)lbm_memory_allocate(ctx_alloc_size);
+    ctx = (eval_context_t*)lbm_malloc(sizeof(eval_context_t));
   }
   if (ctx == NULL) return -1;
 
@@ -997,12 +990,13 @@ lbm_value lbm_find_receiver_and_send(lbm_cid cid, lbm_value msg) {
 
   if (found) {
     if (!mailbox_add_mail(found, msg)) {
+      mutex_unlock(&qmutex);
       return ENC_SYM_NIL;
     }
 
     if (found_blocked){
       drop_ctx_nm(&blocked,found);
-      drop_ctx_nm(&queue,found);
+      //drop_ctx_nm(&queue,found);  ????
 
       enqueue_ctx_nm(&queue,found);
     }
@@ -3422,13 +3416,15 @@ bool lbm_eval_init_events(unsigned int num_events) {
 
   mutex_lock(&lbm_events_mutex);
   lbm_events = (lbm_event_t*)lbm_malloc(num_events * sizeof(lbm_event_t));
-
-  if (!lbm_events) return false;
-  lbm_events_max = num_events;
-  lbm_events_head = 0;
-  lbm_events_tail = 0;
-  lbm_events_full = false;
-  lbm_event_handler_pid = -1;
+  bool r = false;
+  if (lbm_events) {
+    lbm_events_max = num_events;
+    lbm_events_head = 0;
+    lbm_events_tail = 0;
+    lbm_events_full = false;
+    lbm_event_handler_pid = -1;
+    r = true;
+  }
   mutex_unlock(&lbm_events_mutex);
-  return true;
+  return r;
 }
