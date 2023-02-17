@@ -803,13 +803,9 @@ static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 	return addr;
 }
 
-static void unblock_task(void *arg) {
-	(void)arg;
-	lbm_unblock_ctx_unboxed(esp_now_send_cid, ENC_SYM_NIL);
-	vTaskDelete(xTaskGetCurrentTaskHandle());
-}
-
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
+	bool res = ENC_SYM_TRUE;
+
 	if (!esp_now_initialized) {
 		lbm_set_error_reason(esp_init_msg);
 		return ENC_SYM_EERROR;
@@ -848,11 +844,12 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 		esp_err_t send_res = esp_now_send(peer, (uint8_t*)str, (size_t)array->size);
 
 		if (send_res != ESP_OK) {
-			xTaskCreatePinnedToCore(unblock_task, "unblock", 1024, NULL, 8, NULL, tskNO_AFFINITY);
+			lbm_undo_block_ctx_from_extension();
+			res = ENC_SYM_NIL;
 		}
 	}
 
-	return ENC_SYM_TRUE;
+	return res;
 }
 
 static lbm_value ext_wifi_channel(lbm_value *args, lbm_uint argn) {
