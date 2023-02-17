@@ -28,5 +28,6 @@ extern volatile backup_data backup;
 // Functions
 void main_store_backup_data(void);
 bool main_init_done(void);
+void main_wait_until_init_done(void);
 
 #endif /* MAIN_H_ */

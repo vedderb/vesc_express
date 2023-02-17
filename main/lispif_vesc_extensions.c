@@ -712,6 +712,8 @@ static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_
 static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
+	main_wait_until_init_done();
+
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED && !esp_now_initialized) {
 		esp_netif_init();
 		esp_event_loop_create_default();
@@ -846,7 +848,7 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 		esp_err_t send_res = esp_now_send(peer, (uint8_t*)str, (size_t)array->size);
 
 		if (send_res != ESP_OK) {
-			xTaskCreatePinnedToCore(unblock_task, "unblock", 512, NULL, 8, NULL, tskNO_AFFINITY);
+			xTaskCreatePinnedToCore(unblock_task, "unblock", 1024, NULL, 8, NULL, tskNO_AFFINITY);
 		}
 	}
 

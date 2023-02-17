@@ -169,6 +169,12 @@ bool main_init_done(void) {
 	return init_done;
 }
 
+void main_wait_until_init_done(void) {
+	while (!init_done) {
+		vTaskDelay(5 / portTICK_PERIOD_MS);
+	}
+}
+
 static void terminal_nmea(int argc, const char **argv) {
 	(void)argc;(void)argv;
 	nmea_state_t *s = nmea_get_state();
