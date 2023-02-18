@@ -122,6 +122,15 @@ static void tcp_task(void *arg) {
 			int sock =  socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
 			int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 			if (err == 0) {
+				memcpy(&ip_client, &dest_addr.sin_addr.s_addr, 4);
+
+				// Set tcp keepalive option
+				setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+				setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+				setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+				setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+				setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+
 				{
 					char buf[60];
 					sprintf(buf, "VESC:%s:%s\n", backup.config.tcp_hub_id, backup.config.tcp_hub_pass);
