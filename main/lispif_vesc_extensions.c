@@ -33,6 +33,7 @@
 #include "log.h"
 #include "buffer.h"
 #include "utils.h"
+#include "rb.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -663,48 +664,86 @@ static bool esp_now_initialized = false;
 static volatile lbm_cid esp_now_send_cid;
 static char *esp_init_msg = "ESP-NOW not initialized";
 
+typedef struct {
+	uint8_t *data;
+	int len;
+	uint8_t src[6];
+	uint8_t des[6];
+} esp_now_send_data;
+
+#define ESP_NOW_RX_BUFFER_ELEMENTS		10
+static rb_t esp_now_rx_rb;
+static esp_now_send_data esp_now_rx_data[ESP_NOW_RX_BUFFER_ELEMENTS];
+static SemaphoreHandle_t esp_now_rx_sem;
+
+static void esp_rx_fun(void *arg) {
+	(void)arg;
+
+	for (;;) {
+		xSemaphoreTake(esp_now_rx_sem, 10 / portTICK_PERIOD_MS);
+
+		esp_now_send_data data;
+		if (!rb_pop(&esp_now_rx_rb, &data)) {
+			continue;
+		}
+
+		lbm_flat_value_t v;
+		if (lbm_start_flatten(&v, 150 + data.len)) {
+			f_cons(&v);
+			f_sym(&v, sym_event_esp_now_rx);
+
+			f_cons(&v);
+			for (int i = 0; i < 6; i++) {
+				f_cons(&v);
+				f_i(&v, data.src[i]);
+			}
+			f_sym(&v, SYM_NIL);
+
+			f_cons(&v);
+			for (int i = 0; i < 6; i++) {
+				f_cons(&v);
+				f_i(&v, data.des[i]);
+			}
+			f_sym(&v, SYM_NIL);
+
+			f_cons(&v);
+			f_lbm_array(&v, data.len, LBM_TYPE_BYTE, data.data);
+
+			f_sym(&v, SYM_NIL);
+
+			lbm_finish_flatten(&v);
+
+			if (!lbm_event(&v)) {
+				lbm_free(v.buf);
+			}
+		}
+
+		free(data.data);
+	}
+}
+
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
 	lbm_unblock_ctx_unboxed(esp_now_send_cid, status == ESP_NOW_SEND_SUCCESS ? ENC_SYM_TRUE : ENC_SYM_NIL);
 }
 
 static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
 	if (event_esp_now_rx_en) {
-		uint8_t *arr = lbm_malloc_reserve(data_len);
-		if (arr) {
-			memcpy(arr, data, data_len);
-			lbm_flat_value_t v;
+		esp_now_send_data sdata;
 
-			if (lbm_start_flatten(&v, 150)) {
-				f_cons(&v);
-				f_sym(&v, sym_event_esp_now_rx);
+		sdata.data = malloc(data_len);
+		if (!sdata.data) {
+			return;
+		}
 
-				f_cons(&v);
-				for (int i = 0; i < 6; i++) {
-					f_cons(&v);
-					f_i(&v, esp_now_info->src_addr[i]);
-				}
-				f_sym(&v, SYM_NIL);
+		sdata.len = data_len;
+		memcpy(sdata.data, data, data_len);
+		memcpy(sdata.src, esp_now_info->src_addr, 6);
+		memcpy(sdata.des, esp_now_info->des_addr, 6);
 
-				f_cons(&v);
-				for (int i = 0; i < 6; i++) {
-					f_cons(&v);
-					f_i(&v, esp_now_info->des_addr[i]);
-				}
-				f_sym(&v, SYM_NIL);
-
-				f_cons(&v);
-				f_lbm_array(&v, data_len, LBM_TYPE_BYTE, arr);
-
-				f_sym(&v, SYM_NIL);
-				lbm_finish_flatten(&v);
-
-				if (!lbm_event(&v)) {
-					lbm_free(arr);
-					lbm_free(v.buf);
-				}
-			} else {
-				lbm_free(arr);
-			}
+		if (rb_insert(&esp_now_rx_rb, &sdata)) {
+			xSemaphoreGive(esp_now_rx_sem);
+		} else {
+			free(sdata.data);
 		}
 	}
 }
@@ -734,6 +773,10 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 		if (esp_now_init() != ESP_OK) {
 			return ENC_SYM_EERROR;
 		}
+
+		esp_now_rx_sem = xSemaphoreCreateBinary();
+		rb_init(&esp_now_rx_rb, esp_now_rx_data, sizeof(esp_now_send_data), ESP_NOW_RX_BUFFER_ELEMENTS);
+		xTaskCreate(esp_rx_fun, "esp_rx", 2048, NULL, 3, NULL);
 
 		esp_now_register_send_cb(espnow_send_cb);
 		esp_now_register_recv_cb(espnow_recv_cb);
@@ -804,7 +847,7 @@ static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
-	bool res = ENC_SYM_TRUE;
+	lbm_value res = ENC_SYM_TRUE;
 
 	if (!esp_now_initialized) {
 		lbm_set_error_reason(esp_init_msg);
@@ -951,7 +994,7 @@ void lispif_load_vesc_extensions(void) {
 	// Extension libraries
 	lbm_array_extensions_init();
 	lbm_string_extensions_init();
-//	lbm_math_extensions_init(); // These make the ESP crash for some reason...
+	lbm_math_extensions_init(); // These make the ESP crash for some reason...
 
 	if (ext_callback) {
 		ext_callback();
@@ -977,24 +1020,16 @@ void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 		return;
 	}
 
-	uint8_t *arr = lbm_malloc_reserve(len);
-
-	if (arr) {
-		memcpy(arr, data8, len);
-		lbm_flat_value_t v;
-		if (lbm_start_flatten(&v, 50)) {
-			f_cons(&v);
-			f_sym(&v, is_ext ? sym_event_can_eid : sym_event_can_sid);
-			f_cons(&v);
-			f_i32(&v, can_id);
-			f_lbm_array(&v, len, LBM_TYPE_BYTE, arr);
-			lbm_finish_flatten(&v);
-			if (!lbm_event(&v)) {
-				lbm_free(arr);
-				lbm_free(v.buf);
-			}
-		} else {
-			lbm_free(arr);
+	lbm_flat_value_t v;
+	if (lbm_start_flatten(&v, 50 + len)) {
+		f_cons(&v);
+		f_sym(&v, is_ext ? sym_event_can_eid : sym_event_can_sid);
+		f_cons(&v);
+		f_i32(&v, can_id);
+		f_lbm_array(&v, len, LBM_TYPE_BYTE, data8);
+		lbm_finish_flatten(&v);
+		if (!lbm_event(&v)) {
+			lbm_free(v.buf);
 		}
 	}
 }
@@ -1004,22 +1039,14 @@ void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
 		return;
 	}
 
-	uint8_t *arr = lbm_malloc_reserve(len);
-
-	if (arr) {
-		memcpy(arr, data, len);
-		lbm_flat_value_t v;
-		if (lbm_start_flatten(&v, 30)) {
-			f_cons(&v);
-			f_sym(&v, sym_event_data_rx);
-			f_lbm_array(&v, len, LBM_TYPE_BYTE, arr);
-			lbm_finish_flatten(&v);
-			if (!lbm_event(&v)) {
-				lbm_free(arr);
-				lbm_free(v.buf);
-			}
-		} else {
-			lbm_free(arr);
+	lbm_flat_value_t v;
+	if (lbm_start_flatten(&v, 30 + len)) {
+		f_cons(&v);
+		f_sym(&v, sym_event_data_rx);
+		f_lbm_array(&v, len, LBM_TYPE_BYTE, data);
+		lbm_finish_flatten(&v);
+		if (!lbm_event(&v)) {
+			lbm_free(v.buf);
 		}
 	}
 }

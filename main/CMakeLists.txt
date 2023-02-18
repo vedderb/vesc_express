@@ -20,6 +20,7 @@ set(COMPONENT_SRCS
 "nmea.c"
 "utils.c"
 "flash_helper.c"
+"rb.c"
 
 "config/confparser.c"
 "config/confxml.c"

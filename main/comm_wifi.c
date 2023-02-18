@@ -1,5 +1,5 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 - 2023 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -49,7 +49,7 @@ static bool is_connected = false;
 static PACKET_STATE_t packet_state;
 static int m_sock = -1;
 
-static void do_comm(const int sock) {
+static void do_comm(const int sock, PACKET_STATE_t *packet) {
 	int len;
 	char rx_buffer[128];
 
@@ -59,7 +59,7 @@ static void do_comm(const int sock) {
 		len = recv(sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
 
 		for (int i = 0;i < len;i++) {
-			packet_process_byte(rx_buffer[i], &packet_state);
+			packet_process_byte(rx_buffer[i], packet);
 		}
 	} while (len > 0);
 
@@ -67,7 +67,6 @@ static void do_comm(const int sock) {
 }
 
 static void tcp_task(void *arg) {
-	int ip_protocol = 0;
 	int keepAlive = 1;
 	int keepIdle = 5;
 	int keepInterval = 5;
@@ -79,34 +78,62 @@ static void tcp_task(void *arg) {
 	dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
 	dest_addr_ip4->sin_family = AF_INET;
 	dest_addr_ip4->sin_port = htons(65102);
-	ip_protocol = IPPROTO_IP;
-
-	int listen_sock = socket(AF_INET, SOCK_STREAM, ip_protocol);
-
-	int opt = 1;
-	setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-	bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-	listen(listen_sock, 1);
 
 	for (;;) {
-		struct sockaddr addr;
-		socklen_t addr_len = sizeof(addr);
-		int sock = accept(listen_sock, &addr, &addr_len);
+		if (backup.config.tcp_mode == TCP_MODE_LOCAL) {
+			int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+			int opt = 1;
+			setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+			bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+			listen(listen_sock, 1);
 
-		memcpy(&ip_client, addr.sa_data + 2, 4);
+			struct sockaddr addr;
+			socklen_t addr_len = sizeof(addr);
+			int sock = accept(listen_sock, &addr, &addr_len);
 
-		// Set tcp keepalive option
-		setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-		setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-		setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-		setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+			memcpy(&ip_client, addr.sa_data + 2, 4);
 
-		do_comm(sock);
-		shutdown(sock, 0);
+			// Set tcp keepalive option
+			setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+			setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+			setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+			setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+			setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
 
-		close(sock);
+			do_comm(sock, &packet_state);
+			shutdown(sock, 0);
+			close(sock);
+
+			shutdown(listen_sock, 0);
+			close(listen_sock);
+		} else {
+			struct hostent *host = gethostbyname((char*)backup.config.tcp_hub_url);
+
+			if (!host) {
+				vTaskDelay(1000 / portTICK_PERIOD_MS);
+				continue;
+			}
+
+			struct sockaddr_in dest_addr;
+			memcpy(&dest_addr.sin_addr, host->h_addr_list[0], host->h_length);
+			dest_addr.sin_family = AF_INET;
+			dest_addr.sin_port = htons(backup.config.tcp_hub_port);
+
+			int sock =  socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+			int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
+			if (err == 0) {
+				{
+					char buf[60];
+					sprintf(buf, "VESC:%s:%s\n", backup.config.tcp_hub_id, backup.config.tcp_hub_pass);
+					send(sock, buf, strlen(buf), 0);
+				}
+				do_comm(sock, &packet_state);
+			}
+
+			shutdown(sock, 0);
+			close(sock);
+			vTaskDelay(1000 / portTICK_PERIOD_MS);
+		}
 	}
 
 	vTaskDelete(NULL);
@@ -158,7 +185,10 @@ static void broadcast_task(void *arg) {
 		} else {
 			ind += sprintf(sendbuf, "%s::" IPSTR "::65102", backup.config.ble_name, IP2STR(&ip)) + 1;
 		}
-		sendto(sock, sendbuf, ind, 0, (struct sockaddr *)&sDestAddr, sizeof(sDestAddr));
+
+		if (backup.config.tcp_mode == TCP_MODE_LOCAL) {
+			sendto(sock, sendbuf, ind, 0, (struct sockaddr *)&sDestAddr, sizeof(sDestAddr));
+		}
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 

@@ -46,6 +46,11 @@ typedef enum {
 	BLE_MODE_ENCRYPTED
 } BLE_MODE;
 
+typedef enum {
+	TCP_MODE_LOCAL = 0,
+	TCP_MODE_HUB
+} TCP_MODE;
+
 typedef struct {
 	int controller_id;
 	CAN_BAUD can_baud_rate;
@@ -55,6 +60,11 @@ typedef struct {
 	char wifi_sta_key[26];
 	char wifi_ap_ssid[36];
 	char wifi_ap_key[26];
+	TCP_MODE tcp_mode;
+	char tcp_hub_url[36];
+	uint16_t tcp_hub_port;
+	char tcp_hub_id[26];
+	char tcp_hub_pass[26];
 	BLE_MODE ble_mode;
 	char ble_name[9];
 	uint32_t ble_pin;

@@ -43,6 +43,31 @@
 #define CONF_WIFI_AP_KEY "vesc6wifi"
 #endif
 
+// TCP Mode
+#ifndef CONF_TCP_MODE
+#define CONF_TCP_MODE 0
+#endif
+
+// TCP Hub URL
+#ifndef CONF_TCP_HUB_URL
+#define CONF_TCP_HUB_URL "veschub.vedder.se"
+#endif
+
+// TCP Hub Port
+#ifndef CONF_TCP_HUB_PORT
+#define CONF_TCP_HUB_PORT 65101
+#endif
+
+// TCP Hub ID
+#ifndef CONF_TCP_HUB_ID
+#define CONF_TCP_HUB_ID "express1"
+#endif
+
+// TCP Hub Password
+#ifndef CONF_TCP_HUB_PASS
+#define CONF_TCP_HUB_PASS ""
+#endif
+
 // Bluetooth Mode
 #ifndef CONF_BLE_MODE
 #define CONF_BLE_MODE 1
