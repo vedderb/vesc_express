@@ -1031,6 +1031,44 @@ static lbm_value ext_wifi_get_chan(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(prim);
 }
 
+static lbm_value ext_wifi_set_bw(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint8_t bw = lbm_dec_as_i32(args[0]);
+
+	if (bw != 20 && bw != 40) {
+		return ENC_SYM_TERROR;
+	}
+
+	wifi_bandwidth_t bwt = WIFI_BW_HT20;
+	if (bw == 40) {
+		bwt = WIFI_BW_HT40;
+	}
+
+	esp_err_t res = esp_wifi_set_bandwidth(WIFI_IF_AP, bwt);
+
+	if (res == ESP_ERR_WIFI_NOT_INIT) {
+		lbm_set_error_reason(str_wifi_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	wifi_bandwidth_t bwt = WIFI_BW_HT20;
+	esp_err_t res = esp_wifi_get_bandwidth(WIFI_IF_AP, &bwt);
+
+	if (res == ESP_ERR_WIFI_NOT_INIT) {
+		lbm_set_error_reason(str_wifi_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_i(bwt == WIFI_BW_HT20 ? 20 : 40);
+}
+
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TRUE;
 
@@ -1078,19 +1116,6 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	}
 
 	return res;
-}
-
-static lbm_value ext_esp_now_set_channel(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
-
-	if (!esp_now_initialized) {
-		lbm_set_error_reason(esp_init_msg);
-		return ENC_SYM_EERROR;
-	}
-
-	int32_t chan = lbm_dec_as_i32(args[0]);
-	esp_wifi_set_channel(chan, WIFI_SECOND_CHAN_NONE);
-	return ENC_SYM_TRUE;
 }
 
 static bool i2c_started = false;
@@ -1442,7 +1467,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("get-mac-addr", ext_get_mac_addr);
 	lbm_add_extension("wifi-get-chan", ext_wifi_get_chan);
 	lbm_add_extension("wifi-set-chan", ext_wifi_set_chan);
-	lbm_add_extension("esp-now-set-chan", ext_esp_now_set_channel);
+	lbm_add_extension("wifi-get-bw", ext_wifi_get_bw);
+	lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
 
 	// Extension libraries
 	lbm_array_extensions_init();
