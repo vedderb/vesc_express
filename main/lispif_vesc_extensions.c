@@ -991,6 +991,46 @@ static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 	return addr;
 }
 
+static char *str_wifi_not_init_msg = "WiFi not initialized.";
+
+static lbm_value ext_wifi_set_chan(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint8_t ch = lbm_dec_as_i32(args[0]);
+
+	if (ch > 14) {
+		return ENC_SYM_TERROR;
+	}
+
+	uint8_t prim;
+	wifi_second_chan_t second;
+	esp_err_t res = esp_wifi_get_channel(&prim, &second);
+
+	if (res == ESP_ERR_WIFI_NOT_INIT) {
+		lbm_set_error_reason(str_wifi_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	esp_wifi_set_channel(ch, second);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_wifi_get_chan(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	uint8_t prim;
+	wifi_second_chan_t second;
+	esp_err_t res = esp_wifi_get_channel(&prim, &second);
+
+	if (res == ESP_ERR_WIFI_NOT_INIT) {
+		lbm_set_error_reason(str_wifi_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_i(prim);
+}
+
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TRUE;
 
@@ -1038,15 +1078,6 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	}
 
 	return res;
-}
-
-static lbm_value ext_wifi_channel(lbm_value *args, lbm_uint argn) {
-	(void) args; (void) argn;
-
-	uint8_t chan = 0;
-	wifi_second_chan_t wifi_second_chan;
-	esp_wifi_get_channel(&chan, &wifi_second_chan);
-	return lbm_enc_i(chan);
 }
 
 static lbm_value ext_esp_now_set_channel(lbm_value *args, lbm_uint argn) {
@@ -1409,7 +1440,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
 	lbm_add_extension("esp-now-send", ext_esp_now_send);
 	lbm_add_extension("get-mac-addr", ext_get_mac_addr);
-	lbm_add_extension("wifi-get-chan", ext_wifi_channel);
+	lbm_add_extension("wifi-get-chan", ext_wifi_get_chan);
+	lbm_add_extension("wifi-set-chan", ext_wifi_set_chan);
 	lbm_add_extension("esp-now-set-chan", ext_esp_now_set_channel);
 
 	// Extension libraries
