@@ -115,7 +115,7 @@ void hw_init(void) {
 	i2c_driver_install(0, conf.mode, 0, 0, 0);
 
 	xTaskCreatePinnedToCore(sht_task, "shtc3", 1024, NULL, 6, NULL, tskNO_AFFINITY);
-	xTaskCreatePinnedToCore(hw_task, "hw", 256, NULL, 6, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(hw_task, "hw", 512, NULL, 6, NULL, tskNO_AFFINITY);
 
 	lispif_set_ext_load_callback(load_extensions);
 

@@ -52,7 +52,7 @@ void hw_init(void) {
 	    io_conf.pull_up_en = 0;
 	    gpio_config(&io_conf);
 
-	    xTaskCreatePinnedToCore(hw_task, "hw", 256, NULL, 6, NULL, tskNO_AFFINITY);
+	    xTaskCreatePinnedToCore(hw_task, "hw", 512, NULL, 6, NULL, tskNO_AFFINITY);
 
 	    gpio_set_level(CAN_EN_GPIO_NUM, 0);
 

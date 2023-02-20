@@ -34,6 +34,7 @@
 #include "buffer.h"
 #include "utils.h"
 #include "rb.h"
+#include "crc.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -1382,6 +1383,31 @@ static lbm_value ext_main_init_done(lbm_value *args, lbm_uint argn) {
 	return main_init_done() ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
+static lbm_value ext_crc16(lbm_value *args, lbm_uint argn) {
+	if ((argn != 1 && argn != 2) || !lbm_is_array(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+	if (array->elt_type != LBM_TYPE_BYTE) {
+		return ENC_SYM_TERROR;
+	}
+
+	unsigned int len = array->size;
+	if (argn == 2) {
+		if (!lbm_is_number(args[1])) {
+			return ENC_SYM_TERROR;
+		}
+
+		len = lbm_dec_as_u32(args[1]);
+		if (len > array->size) {
+			len = array->size;
+		}
+	}
+
+	return lbm_enc_i(crc16((uint8_t*)array->data, len));
+}
+
 static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 	(void)args;(void)argn;
 	return ENC_SYM_TRUE;
@@ -1415,6 +1441,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("send-data", ext_send_data);
 	lbm_add_extension("import", ext_empty);
 	lbm_add_extension("main-init-done", ext_main_init_done);
+	lbm_add_extension("crc16", ext_crc16);
 
 	// CAN-comands
 	lbm_add_extension("can-scan", ext_can_scan);
