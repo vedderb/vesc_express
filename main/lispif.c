@@ -55,6 +55,7 @@ static bool lisp_thd_running = false;
 static SemaphoreHandle_t lbm_mutex;
 
 static int repl_cid = -1;
+static int restart_cnt = 0;
 
 /*
  * TODO:
@@ -72,6 +73,10 @@ void lispif_init(void) {
 	lbm_mutex = xSemaphoreCreateMutex();
 	lispif_restart(false, true);
 	lbm_set_eval_step_quota(50);
+}
+
+int lispif_get_restart_cnt(void) {
+	return restart_cnt;
 }
 
 void lispif_lock_lbm(void) {
@@ -523,6 +528,8 @@ static void done_callback(eval_context_t *ctx) {
 
 bool lispif_restart(bool print, bool load_code) {
 	bool res = false;
+
+	restart_cnt++;
 
 	char *code_data = (char*)flash_helper_code_data_ptr(CODE_IND_LISP);
 	int32_t code_len = flash_helper_code_size(CODE_IND_LISP);
