@@ -30,8 +30,10 @@ esp_ip4_addr_t comm_wifi_get_ip_client(void);
 bool comm_wifi_is_client_connected(void);
 bool comm_wifi_is_connecting(void);
 bool comm_wifi_is_connected(void);
-void comm_wifi_send_packet(unsigned char *data, unsigned int len);
-void comm_wifi_send_raw(unsigned char *buffer, unsigned int len);
+void comm_wifi_send_packet_local(unsigned char *data, unsigned int len);
+void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len);
+void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len);
+void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len);
 void comm_wifi_disconnect(void);
 
 #endif /* MAIN_COMM_WIFI_H_ */

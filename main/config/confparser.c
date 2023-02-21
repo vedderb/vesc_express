@@ -22,7 +22,8 @@ int32_t confparser_serialize_main_config_t(uint8_t *buffer, const main_config_t 
 	ind += strlen(conf->wifi_ap_ssid) + 1;
 	strcpy((char*)buffer + ind, conf->wifi_ap_key);
 	ind += strlen(conf->wifi_ap_key) + 1;
-	buffer[ind++] = conf->tcp_mode;
+	buffer[ind++] = conf->use_tcp_local;
+	buffer[ind++] = conf->use_tcp_hub;
 	strcpy((char*)buffer + ind, conf->tcp_hub_url);
 	ind += strlen(conf->tcp_hub_url) + 1;
 	buffer_append_uint16(buffer, conf->tcp_hub_port, &ind);
@@ -58,7 +59,8 @@ bool confparser_deserialize_main_config_t(const uint8_t *buffer, main_config_t *
 	ind += strlen(conf->wifi_ap_ssid) + 1;
 	strcpy(conf->wifi_ap_key, (char*)buffer + ind);
 	ind += strlen(conf->wifi_ap_key) + 1;
-	conf->tcp_mode = buffer[ind++];
+	conf->use_tcp_local = buffer[ind++];
+	conf->use_tcp_hub = buffer[ind++];
 	strcpy(conf->tcp_hub_url, (char*)buffer + ind);
 	ind += strlen(conf->tcp_hub_url) + 1;
 	conf->tcp_hub_port = buffer_get_uint16(buffer, &ind);
@@ -83,7 +85,8 @@ void confparser_set_defaults_main_config_t(main_config_t *conf) {
 	strcpy(conf->wifi_sta_key, CONF_WIFI_STA_KEY);
 	strcpy(conf->wifi_ap_ssid, CONF_WIFI_AP_SSID);
 	strcpy(conf->wifi_ap_key, CONF_WIFI_AP_KEY);
-	conf->tcp_mode = CONF_TCP_MODE;
+	conf->use_tcp_local = CONF_USE_TCP_LOCAL;
+	conf->use_tcp_hub = CONF_USE_TCP_HUB;
 	strcpy(conf->tcp_hub_url, CONF_TCP_HUB_URL);
 	conf->tcp_hub_port = CONF_TCP_HUB_PORT;
 	strcpy(conf->tcp_hub_id, CONF_TCP_HUB_ID);

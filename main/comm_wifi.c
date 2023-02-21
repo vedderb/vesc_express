@@ -43,106 +43,117 @@
 
 static EventGroupHandle_t s_wifi_event_group;
 static esp_ip4_addr_t ip = {0};
-static esp_ip4_addr_t ip_client = {0};
 static bool is_connecting = false;
 static bool is_connected = false;
-static PACKET_STATE_t packet_state;
-static int m_sock = -1;
 
-static void do_comm(const int sock, PACKET_STATE_t *packet) {
+typedef struct {
+	PACKET_STATE_t packet;
+	int socket;
+	esp_ip4_addr_t ip_client;
+} comm_state;
+
+static comm_state comm_local = {.socket = -1, .ip_client = {0}};
+static comm_state comm_hub = {.socket = -1, .ip_client = {0}};
+
+static void do_comm(const int sock, comm_state *comm) {
 	int len;
 	char rx_buffer[128];
 
-	m_sock = sock;
+	comm->socket = sock;
 
 	do {
 		len = recv(sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
 
 		for (int i = 0;i < len;i++) {
-			packet_process_byte(rx_buffer[i], packet);
+			packet_process_byte(rx_buffer[i], &comm->packet);
 		}
 	} while (len > 0);
 
-	m_sock = -1;
+	comm->socket = -1;
 }
 
-static void tcp_task(void *arg) {
+static void set_socket_options(int sock) {
+	if (sock < 0) {
+		return;
+	}
+
 	int keepAlive = 1;
 	int keepIdle = 5;
 	int keepInterval = 5;
 	int keepCount = 3;
 	int nodelay = 1;
-	struct sockaddr_storage dest_addr;
 
-	struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
-	dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-	dest_addr_ip4->sin_family = AF_INET;
-	dest_addr_ip4->sin_port = htons(65102);
+	setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+	setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+	setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+	setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+	setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+}
 
+static void tcp_task_local(void *arg) {
 	for (;;) {
-		if (backup.config.tcp_mode == TCP_MODE_LOCAL) {
-			int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-			int opt = 1;
-			setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-			bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-			listen(listen_sock, 1);
+		struct sockaddr_storage dest_addr;
+		struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
+		dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
+		dest_addr_ip4->sin_family = AF_INET;
+		dest_addr_ip4->sin_port = htons(65102);
 
-			struct sockaddr addr;
-			socklen_t addr_len = sizeof(addr);
-			int sock = accept(listen_sock, &addr, &addr_len);
+		int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+		int opt = 1;
+		setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+		bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+		listen(listen_sock, 1);
 
-			memcpy(&ip_client, addr.sa_data + 2, 4);
+		struct sockaddr addr;
+		socklen_t addr_len = sizeof(addr);
+		int sock = accept(listen_sock, &addr, &addr_len);
 
-			// Set tcp keepalive option
-			setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-			setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-			setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-			setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-			setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+		memcpy(&comm_local.ip_client, addr.sa_data + 2, 4);
+		set_socket_options(sock);
 
-			do_comm(sock, &packet_state);
-			shutdown(sock, 0);
-			close(sock);
+		do_comm(sock, &comm_local);
+		shutdown(sock, 0);
+		close(sock);
 
-			shutdown(listen_sock, 0);
-			close(listen_sock);
-		} else {
-			struct hostent *host = gethostbyname((char*)backup.config.tcp_hub_url);
+		shutdown(listen_sock, 0);
+		close(listen_sock);
+		vTaskDelay(10 / portTICK_PERIOD_MS);
+	}
 
-			if (!host) {
-				vTaskDelay(1000 / portTICK_PERIOD_MS);
-				continue;
-			}
+	vTaskDelete(NULL);
+}
 
-			struct sockaddr_in dest_addr;
-			memcpy(&dest_addr.sin_addr, host->h_addr_list[0], host->h_length);
-			dest_addr.sin_family = AF_INET;
-			dest_addr.sin_port = htons(backup.config.tcp_hub_port);
+static void tcp_task_hub(void *arg) {
+	for (;;) {
+		struct hostent *host = gethostbyname((char*)backup.config.tcp_hub_url);
 
-			int sock =  socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-			int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
-			if (err == 0) {
-				memcpy(&ip_client, &dest_addr.sin_addr.s_addr, 4);
-
-				// Set tcp keepalive option
-				setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-				setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-				setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-				setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-				setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
-
-				{
-					char buf[60];
-					sprintf(buf, "VESC:%s:%s\n", backup.config.tcp_hub_id, backup.config.tcp_hub_pass);
-					send(sock, buf, strlen(buf), 0);
-				}
-				do_comm(sock, &packet_state);
-			}
-
-			shutdown(sock, 0);
-			close(sock);
+		if (!host) {
 			vTaskDelay(1000 / portTICK_PERIOD_MS);
+			continue;
 		}
+
+		struct sockaddr_in dest_addr;
+		memcpy(&dest_addr.sin_addr, host->h_addr_list[0], host->h_length);
+		dest_addr.sin_family = AF_INET;
+		dest_addr.sin_port = htons(backup.config.tcp_hub_port);
+
+		int sock =  socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+		int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
+		if (err == 0) {
+			memcpy(&comm_hub.ip_client, &dest_addr.sin_addr.s_addr, 4);
+			set_socket_options(sock);
+
+			{
+				char buf[60];
+				sprintf(buf, "VESC:%s:%s\n", backup.config.tcp_hub_id, backup.config.tcp_hub_pass);
+				send(sock, buf, strlen(buf) + 1, 0);
+			}
+			do_comm(sock, &comm_hub);
+		}
+
+		shutdown(sock, 0);
+		close(sock);
+		vTaskDelay(10 / portTICK_PERIOD_MS);
 	}
 
 	vTaskDelete(NULL);
@@ -164,10 +175,6 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 		LED_RED_ON();
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 	}
-}
-
-static void process_packet(unsigned char *data, unsigned int len) {
-	commands_process_packet(data, len, comm_wifi_send_packet);
 }
 
 /**
@@ -195,7 +202,7 @@ static void broadcast_task(void *arg) {
 			ind += sprintf(sendbuf, "%s::" IPSTR "::65102", backup.config.ble_name, IP2STR(&ip)) + 1;
 		}
 
-		if (backup.config.tcp_mode == TCP_MODE_LOCAL) {
+		if (backup.config.use_tcp_local) {
 			sendto(sock, sendbuf, ind, 0, (struct sockaddr *)&sDestAddr, sizeof(sDestAddr));
 		}
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -204,8 +211,59 @@ static void broadcast_task(void *arg) {
 	vTaskDelete(NULL);
 }
 
+static void process_packet_local(unsigned char *data, unsigned int len) {
+	commands_process_packet(data, len, comm_wifi_send_packet_local);
+}
+
+static void process_packet_hub(unsigned char *data, unsigned int len) {
+	commands_process_packet(data, len, comm_wifi_send_packet_hub);
+}
+
+void comm_wifi_send_packet_local(unsigned char *data, unsigned int len) {
+	packet_send_packet(data, len, &comm_local.packet);
+}
+
+void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len) {
+	packet_send_packet(data, len, &comm_hub.packet);
+}
+
+void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len) {
+	if (comm_local.socket < 0) {
+		return;
+	}
+
+	int to_write = len;
+	while (to_write > 0) {
+		int written = send(comm_local.socket, buffer + (len - to_write), to_write, 0);
+		if (written < 0) {
+			// Error
+			return;
+		}
+
+		to_write -= written;
+	}
+}
+
+void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len) {
+	if (comm_hub.socket < 0) {
+		return;
+	}
+
+	int to_write = len;
+	while (to_write > 0) {
+		int written = send(comm_hub.socket, buffer + (len - to_write), to_write, 0);
+		if (written < 0) {
+			// Error
+			return;
+		}
+
+		to_write -= written;
+	}
+}
+
 void comm_wifi_init(void) {
-	packet_init(comm_wifi_send_raw, process_packet, &packet_state);
+	packet_init(comm_wifi_send_raw_local, process_packet_local, &comm_local.packet);
+	packet_init(comm_wifi_send_raw_hub, process_packet_hub, &comm_hub.packet);
 
 	s_wifi_event_group = xEventGroupCreate();
 	esp_netif_init();
@@ -287,7 +345,14 @@ void comm_wifi_init(void) {
 
 	esp_wifi_start();
 
-	xTaskCreatePinnedToCore(tcp_task, "tcp_server", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	if (backup.config.use_tcp_local) {
+		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	}
+
+	if (backup.config.use_tcp_hub) {
+		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	}
+
 	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 2048, NULL, 8, NULL, tskNO_AFFINITY);
 }
 
@@ -296,11 +361,15 @@ esp_ip4_addr_t comm_wifi_get_ip(void) {
 }
 
 esp_ip4_addr_t comm_wifi_get_ip_client(void) {
-	return ip_client;
+	if (comm_local.socket > 0) {
+		return comm_local.ip_client;
+	} else {
+		return comm_hub.ip_client;
+	}
 }
 
 bool comm_wifi_is_client_connected(void) {
-	return m_sock >= 0;
+	return comm_local.socket >= 0 || comm_hub.socket >= 0;
 }
 
 bool comm_wifi_is_connecting(void) {
@@ -311,33 +380,16 @@ bool comm_wifi_is_connected(void) {
 	return is_connected;
 }
 
-void comm_wifi_send_packet(unsigned char *data, unsigned int len) {
-	packet_send_packet(data, len, &packet_state);
-}
-
-void comm_wifi_send_raw(unsigned char *buffer, unsigned int len) {
-	if (m_sock < 0) {
-		return;
-	}
-
-	// send() can return less bytes than supplied length.
-	// Walk-around for robust implementation.
-	int to_write = len;
-	while (to_write > 0) {
-		int written = send(m_sock, buffer + (len - to_write), to_write, 0);
-		if (written < 0) {
-			// Error
-			return;
-		}
-
-		to_write -= written;
-	}
-}
-
 void comm_wifi_disconnect(void) {
-	if (m_sock >= 0) {
-		shutdown(m_sock, 0);
-		close(m_sock);
-		m_sock = -1;
+	if (comm_local.socket >= 0) {
+		shutdown(comm_local.socket, 0);
+		close(comm_local.socket);
+		comm_local.socket = -1;
+	}
+
+	if (comm_hub.socket >= 0) {
+		shutdown(comm_hub.socket, 0);
+		close(comm_hub.socket);
+		comm_hub.socket = -1;
 	}
 }

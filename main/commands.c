@@ -400,7 +400,14 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		uint8_t *send_buffer = send_buffer_global;
 		size_t send_size = 400;
 
-		if (reply_func == comm_wifi_send_packet) {
+		void(*reply_func_raw)(unsigned char *data, unsigned int len) = 0;
+		if (reply_func == comm_wifi_send_packet_local) {
+			reply_func_raw = comm_wifi_send_raw_local;
+		} else if (reply_func == comm_wifi_send_packet_hub) {
+			reply_func_raw = comm_wifi_send_raw_hub;
+		}
+
+		if (reply_func_raw) {
 			send_buffer = wifi_buffer + 3;
 			send_size = sizeof(wifi_buffer) - 100;
 		}
@@ -440,7 +447,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_int32(send_buffer, 0, &ind);
 		}
 
-		if (reply_func == comm_wifi_send_packet) {
+		if (reply_func_raw) {
 			unsigned short crc = crc16(send_buffer, ind);
 
 			if (ind > 255) {
@@ -451,7 +458,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				wifi_buffer[ind++] = (uint8_t)(crc >> 8);
 				wifi_buffer[ind++] = (uint8_t)(crc & 0xFF);
 				wifi_buffer[ind++] = 3;
-				comm_wifi_send_raw(wifi_buffer, ind);
+				reply_func_raw(wifi_buffer, ind);
 			} else {
 				wifi_buffer[1] = 2;
 				wifi_buffer[2] = ind & 0xFF;
@@ -459,7 +466,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				wifi_buffer[ind++] = (uint8_t)(crc >> 8);
 				wifi_buffer[ind++] = (uint8_t)(crc & 0xFF);
 				wifi_buffer[ind++] = 3;
-				comm_wifi_send_raw(wifi_buffer + 1, ind - 1);
+				reply_func_raw(wifi_buffer + 1, ind - 1);
 			}
 		} else {
 			reply_func(send_buffer, ind);

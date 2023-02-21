@@ -43,9 +43,14 @@
 #define CONF_WIFI_AP_KEY "vesc6wifi"
 #endif
 
-// TCP Mode
-#ifndef CONF_TCP_MODE
-#define CONF_TCP_MODE 0
+// Enable Local TCP
+#ifndef CONF_USE_TCP_LOCAL
+#define CONF_USE_TCP_LOCAL 1
+#endif
+
+// Enable TCP Hub
+#ifndef CONF_USE_TCP_HUB
+#define CONF_USE_TCP_HUB 0
 #endif
 
 // TCP Hub URL
