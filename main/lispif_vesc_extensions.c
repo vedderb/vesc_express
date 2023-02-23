@@ -35,6 +35,7 @@
 #include "utils.h"
 #include "rb.h"
 #include "crc.h"
+#include "bms.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -224,6 +225,154 @@ static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value get_or_set_float(bool set, float *val, lbm_value *lbm_val) {
+	if (set) {
+		*val = lbm_dec_as_float(*lbm_val);
+		return ENC_SYM_TRUE;
+	} else {
+		return lbm_enc_float(*val);
+	}
+}
+
+static lbm_value get_or_set_i(bool set, int *val, lbm_value *lbm_val) {
+	if (set) {
+		*val = lbm_dec_as_i32(*lbm_val);
+		return ENC_SYM_TRUE;
+	} else {
+		return lbm_enc_i(*val);
+	}
+}
+
+static lbm_value get_or_set_bool(bool set, bool *val, lbm_value *lbm_val) {
+	if (set) {
+		*val = lbm_dec_as_i32(*lbm_val);
+		return ENC_SYM_TRUE;
+	} else {
+		return lbm_enc_i(*val);
+	}
+}
+
+static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_EERROR;
+
+	lbm_value set_arg = 0;
+	if (set && argn >= 1) {
+		set_arg = args[argn - 1];
+		argn--;
+
+		if (!lbm_is_number(set_arg)) {
+			lbm_set_error_reason((char*)lbm_error_str_no_number);
+			return ENC_SYM_EERROR;
+		}
+	}
+
+	if (argn != 1 && argn != 2) {
+		return res;
+	}
+
+	if (lbm_type_of(args[0]) != LBM_TYPE_SYMBOL) {
+		return res;
+	}
+
+	lbm_uint name = lbm_dec_sym(args[0]);
+	bms_values *val = (bms_values*)bms_get_values();
+
+	if (compare_symbol(name, &syms_vesc.v_tot)) {
+		res = get_or_set_float(set, &val->v_tot, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.v_charge)) {
+		res = get_or_set_float(set, &val->v_charge, &res);
+	} else if (compare_symbol(name, &syms_vesc.i_in)) {
+		res = get_or_set_float(set, &val->i_in, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.i_in_ic)) {
+		res = get_or_set_float(set, &val->i_in_ic, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.ah_cnt)) {
+		res = get_or_set_float(set, &val->ah_cnt, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.wh_cnt)) {
+		res = get_or_set_float(set, &val->wh_cnt, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.cell_num)) {
+		res = get_or_set_i(set, &val->cell_num, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.v_cell)) {
+		if (argn != 2 || !lbm_is_number(args[1])) {
+			return ENC_SYM_EERROR;
+		}
+
+		int c = lbm_dec_as_i32(args[1]);
+		if (c < 0 || c >= val->cell_num) {
+			return ENC_SYM_EERROR;
+		}
+
+		res = get_or_set_float(set, &val->v_cell[c], &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.bal_state)) {
+		if (argn != 2 || !lbm_is_number(args[1])) {
+			return ENC_SYM_EERROR;
+		}
+
+		int c = lbm_dec_as_i32(args[1]);
+		if (c < 0 || c >= val->cell_num) {
+			return ENC_SYM_EERROR;
+		}
+
+		res = get_or_set_bool(set, &val->bal_state[c], &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.temp_adc_num)) {
+		res = get_or_set_i(set, &val->temp_adc_num, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.temps_adc)) {
+		if (argn != 2 || !lbm_is_number(args[1])) {
+			return ENC_SYM_EERROR;
+		}
+
+		int c = lbm_dec_as_i32(args[1]);
+		if (c < 0 || c >= val->temp_adc_num) {
+			return ENC_SYM_EERROR;
+		}
+
+		res = get_or_set_float(set, &val->temps_adc[c], &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.temp_ic)) {
+		res = get_or_set_float(set, &val->temp_ic, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.temp_hum)) {
+		res = get_or_set_float(set, &val->temp_hum, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.hum)) {
+		res = get_or_set_float(set, &val->hum, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.temp_max_cell)) {
+		res = get_or_set_float(set, &val->temp_max_cell, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.soc)) {
+		res = get_or_set_float(set, &val->soc, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.soh)) {
+		res = get_or_set_float(set, &val->soh, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.can_id)) {
+		res = get_or_set_i(set, &val->can_id, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.ah_cnt_chg_total)) {
+		res = get_or_set_float(set, &val->ah_cnt_chg_total, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.wh_cnt_chg_total)) {
+		res = get_or_set_float(set, &val->wh_cnt_chg_total, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.ah_cnt_dis_total)) {
+		res = get_or_set_float(set, &val->ah_cnt_dis_total, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.wh_cnt_dis_total)) {
+		res = get_or_set_float(set, &val->wh_cnt_dis_total, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.msg_age)) {
+		res = lbm_enc_float(UTILS_AGE_S(val->update_time));
+	}
+
+	if (res != ENC_SYM_EERROR && set) {
+		val->update_time = xTaskGetTickCount();
+	}
+
+	return res;
+}
+
+static lbm_value ext_get_bms_val(lbm_value *args, lbm_uint argn) {
+	return get_set_bms_val(false, args, argn);
+}
+
+static lbm_value ext_set_bms_val(lbm_value *args, lbm_uint argn) {
+	return get_set_bms_val(true, args, argn);
+}
+
+static lbm_value ext_send_bms_can(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	bms_send_status_can();
 	return ENC_SYM_TRUE;
 }
 
@@ -1654,6 +1803,9 @@ void lispif_load_vesc_extensions(void) {
 
 	// Various commands
 	lbm_add_extension("print", ext_print);
+	lbm_add_extension("get-bms-val", ext_get_bms_val);
+	lbm_add_extension("set-bms-val", ext_set_bms_val);
+	lbm_add_extension("send-bms-can", ext_send_bms_can);
 	lbm_add_extension("get-adc", ext_get_adc);
 	lbm_add_extension("systime", ext_systime);
 	lbm_add_extension("secs-since", ext_secs_since);
@@ -1721,6 +1873,14 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("rgbled-init", ext_rgbled_init);
 	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
 	lbm_add_extension("rgbled-color", ext_rgbled_color);
+
+	// TODO:
+	// - can-get
+	// - eeprom
+	// - io-board
+	// - logging
+	// - gnss
+	// - uart?
 
 	// Extension libraries
 	lbm_array_extensions_init();

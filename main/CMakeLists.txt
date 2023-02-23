@@ -21,6 +21,7 @@ set(COMPONENT_SRCS
 "utils.c"
 "flash_helper.c"
 "rb.c"
+"bms.c"
 
 "config/confparser.c"
 "config/confxml.c"

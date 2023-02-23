@@ -32,11 +32,12 @@
 #include "commands.h"
 #include "nmea.h"
 #include "lispif.h"
+#include "bms.h"
 
 #include <string.h>
 
 #ifdef CAN_TX_GPIO_NUM
-#define RX_BUFFER_NUM				3
+#define RX_BUFFER_NUM				2
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
 
 // For double precision literals
@@ -44,7 +45,7 @@
 
 static twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
 static const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-static const twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM, TWAI_MODE_NORMAL);
+static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM, TWAI_MODE_NORMAL);
 
 static SemaphoreHandle_t ping_sem;
 static SemaphoreHandle_t send_mutex;
@@ -228,7 +229,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 	}
 }
 
-#define RXBUF_LEN			100
+#define RXBUF_LEN			50
 static twai_message_t rx_buf[RXBUF_LEN];
 static volatile int rx_write = 0;
 static volatile int rx_read = 0;
@@ -267,8 +268,10 @@ static void process_task(void *arg) {
 
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
 
-			if (msg->extd) {
-				decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+			if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
+				if (msg->extd) {
+					decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+				}
 			}
 		}
 	}
@@ -410,12 +413,14 @@ void comm_can_init(void) {
 
 	update_baud(backup.config.can_baud_rate);
 
+	g_config.rx_queue_len = 15;
+
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
 
 	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(rx_task, "can_rx", 512, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
-	xTaskCreatePinnedToCore(process_task, "can_proc", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(process_task, "can_proc", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 #endif
 }
 

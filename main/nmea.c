@@ -73,26 +73,22 @@ bool nmea_decode_string(const char *data) {
 
 	if (gga_res >= 0) {
 		m_state.gga_cnt++;
-		strcpy(m_state.last_gga, data);
 		ok = true;
 	}
 
 	if (gpgsv_res == 1) {
 		nmea_sync_gsv_info(&(m_state.gsv), &gpgsv);
-		strcpy(m_state.last_gsv, data);
 		m_state.gsv_gp_cnt++;
 		ok = true;
 	}
 
 	if (glgsv_res == 1) {
 		nmea_sync_gsv_info(&(m_state.gsv), &glgsv);
-		strcpy(m_state.last_gsv, data);
 		m_state.gsv_gl_cnt++;
 		ok = true;
 	}
 
 	if (rmc_res >= 0) {
-		strcpy(m_state.last_rmc, data);
 		m_state.rmc_cnt++;
 		ok = true;
 	}

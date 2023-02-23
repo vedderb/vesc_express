@@ -47,7 +47,7 @@ static bool is_connecting = false;
 static bool is_connected = false;
 
 typedef struct {
-	PACKET_STATE_t packet;
+	PACKET_STATE_t *packet;
 	int socket;
 	esp_ip4_addr_t ip_client;
 } comm_state;
@@ -65,7 +65,7 @@ static void do_comm(const int sock, comm_state *comm) {
 		len = recv(sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
 
 		for (int i = 0;i < len;i++) {
-			packet_process_byte(rx_buffer[i], &comm->packet);
+			packet_process_byte(rx_buffer[i], comm->packet);
 		}
 	} while (len > 0);
 
@@ -220,11 +220,11 @@ static void process_packet_hub(unsigned char *data, unsigned int len) {
 }
 
 void comm_wifi_send_packet_local(unsigned char *data, unsigned int len) {
-	packet_send_packet(data, len, &comm_local.packet);
+	packet_send_packet(data, len, comm_local.packet);
 }
 
 void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len) {
-	packet_send_packet(data, len, &comm_hub.packet);
+	packet_send_packet(data, len, comm_hub.packet);
 }
 
 void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len) {
@@ -262,9 +262,6 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len) {
 }
 
 void comm_wifi_init(void) {
-	packet_init(comm_wifi_send_raw_local, process_packet_local, &comm_local.packet);
-	packet_init(comm_wifi_send_raw_hub, process_packet_hub, &comm_hub.packet);
-
 	s_wifi_event_group = xEventGroupCreate();
 	esp_netif_init();
 	esp_event_loop_create_default();
@@ -346,14 +343,18 @@ void comm_wifi_init(void) {
 	esp_wifi_start();
 
 	if (backup.config.use_tcp_local) {
-		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+		comm_local.packet = calloc(1, sizeof(PACKET_STATE_t));
+		packet_init(comm_wifi_send_raw_local, process_packet_local, comm_local.packet);
+		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
 	if (backup.config.use_tcp_hub) {
-		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+		comm_hub.packet = calloc(1, sizeof(PACKET_STATE_t));
+		packet_init(comm_wifi_send_raw_hub, process_packet_hub, comm_hub.packet);
+		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
-	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 2048, NULL, 8, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 1024, NULL, 8, NULL, tskNO_AFFINITY);
 }
 
 esp_ip4_addr_t comm_wifi_get_ip(void) {

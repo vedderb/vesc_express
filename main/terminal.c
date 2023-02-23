@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <ctype.h>
 
 #include "esp_bt.h"
 #include "esp_wifi.h"
@@ -34,9 +35,10 @@
 #include "esp_ota_ops.h"
 #include "utils.h"
 #include "spi_flash_mmap.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // Settings
-#define FAULT_VEC_LEN						25
 #define CALLBACK_LEN						40
 
 // Private types
@@ -76,6 +78,11 @@ void terminal_process_string(char *str) {
 		return;
 	}
 
+	// force command argument to be lowercase
+	for(int i = 0; argv[0][i] != '\0'; i++){
+		argv[0][i] = tolower(argv[0][i]);
+	}
+
 	for (int i = 0;i < callback_write;i++) {
 		if (callbacks[i].cbf != 0 && strcmp(argv[0], callbacks[i].command) == 0) {
 			callbacks[i].cbf(argc, (const char**)argv);
@@ -83,11 +90,45 @@ void terminal_process_string(char *str) {
 		}
 	}
 
-	if (strcmp(argv[0], "ping") == 0) {
-		commands_printf("pong\n");
+	if (strcmp(argv[0], "threads") == 0) {
+		int num_tasks = uxTaskGetNumberOfTasks();
+		TaskStatus_t *tasks = malloc(num_tasks * sizeof(TaskStatus_t));
+		uint32_t time_total;
+		num_tasks = uxTaskGetSystemState(tasks, num_tasks, &time_total);
+
+		const char *state_names[] = {"Running", "Ready", "Blocked", "Suspended", "Deleted", "Invalid"};
+
+		commands_printf("   stack prio     state           name stackmin time    ");
+		commands_printf("--------------------------------------------------------");
+
+		for (int i = 0; i < num_tasks;i++) {
+			double percent = (100.0 * (double)tasks[i].ulRunTimeCounter) / (double)time_total;
+			commands_printf("%.8lx %4lu %9s %14s %8d %lu (%.1f %%)",
+					tasks[i].pxStackBase, tasks[i].uxBasePriority, state_names[tasks[i].eCurrentState],
+					tasks[i].pcTaskName, tasks[i].usStackHighWaterMark, tasks[i].ulRunTimeCounter, percent);
+		}
+
+		free(tasks);
+		commands_printf(" ");
+	} else if (strcmp(argv[0], "mem") == 0) {
+		nvs_stats_t s;
+		nvs_get_stats(NULL, &s);
+
+		commands_printf("NVS free        : %d", s.free_entries);
+		commands_printf("NVS ns cnt      : %d", s.namespace_count);
+		commands_printf("NVS tot         : %d", s.total_entries);
+		commands_printf("NVS used        : %d", s.used_entries);
+
+		commands_printf("Heap free       : %d", esp_get_free_heap_size());
+		commands_printf("Heap free int.  : %d", esp_get_free_internal_heap_size());
+		commands_printf("Heap min        : %d", esp_get_minimum_free_heap_size());
+		commands_printf("mmap data free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_DATA));
+		commands_printf("mmap inst free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_INST));
+
+		commands_printf(" ");
 	} else if (strcmp(argv[0], "can_devs") == 0) {
 		commands_printf("CAN devices seen on the bus the past second:\n");
-//		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		//		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
 //			can_status_msg *msg = comm_can_get_status_msg_index(i);
 //
 //			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < 1.0) {
@@ -129,20 +170,6 @@ void terminal_process_string(char *str) {
 			commands_printf("WIFI Channel    : error %d", ch_res);
 		}
 
-		nvs_stats_t s;
-		nvs_get_stats(NULL, &s);
-
-		commands_printf("NVS free        : %d", s.free_entries);
-		commands_printf("NVS ns cnt      : %d", s.namespace_count);
-		commands_printf("NVS tot         : %d", s.total_entries);
-		commands_printf("NVS used        : %d", s.used_entries);
-
-		commands_printf("Heap free       : %d", esp_get_free_heap_size());
-		commands_printf("Heap free int.  : %d", esp_get_free_internal_heap_size());
-		commands_printf("Heap min        : %d", esp_get_minimum_free_heap_size());
-		commands_printf("mmap data free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_DATA));
-		commands_printf("mmap inst free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_INST));
-
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		if (running != NULL) {
 			esp_app_desc_t running_app_info;
@@ -182,11 +209,14 @@ void terminal_process_string(char *str) {
 		commands_printf("help");
 		commands_printf("  Show this help");
 
-		commands_printf("ping");
-		commands_printf("  Print pong here to see if the reply works");
+		commands_printf("threads");
+		commands_printf("  List all threads");
+
+		commands_printf("mem");
+		commands_printf("  Print memory usage");
 
 		commands_printf("can_devs");
-		commands_printf("  Prints all CAN devices seen on the bus the past second");
+		commands_printf("  Print all CAN devices seen on the bus the past second");
 
 		commands_printf("hw_status");
 		commands_printf("  Print some hardware status information.");
@@ -287,4 +317,3 @@ void terminal_unregister_callback(void(*cbf)(int argc, const char **argv)) {
 		}
 	}
 }
-

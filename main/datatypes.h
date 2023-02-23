@@ -23,6 +23,45 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef struct {
+	float v_tot;
+	float v_charge;
+	float i_in;
+	float i_in_ic;
+	float ah_cnt;
+	float wh_cnt;
+	int cell_num;
+	float v_cell[32];
+	bool bal_state[32];
+	int temp_adc_num;
+	float temps_adc[50];
+	float temp_ic;
+	float temp_hum;
+	float hum;
+	float temp_max_cell;
+	float soc;
+	float soh;
+	int can_id;
+	float ah_cnt_chg_total;
+	float wh_cnt_chg_total;
+	float ah_cnt_dis_total;
+	float wh_cnt_dis_total;
+	uint32_t update_time;
+} bms_values;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float v_cell_min;
+	float v_cell_max;
+	float t_cell_max;
+	float soc;
+	float soh;
+	bool is_charging;
+	bool is_balancing;
+	bool is_charge_allowed;
+} bms_soc_soh_temp_stat;
+
 typedef enum {
 	CAN_BAUD_125K = 0,
 	CAN_BAUD_250K,

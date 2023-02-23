@@ -73,9 +73,6 @@ typedef struct {
 	nmea_gga_info_t gga;
 	nmea_gsv_info_t gsv;
 	nmea_rmc_info_t rmc;
-	char last_gga[512];
-	char last_gsv[512];
-	char last_rmc[512];
 } nmea_state_t;
 
 // Functions

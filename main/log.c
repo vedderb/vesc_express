@@ -331,7 +331,7 @@ bool log_init(void) {
 	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
 			.format_if_mount_failed = true,
 			.max_files = 5,
-			.allocation_unit_size = 16 * 1024
+			.allocation_unit_size = 0
 	};
 
 	sdmmc_card_t *card;
@@ -344,7 +344,7 @@ bool log_init(void) {
 			.sclk_io_num = SD_PIN_SCK,
 			.quadwp_io_num = -1,
 			.quadhd_io_num = -1,
-			.max_transfer_sz = 4000,
+			.max_transfer_sz = 4092,
 	};
 
 	spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
@@ -359,7 +359,7 @@ bool log_init(void) {
 		return false;
 	}
 
-	xTaskCreatePinnedToCore(log_task, "log", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(log_task, "log", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 
 	return true;
 #else
