@@ -34,18 +34,6 @@
 
 //#define HW_HEADER					"hw_devkit_c3.h"
 //#define HW_SOURCE					"hw_devkit_c3.c"
-
-//#define HW_HEADER					"hw_lb_if.h"
-//#define HW_SOURCE					"hw_lb_if.c"
-
-//#define HW_HEADER					"hw_lb_log.h"
-//#define HW_SOURCE					"hw_lb_log.c"
-
-//#define HW_HEADER					"hw_lb_hc.h"
-//#define HW_SOURCE					"hw_lb_hc.c"
-
-//#define HW_HEADER					"hw_lb_rl.h"
-//#define HW_SOURCE					"hw_lb_rl.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)

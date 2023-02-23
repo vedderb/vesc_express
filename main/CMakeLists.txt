@@ -60,7 +60,6 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "config"
 "hwconf"
 "hwconf/trampa"
-"hwconf/lb"
 
 "lispBM"
 "lispBM/include"
