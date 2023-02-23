@@ -72,6 +72,10 @@ static void(* volatile send_func_can_fwd)(unsigned char *data, unsigned int len)
 // Private functions
 static bool rmtree(const char *path);
 
+static void send_func_dummy(unsigned char *data, unsigned int len) {
+	(void)data; (void)len;
+}
+
 void commands_init(void) {
 	print_mutex = xSemaphoreCreateMutex();
 }
@@ -95,9 +99,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	}
 
 	// Avoid calling invalid function pointer if it is null.
-	// commands_send_packet will make the check.
-	if (!reply_func) {
-		return;
+	if (!reply_func && packet_id != COMM_LISP_REPL_CMD) {
+		reply_func = send_func_dummy;
 	}
 
 	switch (packet_id) {
