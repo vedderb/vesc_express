@@ -45,6 +45,7 @@
 #include "driver/i2c.h"
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
+#include "nvs_flash.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -469,6 +470,106 @@ static lbm_value ext_send_data(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+typedef union {
+	uint32_t as_u32;
+	int32_t as_i32;
+	float as_float;
+} eeprom_var;
+
+static bool check_eeprom_addr(int addr) {
+	if (addr < 0 || addr > 127) {
+		lbm_set_error_reason("Address must be 0 to 127");
+		return false;
+	}
+
+	return true;
+}
+
+static bool store_eeprom_var(eeprom_var *v, int address) {
+	if (address < 0 || address > 127) {
+		return false;
+	}
+
+	char buf[10];
+	sprintf(buf, "v%d", address);
+
+	nvs_handle_t my_handle;
+	esp_err_t ok_op = nvs_open("lbm", NVS_READWRITE, &my_handle);
+	esp_err_t ok_set = nvs_set_u32(my_handle, buf, v->as_u32);
+	esp_err_t ok_com = nvs_commit(my_handle);
+	nvs_close(my_handle);
+
+	return ok_op == ESP_OK && ok_set == ESP_OK && ok_com == ESP_OK;
+}
+
+static bool read_eeprom_var(eeprom_var *v, int address) {
+	if (address < 0 || address > 127) {
+		return false;
+	}
+
+	char buf[10];
+	sprintf(buf, "v%d", address);
+
+	nvs_handle_t my_handle;
+	esp_err_t ok_op = nvs_open("lbm", NVS_READONLY, &my_handle);
+	esp_err_t ok_set = nvs_get_u32(my_handle, buf, &v->as_u32);
+	nvs_close(my_handle);
+
+	return ok_op == ESP_OK && ok_set == ESP_OK;
+}
+
+static lbm_value ext_eeprom_store_f(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int addr = lbm_dec_as_i32(args[0]);
+	if (!check_eeprom_addr(addr)) {
+		return ENC_SYM_EERROR;
+	}
+
+	eeprom_var v;
+	v.as_float = lbm_dec_as_float(args[1]);
+	return store_eeprom_var(&v, addr) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_eeprom_read_f(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int addr = lbm_dec_as_i32(args[0]);
+	if (!check_eeprom_addr(addr)) {
+		return ENC_SYM_EERROR;
+	}
+
+	eeprom_var v;
+	bool res = read_eeprom_var(&v, addr);
+	return res ? lbm_enc_float(v.as_float) : ENC_SYM_NIL;
+}
+
+static lbm_value ext_eeprom_store_i(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int addr = lbm_dec_as_i32(args[0]);
+	if (!check_eeprom_addr(addr)) {
+		return ENC_SYM_EERROR;
+	}
+
+	eeprom_var v;
+	v.as_i32 = lbm_dec_as_i32(args[1]);
+	return store_eeprom_var(&v, addr) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_eeprom_read_i(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int addr = lbm_dec_as_i32(args[0]);
+	if (!check_eeprom_addr(addr)) {
+		return ENC_SYM_EERROR;
+	}
+
+	eeprom_var v;
+	bool res = read_eeprom_var(&v, addr);
+	return res ? lbm_enc_i32(v.as_i32) : ENC_SYM_NIL;
+}
+
 static lbm_value ext_can_cmd(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(2);
 
@@ -501,6 +602,176 @@ static lbm_value ext_can_cmd(lbm_value *args, lbm_uint argn) {
 	mempools_free_packet_buffer(send_buf);
 
 	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_get_current(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg *stat0 = comm_can_get_status_msg_id(lbm_dec_as_i32(args[0]));
+	if (stat0) {
+		return lbm_enc_float(stat0->current);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_current_dir(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg *stat0 = comm_can_get_status_msg_id(lbm_dec_as_i32(args[0]));
+	if (stat0) {
+		return lbm_enc_float(stat0->current * SIGN(stat0->duty));
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_current_in(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg_4 *stat4 = comm_can_get_status_msg_4_id(lbm_dec_as_i32(args[0]));
+	if (stat4) {
+		return lbm_enc_float((float)stat4->current_in);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_duty(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg *stat0 = comm_can_get_status_msg_id(lbm_dec_as_i32(args[0]));
+	if (stat0) {
+		return lbm_enc_float(stat0->duty);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_rpm(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg *stat0 = comm_can_get_status_msg_id(lbm_dec_as_i32(args[0]));
+	if (stat0) {
+		return lbm_enc_float(stat0->rpm);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_temp_fet(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg_4 *stat4 = comm_can_get_status_msg_4_id(lbm_dec_as_i32(args[0]));
+	if (stat4) {
+		return lbm_enc_float((float)stat4->temp_fet);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_temp_motor(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg_4 *stat4 = comm_can_get_status_msg_4_id(lbm_dec_as_i32(args[0]));
+	if (stat4) {
+		return lbm_enc_float((float)stat4->temp_motor);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_speed(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg *stat0 = comm_can_get_status_msg_id(lbm_dec_as_i32(args[0]));
+	if (stat0) {
+		return lbm_enc_float(stat0->rpm);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_dist(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg_5 *stat5 = comm_can_get_status_msg_5_id(lbm_dec_as_i32(args[0]));
+	if (stat5) {
+		const float tacho_scale = 1.0;
+		return lbm_enc_float((float)stat5->tacho_value * tacho_scale);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_ppm(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	can_status_msg_6 *stat6 = comm_can_get_status_msg_6_id(lbm_dec_as_i32(args[0]));
+	if (stat6) {
+		return lbm_enc_float((float)stat6->ppm);
+	} else {
+		return lbm_enc_float(0.0);
+	}
+}
+
+static lbm_value ext_can_get_adc(lbm_value *args, lbm_uint argn) {
+	if (argn != 1 && argn != 2) {
+		return ENC_SYM_EERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	lbm_int channel = 0;
+	if (argn == 2) {
+		channel = lbm_dec_as_i32(args[1]);
+	}
+
+	can_status_msg_6 *stat6 = comm_can_get_status_msg_6_id(lbm_dec_as_i32(args[0]));
+
+	if (stat6) {
+		if (channel == 0) {
+			return lbm_enc_float(stat6->adc_1);
+		} else if (channel == 1) {
+			return lbm_enc_float(stat6->adc_2);
+		} else if (channel == 2) {
+			return lbm_enc_float(stat6->adc_3);
+		} else {
+			return ENC_SYM_EERROR;
+		}
+	} else {
+		return lbm_enc_float(-1.0);
+	}
+}
+
+static int cmp_int (const void * a, const void * b) {
+	return ( *(int*)a - *(int*)b );
+}
+
+static lbm_value ext_can_list_devs(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	int dev_num = 0;
+	can_status_msg *msg = comm_can_get_status_msg_index(dev_num);
+
+	while (msg && msg->id >= 0) {
+		dev_num++;
+		msg = comm_can_get_status_msg_index(dev_num);
+	}
+
+	int devs[dev_num];
+
+	for (int i = 0;i < dev_num;i++) {
+		msg = comm_can_get_status_msg_index(i);
+		if (msg) {
+			devs[i] = msg->id;
+		} else {
+			devs[i] = -1;
+		}
+	}
+
+	qsort(devs, dev_num, sizeof(int), cmp_int);
+	lbm_value dev_list = ENC_SYM_NIL;
+
+	for (int i = (dev_num - 1);i >= 0;i--) {
+		if (devs[i] >= 0) {
+			dev_list = lbm_cons(lbm_enc_i(devs[i]), dev_list);
+		} else {
+			break;
+		}
+	}
+
+	return dev_list;
 }
 
 static lbm_value ext_can_scan(lbm_value *args, lbm_uint argn) {
@@ -952,6 +1223,72 @@ static lbm_value ext_plot_send_points(lbm_value *args, lbm_uint argn) {
 	commands_send_plot_points(
 			lbm_dec_as_float(args[0]),
 			lbm_dec_as_float(args[1]));
+	return ENC_SYM_TRUE;
+}
+
+// IO-boards
+
+static lbm_value ext_ioboard_get_adc(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int id = lbm_dec_as_i32(args[0]);
+	int channel = lbm_dec_as_i32(args[1]);
+
+	if (channel < 1 || channel > 8) {
+		lbm_set_error_reason("Channel must be 1 - 8");
+		return ENC_SYM_EERROR;
+	}
+
+	io_board_adc_values *val = 0;
+	if (channel >= 5) {
+		val = comm_can_get_io_board_adc_5_8_id(id);
+		channel -= 4;
+	} else {
+		val = comm_can_get_io_board_adc_1_4_id(id);
+	}
+
+	if (val) {
+		return lbm_enc_float(val->adc_voltages[channel - 1]);
+	} else {
+		return lbm_enc_float(-1.0);
+	}
+}
+
+static lbm_value ext_ioboard_get_digital(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int id = lbm_dec_as_i32(args[0]);
+	int channel = lbm_dec_as_i32(args[1]);
+
+	if (channel < 1 || channel > 64) {
+		lbm_set_error_reason("Channel must be 1 - 64");
+		return ENC_SYM_EERROR;
+	}
+
+	io_board_digial_inputs *val = comm_can_get_io_board_digital_in_id(id);
+
+	if (val) {
+		return lbm_enc_i(val->inputs >> (channel - 1));
+	} else {
+		return lbm_enc_i(-1);
+	}
+}
+
+static lbm_value ext_ioboard_set_digital(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(3);
+	int id = lbm_dec_as_i32(args[0]);
+	int channel = lbm_dec_as_i32(args[1]);
+	bool on = lbm_dec_as_i32(args[2]);
+	comm_can_io_board_set_output_digital(id, channel, on);
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_ioboard_set_pwm(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(3);
+	int id = lbm_dec_as_i32(args[0]);
+	int channel = lbm_dec_as_i32(args[1]);
+	float duty = lbm_dec_as_float(args[2]);
+	comm_can_io_board_set_output_pwm(id, channel, duty);
 	return ENC_SYM_TRUE;
 }
 
@@ -1815,11 +2152,30 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("main-init-done", ext_main_init_done);
 	lbm_add_extension("crc16", ext_crc16);
 
+	// EEPROM
+	lbm_add_extension("eeprom-store-f", ext_eeprom_store_f);
+	lbm_add_extension("eeprom-read-f", ext_eeprom_read_f);
+	lbm_add_extension("eeprom-store-i", ext_eeprom_store_i);
+	lbm_add_extension("eeprom-read-i", ext_eeprom_read_i);
+
 	// CAN-comands
 	lbm_add_extension("can-scan", ext_can_scan);
 	lbm_add_extension("can-send-sid", ext_can_send_sid);
 	lbm_add_extension("can-send-eid", ext_can_send_eid);
 	lbm_add_extension("can-cmd", ext_can_cmd);
+	lbm_add_extension("can-list-devs", ext_can_list_devs);
+
+	lbm_add_extension("canget-current", ext_can_get_current);
+	lbm_add_extension("canget-current-dir", ext_can_get_current_dir);
+	lbm_add_extension("canget-current-in", ext_can_get_current_in);
+	lbm_add_extension("canget-duty", ext_can_get_duty);
+	lbm_add_extension("canget-rpm", ext_can_get_rpm);
+	lbm_add_extension("canget-temp-fet", ext_can_get_temp_fet);
+	lbm_add_extension("canget-temp-motor", ext_can_get_temp_motor);
+	lbm_add_extension("canget-speed", ext_can_get_speed);
+	lbm_add_extension("canget-dist", ext_can_get_dist);
+	lbm_add_extension("canget-ppm", ext_can_get_ppm);
+	lbm_add_extension("canget-adc", ext_can_get_adc);
 
 	lbm_add_extension("canset-current", ext_can_current);
 	lbm_add_extension("canset-current-rel", ext_can_current_rel);
@@ -1859,6 +2215,12 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("plot-set-graph", ext_plot_set_graph);
 	lbm_add_extension("plot-send-points", ext_plot_send_points);
 
+	// IO-boards
+	lbm_add_extension("ioboard-get-adc", ext_ioboard_get_adc);
+	lbm_add_extension("ioboard-get-digital", ext_ioboard_get_digital);
+	lbm_add_extension("ioboard-set-digital", ext_ioboard_set_digital);
+	lbm_add_extension("ioboard-set-pwm", ext_ioboard_set_pwm);
+
 	// ESP NOW
 	lbm_add_extension("esp-now-start", ext_esp_now_start);
 	lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
@@ -1875,17 +2237,15 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("rgbled-color", ext_rgbled_color);
 
 	// TODO:
-	// - can-get
-	// - eeprom
-	// - io-board
 	// - logging
 	// - gnss
+	// - file system
 	// - uart?
 
 	// Extension libraries
 	lbm_array_extensions_init();
 	lbm_string_extensions_init();
-	lbm_math_extensions_init(); // These make the ESP crash for some reason...
+	lbm_math_extensions_init();
 
 	if (ext_callback) {
 		ext_callback();

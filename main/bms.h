@@ -1,5 +1,5 @@
 /*
-	Copyright 2020 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2020 - 2023 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 

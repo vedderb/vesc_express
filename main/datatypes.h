@@ -381,4 +381,74 @@ typedef enum {
 	CAN_PACKET_MAKE_ENUM_32_BITS = 0xFFFFFFFF,
 } CAN_PACKET_ID;
 
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float rpm;
+	float current;
+	float duty;
+} can_status_msg;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float amp_hours;
+	float amp_hours_charged;
+} can_status_msg_2;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float watt_hours;
+	float watt_hours_charged;
+} can_status_msg_3;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float temp_fet;
+	float temp_motor;
+	float current_in;
+	float pid_pos_now;
+} can_status_msg_4;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float v_in;
+	int32_t tacho_value;
+} can_status_msg_5;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float adc_1;
+	float adc_2;
+	float adc_3;
+	float ppm;
+} can_status_msg_6;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float adc_voltages[4];
+} io_board_adc_values;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	uint64_t inputs;
+} io_board_digial_inputs;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float v_in;
+	float v_out;
+	float temp;
+	bool is_out_on;
+	bool is_pch_on;
+	bool is_dsc_on;
+} psw_status;
+
 #endif /* MAIN_DATATYPES_H_ */

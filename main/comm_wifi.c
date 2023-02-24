@@ -345,13 +345,13 @@ void comm_wifi_init(void) {
 	if (backup.config.use_tcp_local) {
 		comm_local.packet = calloc(1, sizeof(PACKET_STATE_t));
 		packet_init(comm_wifi_send_raw_local, process_packet_local, comm_local.packet);
-		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", 3072, NULL, 8, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", 3500, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
 	if (backup.config.use_tcp_hub) {
 		comm_hub.packet = calloc(1, sizeof(PACKET_STATE_t));
 		packet_init(comm_wifi_send_raw_hub, process_packet_hub, comm_hub.packet);
-		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 3072, NULL, 8, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 3500, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
 	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 1024, NULL, 8, NULL, tskNO_AFFINITY);

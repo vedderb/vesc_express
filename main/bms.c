@@ -1,5 +1,5 @@
 /*
-	Copyright 2020 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2020 - 2023 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -16,13 +16,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
-
-/**
- * This is the BMS module of the VESC firmware. It mainly supports the VESC BMS, but
- * the intention is to have it extendible to other BMSs too. The first step is
- * to add the BMS you want to support to the BMS_TYPE enum, and then you need to update
- * this module to interpret CAN-messages from it properly.
- */
 
 #include "bms.h"
 #include "buffer.h"

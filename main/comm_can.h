@@ -22,6 +22,8 @@
 
 #include "datatypes.h"
 
+#define CAN_STATUS_MSGS_TO_STORE	10
+
 // Functions
 void comm_can_init(void);
 void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len);
@@ -40,5 +42,32 @@ void comm_can_set_current_rel_off_delay(uint8_t controller_id, float current_rel
 void comm_can_set_current_brake_rel(uint8_t controller_id, float current_rel);
 void comm_can_set_handbrake(uint8_t controller_id, float current);
 void comm_can_set_handbrake_rel(uint8_t controller_id, float current_rel);
+
+can_status_msg *comm_can_get_status_msg_index(int index);
+can_status_msg *comm_can_get_status_msg_id(int id);
+can_status_msg_2 *comm_can_get_status_msg_2_index(int index);
+can_status_msg_2 *comm_can_get_status_msg_2_id(int id);
+can_status_msg_3 *comm_can_get_status_msg_3_index(int index);
+can_status_msg_3 *comm_can_get_status_msg_3_id(int id);
+can_status_msg_4 *comm_can_get_status_msg_4_index(int index);
+can_status_msg_4 *comm_can_get_status_msg_4_id(int id);
+can_status_msg_5 *comm_can_get_status_msg_5_index(int index);
+can_status_msg_5 *comm_can_get_status_msg_5_id(int id);
+can_status_msg_6 *comm_can_get_status_msg_6_index(int index);
+can_status_msg_6 *comm_can_get_status_msg_6_id(int id);
+
+io_board_adc_values *comm_can_get_io_board_adc_1_4_index(int index);
+io_board_adc_values *comm_can_get_io_board_adc_1_4_id(int id);
+io_board_adc_values *comm_can_get_io_board_adc_5_8_index(int index);
+io_board_adc_values *comm_can_get_io_board_adc_5_8_id(int id);
+io_board_digial_inputs *comm_can_get_io_board_digital_in_index(int index);
+io_board_digial_inputs *comm_can_get_io_board_digital_in_id(int id);
+void comm_can_io_board_set_output_digital(int id, int channel, bool on);
+void comm_can_io_board_set_output_pwm(int id, int channel, float duty);
+
+psw_status *comm_can_get_psw_status_index(int index);
+psw_status *comm_can_get_psw_status_id(int id);
+void comm_can_psw_switch(int id, bool is_on, bool plot);
+void comm_can_update_pid_pos_offset(int id, float angle_now, bool store);
 
 #endif /* MAIN_COMM_CAN_H_ */
