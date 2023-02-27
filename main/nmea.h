@@ -32,6 +32,7 @@ typedef struct {
 	int fix_type;
 	float h_dop;
 	float diff_age;
+	uint32_t update_time;
 } nmea_gga_info_t;
 
 typedef struct {
@@ -51,6 +52,7 @@ typedef struct {
 	int sat_last;
 	int sat_num_base;
 	nmea_gsv_sat_t sats[32];
+	uint32_t update_time;
 } nmea_gsv_info_t;
 
 typedef struct {
@@ -63,6 +65,7 @@ typedef struct {
 	int mo; // Month
 	int dd; // Day
 	float speed; // Ground speed, meters per second
+	uint32_t update_time;
 } nmea_rmc_info_t;
 
 typedef struct {

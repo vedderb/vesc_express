@@ -36,6 +36,7 @@
 #include "rb.h"
 #include "crc.h"
 #include "bms.h"
+#include "nmea.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -2114,6 +2115,55 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_gnss_lat_lon(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	nmea_state_t *s = nmea_get_state();
+
+	lbm_value lat_lon = ENC_SYM_NIL;
+	lat_lon = lbm_cons(lbm_enc_double(s->gga.lon), lat_lon);
+	lat_lon = lbm_cons(lbm_enc_double(s->gga.lat), lat_lon);
+
+	return lat_lon;
+}
+
+static lbm_value ext_gnss_height(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return lbm_enc_float(nmea_get_state()->gga.height);
+}
+
+static lbm_value ext_gnss_speed(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return lbm_enc_float(nmea_get_state()->rmc.speed);
+}
+
+static lbm_value ext_gnss_hdop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return lbm_enc_float(nmea_get_state()->gga.h_dop);
+}
+
+static lbm_value ext_gnss_date_time(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	nmea_state_t *s = nmea_get_state();
+
+	lbm_value lat_lon = ENC_SYM_NIL;
+	lat_lon = lbm_cons(lbm_enc_i(s->rmc.ms), lat_lon);
+	lat_lon = lbm_cons(lbm_enc_i(s->rmc.ss), lat_lon);
+	lat_lon = lbm_cons(lbm_enc_i(s->rmc.mm), lat_lon);
+	lat_lon = lbm_cons(lbm_enc_i(s->rmc.hh), lat_lon);
+	lat_lon = lbm_cons(lbm_enc_i(s->rmc.dd), lat_lon);
+	lat_lon = lbm_cons(lbm_enc_i(s->rmc.mo), lat_lon);
+	lat_lon = lbm_cons(lbm_enc_i(s->rmc.yy), lat_lon);
+
+	return lat_lon;
+}
+
+static lbm_value ext_gnss_age(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return lbm_enc_float(UTILS_AGE_S(nmea_get_state()->gga.update_time));
+}
+
 static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 	(void)args;(void)argn;
 	return ENC_SYM_TRUE;
@@ -2236,9 +2286,16 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
 	lbm_add_extension("rgbled-color", ext_rgbled_color);
 
+	// GNSS
+	lbm_add_extension("gnss-lat-lon", ext_gnss_lat_lon);
+	lbm_add_extension("gnss-height", ext_gnss_height);
+	lbm_add_extension("gnss-speed", ext_gnss_speed);
+	lbm_add_extension("gnss-hdop", ext_gnss_hdop);
+	lbm_add_extension("gnss-date-time", ext_gnss_date_time);
+	lbm_add_extension("gnss-age", ext_gnss_age);
+
 	// TODO:
 	// - logging
-	// - gnss
 	// - file system
 	// - uart?
 

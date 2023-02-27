@@ -23,6 +23,7 @@
 #include <stdio.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // For double precision literals
 #define D(x) 						((double)x##L)
@@ -72,23 +73,27 @@ bool nmea_decode_string(const char *data) {
 	int rmc_res = nmea_decode_rmc(data, &(m_state.rmc));
 
 	if (gga_res >= 0) {
+		m_state.gga.update_time = xTaskGetTickCount();
 		m_state.gga_cnt++;
 		ok = true;
 	}
 
 	if (gpgsv_res == 1) {
 		nmea_sync_gsv_info(&(m_state.gsv), &gpgsv);
+		m_state.gsv.update_time = xTaskGetTickCount();
 		m_state.gsv_gp_cnt++;
 		ok = true;
 	}
 
 	if (glgsv_res == 1) {
 		nmea_sync_gsv_info(&(m_state.gsv), &glgsv);
+		m_state.gsv.update_time = xTaskGetTickCount();
 		m_state.gsv_gl_cnt++;
 		ok = true;
 	}
 
 	if (rmc_res >= 0) {
+		m_state.rmc.update_time = xTaskGetTickCount();
 		m_state.rmc_cnt++;
 		ok = true;
 	}
