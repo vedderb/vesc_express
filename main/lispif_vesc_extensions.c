@@ -37,6 +37,7 @@
 #include "crc.h"
 #include "bms.h"
 #include "nmea.h"
+#include "log_comm.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -197,6 +198,12 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 	}
 
 	return *comp == sym;
+}
+
+static bool is_symbol_true_false(lbm_value v) {
+	bool res = lbm_is_symbol_true(v) || lbm_is_symbol_nil(v);
+	lbm_set_error_reason("Argument must be t or nil (true or false)");
+	return res;
 }
 
 // Various commands
@@ -2115,6 +2122,183 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// Logging
+
+static lbm_value ext_log_start(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(5);
+
+	if (!lbm_is_number(args[0]) ||
+			!lbm_is_number(args[1]) ||
+			!lbm_is_number(args[2]) ||
+			!is_symbol_true_false(args[3]) ||
+			!is_symbol_true_false(args[4])) {
+		return ENC_SYM_EERROR;
+	}
+
+	log_comm_start(
+			lbm_dec_as_i32(args[0]),
+			lbm_dec_as_i32(args[1]),
+			lbm_dec_as_float(args[2]),
+			lbm_is_symbol_true(args[3]),
+			lbm_is_symbol_true(args[4]),
+			lbm_is_symbol_true(args[4]));
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_log_stop(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+	log_comm_stop(lbm_dec_as_i32(args[0]));
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_log_config_field(lbm_value *args, lbm_uint argn) {
+	if (argn != 8) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_EERROR;
+	}
+
+	int arg_now = 0;
+
+	int can_id = -1;
+	if (lbm_is_number(args[arg_now])) {
+		can_id = lbm_dec_as_i32(args[arg_now++]);
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	int field_ind = -1;
+	if (lbm_is_number(args[arg_now])) {
+		field_ind = lbm_dec_as_i32(args[arg_now++]);
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	char *key = lbm_dec_str(args[arg_now++]);
+	if (key == NULL) {
+		return ENC_SYM_EERROR;
+	}
+
+	char *name = lbm_dec_str(args[arg_now++]);
+	if (name == NULL) {
+		return ENC_SYM_EERROR;
+	}
+
+	char *unit = lbm_dec_str(args[arg_now++]);
+	if (unit == NULL) {
+		return ENC_SYM_EERROR;
+	}
+
+	int precision = -1;
+	if (lbm_is_number(args[arg_now])) {
+		precision = lbm_dec_as_i32(args[arg_now++]);
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	bool is_relative = false;
+	if (is_symbol_true_false(args[arg_now])) {
+		is_relative = lbm_is_symbol_true(args[arg_now++]);
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	bool is_timestamp = false;
+	if (is_symbol_true_false(args[arg_now])) {
+		is_timestamp = lbm_is_symbol_true(args[arg_now++]);
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	log_comm_config_field(can_id, field_ind, key, name, unit, precision, is_relative, is_timestamp);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value log_send_fxx(bool is_64, lbm_value *args, lbm_uint argn) {
+	unsigned int arg_now = 0;
+
+	int can_id = -1;
+	if (lbm_is_number(args[arg_now])) {
+		can_id = lbm_dec_as_i32(args[arg_now++]);
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	int field_start = -1;
+	if (lbm_is_number(args[arg_now])) {
+		field_start = lbm_dec_as_i32(args[arg_now++]);
+	} else {
+		return ENC_SYM_EERROR;
+	}
+
+	int32_t ind = 0;
+	uint8_t *buffer = mempools_get_packet_buffer();
+
+	buffer[ind++] = is_64 ? COMM_LOG_DATA_F64 : COMM_LOG_DATA_F32;
+	buffer_append_int16(buffer, field_start, &ind);
+
+	int append_cnt = 0;
+	int append_max = is_64 ? 50 : 100;
+
+	while (arg_now < argn) {
+		if (lbm_is_number(args[arg_now])) {
+			if (is_64) {
+				buffer_append_float64_auto(buffer, lbm_dec_as_double(args[arg_now]), &ind);
+			} else {
+				buffer_append_float32_auto(buffer, lbm_dec_as_float(args[arg_now]), &ind);
+			}
+			append_cnt++;
+			if (append_cnt >= append_max) {
+				mempools_free_packet_buffer(buffer);
+				return ENC_SYM_EERROR;
+			}
+		} else if (lbm_is_cons(args[arg_now])) {
+			lbm_value curr = args[arg_now];
+			while (lbm_is_cons(curr)) {
+				lbm_value  val = lbm_car(curr);
+				if (lbm_is_number(val)) {
+					if (is_64) {
+						buffer_append_float64_auto(buffer, lbm_dec_as_double(val), &ind);
+					} else {
+						buffer_append_float32_auto(buffer, lbm_dec_as_float(val), &ind);
+					}
+					append_cnt++;
+					if (append_cnt >= append_max) {
+						mempools_free_packet_buffer(buffer);
+						return ENC_SYM_EERROR;
+					}
+				} else {
+					mempools_free_packet_buffer(buffer);
+					return ENC_SYM_EERROR;
+				}
+
+				curr = lbm_cdr(curr);
+			}
+		} else {
+			mempools_free_packet_buffer(buffer);
+			return ENC_SYM_EERROR;
+		}
+		arg_now++;
+	}
+
+	log_comm_send(can_id, buffer, ind);
+
+	mempools_free_packet_buffer(buffer);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_log_send_f32(lbm_value *args, lbm_uint argn) {
+	return log_send_fxx(false, args, argn);
+}
+
+static lbm_value ext_log_send_f64(lbm_value *args, lbm_uint argn) {
+	return log_send_fxx(true, args, argn);
+}
+
+// GNSS
+
 static lbm_value ext_gnss_lat_lon(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
@@ -2286,6 +2470,13 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
 	lbm_add_extension("rgbled-color", ext_rgbled_color);
 
+	// Logging
+	lbm_add_extension("log-start", ext_log_start);
+	lbm_add_extension("log-stop", ext_log_stop);
+	lbm_add_extension("log-config-field", ext_log_config_field);
+	lbm_add_extension("log-send-f32", ext_log_send_f32);
+	lbm_add_extension("log-send-f64", ext_log_send_f64);
+
 	// GNSS
 	lbm_add_extension("gnss-lat-lon", ext_gnss_lat_lon);
 	lbm_add_extension("gnss-height", ext_gnss_height);
@@ -2295,7 +2486,6 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("gnss-age", ext_gnss_age);
 
 	// TODO:
-	// - logging
 	// - file system
 	// - uart?
 

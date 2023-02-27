@@ -29,11 +29,7 @@
 #define D(x) 						((double)x##L)
 
 // Private variables
-static char m_str_tmp[512];
 static nmea_state_t m_state = {0};
-
-// Private functions
-static double nmea_parse_val(char *str);
 
 void nmea_init(void) {
 	m_state.rmc.hh = -1;
@@ -101,6 +97,34 @@ bool nmea_decode_string(const char *data) {
 	return ok;
 }
 
+static bool nmea_parse_val(char *str, double *val) {
+	int ind = -1;
+	int len = strlen(str);
+	bool retval = false;
+
+	for (int i = 2;i < len;i++) {
+		if (str[i] == '.') {
+			ind = i - 2;
+			break;
+		}
+	}
+
+	if (ind >= 0) {
+		char a[len + 1];
+		memcpy(a, str, ind);
+		a[ind] = ' ';
+		memcpy(a + ind + 1, str + ind, len - ind);
+
+		double l1, l2;
+		if (sscanf(a, "%lf %lf", &l1, &l2) == 2) {
+			*val = l1 + l2 / D(60.0);
+			retval = true;
+		}
+	}
+
+	return retval;
+}
+
 /**
  * Decode NMEA GGA message.
  *
@@ -128,6 +152,7 @@ int nmea_decode_gga(const char *data, nmea_gga_info_t *gga) {
 
 	bool found = false;
 	int len = strlen(data);
+	char *str_tmp = malloc(len + 1);
 
 	for (int i = 0;i < 10;i++) {
 		if ((i + 5) >= len) {
@@ -139,7 +164,7 @@ int nmea_decode_gga(const char *data, nmea_gga_info_t *gga) {
 				data[i + 2] == 'A' &&
 				data[i + 3] == ',') {
 			found = true;
-			strcpy(m_str_tmp, data + i + 4);
+			strcpy(str_tmp, data + i + 4);
 			break;
 		}
 	}
@@ -148,7 +173,7 @@ int nmea_decode_gga(const char *data, nmea_gga_info_t *gga) {
 		char *token, *str;
 		int ind = 0;
 
-		str = m_str_tmp;
+		str = str_tmp;
 		token = strsep(&str, ",");
 
 		while (token != 0) {
@@ -174,8 +199,9 @@ int nmea_decode_gga(const char *data, nmea_gga_info_t *gga) {
 
 			case 1: {
 				// Latitude
-				dec_fields++;
-				lat = nmea_parse_val(token);
+				if (nmea_parse_val(token, &lat)) {
+					dec_fields++;
+				}
 			} break;
 
 			case 2:
@@ -188,8 +214,9 @@ int nmea_decode_gga(const char *data, nmea_gga_info_t *gga) {
 
 			case 3: {
 				// Longitude
-				dec_fields++;
-				lon = nmea_parse_val(token);
+				if (nmea_parse_val(token, &lon)) {
+					dec_fields++;
+				}
 			} break;
 
 			case 4:
@@ -210,25 +237,22 @@ int nmea_decode_gga(const char *data, nmea_gga_info_t *gga) {
 
 			case 6:
 				// Satellites
-				dec_fields++;
-				if (sscanf(token, "%d", &sats) != 1) {
-					sats = 0;
+				if (sscanf(token, "%d", &sats) == 1) {
+					dec_fields++;
 				}
 				break;
 
 			case 7:
 				// hdop
-				dec_fields++;
-				if (sscanf(token, "%f", &hdop) != 1) {
-					hdop = 0.0;
+				if (sscanf(token, "%f", &hdop) == 1) {
+					dec_fields++;
 				}
 				break;
 
 			case 8:
 				// Altitude
-				dec_fields++;
-				if (sscanf(token, "%lf", &height) != 1) {
-					height = 0.0;
+				if (sscanf(token, "%lf", &height) == 1) {
+					dec_fields++;
 				}
 				break;
 
@@ -261,6 +285,8 @@ int nmea_decode_gga(const char *data, nmea_gga_info_t *gga) {
 	} else {
 		dec_fields = -1;
 	}
+
+	free(str_tmp);
 
 	// 64-bit writes are not atomic
 	portDISABLE_INTERRUPTS();
@@ -304,6 +330,7 @@ int nmea_decode_gsv(const char *system_str, const char *data, nmea_gsv_info_t *g
 
 	bool found = false;
 	int len = strlen(data);
+	char *str_tmp = malloc(len + 1);
 
 	for (int i = 0;i < 10;i++) {
 		if ((i + 7) >= len) {
@@ -317,7 +344,7 @@ int nmea_decode_gsv(const char *system_str, const char *data, nmea_gsv_info_t *g
 				data[i + 4] == 'V' &&
 				data[i + 5] == ',') {
 			found = true;
-			strcpy(m_str_tmp, data + i + 6);
+			strcpy(str_tmp, data + i + 6);
 			break;
 		}
 	}
@@ -326,7 +353,7 @@ int nmea_decode_gsv(const char *system_str, const char *data, nmea_gsv_info_t *g
 		char *token, *str;
 		int ind = 0;
 
-		str = m_str_tmp;
+		str = str_tmp;
 		token = strsep(&str, ",");
 
 		while (token !=0) {
@@ -416,6 +443,8 @@ int nmea_decode_gsv(const char *system_str, const char *data, nmea_gsv_info_t *g
 		retval = -1;
 	}
 
+	free(str_tmp);
+
 	return retval;
 }
 
@@ -473,6 +502,7 @@ int nmea_decode_rmc(const char *data, nmea_rmc_info_t *rmc) {
 
 	bool found = false;
 	int len = strlen(data);
+	char *str_tmp = malloc(len + 1);
 
 	for (int i = 0;i < 10;i++) {
 		if ((i + 5) >= len) {
@@ -484,7 +514,7 @@ int nmea_decode_rmc(const char *data, nmea_rmc_info_t *rmc) {
 				data[i + 2] == 'C' &&
 				data[i + 3] == ',') {
 			found = true;
-			strcpy(m_str_tmp, data + i + 4);
+			strcpy(str_tmp, data + i + 4);
 			break;
 		}
 	}
@@ -493,7 +523,7 @@ int nmea_decode_rmc(const char *data, nmea_rmc_info_t *rmc) {
 		char *token, *str;
 		int ind = 0;
 
-		str = m_str_tmp;
+		str = str_tmp;
 		token = strsep(&str, ",");
 
 		while (token != 0) {
@@ -546,32 +576,7 @@ int nmea_decode_rmc(const char *data, nmea_rmc_info_t *rmc) {
 	rmc->dd = dd;
 	rmc->speed = speed;
 
+	free(str_tmp);
+
 	return dec_fields;
-}
-
-static double nmea_parse_val(char *str) {
-	int ind = -1;
-	int len = strlen(str);
-	double retval = D(0.0);
-
-	for (int i = 2;i < len;i++) {
-		if (str[i] == '.') {
-			ind = i - 2;
-			break;
-		}
-	}
-
-	if (ind >= 0) {
-		char a[len + 1];
-		memcpy(a, str, ind);
-		a[ind] = ' ';
-		memcpy(a + ind + 1, str + ind, len - ind);
-
-		double l1, l2;
-		if (sscanf(a, "%lf %lf", &l1, &l2) == 2) {
-			retval = l1 + l2 / D(60.0);
-		}
-	}
-
-	return retval;
 }
