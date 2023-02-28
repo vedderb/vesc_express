@@ -48,6 +48,10 @@
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
 #include "nvs_flash.h"
+#include "esp_sleep.h"
+#include "soc/rtc.h"
+#include "esp_bt.h"
+#include "esp_bt_main.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -2400,6 +2404,41 @@ static lbm_value ext_gnss_age(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float(UTILS_AGE_S(nmea_get_state()->gga.update_time));
 }
 
+static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	esp_bluedroid_disable();
+	esp_bt_controller_disable();
+	esp_wifi_stop();
+
+	float sleep_time = lbm_dec_as_float(args[0]);
+	if (sleep_time > 0) {
+		esp_sleep_enable_timer_wakeup((uint32_t)(sleep_time * 1.0e6));
+	}
+
+	esp_deep_sleep_start();
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int pin = lbm_dec_as_i32(args[0]);
+	int mode = lbm_dec_as_i32(args[1]);
+
+	if (!gpio_is_valid(pin) || !esp_sleep_is_valid_wakeup_gpio(pin)) {
+		lbm_set_error_reason(pin_invalid_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	gpio_set_direction(pin, GPIO_MODE_INPUT);
+	esp_deep_sleep_enable_gpio_wakeup(1 << pin,
+			mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
+
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 	(void)args;(void)argn;
 	return ENC_SYM_TRUE;
@@ -2538,6 +2577,10 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("gnss-hdop", ext_gnss_hdop);
 	lbm_add_extension("gnss-date-time", ext_gnss_date_time);
 	lbm_add_extension("gnss-age", ext_gnss_age);
+
+	// Sleep
+	lbm_add_extension("sleep-deep", ext_sleep_deep);
+	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
 
 	// TODO:
 	// - file system
