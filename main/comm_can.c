@@ -37,6 +37,18 @@
 
 #include <string.h>
 
+// Status messages
+static can_status_msg stat_msgs[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_2 stat_msgs_2[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_3 stat_msgs_3[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_4 stat_msgs_4[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_5 stat_msgs_5[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_6 stat_msgs_6[CAN_STATUS_MSGS_TO_STORE];
+static io_board_adc_values io_board_adc_1_4[CAN_STATUS_MSGS_TO_STORE];
+static io_board_adc_values io_board_adc_5_8[CAN_STATUS_MSGS_TO_STORE];
+static io_board_digial_inputs io_board_digital_in[CAN_STATUS_MSGS_TO_STORE];
+static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
+
 #ifdef CAN_TX_GPIO_NUM
 #define RX_BUFFER_NUM				2
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
@@ -51,18 +63,6 @@ static volatile HW_TYPE ping_hw_last = HW_TYPE_VESC;
 uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
 int rx_buffer_offset[RX_BUFFER_NUM];
 static unsigned int rx_buffer_last_id;
-
-// Status messages
-static can_status_msg stat_msgs[CAN_STATUS_MSGS_TO_STORE];
-static can_status_msg_2 stat_msgs_2[CAN_STATUS_MSGS_TO_STORE];
-static can_status_msg_3 stat_msgs_3[CAN_STATUS_MSGS_TO_STORE];
-static can_status_msg_4 stat_msgs_4[CAN_STATUS_MSGS_TO_STORE];
-static can_status_msg_5 stat_msgs_5[CAN_STATUS_MSGS_TO_STORE];
-static can_status_msg_6 stat_msgs_6[CAN_STATUS_MSGS_TO_STORE];
-static io_board_adc_values io_board_adc_1_4[CAN_STATUS_MSGS_TO_STORE];
-static io_board_adc_values io_board_adc_5_8[CAN_STATUS_MSGS_TO_STORE];
-static io_board_digial_inputs io_board_digital_in[CAN_STATUS_MSGS_TO_STORE];
-static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 
 // Private functions
 static void update_baud(CAN_BAUD baudrate);
@@ -584,6 +584,21 @@ static void update_baud(CAN_BAUD baudrate) {
 #endif
 
 void comm_can_init(void) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		stat_msgs[i].id = -1;
+		stat_msgs_2[i].id = -1;
+		stat_msgs_3[i].id = -1;
+		stat_msgs_4[i].id = -1;
+		stat_msgs_5[i].id = -1;
+		stat_msgs_6[i].id = -1;
+
+		io_board_adc_1_4[i].id = -1;
+		io_board_adc_5_8[i].id = -1;
+		io_board_digital_in[i].id = -1;
+
+		psw_stat[i].id = -1;
+	}
+
 #ifdef CAN_TX_GPIO_NUM
 	ping_sem = xSemaphoreCreateBinary();
 	proc_sem = xSemaphoreCreateBinary();
