@@ -92,6 +92,12 @@ typedef struct {
 	lbm_uint pin_mode_in_pd;
 	lbm_uint pin_mode_analog;
 
+	// Sysinfo
+	lbm_uint hw_name;
+	lbm_uint fw_ver;
+	lbm_uint uuid;
+	lbm_uint hw_type;
+
 	// Rates
 	lbm_uint rate_100k;
 	lbm_uint rate_200k;
@@ -180,6 +186,16 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			get_add_symbol("pin-mode-in-pd", comp);
 		} else if (comp == &syms_vesc.pin_mode_analog) {
 			get_add_symbol("pin-mode-analog", comp);
+		}
+
+		else if (comp == &syms_vesc.hw_name) {
+			get_add_symbol("hw-name", comp);
+		} else if (comp == &syms_vesc.fw_ver) {
+			get_add_symbol("fw-ver", comp);
+		} else if (comp == &syms_vesc.uuid) {
+			get_add_symbol("uuid", comp);
+		} else if (comp == &syms_vesc.hw_type) {
+			get_add_symbol("hw-type", comp);
 		}
 
 		else if (comp == &syms_vesc.rate_100k) {
@@ -576,6 +592,42 @@ static lbm_value ext_eeprom_read_i(lbm_value *args, lbm_uint argn) {
 	eeprom_var v;
 	bool res = read_eeprom_var(&v, addr);
 	return res ? lbm_enc_i32(v.as_i32) : ENC_SYM_NIL;
+}
+
+static lbm_uint sym_hw_express;
+
+static lbm_value ext_sysinfo(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_EERROR;
+
+	if (argn != 1) {
+		return res;
+	}
+
+	if (lbm_type_of(args[0]) != LBM_TYPE_SYMBOL) {
+		return res;
+	}
+
+	lbm_uint name = lbm_dec_sym(args[0]);
+
+	if (compare_symbol(name, &syms_vesc.hw_name)) {
+		lbm_value lbm_res;
+		if (lbm_create_array(&lbm_res, LBM_TYPE_CHAR, strlen(HW_NAME) + 1)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(lbm_res);
+			strcpy((char*)arr->data, HW_NAME);
+			res = lbm_res;
+		} else {
+			res = ENC_SYM_MERROR;
+		}
+	} else if (compare_symbol(name, &syms_vesc.fw_ver)) {
+		res = ENC_SYM_NIL;
+		res = lbm_cons(lbm_enc_i(FW_TEST_VERSION_NUMBER), res);
+		res = lbm_cons(lbm_enc_i(FW_VERSION_MINOR), res);
+		res = lbm_cons(lbm_enc_i(FW_VERSION_MAJOR), res);
+	} else if (compare_symbol(name, &syms_vesc.hw_type)) {
+		res = lbm_enc_sym(sym_hw_express);
+	}
+
+	return res;
 }
 
 static lbm_value ext_can_cmd(lbm_value *args, lbm_uint argn) {
@@ -2359,6 +2411,7 @@ void lispif_load_vesc_extensions(void) {
 		i2c_mutex_init_done = true;
 	}
 
+	lbm_add_symbol_const("hw-express", &sym_hw_express);
 	lbm_add_symbol_const("event-can-sid", &sym_event_can_sid);
 	lbm_add_symbol_const("event-can-eid", &sym_event_can_eid);
 	lbm_add_symbol_const("event-data-rx", &sym_event_data_rx);
@@ -2382,6 +2435,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("secs-since", ext_secs_since);
 	lbm_add_extension("event-enable", ext_enable_event);
 	lbm_add_extension("send-data", ext_send_data);
+	lbm_add_extension("sysinfo", ext_sysinfo);
 	lbm_add_extension("import", ext_empty);
 	lbm_add_extension("main-init-done", ext_main_init_done);
 	lbm_add_extension("crc16", ext_crc16);
