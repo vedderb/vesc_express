@@ -24,6 +24,7 @@
 #include "extensions/array_extensions.h"
 #include "extensions/string_extensions.h"
 #include "extensions/math_extensions.h"
+#include "lispif_disp_extensions.h"
 #include "lbm_constants.h"
 
 #include "commands.h"
@@ -1721,6 +1722,9 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("rgbled-init", ext_rgbled_init);
 	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
 	lbm_add_extension("rgbled-color", ext_rgbled_color);
+
+	// Disp extensions
+	lispif_load_disp_extensions();
 
 	// Extension libraries
 	lbm_array_extensions_init();
