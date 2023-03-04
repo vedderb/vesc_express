@@ -43,10 +43,6 @@
 #define SET_DATA_COMMAND() 	    (DISP_REG_SET = 1 << GPIO_DISP_DATA_COMMAND)
 #define CLEAR_DATA_COMMAND() 	(DISP_REG_CLR = 1 << GPIO_DISP_DATA_COMMAND)
 
-#define TRANS_1 GPIO_NUM_8
-#define TRANS_2 GPIO_NUM_1
-#define BUF_SWITCH 10
-
 void init_gpio(void) {
 	gpio_reset_pin(GPIO_DISP_RESET);
 	gpio_reset_pin(GPIO_DISP_SPI_MOSI);
@@ -59,9 +55,6 @@ void init_gpio(void) {
 	gpconf.pin_bit_mask =
 			BIT(GPIO_DISP_RESET) |
 			BIT(GPIO_DISP_DATA_COMMAND) |
-			BIT(TRANS_1) |
-			BIT(TRANS_2) |
-			BIT(BUF_SWITCH) |
 			0;
 	gpconf.mode = GPIO_MODE_OUTPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_ENABLE;
@@ -70,10 +63,6 @@ void init_gpio(void) {
 	gpio_config(&gpconf);
 
 	CLEAR_DATA_COMMAND();
-	gpio_set_level(TRANS_1,0);
-	gpio_set_level(TRANS_2,0);
-	gpio_set_level(BUF_SWITCH,0);
-
 }
 
 static void disp_spi_tx_pre(spi_transaction_t *t)
@@ -98,7 +87,7 @@ void init_hwspi(void) {
 			.mode=0,                                
 			.spics_io_num=GPIO_DISP_SPI_CS,        
 			.flags = 0,
-			.queue_size=7,                          
+			.queue_size=1,
 			.pre_cb=disp_spi_tx_pre,               
 	};
 	spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
@@ -226,132 +215,82 @@ static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 #define DISP_DATA_BUFFER_SIZE 1024
 
 typedef struct data_stream_buffer_s {
-	uint8_t data[DISP_DATA_BUFFER_SIZE];
-	int     pos;
-	spi_transaction_t trans;
-	struct data_stream_buffer_s *next;
+    uint8_t data[DISP_DATA_BUFFER_SIZE];
+    int     pos;
+    spi_transaction_t trans;
+    struct data_stream_buffer_s *next;
 } data_stream_buffer_t;
 
-data_stream_buffer_t data_buffer[2];
+data_stream_buffer_t data_buffer[3];
 data_stream_buffer_t *active_buffer;
 
 static void disp_data_stream_init(void) {
-	data_buffer[0].pos = 0;
-	data_buffer[0].next = &data_buffer[1];
-	data_buffer[0].trans.length = DISP_DATA_BUFFER_SIZE * 8;
-	data_buffer[0].trans.tx_buffer = data_buffer[0].data;
-	data_buffer[0].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
-	data_buffer[0].trans.user = (void*)1;
-	data_buffer[1].pos = 0;
-	data_buffer[1].next = NULL;
-	data_buffer[1].trans.length = DISP_DATA_BUFFER_SIZE * 8;
-	data_buffer[1].trans.tx_buffer = data_buffer[1].data;
-	data_buffer[1].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
-	data_buffer[1].trans.user = (void*)1;
+    data_buffer[0].pos = 0;
+    data_buffer[0].trans.length = DISP_DATA_BUFFER_SIZE * 8;
+    data_buffer[0].trans.tx_buffer = data_buffer[0].data;
+    data_buffer[0].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
+    data_buffer[0].trans.user = (void*)1;
+    data_buffer[0].next = &data_buffer[1];
 
-	active_buffer = &data_buffer[0];
+    data_buffer[1].pos = 0;
+    data_buffer[1].trans.length = DISP_DATA_BUFFER_SIZE * 8;
+    data_buffer[1].trans.tx_buffer = data_buffer[1].data;
+    data_buffer[1].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
+    data_buffer[1].trans.user = (void*)1;
+    data_buffer[1].next = &data_buffer[2];
+
+    data_buffer[2].pos = 0;
+    data_buffer[2].trans.length = DISP_DATA_BUFFER_SIZE * 8;
+    data_buffer[2].trans.tx_buffer = data_buffer[2].data;
+    data_buffer[2].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
+    data_buffer[2].trans.user = (void*)1;
+    data_buffer[2].next = &data_buffer[0];
+
+    active_buffer = &data_buffer[0];
 }
 
-static uint32_t buffer0_cnt = 0;
-static uint32_t buffer1_cnt = 0;
-static uint32_t no_mem_err = 0;
-static uint32_t invalid_state_err = 0;
-static uint32_t other_err = 0;
+static void IRAM_ATTR disp_data_stream_write(uint8_t byte) {
+    active_buffer->data[active_buffer->pos++] = byte;
 
-static void IRAM_ATTR disp_data_stream_write(uint8_t byte, bool done) {
-
-	if (active_buffer == NULL) {
-		while (true) {
-
-			spi_transaction_t   *p;
-			esp_err_t r = spi_device_get_trans_result(spi, &p, 0);
-			if (r == ESP_OK) {
-				if (p == &data_buffer[0].trans) {
-					//commands_printf_lisp("buffer 0 done");
-					active_buffer = &data_buffer[0];
-					active_buffer->next = NULL;
-					active_buffer->pos = 0;
-					break;
-				} else if (p == &data_buffer[1].trans) {
-					//commands_printf_lisp("buffer 1 done");
-					active_buffer = &data_buffer[1];
-					active_buffer->next = NULL;
-					active_buffer->pos = 0;
-					break;
-				} else {
-					commands_printf_lisp("This should not happen");
-				}
-			}
-		}
-	}
-
-	active_buffer->data[active_buffer->pos++] = byte;
-	if (active_buffer->pos == DISP_DATA_BUFFER_SIZE) {
-		if (done) {
-			active_buffer->trans.flags = 0;
-		}
-
-		active_buffer->trans.length = DISP_DATA_BUFFER_SIZE * 8;
-		esp_err_t r = spi_device_queue_trans(spi, &active_buffer->trans, portMAX_DELAY);
-		if (r == ESP_ERR_NO_MEM) {
-			no_mem_err ++;
-		} else if (r == ESP_ERR_INVALID_STATE) {
-			invalid_state_err ++;
-		} else if (r != ESP_OK) {
-			other_err ++;
-		}
-		active_buffer = active_buffer->next;
-	} else if (done) {
-		active_buffer->trans.flags = 0;
-		active_buffer->trans.length = (active_buffer->pos) * 8;
-		if (active_buffer == &data_buffer[0]) {
-			gpio_set_level(TRANS_1, 1);
-		} else {
-			gpio_set_level(TRANS_2, 1);
-		}
-		spi_device_queue_trans(spi, &active_buffer->trans, portMAX_DELAY);
-		active_buffer = active_buffer->next;
-	}
+    if (active_buffer->pos == DISP_DATA_BUFFER_SIZE) {
+        active_buffer->trans.length = active_buffer->pos * 8;
+        active_buffer->pos = 0;
+        spi_device_queue_trans(spi, &active_buffer->trans, portMAX_DELAY);
+        active_buffer = active_buffer->next;
+    }
 }
 
+static void disp_data_stream_finish(void) {
+    spi_transaction_t *p;
+    spi_device_get_trans_result(spi, &p, 10);
+    //SET_CS();
+    gpio_set_level(GPIO_DISP_SPI_CS,1);
+}
 
 static void IRAM_ATTR blast_indexed2(uint8_t *data, uint32_t *color_map, uint32_t num_pix) {
-	uint16_t draw_buf[128];
+    uint16_t colors[2];
+    colors[0] = to_RGB565(color_map[0]);
+    colors[1] = to_RGB565(color_map[1]);
 
-	int blocks = num_pix >> 7;
-	int rest   = num_pix & 0x7F;
-	int pos = 0;
+    spi_device_acquire_bus(spi, portMAX_DELAY);
+    disp_data_stream_init();
+    disp_write_cmd(0x2C);
 
-	uint16_t colors[2];
-	colors[0] = to_RGB565(color_map[0]);
-	colors[1] = to_RGB565(color_map[1]);
+    for (int i = 0; i < num_pix; i ++) {
+        int byte = i >> 3;
+        int bit  = 7 - (i & 0x7);
+        if (data[byte] & (1 << bit)) {
+            disp_data_stream_write((uint8_t)(colors[1]));
+            disp_data_stream_write((uint8_t)(colors[1] >> 8));
+        } else {
+            disp_data_stream_write((uint8_t)(colors[0]));
+            disp_data_stream_write((uint8_t)(colors[0] >> 8));
+        }
+    }
 
-	spi_device_acquire_bus(spi, portMAX_DELAY);
-	disp_data_stream_init();
-	disp_write_cmd(0x2C);
+    disp_data_stream_finish();
 
-	for (int i = 0; i < num_pix -1; i ++) {
-		int byte = i >> 3;
-		int bit  = 7 - (i & 0x7);
-		if (data[byte] & (1 << bit)) {
-			disp_data_stream_write((uint8_t)(colors[1]),false);
-			disp_data_stream_write((uint8_t)(colors[1] >> 8),false);
-		} else {
-			disp_data_stream_write((uint8_t)(colors[0]),false);
-			disp_data_stream_write((uint8_t)(colors[0] >> 8),false);
-		}
-	}
-	int byte = (num_pix -1) >> 3;
-	int bit  = 7 - ((num_pix - 1) & 0x7);
-	if (data[byte] & (1 << bit)) {
-		disp_data_stream_write((uint8_t)(colors[1]),false);
-		disp_data_stream_write((uint8_t)(colors[1] >> 8),true);
-	} else {
-		disp_data_stream_write((uint8_t)(colors[0]),false);
-		disp_data_stream_write((uint8_t)(colors[0] >> 8),true);
-	}
-
-	spi_device_release_bus(spi);
+    spi_device_release_bus(spi);
 }
 
 static void IRAM_ATTR render_image_buffer(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y) {
