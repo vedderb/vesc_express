@@ -18,18 +18,18 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "hw_devkit_c3.h"
+#include "hw_devkit_c3_ili9341.h"
 #include "lispif.h"
 #include "lispbm.h"
 #include "lispif_disp_extensions.h"
 #include "commands.h"
+#include "hwspi.h"
 
 #include "soc/gpio_struct.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 
 #define GPIO_DISP_RESET        18
-#define GPIO_DISP_SPI_MISO     4
 #define GPIO_DISP_SPI_CLK      5
 #define GPIO_DISP_SPI_MOSI     6
 #define GPIO_DISP_DATA_COMMAND 7
@@ -53,6 +53,7 @@ void init_gpio(void) {
 	gpio_config_t gpconf = {0};
 
 	gpconf.pin_bit_mask =
+			BIT(GPIO_DISP_SPI_CS) |
 			BIT(GPIO_DISP_RESET) |
 			BIT(GPIO_DISP_DATA_COMMAND) |
 			0;
@@ -65,52 +66,12 @@ void init_gpio(void) {
 	CLEAR_DATA_COMMAND();
 }
 
-static void disp_spi_tx_pre(spi_transaction_t *t)
-{
-    int dc=(int)t->user;
-    gpio_set_level(GPIO_DISP_DATA_COMMAND, dc);
-}
-
-static spi_device_handle_t spi;
-
 void init_hwspi(void) {
-	spi_bus_config_t buscfg={
-			.miso_io_num=GPIO_DISP_SPI_MISO,
-			.mosi_io_num=GPIO_DISP_SPI_MOSI,
-			.sclk_io_num=GPIO_DISP_SPI_CLK,
-			.quadwp_io_num=-1,
-			.quadhd_io_num=-1,
-			.max_transfer_sz=16*320*2+8
-	};
-	spi_device_interface_config_t devcfg={
-			.clock_speed_hz=40*1000*1000,
-			.mode=0,                                
-			.spics_io_num=GPIO_DISP_SPI_CS,        
-			.flags = 0,
-			.queue_size=1,
-			.pre_cb=disp_spi_tx_pre,               
-	};
-	spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
-	spi_bus_add_device(SPI2_HOST, &devcfg, &spi);
+	hwspi_init(40, 0, -1, GPIO_DISP_SPI_MOSI, GPIO_DISP_SPI_CLK, GPIO_DISP_SPI_CS);
 }
 
-void disp_write_cmd(uint8_t cmd) {
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-    t.length=8;
-    t.tx_buffer=&cmd;
-    t.user=(void*)0;
-    spi_device_polling_transmit(spi, &t);
-}
-
-void disp_write_data(uint8_t *data, int len) {
-	spi_transaction_t t;
-	if (len==0) return;        
-	memset(&t, 0, sizeof(t)); 
-	t.length=len*8;            
-	t.tx_buffer=data;  
-	t.user=(void*)1;              
-	spi_device_polling_transmit(spi, &t);  //Transmit!
+void disp_command(uint8_t cmd) {
+	hwspi_send_data(&cmd, 1);
 }
 
 static lbm_value ext_disp_reset(lbm_value *args, lbm_uint argn) {
@@ -144,51 +105,6 @@ static uint16_t to_RGB565(uint32_t rgb) {
 	return color;
 }
 
-static lbm_value ext_disp_rect(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_NUMBER_ALL();
-
-	if (argn == 5) {
-
-		uint16_t x = (uint16_t)lbm_dec_as_u32(args[0]);
-		uint16_t y = (uint16_t)lbm_dec_as_u32(args[1]);
-		uint16_t w = (uint16_t)lbm_dec_as_u32(args[2]);
-		uint16_t h = (uint16_t)lbm_dec_as_u32(args[3]);
-		uint16_t x1 = w + x;
-		uint16_t y1 = h + y;
-		uint16_t c = to_RGB565(lbm_dec_as_u32(args[4]));
-		
-		spi_device_acquire_bus(spi, portMAX_DELAY);
-		uint8_t data[4];
-		data[0] = x>>8; data[1] = x;
-		data[2] = x1>>8; data[3] = x1;
-		disp_write_cmd(0x2A); // Col addr
-		disp_write_data(data, 4);
-		data[0] = y>>8; data[1] = y;
-		data[2] = y1>>8; data[3] = y1;
-		disp_write_cmd(0x2B); // page addr
-		disp_write_data(data,4);
-
-		uint16_t colors[16];
-		int image_size = w*h;
-		int blocks = image_size >> 4;
-		int rest   = image_size & 0xF;
-		
-		for ( int j = 0; j < 16; j ++) {
-			colors[j] = c;
-		}
-
-		disp_write_cmd(0x2C);
-		for (int i = 0; i < blocks; i ++) {
-			disp_write_data((uint8_t*)colors, 32);
-		}
-		
-		disp_write_data((uint8_t*)colors, rest*2);
-		
-		spi_device_release_bus(spi);
-		return ENC_SYM_TRUE;
-	}
-	return ENC_SYM_TERROR;
-}
 
 static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
@@ -196,101 +112,57 @@ static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 	uint8_t cmd_args[10];
 	int     cmd_argn = 0;
 
-	if (argn >= 1 && argn < 10){
+	if (argn > 1 && argn < 10){
 
 		for (int i = 1; i < argn; i++) {
 			cmd_args[i-1] = (uint8_t)lbm_dec_as_u32(args[i]);
 			cmd_argn++;
 		}
 
-		spi_device_acquire_bus(spi, portMAX_DELAY);
-		disp_write_cmd((uint8_t)lbm_dec_as_u32(args[0]));
-		disp_write_data(cmd_args, cmd_argn);
-		spi_device_release_bus(spi);
+		hwspi_begin();
+		CLEAR_DATA_COMMAND();
+		disp_command((uint8_t)lbm_dec_as_u32(args[0]));
+		SET_DATA_COMMAND();
+		hwspi_send_data(cmd_args, cmd_argn);
+		hwspi_end();
+		CLEAR_DATA_COMMAND();
+		return ENC_SYM_TRUE;
+	} else if (argn == 1) {
+		hwspi_begin();
+		CLEAR_DATA_COMMAND();
+		disp_command((uint8_t)lbm_dec_as_u32(args[0]));
+		hwspi_end();
 		return ENC_SYM_TRUE;
 	}
+
 	return ENC_SYM_TERROR;
 }
 
-#define DISP_DATA_BUFFER_SIZE 1024
-
-typedef struct data_stream_buffer_s {
-    uint8_t data[DISP_DATA_BUFFER_SIZE];
-    int     pos;
-    spi_transaction_t trans;
-    struct data_stream_buffer_s *next;
-} data_stream_buffer_t;
-
-data_stream_buffer_t data_buffer[3];
-data_stream_buffer_t *active_buffer;
-
-static void disp_data_stream_init(void) {
-    data_buffer[0].pos = 0;
-    data_buffer[0].trans.length = DISP_DATA_BUFFER_SIZE * 8;
-    data_buffer[0].trans.tx_buffer = data_buffer[0].data;
-    data_buffer[0].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
-    data_buffer[0].trans.user = (void*)1;
-    data_buffer[0].next = &data_buffer[1];
-
-    data_buffer[1].pos = 0;
-    data_buffer[1].trans.length = DISP_DATA_BUFFER_SIZE * 8;
-    data_buffer[1].trans.tx_buffer = data_buffer[1].data;
-    data_buffer[1].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
-    data_buffer[1].trans.user = (void*)1;
-    data_buffer[1].next = &data_buffer[2];
-
-    data_buffer[2].pos = 0;
-    data_buffer[2].trans.length = DISP_DATA_BUFFER_SIZE * 8;
-    data_buffer[2].trans.tx_buffer = data_buffer[2].data;
-    data_buffer[2].trans.flags = SPI_TRANS_CS_KEEP_ACTIVE;
-    data_buffer[2].trans.user = (void*)1;
-    data_buffer[2].next = &data_buffer[0];
-
-    active_buffer = &data_buffer[0];
-}
-
-static void IRAM_ATTR disp_data_stream_write(uint8_t byte) {
-    active_buffer->data[active_buffer->pos++] = byte;
-
-    if (active_buffer->pos == DISP_DATA_BUFFER_SIZE) {
-        active_buffer->trans.length = active_buffer->pos * 8;
-        active_buffer->pos = 0;
-        spi_device_queue_trans(spi, &active_buffer->trans, portMAX_DELAY);
-        active_buffer = active_buffer->next;
-    }
-}
-
-static void disp_data_stream_finish(void) {
-    spi_transaction_t *p;
-    spi_device_get_trans_result(spi, &p, 10);
-    //SET_CS();
-    gpio_set_level(GPIO_DISP_SPI_CS,1);
-}
-
 static void IRAM_ATTR blast_indexed2(uint8_t *data, uint32_t *color_map, uint32_t num_pix) {
-    uint16_t colors[2];
-    colors[0] = to_RGB565(color_map[0]);
-    colors[1] = to_RGB565(color_map[1]);
+	uint16_t colors[2];
+	colors[0] = to_RGB565(color_map[0]);
+	colors[1] = to_RGB565(color_map[1]);
 
-    spi_device_acquire_bus(spi, portMAX_DELAY);
-    disp_data_stream_init();
-    disp_write_cmd(0x2C);
+	hwspi_begin();
+	CLEAR_DATA_COMMAND();
+	disp_command(0x2C);
+	SET_DATA_COMMAND();
+	hwspi_data_stream_start();
 
-    for (int i = 0; i < num_pix; i ++) {
-        int byte = i >> 3;
-        int bit  = 7 - (i & 0x7);
-        if (data[byte] & (1 << bit)) {
-            disp_data_stream_write((uint8_t)(colors[1]));
-            disp_data_stream_write((uint8_t)(colors[1] >> 8));
-        } else {
-            disp_data_stream_write((uint8_t)(colors[0]));
-            disp_data_stream_write((uint8_t)(colors[0] >> 8));
-        }
-    }
-
-    disp_data_stream_finish();
-
-    spi_device_release_bus(spi);
+	for (int i = 0; i < num_pix; i ++) {
+		int byte = i >> 3;
+		int bit  = 7 - (i & 0x7);
+		if (data[byte] & (1 << bit)) {
+			hwspi_data_stream_write((uint8_t)(colors[1]));
+			hwspi_data_stream_write((uint8_t)(colors[1] >> 8));
+		} else {
+			hwspi_data_stream_write((uint8_t)(colors[0]));
+			hwspi_data_stream_write((uint8_t)(colors[0] >> 8));
+		}
+	}
+	hwspi_data_stream_finish();
+	hwspi_end();
+	CLEAR_DATA_COMMAND();
 }
 
 static void IRAM_ATTR render_image_buffer(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y) {
@@ -299,15 +171,25 @@ static void IRAM_ATTR render_image_buffer(image_buffer_t *img, uint32_t *color_m
 	uint16_t ps = y;
 	uint16_t pe = y + img->height - 1;
 
-	spi_device_acquire_bus(spi, portMAX_DELAY);
 	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
-	disp_write_cmd(0x2A);
-	disp_write_data(col,4);
+
+	hwspi_begin();
+	CLEAR_DATA_COMMAND();
+	disp_command(0x2A);
+	SET_DATA_COMMAND();
+	hwspi_send_data(col,4);
+	hwspi_end();
+	CLEAR_DATA_COMMAND();
+
 
 	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
-	disp_write_cmd(0x2B);
-	disp_write_data(row, 4);
-	spi_device_release_bus(spi);
+	hwspi_begin();
+	CLEAR_DATA_COMMAND();
+	disp_command(0x2B);
+	SET_DATA_COMMAND();
+	hwspi_send_data(row, 4);
+	hwspi_end();
+	CLEAR_DATA_COMMAND();
 
 	switch(img->fmt) {
 	case indexed2:
@@ -326,6 +208,61 @@ static void IRAM_ATTR render_image_buffer(image_buffer_t *img, uint32_t *color_m
 	default:
 		break;
 	}
+}
+
+static lbm_value ext_disp_clear(lbm_value *args, lbm_uint argn) {
+	if (argn > 1) {
+		return ENC_SYM_TERROR;
+	}
+
+	uint32_t clear_color = 0;
+
+	if (argn == 1) {
+		if (!lbm_is_number(args[0])) {
+			return ENC_SYM_TERROR;
+		}
+
+		clear_color = lbm_dec_as_u32(args[0]);
+	}
+
+	uint16_t cs = 0;
+	uint16_t ce = DISPLAY_WIDTH - 1;
+	uint16_t ps = 0;
+	uint16_t pe = DISPLAY_HEIGHT - 1;
+
+	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
+
+	hwspi_begin();
+	CLEAR_DATA_COMMAND();
+	disp_command(0x2A);
+	SET_DATA_COMMAND();
+	hwspi_send_data(col, 4);
+	hwspi_end();
+	CLEAR_DATA_COMMAND();
+
+	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
+	hwspi_begin();
+	CLEAR_DATA_COMMAND();
+	disp_command(0x2B);
+	SET_DATA_COMMAND();
+	hwspi_send_data(row, 4);
+	hwspi_end();
+	CLEAR_DATA_COMMAND();
+
+	hwspi_begin();
+	CLEAR_DATA_COMMAND();
+	disp_command(0x2C);
+	SET_DATA_COMMAND();
+	hwspi_data_stream_start();
+	for (int i = 0; i < (DISPLAY_WIDTH * DISPLAY_HEIGHT); i ++) {
+		hwspi_data_stream_write((uint8_t)(clear_color));
+		hwspi_data_stream_write((uint8_t)(clear_color >> 8));
+	}
+	hwspi_data_stream_finish();
+	hwspi_end();
+	CLEAR_DATA_COMMAND();
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_render(lbm_value *args, lbm_uint argn) {
@@ -357,7 +294,7 @@ static lbm_value ext_render(lbm_value *args, lbm_uint argn) {
 
 static void load_extensions(void) {
 	lbm_add_extension("disp-reset", ext_disp_reset);
-	lbm_add_extension("disp-rect", ext_disp_rect);
+    lbm_add_extension("disp-clear", ext_disp_clear);
 	lbm_add_extension("disp-cmd", ext_disp_cmd);
 	lbm_add_extension("disp-render", ext_render);
 }

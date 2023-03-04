@@ -34,7 +34,7 @@
 #define UART_RX						20
 
 // ADC
-#define HW_HAS_ADC
+//#define HW_HAS_ADC
 #define HW_ADC_CH0					ADC1_CHANNEL_0
 #define HW_ADC_CH1					ADC1_CHANNEL_1
 #define HW_ADC_CH2					ADC1_CHANNEL_2
@@ -42,5 +42,9 @@
 
 // Functions
 void hw_init(void);
+
+// DISPLAY (Horizontal mode)
+#define DISPLAY_WIDTH              320
+#define DISPLAY_HEIGHT             240
 
 #endif /* MAIN_HWCONF_DEVKIT_C3_H_ */
