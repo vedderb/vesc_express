@@ -29,7 +29,6 @@
 
 static const char *image_buffer_desc = "Image-Buffer";
 
-
 static lbm_uint symbol_indexed2 = 0;
 static lbm_uint symbol_indexed4 = 0;
 static lbm_uint symbol_rgb332 = 0;

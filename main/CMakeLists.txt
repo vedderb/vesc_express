@@ -23,6 +23,7 @@ set(COMPONENT_SRCS
 "rb.c"
 "bms.c"
 "log_comm.c"
+"hwspi.c"
 
 "config/confparser.c"
 "config/confxml.c"
