@@ -413,69 +413,110 @@ static void img_putc(image_buffer_t *img, int x, int y, uint32_t fg, uint32_t bg
 	}
 }
 
-void blit_rot_scale( image_buffer_t *img_dest, image_buffer_t *img_src,
-					 int x, int y, // Where on display
-					 float xr, float yr, // Pixel to rotate around
-					 float rot, // Rotation angle in degrees
-					 float scale, // Scale factor
-					 int32_t transparent_color) {
+static void blit_rot_scale(image_buffer_t *img_dest, image_buffer_t *img_src, int x,
+		int y, // Where on display
+		float xr, float yr, // Pixel to rotate around
+		float rot, // Rotation angle in degrees
+		float scale, // Scale factor
+		int32_t transparent_color) {
 
-	int width = img_src->width;
-	int height = img_src->height;
-	int x_start = 0;
-	int x_width = img_dest->width;
-	int y_start = 0;
-	int y_width = img_dest->height;
+	int src_w = img_src->width;
+	int src_h = img_src->height;
+	int des_w = img_dest->width;
+	int des_h = img_dest->height;
 
-	float sr = sinf(-rot * M_PI / 180.0f);
-	float cr = cosf(-rot * M_PI / 180.0f);
+	int des_x_start = 0;
+	int des_y_start = 0;
+	int des_x_end = (des_x_start + des_w);
+	int des_y_end = (des_y_start + des_h);
 
-	xr *= scale;
-	yr *= scale;
+	if (des_x_start < 0) des_x_start = 0;
+	if (des_x_end > des_w) des_x_end = des_w;
+	if (des_y_start < 0) des_y_start = 0;
+	if (des_y_end > des_h) des_y_end = des_h;
 
-	int x_end = (x_start + x_width);
-	int y_end = (y_start + y_width);
+	if (rot == 0.0 && scale == 1.0) {
+		if (x > 0) des_x_start += x;
+		if (y > 0) des_y_start += y;
+		if ((des_x_end - x) > src_w) des_x_end = src_w + x;
+		if ((des_y_end - y) > src_h) des_y_end = src_h + y;
 
-	if (x_start < 0) {
-		x_start = 0;
-	}
+		for (int j = des_y_start; j < des_y_end; j++) {
+			for (int i = des_x_start; i < des_x_end; i++) {
+				int px = i - x;
+				int py = j - y;
 
-	if (x_end > x_width) {
-		x_end = x_width;
-	}
+				if (px >= 0 && px < src_w && py >= 0 && py < src_h) {
+					uint32_t p = getpixel(img_src, px, py);
 
-	if (y_start < 0) {
-		y_start = 0;
-	}
+					if (p != (uint32_t) transparent_color) {
+						putpixel(img_dest, i, j, p);
+					}
+				}
+			}
+		}
+	} else if (rot == 0.0) {
+		xr *= scale;
+		yr *= scale;
 
-	if (y_end > y_width) {
-		y_end = y_width;
-	}
+		const int fp_scale = 1000;
 
-	const int fp_scale = 1000;
+		int xr_i = xr;
+		int yr_i = yr;
+		int scale_i = scale * (float) fp_scale;
 
-	int sr_i = sr * fp_scale;
-	int cr_i = cr * fp_scale;
-	int xr_i = xr;
-	int yr_i = yr;
-	int scale_i = scale * (float)fp_scale;
+		for (int j = des_y_start; j < des_y_end; j++) {
+			for (int i = des_x_start; i < des_x_end; i++) {
+				int px = (i - x - xr_i) * fp_scale;
+				int py = (j - y - yr_i) * fp_scale;
 
-	for (int j = y_start;j < y_end;j++) {
-		for (int i = x_start;i < x_end;i++) {
-			int px = (i - x - xr_i) * cr_i + (j - y - yr_i) * sr_i;
-			int py = -(i - x - xr_i) * sr_i + (j - y - yr_i) * cr_i;
+				px += xr_i * fp_scale;
+				py += yr_i * fp_scale;
 
-			px += xr_i * fp_scale;
-			py += yr_i * fp_scale;
+				px /= scale_i;
+				py /= scale_i;
 
-			px /= scale_i;
-			py /= scale_i;
+				if (px >= 0 && px < src_w && py >= 0 && py < src_h) {
+					uint32_t p = getpixel(img_src, px, py);
 
-			if (px >= 0 && px < width && py >= 0 && py < height) {
-				uint32_t p = getpixel(img_src, px, py);
+					if (p != (uint32_t) transparent_color) {
+						putpixel(img_dest, i, j, p);
+					}
+				}
+			}
+		}
+	} else {
+		float sr = sinf(-rot * M_PI / 180.0f);
+		float cr = cosf(-rot * M_PI / 180.0f);
 
-				if (p != (uint32_t)transparent_color) {
-	 				putpixel(img_dest, i, j, p);
+		xr *= scale;
+		yr *= scale;
+
+		const int fp_scale = 1000;
+
+		int sr_i = sr * fp_scale;
+		int cr_i = cr * fp_scale;
+		int xr_i = xr;
+		int yr_i = yr;
+		int scale_i = scale * (float) fp_scale;
+
+		for (int j = des_y_start; j < des_y_end; j++) {
+			for (int i = des_x_start; i < des_x_end; i++) {
+				int px = (i - x - xr_i) * cr_i + (j - y - yr_i) * sr_i;
+				int py = -(i - x - xr_i) * sr_i + (j - y - yr_i) * cr_i;
+
+				px += xr_i * fp_scale;
+				py += yr_i * fp_scale;
+
+				px /= scale_i;
+				py /= scale_i;
+
+				if (px >= 0 && px < src_w && py >= 0 && py < src_h) {
+					uint32_t p = getpixel(img_src, px, py);
+
+					if (p != (uint32_t) transparent_color) {
+						putpixel(img_dest, i, j, p);
+					}
 				}
 			}
 		}
@@ -671,39 +712,50 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_blit(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-
-	if (argn == 9 &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lispif_disp_is_image_buffer(args[1]) &&
-		lbm_is_number(args[2]) &&
-		lbm_is_number(args[3]) &&
-		lbm_is_number(args[4]) &&
-		lbm_is_number(args[5]) &&
-		lbm_is_number(args[6]) &&
-		lbm_is_number(args[7]) &&
-		lbm_is_number(args[8])) {
-
-		image_buffer_t *dest = (image_buffer_t*)lbm_get_custom_value(args[0]);
-		image_buffer_t *src  = (image_buffer_t*)lbm_get_custom_value(args[1]);
-		int32_t x = lbm_dec_as_i32(args[2]);
-		int32_t y = lbm_dec_as_i32(args[3]);
-		float xr = lbm_dec_as_float(args[4]);
-		float yr = lbm_dec_as_float(args[5]);
-		float rot = lbm_dec_as_float(args[6]);
-		float scale = lbm_dec_as_float(args[7]);
-		int32_t tc = lbm_dec_as_u32(args[8]);
-
-		blit_rot_scale(dest,src,x,y,xr,yr,rot,scale, tc);
-		res = ENC_SYM_TRUE;
-
+	if ((argn != 5 && argn != 6 && argn != 9) ||
+			!lispif_disp_is_image_buffer(args[0]) ||
+			!lispif_disp_is_image_buffer(args[1]) ||
+			!lbm_is_number(args[2]) ||
+			!lbm_is_number(args[3]) ||
+			!lbm_is_number(args[4])) {
+		return ENC_SYM_TERROR;
 	}
 
-	return res;
+	image_buffer_t *dest = (image_buffer_t*)lbm_get_custom_value(args[0]);
+	image_buffer_t *src  = (image_buffer_t*)lbm_get_custom_value(args[1]);
+	int32_t x = lbm_dec_as_i32(args[2]);
+	int32_t y = lbm_dec_as_i32(args[3]);
+
+	float xr = 0.0;
+	float yr = 0.0;
+	float rot = 0.0;
+	float scale = 1.0;
+	int tc = -1;
+
+	if (argn == 9 &&
+			lbm_is_number(args[5]) &&
+			lbm_is_number(args[6]) &&
+			lbm_is_number(args[7]) &&
+			lbm_is_number(args[8])) {
+		xr = lbm_dec_as_float(args[4]);
+		yr = lbm_dec_as_float(args[5]);
+		rot = lbm_dec_as_float(args[6]);
+		scale = lbm_dec_as_float(args[7]);
+		tc = lbm_dec_as_u32(args[8]);
+	} else if (argn == 6 &&
+			lbm_is_number(args[5])) {
+		scale = lbm_dec_as_float(args[4]);
+		tc = lbm_dec_as_u32(args[5]);
+	} else if (argn == 5) {
+		tc = lbm_dec_as_u32(args[4]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	blit_rot_scale(dest,src,x,y,xr,yr,rot,scale, tc);
+
+	return ENC_SYM_TRUE;
 }
-
-
-// Init image_buffer extension_library
 
 void lispif_load_disp_extensions(void) {
 	register_symbols();
@@ -717,4 +769,3 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-circle", ext_circle);
 	lbm_add_extension("img-blit", ext_blit);
 }
-
