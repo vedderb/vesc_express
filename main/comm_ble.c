@@ -158,7 +158,7 @@ static gatts_profile_instance_t gatts_profile = {
 		.gatts_if = ESP_GATT_IF_NONE,
 };
 
-static PACKET_STATE_t packet_state;
+static PACKET_STATE_t *packet_state;
 
 static void char1_read_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 static void char1_write_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
@@ -261,7 +261,7 @@ static void char1_write_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
 	if (ble_chars[0].char_val != NULL) {
 		for (int i = 0; i < param->write.len; ++i) {
-			packet_process_byte(param->write.value[i], &packet_state);
+			packet_process_byte(param->write.value[i], packet_state);
 		}
 	}
 
@@ -553,7 +553,8 @@ static void send_packet_raw(unsigned char *buffer, unsigned int len) {
 }
 
 void comm_ble_init(void) {
-	packet_init(send_packet_raw, process_packet, &packet_state);
+	packet_state = calloc(1, sizeof(PACKET_STATE_t));
+	packet_init(send_packet_raw, process_packet, packet_state);
 
 	if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
 		ble_chars[0].char_perm = (ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED);
@@ -619,5 +620,5 @@ int comm_ble_mtu_now(void) {
 }
 
 void comm_ble_send_packet(unsigned char *data, unsigned int len) {
-	packet_send_packet(data, len, &packet_state);
+	packet_send_packet(data, len, packet_state);
 }

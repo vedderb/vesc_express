@@ -57,7 +57,7 @@ void comm_uart_init(void) {
 
 	packet_init(send_packet_raw, process_packet, &packet_state);
 
-	xTaskCreatePinnedToCore(rx_task, "usb_rx", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(rx_task, "usb_rx", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 }
 
 void comm_uart_send_packet(unsigned char *data, unsigned int len) {

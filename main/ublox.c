@@ -35,7 +35,7 @@
 #endif
 #define BAUDRATE					115200
 #define LINE_BUFFER_SIZE			256
-#define UBX_BUFFER_SIZE				3000
+#define UBX_BUFFER_SIZE				2000
 #define CFG_ACK_WAIT_MS				100
 
 // For double precision literals
@@ -142,11 +142,11 @@ bool ublox_init(bool print) {
 			.source_clk = UART_SCLK_DEFAULT,
 	};
 
-	uart_driver_install(UART_NUM, 1024, 512, 0, 0, 0);
+	uart_driver_install(UART_NUM, 512, 512, 0, 0, 0);
 	uart_param_config(UART_NUM, &uart_config);
 	uart_set_pin(UART_NUM, UART_TX, UART_RX, -1, -1);
 
-	xTaskCreatePinnedToCore(rx_task, "ublox_rx", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(rx_task, "ublox_rx", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 
 	// Prevent unused warnings
 	(void)ubx_get_U1;

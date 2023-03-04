@@ -1,5 +1,5 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2020 - 2023 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -17,37 +17,17 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_HWCONF_LB_HW_LB_LOG_T_H_
-#define MAIN_HWCONF_LB_HW_LB_LOG_T_H_
+#ifndef BMS_H_
+#define BMS_H_
 
-#include "driver/gpio.h"
-
-#define HW_NAME						"LB Log"
-
-#define HW_INIT_HOOK()				hw_init()
-
-// CAN
-#define CAN_TX_GPIO_NUM				7
-#define CAN_RX_GPIO_NUM				6
-#define CAN_EN_GPIO_NUM				8
-
-// SD-card
-#define SD_PIN_MOSI					4
-#define SD_PIN_MISO					0
-#define SD_PIN_SCK					10
-#define SD_PIN_CS					3
-
-// UART
-#define UART_NUM					0
-#define UART_BAUDRATE				115200
-#define UART_TX						21
-#define UART_RX						20
+#include "datatypes.h"
 
 // Functions
-void hw_init(void);
-void hw_clear_can_fault(void);
+void bms_init(void);
+bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext);
+void bms_process_cmd(unsigned char *data, unsigned int len,
+		void(*reply_func)(unsigned char *data, unsigned int len));
+volatile bms_values *bms_get_values(void);
+void bms_send_status_can(void);
 
-// Config Overrides
-#define CONF_BLE_NAME				"LbBMS"
-
-#endif /* MAIN_HWCONF_LB_HW_LB_LOG_T_H_ */
+#endif /* BMS_H_ */

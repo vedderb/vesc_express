@@ -17,24 +17,30 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_UTILS_H_
-#define MAIN_UTILS_H_
+#ifndef COMM_LOG_COMM_H_
+#define COMM_LOG_COMM_H_
 
 #include <stdint.h>
 #include <stdbool.h>
 
-int32_t utils_ms_today(void);
-int64_t utils_ms_tot(void);
+// Functions
+void log_comm_start(
+		int can_id,
+		int field_num,
+		float rate_hz,
+		bool append_time,
+		bool append_gnss,
+		bool append_gnss_time);
+void log_comm_stop(int can_id);
+void log_comm_config_field(
+		int can_id,
+		int field_ind,
+		char *key,
+		char *name,
+		char *unit,
+		int precision,
+		bool is_relative,
+		bool is_timestamp);
+void log_comm_send(int can_id, uint8_t *data, unsigned int len);
 
-#define UTILS_AGE_S(x)		((float)(xTaskGetTickCount() - x) / ((float)portTICK_PERIOD_MS * 1000.0))
-
-// Return the sign of the argument. -1.0 if negative, 1.0 if zero or positive.
-#define SIGN(x)				(((x) < 0.0) ? -1.0 : 1.0)
-
-// Squared
-#define SQ(x)				((x) * (x))
-
-// For double precision literals
-#define D(x) 				((double)x##L)
-
-#endif /* MAIN_UTILS_H_ */
+#endif /* COMM_LOG_COMM_H_ */

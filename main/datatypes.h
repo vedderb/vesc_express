@@ -23,6 +23,45 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef struct {
+	float v_tot;
+	float v_charge;
+	float i_in;
+	float i_in_ic;
+	float ah_cnt;
+	float wh_cnt;
+	int cell_num;
+	float v_cell[32];
+	bool bal_state[32];
+	int temp_adc_num;
+	float temps_adc[50];
+	float temp_ic;
+	float temp_hum;
+	float hum;
+	float temp_max_cell;
+	float soc;
+	float soh;
+	int can_id;
+	float ah_cnt_chg_total;
+	float wh_cnt_chg_total;
+	float ah_cnt_dis_total;
+	float wh_cnt_dis_total;
+	uint32_t update_time;
+} bms_values;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float v_cell_min;
+	float v_cell_max;
+	float t_cell_max;
+	float soc;
+	float soh;
+	bool is_charging;
+	bool is_balancing;
+	bool is_charge_allowed;
+} bms_soc_soh_temp_stat;
+
 typedef enum {
 	CAN_BAUD_125K = 0,
 	CAN_BAUD_250K,
@@ -341,5 +380,75 @@ typedef enum {
 	CAN_PACKET_GNSS_ALT_SPEED_HDOP,
 	CAN_PACKET_MAKE_ENUM_32_BITS = 0xFFFFFFFF,
 } CAN_PACKET_ID;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float rpm;
+	float current;
+	float duty;
+} can_status_msg;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float amp_hours;
+	float amp_hours_charged;
+} can_status_msg_2;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float watt_hours;
+	float watt_hours_charged;
+} can_status_msg_3;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float temp_fet;
+	float temp_motor;
+	float current_in;
+	float pid_pos_now;
+} can_status_msg_4;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float v_in;
+	int32_t tacho_value;
+} can_status_msg_5;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float adc_1;
+	float adc_2;
+	float adc_3;
+	float ppm;
+} can_status_msg_6;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float adc_voltages[4];
+} io_board_adc_values;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	uint64_t inputs;
+} io_board_digial_inputs;
+
+typedef struct {
+	int id;
+	uint32_t rx_time;
+	float v_in;
+	float v_out;
+	float temp;
+	bool is_out_on;
+	bool is_pch_on;
+	bool is_dsc_on;
+} psw_status;
 
 #endif /* MAIN_DATATYPES_H_ */

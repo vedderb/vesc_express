@@ -21,6 +21,9 @@ set(COMPONENT_SRCS
 "utils.c"
 "flash_helper.c"
 "rb.c"
+"bms.c"
+"log_comm.c"
+"hwspi.c"
 
 "config/confparser.c"
 "config/confxml.c"
@@ -60,7 +63,6 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "config"
 "hwconf"
 "hwconf/trampa"
-"hwconf/lb"
 
 "lispBM"
 "lispBM/include"

@@ -29,7 +29,6 @@
 
 static const char *image_buffer_desc = "Image-Buffer";
 
-
 static lbm_uint symbol_indexed2 = 0;
 static lbm_uint symbol_indexed4 = 0;
 static lbm_uint symbol_rgb332 = 0;
@@ -421,20 +420,15 @@ void blit_rot_scale( image_buffer_t *img_dest, image_buffer_t *img_src,
 					 float scale, // Scale factor
 					 int32_t transparent_color) {
 
+	int width = img_src->width;
+	int height = img_src->height;
 	int x_start = 0;
 	int x_width = img_dest->width;
 	int y_start = 0;
 	int y_width = img_dest->height;
-	int width = img_src->width;
-	int height = img_src->height;
-	int cx = width >> 1;
-	int cy = height >> 1; // Center pixel of image
 
-	float sr = sinf(-rot * 3.14159f / 180.0f);
-	float cr = cosf(-rot * 3.14159f / 180.0f);
-
-	x -= cx * scale;
-	y -= cy * scale;
+	float sr = sinf(-rot * M_PI / 180.0f);
+	float cr = cosf(-rot * M_PI / 180.0f);
 
 	xr *= scale;
 	yr *= scale;
@@ -465,6 +459,7 @@ void blit_rot_scale( image_buffer_t *img_dest, image_buffer_t *img_src,
 	int xr_i = xr;
 	int yr_i = yr;
 	int scale_i = scale * (float)fp_scale;
+
 	for (int j = y_start;j < y_end;j++) {
 		for (int i = x_start;i < x_end;i++) {
 			int px = (i - x - xr_i) * cr_i + (j - y - yr_i) * sr_i;

@@ -37,6 +37,7 @@
 #include "main.h"
 #include "mempools.h"
 #include "lispif.h"
+#include "bms.h"
 
 #include <string.h>
 #include <sys/time.h>
@@ -102,6 +103,7 @@ void app_main(void) {
 	}
 
 	mempools_init();
+	bms_init();
 	commands_init();
 	comm_can_init();
 	comm_usb_init();
@@ -190,10 +192,7 @@ static void terminal_nmea(int argc, const char **argv) {
 			"Lat       : %.8f\n"
 			"Lon       : %.8f\n"
 			"Height    : %f\n"
-			"Time      : %02d-%02d-%02d %02d:%02d:%02d\n"
-			"Last GGA  : %s"
-			"Last GSV  : %s"
-			"Last RMC  : %s\n",
+			"Time      : %02d-%02d-%02d %02d:%02d:%02d\n",
 			s->gga_cnt,
 			s->gsv_gp_cnt,
 			s->gsv_gl_cnt,
@@ -204,10 +203,8 @@ static void terminal_nmea(int argc, const char **argv) {
 			s->gga.lat,
 			s->gga.lon,
 			s->gga.height,
-			s->rmc.yy, s->rmc.mo, s->rmc.dd, s->rmc.hh, s->rmc.mm, s->rmc.ss,
-			s->last_gga,
-			s->last_gsv,
-			s->last_rmc);
+			s->rmc.yy, s->rmc.mo, s->rmc.dd, s->rmc.hh, s->rmc.mm, s->rmc.ss
+			);
 }
 
 static void terminal_ublox_reinit(int argc, const char **argv) {

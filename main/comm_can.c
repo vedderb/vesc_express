@@ -32,19 +32,30 @@
 #include "commands.h"
 #include "nmea.h"
 #include "lispif.h"
+#include "bms.h"
+#include "utils.h"
 
 #include <string.h>
 
-#ifdef CAN_TX_GPIO_NUM
-#define RX_BUFFER_NUM				3
-#define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
+// Status messages
+static can_status_msg stat_msgs[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_2 stat_msgs_2[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_3 stat_msgs_3[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_4 stat_msgs_4[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_5 stat_msgs_5[CAN_STATUS_MSGS_TO_STORE];
+static can_status_msg_6 stat_msgs_6[CAN_STATUS_MSGS_TO_STORE];
+static io_board_adc_values io_board_adc_1_4[CAN_STATUS_MSGS_TO_STORE];
+static io_board_adc_values io_board_adc_5_8[CAN_STATUS_MSGS_TO_STORE];
+static io_board_digial_inputs io_board_digital_in[CAN_STATUS_MSGS_TO_STORE];
+static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 
-// For double precision literals
-#define D(x) 						((double)x##L)
+#ifdef CAN_TX_GPIO_NUM
+#define RX_BUFFER_NUM				2
+#define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
 
 static twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
 static const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-static const twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM, TWAI_MODE_NORMAL);
+static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM, TWAI_MODE_NORMAL);
 
 static SemaphoreHandle_t ping_sem;
 static SemaphoreHandle_t send_mutex;
@@ -226,9 +237,177 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				break;
 		}
 	}
+
+	// The packets below are addressed to all devices, mainly containing status information.
+
+	switch (cmd) {
+	case CAN_PACKET_STATUS:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			can_status_msg *stat_tmp = &stat_msgs[i];
+			if (stat_tmp->id == id || stat_tmp->id == -1) {
+				ind = 0;
+				stat_tmp->id = id;
+				stat_tmp->rx_time = xTaskGetTickCount();
+				stat_tmp->rpm = (float)buffer_get_int32(data8, &ind);
+				stat_tmp->current = (float)buffer_get_int16(data8, &ind) / 10.0;
+				stat_tmp->duty = (float)buffer_get_int16(data8, &ind) / 1000.0;
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_STATUS_2:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			can_status_msg_2 *stat_tmp_2 = &stat_msgs_2[i];
+			if (stat_tmp_2->id == id || stat_tmp_2->id == -1) {
+				ind = 0;
+				stat_tmp_2->id = id;
+				stat_tmp_2->rx_time = xTaskGetTickCount();
+				stat_tmp_2->amp_hours = (float)buffer_get_int32(data8, &ind) / 1e4;
+				stat_tmp_2->amp_hours_charged = (float)buffer_get_int32(data8, &ind) / 1e4;
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_STATUS_3:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			can_status_msg_3 *stat_tmp_3 = &stat_msgs_3[i];
+			if (stat_tmp_3->id == id || stat_tmp_3->id == -1) {
+				ind = 0;
+				stat_tmp_3->id = id;
+				stat_tmp_3->rx_time = xTaskGetTickCount();
+				stat_tmp_3->watt_hours = (float)buffer_get_int32(data8, &ind) / 1e4;
+				stat_tmp_3->watt_hours_charged = (float)buffer_get_int32(data8, &ind) / 1e4;
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_STATUS_4:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			can_status_msg_4 *stat_tmp_4 = &stat_msgs_4[i];
+			if (stat_tmp_4->id == id || stat_tmp_4->id == -1) {
+				ind = 0;
+				stat_tmp_4->id = id;
+				stat_tmp_4->rx_time = xTaskGetTickCount();
+				stat_tmp_4->temp_fet = (float)buffer_get_int16(data8, &ind) / 10.0;
+				stat_tmp_4->temp_motor = (float)buffer_get_int16(data8, &ind) / 10.0;
+				stat_tmp_4->current_in = (float)buffer_get_int16(data8, &ind) / 10.0;
+				stat_tmp_4->pid_pos_now = (float)buffer_get_int16(data8, &ind) / 50.0;
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_STATUS_5:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			can_status_msg_5 *stat_tmp_5 = &stat_msgs_5[i];
+			if (stat_tmp_5->id == id || stat_tmp_5->id == -1) {
+				ind = 0;
+				stat_tmp_5->id = id;
+				stat_tmp_5->rx_time = xTaskGetTickCount();
+				stat_tmp_5->tacho_value = buffer_get_int32(data8, &ind);
+				stat_tmp_5->v_in = (float)buffer_get_int16(data8, &ind) / 1e1;
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_STATUS_6:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			can_status_msg_6 *stat_tmp_6 = &stat_msgs_6[i];
+			if (stat_tmp_6->id == id || stat_tmp_6->id == -1) {
+				ind = 0;
+				stat_tmp_6->id = id;
+				stat_tmp_6->rx_time = xTaskGetTickCount();
+				stat_tmp_6->adc_1 = buffer_get_float16(data8, 1e3, &ind);
+				stat_tmp_6->adc_2 = buffer_get_float16(data8, 1e3, &ind);
+				stat_tmp_6->adc_3 = buffer_get_float16(data8, 1e3, &ind);
+				stat_tmp_6->ppm = buffer_get_float16(data8, 1e3, &ind);
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_IO_BOARD_ADC_1_TO_4:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			io_board_adc_values *msg = &io_board_adc_1_4[i];
+			if (msg->id == id || msg->id == -1) {
+				ind = 0;
+				msg->id = id;
+				msg->rx_time = xTaskGetTickCount();
+				ind = 0;
+				int j = 0;
+				while (ind < len) {
+					msg->adc_voltages[j++] = buffer_get_float16(data8, 1e2, &ind);
+				}
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_IO_BOARD_ADC_5_TO_8:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			io_board_adc_values *msg = &io_board_adc_5_8[i];
+			if (msg->id == id || msg->id == -1) {
+				ind = 0;
+				msg->id = id;
+				msg->rx_time = xTaskGetTickCount();
+				ind = 0;
+				int j = 0;
+				while (ind < len) {
+					msg->adc_voltages[j++] = buffer_get_float16(data8, 1e2, &ind);
+				}
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_IO_BOARD_DIGITAL_IN:
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			io_board_digial_inputs *msg = &io_board_digital_in[i];
+			if (msg->id == id || msg->id == -1) {
+				ind = 0;
+				msg->id = id;
+				msg->rx_time = xTaskGetTickCount();
+				msg->inputs = 0;
+				ind = 0;
+				while (ind < len) {
+					msg->inputs |= (uint64_t)data8[ind] << (ind * 8);
+					ind++;
+				}
+				break;
+			}
+		}
+		break;
+
+	case CAN_PACKET_PSW_STAT: {
+		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			psw_status *msg = &psw_stat[i];
+			if (msg->id == id || msg->id == -1) {
+				ind = 0;
+				msg->id = id;
+				msg->rx_time = xTaskGetTickCount();
+
+				msg->v_in = buffer_get_float16(data8, 10.0, &ind);
+				msg->v_out = buffer_get_float16(data8, 10.0, &ind);
+				msg->temp = buffer_get_float16(data8, 10.0, &ind);
+				msg->is_out_on = (data8[ind] >> 0) & 1;
+				msg->is_pch_on = (data8[ind] >> 1) & 1;
+				msg->is_dsc_on = (data8[ind] >> 2) & 1;
+				ind++;
+				break;
+			}
+		}
+	} break;
+
+	default:
+		break;
+	}
 }
 
-#define RXBUF_LEN			100
+#define RXBUF_LEN			50
 static twai_message_t rx_buf[RXBUF_LEN];
 static volatile int rx_write = 0;
 static volatile int rx_read = 0;
@@ -267,8 +446,10 @@ static void process_task(void *arg) {
 
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
 
-			if (msg->extd) {
-				decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+			if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
+				if (msg->extd) {
+					decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+				}
 			}
 		}
 	}
@@ -403,6 +584,21 @@ static void update_baud(CAN_BAUD baudrate) {
 #endif
 
 void comm_can_init(void) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		stat_msgs[i].id = -1;
+		stat_msgs_2[i].id = -1;
+		stat_msgs_3[i].id = -1;
+		stat_msgs_4[i].id = -1;
+		stat_msgs_5[i].id = -1;
+		stat_msgs_6[i].id = -1;
+
+		io_board_adc_1_4[i].id = -1;
+		io_board_adc_5_8[i].id = -1;
+		io_board_digital_in[i].id = -1;
+
+		psw_stat[i].id = -1;
+	}
+
 #ifdef CAN_TX_GPIO_NUM
 	ping_sem = xSemaphoreCreateBinary();
 	proc_sem = xSemaphoreCreateBinary();
@@ -410,12 +606,14 @@ void comm_can_init(void) {
 
 	update_baud(backup.config.can_baud_rate);
 
+	g_config.rx_queue_len = 15;
+
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
 
 	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(rx_task, "can_rx", 512, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
-	xTaskCreatePinnedToCore(process_task, "can_proc", 4096, NULL, 8, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(process_task, "can_proc", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 #endif
 }
 
@@ -673,4 +871,237 @@ void comm_can_set_handbrake_rel(uint8_t controller_id, float current_rel) {
 	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
 	comm_can_transmit_eid(controller_id |
 			((uint32_t)CAN_PACKET_SET_CURRENT_HANDBRAKE_REL << 8), buffer, send_index);
+}
+
+can_status_msg *comm_can_get_status_msg_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &stat_msgs[index];
+	} else {
+		return 0;
+	}
+}
+
+can_status_msg *comm_can_get_status_msg_id(int id) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (stat_msgs[i].id == id) {
+			return &stat_msgs[i];
+		}
+	}
+
+	return 0;
+}
+
+can_status_msg_2 *comm_can_get_status_msg_2_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &stat_msgs_2[index];
+	} else {
+		return 0;
+	}
+}
+
+can_status_msg_2 *comm_can_get_status_msg_2_id(int id) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (stat_msgs_2[i].id == id) {
+			return &stat_msgs_2[i];
+		}
+	}
+
+	return 0;
+}
+
+can_status_msg_3 *comm_can_get_status_msg_3_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &stat_msgs_3[index];
+	} else {
+		return 0;
+	}
+}
+
+can_status_msg_3 *comm_can_get_status_msg_3_id(int id) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (stat_msgs_3[i].id == id) {
+			return &stat_msgs_3[i];
+		}
+	}
+
+	return 0;
+}
+
+can_status_msg_4 *comm_can_get_status_msg_4_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &stat_msgs_4[index];
+	} else {
+		return 0;
+	}
+}
+
+can_status_msg_4 *comm_can_get_status_msg_4_id(int id) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (stat_msgs_4[i].id == id) {
+			return &stat_msgs_4[i];
+		}
+	}
+
+	return 0;
+}
+
+can_status_msg_5 *comm_can_get_status_msg_5_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &stat_msgs_5[index];
+	} else {
+		return 0;
+	}
+}
+
+can_status_msg_5 *comm_can_get_status_msg_5_id(int id) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (stat_msgs_5[i].id == id) {
+			return &stat_msgs_5[i];
+		}
+	}
+
+	return 0;
+}
+
+can_status_msg_6 *comm_can_get_status_msg_6_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &stat_msgs_6[index];
+	} else {
+		return 0;
+	}
+}
+
+can_status_msg_6 *comm_can_get_status_msg_6_id(int id) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (stat_msgs_6[i].id == id) {
+			return &stat_msgs_6[i];
+		}
+	}
+
+	return 0;
+}
+
+io_board_adc_values *comm_can_get_io_board_adc_1_4_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE && io_board_adc_1_4[index].id >= 0) {
+		return &io_board_adc_1_4[index];
+	} else {
+		return 0;
+	}
+}
+
+io_board_adc_values *comm_can_get_io_board_adc_1_4_id(int id) {
+	if (id == 255 && io_board_adc_1_4[0].id >= 0) {
+		return &io_board_adc_1_4[0];
+	}
+
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (io_board_adc_1_4[i].id == id) {
+			return &io_board_adc_1_4[i];
+		}
+	}
+
+	return 0;
+}
+
+io_board_adc_values *comm_can_get_io_board_adc_5_8_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE && io_board_adc_5_8[index].id >= 0) {
+		return &io_board_adc_5_8[index];
+	} else {
+		return 0;
+	}
+}
+
+io_board_adc_values *comm_can_get_io_board_adc_5_8_id(int id) {
+	if (id == 255 && io_board_adc_5_8[0].id >= 0) {
+		return &io_board_adc_5_8[0];
+	}
+
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (io_board_adc_5_8[i].id == id) {
+			return &io_board_adc_5_8[i];
+		}
+	}
+
+	return 0;
+}
+
+io_board_digial_inputs *comm_can_get_io_board_digital_in_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &io_board_digital_in[index];
+	} else {
+		return 0;
+	}
+}
+
+io_board_digial_inputs *comm_can_get_io_board_digital_in_id(int id) {
+	if (id == 255 && io_board_digital_in[0].id >= 0) {
+		return &io_board_digital_in[0];
+	}
+
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (io_board_digital_in[i].id == id) {
+			return &io_board_digital_in[i];
+		}
+	}
+
+	return 0;
+}
+
+void comm_can_io_board_set_output_digital(int id, int channel, bool on) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+
+	buffer[send_index++] = channel;
+	buffer[send_index++] = 1;
+	buffer[send_index++] = on ? 1 : 0;
+
+	comm_can_transmit_eid(id | ((uint32_t)CAN_PACKET_IO_BOARD_SET_OUTPUT_DIGITAL << 8), buffer, send_index);
+}
+
+void comm_can_io_board_set_output_pwm(int id, int channel, float duty) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+
+	buffer[send_index++] = channel;
+	buffer_append_float16(buffer, duty, 1e3, &send_index);
+
+	comm_can_transmit_eid(id | ((uint32_t)CAN_PACKET_IO_BOARD_SET_OUTPUT_PWM << 8), buffer, send_index);
+}
+
+psw_status *comm_can_get_psw_status_index(int index) {
+	if (index < CAN_STATUS_MSGS_TO_STORE) {
+		return &psw_stat[index];
+	} else {
+		return 0;
+	}
+}
+
+psw_status *comm_can_get_psw_status_id(int id) {
+	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		if (psw_stat[i].id == id) {
+			return &psw_stat[i];
+		}
+	}
+
+	return 0;
+}
+
+void comm_can_psw_switch(int id, bool is_on, bool plot) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+
+	buffer[send_index++] = is_on ? 1 : 0;
+	buffer[send_index++] = plot ? 1 : 0;
+
+	comm_can_transmit_eid(id | ((uint32_t)CAN_PACKET_PSW_SWITCH << 8), buffer, send_index);
+}
+
+void comm_can_update_pid_pos_offset(int id, float angle_now, bool store) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+
+	buffer_append_float32(buffer, angle_now, 1e4, &send_index);
+	buffer[send_index++] = store;
+
+	comm_can_transmit_eid(id | ((uint32_t)CAN_PACKET_UPDATE_PID_POS_OFFSET << 8), buffer, send_index);
 }
