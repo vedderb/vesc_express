@@ -217,6 +217,9 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 	}
 }
 
+static uint8_t indexed4_mask[4] = {0x03, 0x0C, 0x30, 0xC0};
+static uint8_t indexed4_shift[4] = {0, 2, 4, 6};
+
 static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 	uint16_t w = img->width;
 	uint16_t h = img->height;
@@ -226,20 +229,19 @@ static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 		case indexed2: {
 			uint32_t pos = y * w + x;
 			uint32_t byte = pos >> 3;
-			uint32_t bit  = (pos & 0x7);
+			uint32_t bit  = 7 - (pos & 0x7);
 			if (c) {
-				data[byte] |= (1 << ( 7 - bit));
+				data[byte] |= (1 << bit);
 			} else {
-				data[byte] &= ~(1 << ( 7 - bit));
+				data[byte] &= ~(1 << bit);
 			}
 			break;
 		}
 		case indexed4: {
-			int pos = y*(w<<1) + (x<<1);
-			uint32_t byte = pos >> 3;
-			uint32_t bit  = 7 - (pos & 0x7);
-			uint8_t  val  = (uint8_t)(c & 0x3);
-			data[byte] = (data[byte] & (0x3 << (7 - bit))) | val;
+			int pos = y*w + x;
+			uint32_t byte = pos >> 2;
+			uint32_t ix  = 3 - (pos & 0x3);
+			data[byte] =  (data[byte] & ~indexed4_mask[ix]) | c << indexed4_shift[ix];
 			break;
 		}
 		case rgb332: {
@@ -281,10 +283,11 @@ static uint32_t getpixel(image_buffer_t* img, uint16_t x, uint16_t y) {
 			return (uint32_t)(data[byte] >> bit) & 0x1;
 		}
 		case indexed4: {
-			int pos = y*(w<<1) + (x<<1);
-			uint32_t byte = pos >> 3;
-			uint32_t bit  = 7 - (pos & 0x7);
-			return (uint32_t)(data[byte] >> bit) & 0x3;
+			int pos = y*w + x;
+			uint32_t byte = pos >> 2;
+			uint32_t ix  = 3 - (pos & 0x3);
+			return (uint32_t)((data[byte] & indexed4_mask[ix]) >> indexed4_shift[ix]);
+			break;
 		}
 		case rgb332: {
 			int pos = y*w + x;

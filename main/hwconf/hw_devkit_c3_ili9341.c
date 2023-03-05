@@ -143,7 +143,6 @@ static void IRAM_ATTR blast_indexed2(uint8_t *data, uint32_t *color_map, uint32_
 	colors[0] = to_RGB565(color_map[0]);
 	colors[1] = to_RGB565(color_map[1]);
 
-	hwspi_begin();
 	CLEAR_DATA_COMMAND();
 	disp_command(0x2C);
 	SET_DATA_COMMAND();
@@ -161,7 +160,31 @@ static void IRAM_ATTR blast_indexed2(uint8_t *data, uint32_t *color_map, uint32_
 		}
 	}
 	hwspi_data_stream_finish();
-	hwspi_end();
+	CLEAR_DATA_COMMAND();
+}
+
+static void IRAM_ATTR blast_indexed4(uint8_t *data, uint32_t* color_map, uint32_t num_pix) {
+	uint16_t colors[4];
+	colors[0] = to_RGB565(color_map[0]);
+	colors[1] = to_RGB565(color_map[1]);
+	colors[2] = to_RGB565(color_map[2]);
+	colors[3] = to_RGB565(color_map[3]);
+	static uint8_t indexed4_mask[4] = {0x03, 0x0C, 0x30, 0xC0};
+	static uint8_t indexed4_shift[4] = {0, 2, 4, 6};
+
+	CLEAR_DATA_COMMAND();
+	disp_command(0x2c);
+	SET_DATA_COMMAND();
+	hwspi_data_stream_start();
+
+	for (int i = 0; i < num_pix; i ++) {
+		int byte = i >> 2;
+		int mask_ix = (3 - (i & 0x03));
+		uint16_t c = colors[(data[byte] & indexed4_mask[mask_ix]) >> indexed4_shift[mask_ix]];
+		hwspi_data_stream_write((uint8_t)c);
+		hwspi_data_stream_write((uint8_t)(c >> 8));
+	}
+	hwspi_data_stream_finish();
 	CLEAR_DATA_COMMAND();
 }
 
@@ -191,12 +214,13 @@ static void IRAM_ATTR render_image_buffer(image_buffer_t *img, uint32_t *color_m
 	hwspi_end();
 	CLEAR_DATA_COMMAND();
 
+	hwspi_begin();
 	switch(img->fmt) {
 	case indexed2:
 		blast_indexed2(img->data + img->data_offset, color_map, img->width * img->height);
 		break;
 	case indexed4:
-		//blast_bpp_2(img, color_map);
+		blast_indexed4(img->data + img->data_offset, color_map, img->width * img->height);
 		break;
 	case rgb332:
 		//blast_bpp_8(img, color_map);
@@ -208,6 +232,7 @@ static void IRAM_ATTR render_image_buffer(image_buffer_t *img, uint32_t *color_m
 	default:
 		break;
 	}
+	hwspi_end();
 }
 
 static lbm_value ext_disp_clear(lbm_value *args, lbm_uint argn) {
