@@ -116,14 +116,12 @@ void hwspi_data_stream_start(void) {
 }
 
 void hwspi_data_stream_finish(void) {
-	spi_transaction_t *p;
-	spi_device_get_trans_result(m_spi, &p, 10);
+	static spi_transaction_t *tmp_ptr = 0;
+	spi_device_get_trans_result(m_spi, &tmp_ptr, 0);
+	spi_device_get_trans_result(m_spi, &tmp_ptr, 1);
 
 	if (m_active_buffer->pos != 0) {
-		m_active_buffer->trans.length = m_active_buffer->pos * 8;
-		m_active_buffer->pos = 0;
-		spi_device_transmit(m_spi, &m_active_buffer->trans);
-		m_active_buffer = m_active_buffer->next;
+		hwspi_send_data(m_active_buffer->data, m_active_buffer->pos);
 	}
 }
 
