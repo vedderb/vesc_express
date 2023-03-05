@@ -41,40 +41,62 @@ static spi_device_handle_t m_spi;
 static int m_pin_cs = -1;
 static data_stream_buffer_t m_data_buffers[HWSPI_BUFFERS];
 static data_stream_buffer_t *m_active_buffer = 0;
+static bool m_init_done = false;
+static spi_bus_config_t m_buscfg = {0};
+static spi_device_interface_config_t m_devcfg = {0};
 
 // Global variables
 uint8_t *hwspi_buffer_pointer = 0;
 int *hwspi_buffer_pos = 0;
 
+#include "commands.h"
+
 void hwspi_init(int clk_mhz, int mode,
 		int pin_miso, int pin_mosi, int pin_clk, int pin_cs) {
 
-	for (int i = 0;i < HWSPI_BUFFERS;i++) {
-		m_data_buffers[i].data = heap_caps_malloc(HWSPI_DATA_BUFFER_SIZE, MALLOC_CAP_DMA);
+	if (!m_init_done) {
+		for (int i = 0;i < HWSPI_BUFFERS;i++) {
+			m_data_buffers[i].data = heap_caps_malloc(HWSPI_DATA_BUFFER_SIZE, MALLOC_CAP_DMA);
+		}
 	}
 
 	m_pin_cs = pin_cs;
 
-	spi_bus_config_t buscfg={
-			.miso_io_num = pin_miso,
-			.mosi_io_num = pin_mosi,
-			.sclk_io_num = pin_clk,
-			.quadwp_io_num=-1,
-			.quadhd_io_num=-1,
-			.max_transfer_sz=4092
-	};
+	m_buscfg.miso_io_num = pin_miso;
+	m_buscfg.mosi_io_num = pin_mosi;
+	m_buscfg.sclk_io_num = pin_clk;
+	m_buscfg.quadwp_io_num = -1;
+	m_buscfg.quadhd_io_num = -1;
+	m_buscfg.max_transfer_sz = 4092;
 
-	spi_device_interface_config_t devcfg={
-			.clock_speed_hz = clk_mhz * 1000 * 1000,
-			.mode = mode,
-			.spics_io_num = -1, // We handle CS manually
-			.flags = 0,
-			.queue_size = 1, // Must be 1, otherwise multiple buffers will be queued at the same time
-			.pre_cb = NULL,
-	};
+	m_devcfg.clock_speed_hz = clk_mhz * 1000 * 1000;
+	m_devcfg.mode = mode;
+	m_devcfg.spics_io_num = -1; // We handle CS manually
+	m_devcfg.flags = 0;
+	m_devcfg.queue_size = 1; // Must be 1, otherwise multiple buffers will be queued at the same time
+	m_devcfg.pre_cb = NULL;
 
-	spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
-	spi_bus_add_device(SPI2_HOST, &devcfg, &m_spi);
+	gpio_config_t gpconf = {0};
+	gpconf.pin_bit_mask = BIT(m_pin_cs);
+	gpconf.mode = GPIO_MODE_OUTPUT;
+	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpconf.intr_type =  GPIO_INTR_DISABLE;
+
+	gpio_config(&gpconf);
+
+	if (m_init_done) {
+		static spi_transaction_t *tmp_ptr = 0;
+		spi_device_get_trans_result(m_spi, &tmp_ptr, 0);
+		spi_device_get_trans_result(m_spi, &tmp_ptr, 0);
+		spi_bus_remove_device(m_spi);
+		spi_bus_free(SPI2_HOST);
+	}
+
+	spi_bus_initialize(SPI2_HOST, &m_buscfg, SPI_DMA_CH_AUTO);
+	spi_bus_add_device(SPI2_HOST, &m_devcfg, &m_spi);
+
+	m_init_done = true;
 }
 
 void hwspi_begin(void) {

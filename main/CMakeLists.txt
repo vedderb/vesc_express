@@ -32,7 +32,6 @@ set(COMPONENT_SRCS
 "lispif.c"
 "lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
-"lispif_disp_extensions.c"
 
 "lispBM/src/env.c"
 "lispBM/src/fundamental.c"
@@ -57,6 +56,9 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/array_extensions.c"
 "lispBM/src/extensions/math_extensions.c"
 "lispBM/src/extensions/string_extensions.c"
+
+"display/lispif_disp_extensions.c"
+"display/disp_sh8501b.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS
@@ -68,6 +70,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "lispBM"
 "lispBM/include"
 "lispBM/platform/freertos/include"
+"display"
 )
 
 register_component()
