@@ -25,6 +25,8 @@
 #include "lbm_custom_type.h"
 #include "commands.h"
 
+#include "display/disp_sh8501b.h"
+
 #include <math.h>
 
 static const char *image_buffer_desc = "Image-Buffer";
@@ -295,9 +297,8 @@ static uint32_t getpixel(image_buffer_t* img, uint16_t x, uint16_t y) {
 		}
 		case rgb565: {
 			int pos = y*(w<<1) + (x<<1);
-			uint16_t *dp = (uint16_t*)img->data[pos];
 			uint16_t c = ((uint16_t)data[pos] << 8) | (uint16_t)data[pos+1];
-			return rgb565to888(dp[pos]);
+			return rgb565to888(c);
 		}
 		case rgb888: {
 			int pos = y*(w*3) + (x*3);
@@ -760,8 +761,67 @@ static lbm_value ext_blit(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// Display Drivers
+
+static char *msg_invalid_gpio = "Invalid GPIO";
+static char *msg_invalid_spi_speed = "Invalid SPI speed";
+
+static bool gpio_is_valid(int pin) {
+	switch (pin) {
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+	case 10:
+	case 18:
+	case 19:
+	case 20:
+	case 21:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(5);
+
+	int gpio_sd0, gpio_clk, gpio_cs, gpio_reset;
+	gpio_sd0 = lbm_dec_as_i32(args[0]);
+	gpio_clk = lbm_dec_as_i32(args[1]);
+	gpio_cs = lbm_dec_as_i32(args[2]);
+	gpio_reset = lbm_dec_as_i32(args[3]);
+
+	if (!gpio_is_valid(gpio_sd0) ||
+			!gpio_is_valid(gpio_clk) ||
+			!gpio_is_valid(gpio_cs) ||
+			!gpio_is_valid(gpio_reset)) {
+		lbm_set_error_reason(msg_invalid_gpio);
+		return ENC_SYM_EERROR;
+	}
+
+	int spi_mhz = lbm_dec_as_i32(args[4]);
+
+	if (spi_mhz > 40) {
+		lbm_set_error_reason(msg_invalid_spi_speed);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_sh8501b_init(gpio_sd0, gpio_clk, gpio_cs, gpio_reset, spi_mhz);
+
+	return ENC_SYM_TRUE;
+}
+
 void lispif_load_disp_extensions(void) {
 	register_symbols();
+
 	lbm_add_extension("img-buffer", ext_image_buffer);
 	lbm_add_extension("img-buffer-from-bin", ext_image_buffer_from_bin);
 	lbm_add_extension("img-dims", ext_image_dims);
@@ -771,4 +831,6 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-clear", ext_clear);
 	lbm_add_extension("img-circle", ext_circle);
 	lbm_add_extension("img-blit", ext_blit);
+
+	lbm_add_extension("disp-load-sh8501b", ext_disp_load_sh8501b);
 }

@@ -32,7 +32,7 @@
  * NOTE: Making the buffer any larger seems to cause some data loss. No idea why that
  * happens, looks like some ESP-issue...
  */
-#define HWSPI_DATA_BUFFER_SIZE 	500
+#define HWSPI_DATA_BUFFER_SIZE 	1024
 #define HWSPI_BUFFERS			3
 
 // Global variables
