@@ -286,8 +286,6 @@ void disp_sh8501b_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int 
 	lbm_add_extension("ext-disp-cmd", ext_disp_cmd);
 	lbm_add_extension("ext-disp-clear", ext_disp_clear);
 	lbm_add_extension("ext-disp-render", ext_render);
-
-	disp_reset();
 }
 
 void disp_sh8501b_command(uint8_t command, uint8_t *args, int argn) {

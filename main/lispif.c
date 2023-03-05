@@ -70,6 +70,7 @@ static void sleep_callback(uint32_t us);
 static void eval_thread(void *arg);
 
 void lispif_init(void) {
+	memset(&buffered_tok_state, 0, sizeof(buffered_tok_state));
 	lbm_mutex = xSemaphoreCreateMutex();
 	lispif_restart(false, true);
 	lbm_set_eval_step_quota(50);
