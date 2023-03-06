@@ -1,5 +1,6 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2023 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2023 Joel Svensson    svenssonjoel@yahoo.se
 
 	This file is part of the VESC firmware.
 
@@ -15,36 +16,19 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
-#ifndef MAIN_HWCONF_DEVKIT_C3_H_
-#define MAIN_HWCONF_DEVKIT_C3_H_
+#ifndef MAIN_DISPLAY_DISP_ILI9341_H_
+#define MAIN_DISPLAY_DISP_ILI9341_H_
 
-#include "adc.h"
+#include <stdint.h>
+#include <stdbool.h>
+#include "lispif_disp_extensions.h"
 
-#define HW_NAME						"Devkit C3"
-#define HW_UART_COMM
+void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int pin_dc, int clock_mhz);
+void disp_ili9341_command(uint8_t command, uint8_t *args, int argn);
+bool disp_ili9341_render_image(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y);
+void disp_ili9341_clear(uint32_t color);
+void disp_ili9341_reset(void);
 
-#define HW_INIT_HOOK()				hw_init()
-
-// UART
-#define UART_NUM					0
-#define UART_BAUDRATE				115200
-#define UART_TX						21
-#define UART_RX						20
-
-// ADC
-//#define HW_HAS_ADC
-#define HW_ADC_CH0					ADC1_CHANNEL_0
-#define HW_ADC_CH1					ADC1_CHANNEL_1
-#define HW_ADC_CH2					ADC1_CHANNEL_2
-#define HW_ADC_CH3					ADC1_CHANNEL_3
-
-// Functions
-void hw_init(void);
-
-// DISPLAY (Horizontal mode)
-#define DISPLAY_WIDTH              320
-#define DISPLAY_HEIGHT             240
-
-#endif /* MAIN_HWCONF_DEVKIT_C3_H_ */
+#endif /* MAIN_DISPLAY_DISP_ILI9341_H_ */
