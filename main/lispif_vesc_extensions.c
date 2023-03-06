@@ -24,6 +24,7 @@
 #include "extensions/array_extensions.h"
 #include "extensions/string_extensions.h"
 #include "extensions/math_extensions.h"
+#include "lispif_disp_extensions.h"
 #include "lbm_constants.h"
 
 #include "commands.h"
@@ -2592,6 +2593,9 @@ void lispif_load_vesc_extensions(void) {
 	// Sleep
 	lbm_add_extension("sleep-deep", ext_sleep_deep);
 	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
+
+        // Disp extensions
+	lispif_load_disp_extensions();
 
 	// TODO:
 	// - file system

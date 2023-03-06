@@ -32,7 +32,6 @@ set(COMPONENT_SRCS
 "lispif.c"
 "lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
-
 "lispBM/src/env.c"
 "lispBM/src/fundamental.c"
 "lispBM/src/heap.c"
@@ -59,6 +58,7 @@ set(COMPONENT_SRCS
 
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
+"display/disp_ili9341.c"
 "display/tjpgd.c"
 )
 

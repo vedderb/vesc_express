@@ -26,6 +26,7 @@
 #include "commands.h"
 
 #include "display/disp_sh8501b.h"
+#include "display/disp_ili9341.h"
 #include "display/tjpgd.h"
 
 #include <math.h>
@@ -245,7 +246,6 @@ static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 			uint32_t ix  = 3 - (pos & 0x3);
 			data[byte] =  (data[byte] & ~indexed4_mask[ix]) | c << indexed4_shift[ix];
 			break;
-			break;
 		}
 		case rgb332: {
 			int pos = y*w + x;
@@ -254,10 +254,9 @@ static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 		}
 		case rgb565: {
 			int pos = y*(w<<1) + (x<<1) ;
-			//uint16_t *dp = (uint16_t*)img->data[pos];
-			//dp[pos] = rgb888to565(c);
-			data[pos] = (uint8_t)c >> 8;
-			data[pos+1] = (uint8_t)c;
+			uint16_t color = rgb888to565(c);
+			data[pos] = (uint8_t)color >> 8;
+			data[pos+1] = (uint8_t)color;
 			break;
 		}
 		case rgb888: {
@@ -905,6 +904,41 @@ static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_disp_load_ili9341(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(6);
+
+	int gpio_sd0, gpio_clk, gpio_cs, gpio_reset, gpio_dc;
+	gpio_sd0 = lbm_dec_as_i32(args[0]);
+	gpio_clk = lbm_dec_as_i32(args[1]);
+	gpio_cs = lbm_dec_as_i32(args[2]);
+	gpio_reset = lbm_dec_as_i32(args[3]);
+	gpio_dc = lbm_dec_as_i32(args[4]);
+
+	if (!gpio_is_valid(gpio_sd0) ||
+			!gpio_is_valid(gpio_clk) ||
+			!gpio_is_valid(gpio_cs) ||
+			!gpio_is_valid(gpio_reset) ||
+			!gpio_is_valid(gpio_dc)) {
+		lbm_set_error_reason(msg_invalid_gpio);
+		return ENC_SYM_EERROR;
+	}
+
+	int spi_mhz = lbm_dec_as_i32(args[5]);
+
+	if (spi_mhz > 40) {
+		lbm_set_error_reason(msg_invalid_spi_speed);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_ili9341_init(gpio_sd0, gpio_clk, gpio_cs, gpio_reset, gpio_dc, spi_mhz);
+
+	disp_render_image = disp_ili9341_render_image;
+	disp_clear = disp_ili9341_clear;
+	disp_reset = disp_ili9341_reset;
+
+	return ENC_SYM_TRUE;
+}
+
 // Jpg decoder
 
 typedef struct {
@@ -1006,6 +1040,7 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-blit", ext_blit);
 
 	lbm_add_extension("disp-load-sh8501b", ext_disp_load_sh8501b);
+	lbm_add_extension("disp-load-ili9341", ext_disp_load_ili9341);
 	lbm_add_extension("disp-reset", ext_disp_reset);
 	lbm_add_extension("disp-clear", ext_disp_clear);
 	lbm_add_extension("disp-render", ext_disp_render);
