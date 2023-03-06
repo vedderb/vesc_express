@@ -51,9 +51,9 @@ static color_format_t sym_to_color_format(lbm_value v) {
 }
 
 static bool image_buffer_destructor(lbm_uint value) {
-	image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(value);
+	image_buffer_t *img = (image_buffer_t*)value;
 	lbm_free((void*)img->data);
-	lbm_free((void*)value);
+	lbm_free((void*)img);
 	return true;
 }
 
