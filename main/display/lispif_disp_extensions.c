@@ -856,9 +856,16 @@ static lbm_value ext_disp_render(lbm_value *args, lbm_uint argn) {
 			}
 		}
 		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-		disp_render_image(img, colors, lbm_dec_as_u32(args[1]), lbm_dec_as_u32(args[2]));
+		bool render_res = disp_render_image(img, colors, lbm_dec_as_u32(args[1]), lbm_dec_as_u32(args[2]));
+
+		if (!render_res) {
+			lbm_set_error_reason("Could not render image. Check if the format and location is compatible with the display.");
+			return ENC_SYM_EERROR;
+		}
+
 		res = ENC_SYM_TRUE;
 	}
+
 	return res;
 }
 
