@@ -266,6 +266,44 @@ static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint32_t orientation = lbm_dec_as_u32(args[0]);
+	uint8_t arg = 0;
+	lbm_value res = ENC_SYM_TRUE;
+	switch(orientation) {
+	case 0:
+		arg = 0x8;
+		disp_ili9341_command(0x36, &arg, 1);
+		display_width = 240;
+		display_height = 320;
+		break;
+	case 1:
+		arg = 0x68;
+		disp_ili9341_command(0x36, &arg, 1);
+		display_width = 320;
+		display_height = 240;
+		break;
+	case 2:
+		arg = 0xC8;
+		disp_ili9341_command(0x36, &arg, 1);
+		display_width = 240;
+		display_height = 320;
+		break;
+	case 3:
+		arg = 0xA8;
+		disp_ili9341_command(0x36, &arg, 1);
+		display_width = 320;
+		display_height = 240;
+		break;
+	default:
+		res = ENC_SYM_EERROR;
+		break;
+	}
+	return res;
+}
+
 void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int pin_dc, int clock_mhz) {
 	hwspi_init(clock_mhz, 0, -1, pin_sd0, pin_clk, pin_cs);
 	m_pin_reset = pin_reset;
@@ -284,6 +322,7 @@ void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int 
 	gpio_set_level(m_pin_dc, 0);
 
 	lbm_add_extension("ext-disp-cmd", ext_disp_cmd);
+	lbm_add_extension("ext-disp-orientation", ext_disp_orientation);
 }
 
 
@@ -311,7 +350,7 @@ static uint8_t ili9341_init_sequence[15][7] = {
 		{2, 0x3A, 0x55},
 		{3, 0xB1, 0x00, 0x1A},
 		{3, 0xB6, 0x0A, 0xA2},
-		{2, 0x36, 0x68}
+		{2, 0x36, 0xA8}
 };
 
 void disp_ili9341_reset(void) {
