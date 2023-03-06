@@ -167,12 +167,11 @@ static uint32_t rgb332to888(uint8_t rgb) {
 
 static uint32_t  rgb565to888(uint16_t rgb) {
 	uint32_t r = (uint32_t)(rgb >> 11);
-	uint32_t g = (uint32_t)((rgb >> 5) & 0x1F);
+	uint32_t g = (uint32_t)((rgb >> 5) & 0x3F);
 	uint32_t b = (uint32_t)(rgb & 0x1F);
 	uint32_t rgb888 = r << (16 + 3) | g << (8 + 2) | b << 3;
 	return rgb888;
 }
-
 
 static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 	uint32_t img_size = (uint32_t)img->width * img->height;
@@ -253,10 +252,9 @@ static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 		}
 		case rgb565: {
 			int pos = y*(w<<1) + (x<<1) ;
-			//uint16_t *dp = (uint16_t*)img->data[pos];
-			//dp[pos] = rgb888to565(c);
-			data[pos] = (uint8_t)c >> 8;
-			data[pos+1] = (uint8_t)c;
+			uint16_t color = rgb888to565(c);
+			data[pos] = (uint8_t)color >> 8;
+			data[pos+1] = (uint8_t)color;
 			break;
 		}
 		case rgb888: {
@@ -289,7 +287,6 @@ static uint32_t getpixel(image_buffer_t* img, uint16_t x, uint16_t y) {
 			uint32_t byte = pos >> 2;
 			uint32_t ix  = 3 - (pos & 0x3);
 			return (uint32_t)((data[byte] & indexed4_mask[ix]) >> indexed4_shift[ix]);
-			break;
 		}
 		case rgb332: {
 			int pos = y*w + x;
@@ -763,9 +760,6 @@ static lbm_value ext_blit(lbm_value *args, lbm_uint argn) {
 
 // Display Drivers
 
-static char *msg_invalid_gpio = "Invalid GPIO";
-static char *msg_invalid_spi_speed = "Invalid SPI speed";
-
 static bool gpio_is_valid(int pin) {
 	switch (pin) {
 	case 0:
@@ -788,6 +782,91 @@ static bool gpio_is_valid(int pin) {
 	default:
 		return false;
 	}
+}
+
+static bool(* volatile disp_render_image)(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y) = 0;
+static void(* volatile disp_clear)(uint32_t color) = 0;
+static void(* volatile disp_reset)(void) = 0;
+
+static char *msg_invalid_gpio = "Invalid GPIO";
+static char *msg_invalid_spi_speed = "Invalid SPI speed";
+static char *msg_not_supported = "Command not supported or display driver not initialized";
+
+static lbm_value ext_disp_reset(lbm_value *args, lbm_uint argn) {
+	(void) args;
+	(void) argn;
+
+	if (disp_reset == NULL) {
+		lbm_set_error_reason(msg_not_supported);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_reset();
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_disp_clear(lbm_value *args, lbm_uint argn) {
+	if (disp_clear == NULL) {
+		lbm_set_error_reason(msg_not_supported);
+		return ENC_SYM_EERROR;
+	}
+
+	if (argn > 1) {
+		return ENC_SYM_TERROR;
+	}
+
+	uint32_t clear_color = 0;
+
+	if (argn == 1) {
+		if (!lbm_is_number(args[0])) {
+			return ENC_SYM_TERROR;
+		}
+
+		clear_color = lbm_dec_as_u32(args[0]);
+	}
+
+	disp_clear(clear_color);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_disp_render(lbm_value *args, lbm_uint argn) {
+	if (disp_render_image == NULL) {
+		lbm_set_error_reason(msg_not_supported);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value res = ENC_SYM_TERROR;
+	uint32_t colors[4] = {0};
+	if (argn >= 3 &&
+		lispif_disp_is_image_buffer(args[0]) &&
+		lbm_is_number(args[1]) &&
+		lbm_is_number(args[2])) {
+
+		if (argn == 4 &&
+			lbm_is_list(args[3])) {
+			int i = 0;
+			lbm_value curr = args[3];
+			while (lbm_is_cons(curr) && i < 4) {
+				// Interpret "anything" as a 32bit value
+				colors[i] = lbm_dec_as_u32(lbm_car(curr));
+				curr = lbm_cdr(curr);
+				i++;
+			}
+		}
+		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+		bool render_res = disp_render_image(img, colors, lbm_dec_as_u32(args[1]), lbm_dec_as_u32(args[2]));
+
+		if (!render_res) {
+			lbm_set_error_reason("Could not render image. Check if the format and location is compatible with the display.");
+			return ENC_SYM_EERROR;
+		}
+
+		res = ENC_SYM_TRUE;
+	}
+
+	return res;
 }
 
 static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
@@ -816,11 +895,19 @@ static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
 
 	disp_sh8501b_init(gpio_sd0, gpio_clk, gpio_cs, gpio_reset, spi_mhz);
 
+	disp_render_image = disp_sh8501b_render_image;
+	disp_clear = disp_sh8501b_clear;
+	disp_reset = disp_sh8501b_reset;
+
 	return ENC_SYM_TRUE;
 }
 
 void lispif_load_disp_extensions(void) {
 	register_symbols();
+
+	disp_render_image = NULL;
+	disp_clear = NULL;
+	disp_reset = NULL;
 
 	lbm_add_extension("img-buffer", ext_image_buffer);
 	lbm_add_extension("img-buffer-from-bin", ext_image_buffer_from_bin);
@@ -833,4 +920,7 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-blit", ext_blit);
 
 	lbm_add_extension("disp-load-sh8501b", ext_disp_load_sh8501b);
+	lbm_add_extension("disp-reset", ext_disp_reset);
+	lbm_add_extension("disp-clear", ext_disp_clear);
+	lbm_add_extension("disp-render", ext_disp_render);
 }
