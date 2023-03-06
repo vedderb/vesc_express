@@ -58,6 +58,7 @@ set(COMPONENT_SRCS
 
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
+"display/tjpgd.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS
