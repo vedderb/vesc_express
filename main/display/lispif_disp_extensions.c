@@ -315,13 +315,22 @@ static uint32_t getpixel(image_buffer_t* img, uint16_t x, uint16_t y) {
 
 
 static void h_line(image_buffer_t* img, int16_t x, int16_t y, uint16_t len, uint32_t c) {
-
 	if (len == 0 || y < 0 || y > img->height) return;
 	if (x < 0) x = 0;
 	if (x + len > img->width) len -= ((x + len) - img->width);
 
 	for (int i = 0; i < len; i ++) {
 		putpixel(img, x+i, y, c);
+	}
+}
+
+static void v_line(image_buffer_t* img, int16_t x, int16_t y, uint16_t len, uint32_t c) {
+	if (len == 0 || x < 0 || x > img->width) return;
+	if (x < 0) x = 0;
+	if (y + len > img->height) len -= ((y + len) - img->height);
+
+	for (int i = 0; i < len; i ++) {
+		putpixel(img, x, y+i, c);
 	}
 }
 
@@ -385,6 +394,19 @@ static void circle(image_buffer_t *img, int x, int y, int radius, bool fill, uin
 			x0 = x0+1;
 			da = da + 8;
 		}
+	}
+}
+
+static void rectangle(image_buffer_t *img, int x, int y, int width, int height, bool fill, uint32_t color) {
+	if (fill) {
+		for (int i = y; i < (y + height);i++) {
+			h_line(img, x, i, width, color);
+		}
+	} else {
+		h_line(img, x, y, width, color);
+		h_line(img, x, y + height, width, color);
+		v_line(img, x, y, height, color);
+		v_line(img, x + width, y, height, color);
 	}
 }
 
@@ -596,17 +618,22 @@ static lbm_value ext_image_buffer_from_bin(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_clear(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if (argn == 2 &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1])){
-
-		uint32_t c = lbm_dec_as_u32(args[1]);
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-		image_buffer_clear(img, c);
-		res = ENC_SYM_TRUE;
+	if ((argn != 1 && argn != 2) ||
+			!lispif_disp_is_image_buffer(args[0]) ||
+			(argn == 2 && !lbm_is_number(args[1]))) {
+		return ENC_SYM_TERROR;
 	}
-	return res;
+
+	image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+
+	uint32_t color = 0;
+	if (argn == 2) {
+		color = lbm_dec_as_u32(args[1]);
+	}
+
+	image_buffer_clear(img, color);
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_putpixel(lbm_value *args, lbm_uint argn) {
@@ -670,6 +697,64 @@ static lbm_value ext_circle(lbm_value *args, lbm_uint argn) {
 		int fill = lbm_dec_as_u32(args[4]);
 		uint32_t fg = lbm_dec_as_u32(args[5]);
 		circle(img, x, y, radius, fill, fg);
+		res = ENC_SYM_TRUE;
+	}
+	return res;
+}
+
+static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_TERROR;
+	if (argn == 7 &&
+		lispif_disp_is_image_buffer(args[0]) &&
+		lbm_is_number(args[1]) &&
+		lbm_is_number(args[2]) &&
+		lbm_is_number(args[3]) &&
+		lbm_is_number(args[4]) &&
+		lbm_is_number(args[5]) &&
+		lbm_is_number(args[6])) {
+
+		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+
+		int x = lbm_dec_as_i32(args[1]);
+		int y = lbm_dec_as_i32(args[2]);
+		int width = lbm_dec_as_u32(args[3]);
+		int height = lbm_dec_as_u32(args[4]);
+		int fill = lbm_dec_as_u32(args[5]);
+		uint32_t fg = lbm_dec_as_u32(args[6]);
+		rectangle(img, x, y, width, height, fill, fg);
+		res = ENC_SYM_TRUE;
+	}
+	return res;
+}
+
+static lbm_value ext_rectangle_rounded(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_TERROR;
+	if (argn == 7 &&
+		lispif_disp_is_image_buffer(args[0]) &&
+		lbm_is_number(args[1]) &&
+		lbm_is_number(args[2]) &&
+		lbm_is_number(args[3]) &&
+		lbm_is_number(args[4]) &&
+		lbm_is_number(args[5]) &&
+		lbm_is_number(args[6])) {
+
+		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+
+		int x = lbm_dec_as_i32(args[1]);
+		int y = lbm_dec_as_i32(args[2]);
+		int width = lbm_dec_as_u32(args[3]);
+		int height = lbm_dec_as_u32(args[4]);
+		int rad = lbm_dec_as_u32(args[5]);
+		uint32_t fg = lbm_dec_as_u32(args[6]);
+
+		rectangle(img, x + rad, y, width - 2 * rad, rad, true, fg);
+		rectangle(img, x + rad, y + height - rad, width - 2 * rad, rad, true, fg);
+		rectangle(img, x, y + rad, width, height - 2 * rad, true, fg);
+		circle(img, x + rad, y + rad, rad, 1, fg);
+		circle(img, x + rad, y + height - rad, rad, 1, fg);
+		circle(img, x + width - rad, y + rad, rad, 1, fg);
+		circle(img, x + width - rad, y + height - rad, rad, 1, fg);
+
 		res = ENC_SYM_TRUE;
 	}
 	return res;
@@ -1037,6 +1122,8 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-text", ext_text);
 	lbm_add_extension("img-clear", ext_clear);
 	lbm_add_extension("img-circle", ext_circle);
+	lbm_add_extension("img-rectangle", ext_rectangle);
+	lbm_add_extension("img-rectangle-rounded", ext_rectangle_rounded);
 	lbm_add_extension("img-blit", ext_blit);
 
 	lbm_add_extension("disp-load-sh8501b", ext_disp_load_sh8501b);
