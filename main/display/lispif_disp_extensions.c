@@ -26,6 +26,7 @@
 #include "commands.h"
 
 #include "display/disp_sh8501b.h"
+#include "display/tjpgd.h"
 
 #include <math.h>
 
@@ -904,6 +905,89 @@ static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// Jpg decoder
+
+typedef struct {
+	uint8_t *data;
+	int pos;
+	int size;
+	int ofs_x;
+	int ofs_y;
+} jpg_bufdef;
+
+size_t jpg_input_func (JDEC* jd, uint8_t* buff, size_t ndata) {
+	jpg_bufdef *dev = (jpg_bufdef*)jd->device;
+
+	if (ndata > (dev->size - dev->pos)) {
+		ndata = (dev->size - dev->pos);
+	}
+
+	if (buff) {
+		memcpy(buff, dev->data + dev->pos, ndata);
+	}
+	dev->pos += ndata;
+	return ndata;
+}
+
+int jpg_output_func (	/* 1:Ok, 0:Aborted */
+	JDEC* jd,		/* Decompression object */
+	void* bitmap,	/* Bitmap data to be output */
+	JRECT* rect		/* Rectangular region to output */
+) {
+	jpg_bufdef *dev = (jpg_bufdef*)jd->device;
+
+	image_buffer_t img;
+	memset(&img, 0, sizeof(img));
+
+	img.fmt = rgb888;
+	img.width = rect->right - rect->left + 1;
+	img.height = rect->bottom - rect->top + 1;
+	img.data = bitmap;
+
+	disp_render_image(&img, 0, rect->left + dev->ofs_x, rect->top + dev->ofs_y);
+
+	return 1;
+}
+
+static lbm_value ext_disp_render_jpg(lbm_value *args, lbm_uint argn) {
+	if (disp_render_image == NULL) {
+		lbm_set_error_reason(msg_not_supported);
+		return ENC_SYM_EERROR;
+	}
+
+	if (argn != 3 ||
+			!lbm_is_byte_array(args[0]) ||
+			!lbm_is_number(args[1]) ||
+			!lbm_is_number(args[2])) {
+		return ENC_SYM_TERROR;
+	}
+
+	JDEC jd;
+	void *jdwork;
+	const size_t sz_work = 4096;
+
+	jdwork = lbm_malloc(sz_work);
+	if (!jdwork) {
+		return ENC_SYM_MERROR;
+	}
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+
+	jpg_bufdef iodev;
+	iodev.data = (uint8_t*)(array->data);
+	iodev.size = array->size;
+	iodev.pos = 0;
+	iodev.ofs_x = lbm_dec_as_i32(args[1]);
+	iodev.ofs_y = lbm_dec_as_i32(args[2]);
+
+	jd_prepare(&jd, jpg_input_func, jdwork, sz_work, &iodev);
+	jd_decomp(&jd, jpg_output_func, 0);
+
+	lbm_free(jdwork);
+
+	return ENC_SYM_TRUE;
+}
+
 void lispif_load_disp_extensions(void) {
 	register_symbols();
 
@@ -925,4 +1009,5 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("disp-reset", ext_disp_reset);
 	lbm_add_extension("disp-clear", ext_disp_clear);
 	lbm_add_extension("disp-render", ext_disp_render);
+	lbm_add_extension("disp-render-jpg", ext_disp_render_jpg);
 }
