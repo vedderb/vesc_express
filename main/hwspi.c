@@ -142,16 +142,16 @@ void hwspi_data_stream_finish(void) {
 	spi_device_get_trans_result(m_spi, &tmp_ptr, 0);
 //	spi_device_get_trans_result(m_spi, &tmp_ptr, 1);
 
-	if (m_active_buffer->pos != 0) {
+//	if (m_active_buffer->pos != 0) {
 		hwspi_send_data(m_active_buffer->data, m_active_buffer->pos);
-	}
+//	}
 }
 
 void hwspi_send_data(uint8_t *data, int len) {
 	spi_transaction_t t;
 	memset(&t, 0, sizeof(t));
 	t.length = len * 8;
-	t.tx_buffer=data;
+	t.tx_buffer = data;
 	t.flags = 0;
 	spi_device_polling_transmit(m_spi, &t);
 }
