@@ -83,7 +83,6 @@ static uint32_t image_dims_to_size_bytes(color_format_t fmt, uint16_t width, uin
 }
 
 static lbm_value image_buffer_lift(uint8_t *buf, uint8_t buf_offset, color_format_t fmt, uint16_t width, uint16_t height) {
-
 	image_buffer_t *img = lbm_malloc(sizeof(image_buffer_t));
 	if (!img) return ENC_SYM_MERROR;
 
@@ -102,7 +101,6 @@ static lbm_value image_buffer_lift(uint8_t *buf, uint8_t buf_offset, color_forma
 }
 
 static lbm_value image_buffer_allocate(color_format_t fmt, uint16_t width, uint16_t height) {
-
 	uint32_t size_bytes = image_dims_to_size_bytes(fmt, width, height);
 
 	uint8_t *buf = lbm_malloc(size_bytes);
@@ -136,6 +134,11 @@ static bool register_symbols(void) {
 }
 
 // Internal functions
+
+static inline void norm_angle(float *angle) {
+	while (*angle < -M_PI) { *angle += 2.0 * M_PI; }
+	while (*angle >=  M_PI) { *angle -= 2.0 * M_PI; }
+}
 
 static uint8_t rgb888to332(uint32_t rgb) {
 	uint8_t r = (uint8_t)(rgb >> (16 + 5));
@@ -313,28 +316,114 @@ static uint32_t getpixel(image_buffer_t* img, uint16_t x, uint16_t y) {
 	return 0;
 }
 
-
 static void h_line(image_buffer_t* img, int16_t x, int16_t y, uint16_t len, uint32_t c) {
-	if (len == 0 || y < 0 || y > img->height) return;
-	if (x < 0) x = 0;
-	if (x + len > img->width) len -= ((x + len) - img->width);
-
 	for (int i = 0; i < len; i ++) {
 		putpixel(img, x+i, y, c);
 	}
 }
 
 static void v_line(image_buffer_t* img, int16_t x, int16_t y, uint16_t len, uint32_t c) {
-	if (len == 0 || x < 0 || x > img->width) return;
-	if (x < 0) x = 0;
-	if (y + len > img->height) len -= ((y + len) - img->height);
-
 	for (int i = 0; i < len; i ++) {
 		putpixel(img, x, y+i, c);
 	}
 }
 
-static void draw_line(image_buffer_t *img, int x0, int y0, int x1, int y1, uint32_t c) {
+static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t color) {
+	switch (radius) {
+	case 0:
+		putpixel(img, x, y, color);
+		break;
+
+	case 1:
+		putpixel(img, x - 1, y, color);
+		putpixel(img, x, y, color);
+		break;
+
+	case 2:
+		putpixel(img, x - 1, y - 1, color);
+		putpixel(img, x, y - 1, color);
+		putpixel(img, x - 2, y, color);
+		putpixel(img, x - 1, y, color);
+		putpixel(img, x, y, color);
+		putpixel(img, x + 1, y, color);
+		putpixel(img, x - 1, y + 1, color);
+		putpixel(img, x, y + 1, color);
+		break;
+
+	case 3:
+		h_line(img, x - 2, y - 2, 4, color);
+		h_line(img, x - 2, y - 1, 4, color);
+		h_line(img, x - 3, y, 6, color);
+		h_line(img, x - 2, y + 1, 4, color);
+		h_line(img, x - 2, y + 2, 4, color);
+		break;
+
+	case 4:
+		h_line(img, x - 2, y - 3, 4, color);
+		h_line(img, x - 3, y - 2, 6, color);
+		h_line(img, x - 3, y - 1, 6, color);
+		h_line(img, x - 4, y, 8, color);
+		h_line(img, x - 3, y + 1, 6, color);
+		h_line(img, x - 3, y + 2, 6, color);
+		h_line(img, x - 2, y + 3, 4, color);
+		break;
+
+	default: {
+		int r2 = radius * radius;
+		for(int y1 = -radius;y1 <= 0;y1++) {
+			for(int x1 =- radius;x1 <= 0;x1++) {
+				if(x1 * x1 + y1 * y1 <= r2) {
+					h_line(img, x + x1, y + y1, 2 * (-x1), color);
+					h_line(img, x + x1, y - y1, 2 * (-x1), color);
+					break;
+				}
+			}
+		}
+	} break;
+	}
+}
+
+static void circle(image_buffer_t *img, int x, int y, int radius, int thickness, uint32_t color) {
+	int x0 = 0;
+	int y0 = radius;
+	int d = 5 - 4*radius;
+	int da = 12;
+	int db = 20 - 8*radius;
+
+	if (thickness < 2) {
+		while (x0 < y0) {
+			putpixel(img, x + x0, y + y0, color);
+			putpixel(img, x + x0, y - y0, color);
+			putpixel(img, x - x0, y + y0, color);
+			putpixel(img, x - x0, y - y0, color);
+			putpixel(img, x + y0, y + x0, color);
+			putpixel(img, x + y0, y - x0, color);
+			putpixel(img, x - y0, y + x0, color);
+			putpixel(img, x - y0, y - x0, color);
+			if (d < 0) { d = d + da; db = db+8; }
+			else  { y0 = y0 - 1; d = d+db; db = db + 16; }
+			x0 = x0+1;
+			da = da + 8;
+		}
+	} else {
+		while (x0 < y0) {
+			fill_circle(img, x + x0, y + y0, thickness, color);
+			fill_circle(img, x + x0, y - y0, thickness, color);
+			fill_circle(img, x - x0, y + y0, thickness, color);
+			fill_circle(img, x - x0, y - y0, thickness, color);
+			fill_circle(img, x + y0, y + x0, thickness, color);
+			fill_circle(img, x + y0, y - x0, thickness, color);
+			fill_circle(img, x - y0, y + x0, thickness, color);
+			fill_circle(img, x - y0, y - x0, thickness, color);
+			if (d < 0) { d = d + da; db = db+8; }
+			else  { y0 = y0 - 1; d = d+db; db = db + 16; }
+			x0 = x0+1;
+			da = da + 8;
+		}
+	}
+}
+
+static void line(image_buffer_t *img, int x0, int y0, int x1, int y1, int thickness, uint32_t c) {
 	int dx = abs(x1 - x0);
 	int sx = x0 < x1 ? 1 : -1;
 	int dy = -abs(y1 - y0);
@@ -342,7 +431,12 @@ static void draw_line(image_buffer_t *img, int x0, int y0, int x1, int y1, uint3
 	int error = dx + dy;
 
 	while (true) {
-		putpixel(img, x0, y0,c);
+		if (thickness > 1) {
+			fill_circle(img, x0, y0, thickness, c);
+		} else {
+			putpixel(img, x0, y0, c);
+		}
+
 		if (x0 == x1 && y0 == y1) {
 			break;
 		}
@@ -363,40 +457,6 @@ static void draw_line(image_buffer_t *img, int x0, int y0, int x1, int y1, uint3
 	}
 }
 
-static void circle(image_buffer_t *img, int x, int y, int radius, bool fill, uint32_t color) {
-	if (fill) {
-		for(int y1 = -radius;y1 <= 0;y1++) {
-			for(int x1 =- radius;x1 <= 0;x1++) {
-				if(x1 * x1 + y1 * y1 <= radius * radius) {
-					h_line(img, x + x1, y + y1, 2 * (-x1), color);
-					h_line(img, x + x1, y - y1, 2 * (-x1), color);
-					break;
-				}
-			}
-		}
-	} else {
-		int x0 = 0;
-		int y0 = radius;
-		int d = 5 - 4*radius;
-		int da = 12;
-		int db = 20 - 8*radius;
-		while (x0 < y0) {
-			putpixel(img, x + x0, y + y0, color);
-			putpixel(img, x + x0, y - y0, color);
-			putpixel(img, x - x0, y + y0, color);
-			putpixel(img, x - x0, y - y0, color);
-			putpixel(img, x + y0, y + x0, color);
-			putpixel(img, x + y0, y - x0, color);
-			putpixel(img, x - y0, y + x0, color);
-			putpixel(img, x - y0, y - x0, color);
-			if (d < 0) { d = d + da; db = db+8; }
-			else  { y0 = y0 - 1; d = d+db; db = db + 16; }
-			x0 = x0+1;
-			da = da + 8;
-		}
-	}
-}
-
 static void rectangle(image_buffer_t *img, int x, int y, int width, int height, bool fill, uint32_t color) {
 	if (fill) {
 		for (int i = y; i < (y + height);i++) {
@@ -410,8 +470,44 @@ static void rectangle(image_buffer_t *img, int x, int y, int width, int height, 
 	}
 }
 
-static void img_putc(image_buffer_t *img, int x, int y, uint32_t fg, uint32_t bg, uint8_t *font_data, uint8_t ch) {
+static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end, int thickness, uint32_t color) {
+	ang_start *= M_PI / 180.0;
+	ang_end *= M_PI / 180.0;
 
+	norm_angle(&ang_start);
+	norm_angle(&ang_end);
+
+	float ang_range = ang_end - ang_start;
+
+	if (ang_range < 0.0) {
+		ang_range += 2.0 * M_PI;
+	}
+
+	float steps = 40.0 * ang_range * (0.5 / M_PI);
+
+	float ang_step = ang_range / steps;
+	float sa = sinf(ang_step);
+	float ca = cosf(ang_step);
+
+	float s_start = sinf(ang_start);
+	float c_start = cosf(ang_start);
+
+	float px = c_start * (float)rad;
+	float py = s_start * (float)rad;
+
+	for (int i = 0;i < steps;i++) {
+		float px_before = px;
+		float py_before = py;
+
+		px = px * ca - py * sa;
+		py = py * ca + px_before * sa;
+
+		line(img, x + px_before, y + py_before,
+				x + px, y + py, thickness, color);
+	}
+}
+
+static void img_putc(image_buffer_t *img, int x, int y, uint32_t fg, uint32_t bg, uint8_t *font_data, uint8_t ch) {
 	uint8_t w = font_data[0];
 	uint8_t h = font_data[1];
 	uint8_t char_num = font_data[2];
@@ -656,7 +752,7 @@ static lbm_value ext_putpixel(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_line(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TERROR;
-	if (argn == 6 &&
+	if ((argn == 6 || (argn == 7 && lbm_is_number(args[6]))) &&
 		lispif_disp_is_image_buffer(args[0]) &&
 		lbm_is_number(args[1]) &&
 		lbm_is_number(args[2]) &&
@@ -672,7 +768,12 @@ static lbm_value ext_line(lbm_value *args, lbm_uint argn) {
 		int y1 = lbm_dec_as_u32(args[4]);
 		uint32_t fg = lbm_dec_as_u32(args[5]);
 
-		draw_line(img, x0, y0, x1, y1, fg);
+		int thickness = 1;
+		if (argn == 7) {
+			thickness = lbm_dec_as_u32(args[6]);
+		}
+
+		line(img, x0, y0, x1, y1, thickness, fg);
 
 		res = ENC_SYM_TRUE;
 	}
@@ -696,7 +797,43 @@ static lbm_value ext_circle(lbm_value *args, lbm_uint argn) {
 		int radius = lbm_dec_as_u32(args[3]);
 		int fill = lbm_dec_as_u32(args[4]);
 		uint32_t fg = lbm_dec_as_u32(args[5]);
-		circle(img, x, y, radius, fill, fg);
+		if (fill == 1) {
+			fill_circle(img, x, y, radius, fg);
+		} else {
+			circle(img, x, y, radius, fill, fg);
+		}
+		res = ENC_SYM_TRUE;
+	}
+	return res;
+}
+
+static lbm_value ext_arc(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_TERROR;
+	if ((argn == 7 || (argn == 8 && lbm_is_number(args[7]))) &&
+		lispif_disp_is_image_buffer(args[0]) &&
+		lbm_is_number(args[1]) &&
+		lbm_is_number(args[2]) &&
+		lbm_is_number(args[3]) &&
+		lbm_is_number(args[4]) &&
+		lbm_is_number(args[5]) &&
+		lbm_is_number(args[6])) {
+
+		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+
+		int x = lbm_dec_as_u32(args[1]);
+		int y = lbm_dec_as_u32(args[2]);
+		int rad = lbm_dec_as_i32(args[3]);
+		float ang_start = lbm_dec_as_float(args[4]);
+		float ang_end = lbm_dec_as_float(args[5]);
+		uint32_t fg = lbm_dec_as_u32(args[6]);
+
+		int thickness = 1;
+		if (argn == 8) {
+			thickness = lbm_dec_as_u32(args[7]);
+		}
+
+		arc(img, x, y, rad, ang_start, ang_end, thickness, fg);
+
 		res = ENC_SYM_TRUE;
 	}
 	return res;
@@ -750,10 +887,10 @@ static lbm_value ext_rectangle_rounded(lbm_value *args, lbm_uint argn) {
 		rectangle(img, x + rad, y, width - 2 * rad, rad, true, fg);
 		rectangle(img, x + rad, y + height - rad, width - 2 * rad, rad, true, fg);
 		rectangle(img, x, y + rad, width, height - 2 * rad, true, fg);
-		circle(img, x + rad, y + rad, rad, 1, fg);
-		circle(img, x + rad, y + height - rad, rad, 1, fg);
-		circle(img, x + width - rad, y + rad, rad, 1, fg);
-		circle(img, x + width - rad, y + height - rad, rad, 1, fg);
+		fill_circle(img, x + rad, y + rad, rad, fg);
+		fill_circle(img, x + rad, y + height - rad, rad, fg);
+		fill_circle(img, x + width - rad, y + rad, rad, fg);
+		fill_circle(img, x + width - rad, y + height - rad, rad, fg);
 
 		res = ENC_SYM_TRUE;
 	}
@@ -1122,6 +1259,7 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-text", ext_text);
 	lbm_add_extension("img-clear", ext_clear);
 	lbm_add_extension("img-circle", ext_circle);
+	lbm_add_extension("img-arc", ext_arc);
 	lbm_add_extension("img-rectangle", ext_rectangle);
 	lbm_add_extension("img-rectangle-rounded", ext_rectangle_rounded);
 	lbm_add_extension("img-blit", ext_blit);
