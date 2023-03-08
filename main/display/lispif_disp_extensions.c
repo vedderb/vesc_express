@@ -469,16 +469,23 @@ static void line(image_buffer_t *img, int x0, int y0, int x1, int y1, int thickn
 	}
 }
 
-static void rectangle(image_buffer_t *img, int x, int y, int width, int height, bool fill, uint32_t color) {
+static void rectangle(image_buffer_t *img, int x, int y, int width, int height, bool fill, int thickness, uint32_t color) {
 	if (fill) {
 		for (int i = y; i < (y + height);i++) {
 			h_line(img, x, i, width, color);
 		}
 	} else {
-		h_line(img, x, y, width, color);
-		h_line(img, x, y + height, width, color);
-		v_line(img, x, y, height, color);
-		v_line(img, x + width, y, height, color);
+		if (thickness <= 1) {
+			h_line(img, x, y, width, color);
+			h_line(img, x, y + height, width, color);
+			v_line(img, x, y, height, color);
+			v_line(img, x + width, y, height, color);
+		} else {
+			line(img, x, y, x + width, y, thickness, color);
+			line(img, x, y + height, x + width, y + height, thickness, color);
+			line(img, x, y, x, y + height, thickness, color);
+			line(img, x + width, y, x + width, y + height, thickness, color);
+		}
 	}
 }
 
@@ -939,29 +946,41 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	if (arg_dec.attr_rounded.is_valid) {
-		int x = lbm_dec_as_i32(arg_dec.args[0]);
-		int y = lbm_dec_as_i32(arg_dec.args[1]);
-		int width = lbm_dec_as_i32(arg_dec.args[2]);
-		int height = lbm_dec_as_i32(arg_dec.args[3]);
-		int rad = lbm_dec_as_i32(arg_dec.attr_rounded.args[0]);
-		uint32_t fg = lbm_dec_as_i32(arg_dec.args[4]);
+	image_buffer_t *img = arg_dec.img;
+	int x = lbm_dec_as_i32(arg_dec.args[0]);
+	int y = lbm_dec_as_i32(arg_dec.args[1]);
+	int width = lbm_dec_as_i32(arg_dec.args[2]);
+	int height = lbm_dec_as_i32(arg_dec.args[3]);
+	int rad = lbm_dec_as_i32(arg_dec.attr_rounded.args[0]);
+	int thickness = lbm_dec_as_i32(arg_dec.attr_thickness.args[0]);
+	uint32_t color = lbm_dec_as_i32(arg_dec.args[4]);
 
-		rectangle(arg_dec.img, x + rad, y, width - 2 * rad, rad, true, fg);
-		rectangle(arg_dec.img, x + rad, y + height - rad, width - 2 * rad, rad, true, fg);
-		rectangle(arg_dec.img, x, y + rad, width, height - 2 * rad, true, fg);
-		fill_circle(arg_dec.img, x + rad, y + rad, rad, fg);
-		fill_circle(arg_dec.img, x + rad, y + height - rad, rad, fg);
-		fill_circle(arg_dec.img, x + width - rad, y + rad, rad, fg);
-		fill_circle(arg_dec.img, x + width - rad, y + height - rad, rad, fg);
+	if (arg_dec.attr_rounded.is_valid) {
+		if (arg_dec.attr_filled.is_valid) {
+			rectangle(img, x + rad, y, width - 2 * rad, rad, 1, true, color);
+			rectangle(img, x + rad, y + height - rad, width - 2 * rad, rad, 1, true, color);
+			rectangle(img, x, y + rad, width, height - 2 * rad, 1, true, color);
+			fill_circle(img, x + rad, y + rad, rad, color);
+			fill_circle(img, x + rad, y + height - rad, rad, color);
+			fill_circle(img, x + width - rad, y + rad, rad, color);
+			fill_circle(img, x + width - rad, y + height - rad, rad, color);
+		} else {
+			line(img, x + rad, y, x + width - rad, y, thickness, color);
+			line(img, x + rad, y + height, x + width - rad, y + height, thickness, color);
+			line(img, x, y + rad, x, y + height - rad, thickness, color);
+			line(img, x + width, y + rad, x + width, y + height - rad, thickness, color);
+			arc(img, x + rad, y + rad, rad, 180, 270, thickness, color);
+			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, color);
+			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, color);
+			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, color);
+		}
 	} else {
-		rectangle(arg_dec.img,
-				lbm_dec_as_i32(arg_dec.args[0]),
-				lbm_dec_as_i32(arg_dec.args[1]),
-				lbm_dec_as_i32(arg_dec.args[2]),
-				lbm_dec_as_i32(arg_dec.args[3]),
+		rectangle(img,
+				x, y,
+				width, height,
 				arg_dec.attr_filled.is_valid,
-				lbm_dec_as_i32(arg_dec.args[4]));
+				thickness,
+				color);
 	}
 
 	return ENC_SYM_TRUE;
