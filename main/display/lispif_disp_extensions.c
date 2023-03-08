@@ -636,7 +636,7 @@ static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, flo
 	}
 }
 
-static void img_putc(image_buffer_t *img, int x, int y, uint32_t fg, uint32_t bg, uint8_t *font_data, uint8_t ch) {
+static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t *font_data, uint8_t ch) {
 	uint8_t w = font_data[0];
 	uint8_t h = font_data[1];
 	uint8_t char_num = font_data[2];
@@ -658,7 +658,9 @@ static void img_putc(image_buffer_t *img, int x, int y, uint32_t fg, uint32_t bg
 			int f_pos = 4 + ch * (w * h) / 8 + (f_ind / 8);
 			int bit_pos = f_ind % 8;
 			int bit = font_data[f_pos] & (1 << bit_pos);
-			putpixel(img, x+i, y+j, bit ? fg : bg);
+			if (bit || bg >= 0) {
+				putpixel(img, x+i, y+j, bit ? fg : bg);
+			}
 		}
 	}
 }
@@ -1200,8 +1202,8 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 
 	int x = lbm_dec_as_u32(args[1]);
 	int y = lbm_dec_as_u32(args[2]);
-	int fg = lbm_dec_as_u32(args[3]);
-	int bg = lbm_dec_as_u32(args[4]);
+	int fg = lbm_dec_as_i32(args[3]);
+	int bg = lbm_dec_as_i32(args[4]);
 
 	if (!lispif_disp_is_image_buffer(args[0])) return ENC_SYM_TERROR;
 	image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
