@@ -438,56 +438,104 @@ static void circle(image_buffer_t *img, int x, int y, int radius, int thickness,
 // TODO: This should be more efficient
 // http://homepages.enterprise.net/murphy/thickline/index.html
 // https://github.com/ArminJo/STMF3-Discovery-Demos/blob/master/lib/BlueDisplay/LocalGUI/ThickLine.hpp
-static void line(image_buffer_t *img, int x0, int y0, int x1, int y1, int thickness, uint32_t c) {
+static void line(image_buffer_t *img, int x0, int y0, int x1, int y1, int thickness, int dot1, int dot2, uint32_t c) {
 	int dx = abs(x1 - x0);
 	int sx = x0 < x1 ? 1 : -1;
 	int dy = -abs(y1 - y0);
 	int sy = y0 < y1 ? 1 : -1;
 	int error = dx + dy;
 
-	while (true) {
-		if (thickness > 1) {
-			fill_circle(img, x0, y0, thickness, c);
-		} else {
-			putpixel(img, x0, y0, c);
-		}
+	if (dot1 > 0) {
+		// These are used to deal with consecutive calls with
+		// possibly overlapping pixels.
+		static int dotcnt = 0;
+		static int x_last = 0;
+		static int y_last = 0;
 
-		if (x0 == x1 && y0 == y1) {
-			break;
-		}
-		if ((error * 2) >= dy) {
-			if (x0 == x1) {
+		while (true) {
+			if (dotcnt <= dot1) {
+				if (thickness > 1) {
+					fill_circle(img, x0, y0, thickness, c);
+				} else {
+					putpixel(img, x0, y0, c);
+				}
+			}
+
+			if (x0 != x_last || y0 != y_last) {
+				dotcnt++;
+			}
+
+			x_last = x0;
+			y_last = y0;
+
+			if (dotcnt >= (dot1 + dot2)) {
+				dotcnt = 0;
+			}
+
+			if (x0 == x1 && y0 == y1) {
 				break;
 			}
-			error += dy;
-			x0 += sx;
+			if ((error * 2) >= dy) {
+				if (x0 == x1) {
+					break;
+				}
+				error += dy;
+				x0 += sx;
+			}
+			if ((error * 2) <= dx) {
+				if (y0 == y1) {
+					break;
+				}
+				error += dx;
+				y0 += sy;
+			}
 		}
-		if ((error * 2) <= dx) {
-			if (y0 == y1) {
+	} else {
+		while (true) {
+			if (thickness > 1) {
+				fill_circle(img, x0, y0, thickness, c);
+			} else {
+				putpixel(img, x0, y0, c);
+			}
+
+			if (x0 == x1 && y0 == y1) {
 				break;
 			}
-			error += dx;
-			y0 += sy;
+			if ((error * 2) >= dy) {
+				if (x0 == x1) {
+					break;
+				}
+				error += dy;
+				x0 += sx;
+			}
+			if ((error * 2) <= dx) {
+				if (y0 == y1) {
+					break;
+				}
+				error += dx;
+				y0 += sy;
+			}
 		}
 	}
 }
 
-static void rectangle(image_buffer_t *img, int x, int y, int width, int height, bool fill, int thickness, uint32_t color) {
+static void rectangle(image_buffer_t *img, int x, int y, int width, int height,
+		bool fill, int thickness, int dot1, int dot2, uint32_t color) {
 	if (fill) {
 		for (int i = y; i < (y + height);i++) {
 			h_line(img, x, i, width, color);
 		}
 	} else {
-		if (thickness <= 1) {
+		if (thickness <= 1 && dot1 == 0) {
 			h_line(img, x, y, width, color);
 			h_line(img, x, y + height, width, color);
 			v_line(img, x, y, height, color);
 			v_line(img, x + width, y, height, color);
 		} else {
-			line(img, x, y, x + width, y, thickness, color);
-			line(img, x, y + height, x + width, y + height, thickness, color);
-			line(img, x, y, x, y + height, thickness, color);
-			line(img, x + width, y, x + width, y + height, thickness, color);
+			line(img, x, y, x + width, y, thickness, dot1, dot2, color);
+			line(img, x, y + height, x + width, y + height, thickness, dot1, dot2, color);
+			line(img, x, y, x, y + height, thickness, dot1, dot2, color);
+			line(img, x + width, y, x + width, y + height, thickness, dot1, dot2, color);
 		}
 	}
 }
@@ -499,7 +547,8 @@ static bool triangle_edge(int ax, int ay, int bx, int by, int cx, int cy) {
 	return ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) >= 0;
 }
 
-static void fill_triangle(image_buffer_t *img, int x0, int y0, int x1, int y1, int x2, int y2, uint32_t color) {
+static void fill_triangle(image_buffer_t *img, int x0, int y0,
+		int x1, int y1, int x2, int y2, uint32_t color) {
 	int x_min = NMIN(x0, NMIN(x1, x2));
 	int x_max = NMAX(x0, NMAX(x1, x2));
 	int y_min = NMIN(y0, NMIN(y1, y2));
@@ -518,7 +567,8 @@ static void fill_triangle(image_buffer_t *img, int x0, int y0, int x1, int y1, i
 	}
 }
 
-static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end, int thickness, bool filled, uint32_t color) {
+static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end,
+		int thickness, bool filled, int dot1, int dot2, uint32_t color) {
 	ang_start *= M_PI / 180.0;
 	ang_end *= M_PI / 180.0;
 
@@ -558,7 +608,7 @@ static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, flo
 					color);
 		} else {
 			line(img, x + px_before, y + py_before,
-					x + px, y + py, thickness, color);
+					x + px, y + py, thickness, dot1, dot2, color);
 		}
 	}
 }
@@ -927,6 +977,8 @@ static lbm_value ext_line(lbm_value *args, lbm_uint argn) {
 			lbm_dec_as_i32(arg_dec.args[2]),
 			lbm_dec_as_i32(arg_dec.args[3]),
 			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+			lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
+			lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
 			lbm_dec_as_i32(arg_dec.args[4]));
 
 	return ENC_SYM_TRUE;
@@ -944,6 +996,17 @@ static lbm_value ext_circle(lbm_value *args, lbm_uint argn) {
 				lbm_dec_as_i32(arg_dec.args[0]),
 				lbm_dec_as_i32(arg_dec.args[1]),
 				lbm_dec_as_i32(arg_dec.args[2]),
+				lbm_dec_as_i32(arg_dec.args[3]));
+	} if (arg_dec.attr_dotted.is_valid) {
+		arc(arg_dec.img,
+				lbm_dec_as_i32(arg_dec.args[0]),
+				lbm_dec_as_i32(arg_dec.args[1]),
+				lbm_dec_as_i32(arg_dec.args[2]),
+				0, 359.9,
+				lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+				false,
+				lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
+				lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
 				lbm_dec_as_i32(arg_dec.args[3]));
 	} else {
 		circle(arg_dec.img,
@@ -972,6 +1035,8 @@ static lbm_value ext_arc(lbm_value *args, lbm_uint argn) {
 			lbm_dec_as_float(arg_dec.args[4]),
 			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
 			arg_dec.attr_filled.is_valid,
+			lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
+			lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
 			lbm_dec_as_i32(arg_dec.args[5]));
 
 	return ENC_SYM_TRUE;
@@ -992,25 +1057,27 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 	int rad = lbm_dec_as_i32(arg_dec.attr_rounded.args[0]);
 	int thickness = lbm_dec_as_i32(arg_dec.attr_thickness.args[0]);
 	uint32_t color = lbm_dec_as_i32(arg_dec.args[4]);
+	int dot1 = lbm_dec_as_i32(arg_dec.attr_dotted.args[0]);
+	int dot2 = lbm_dec_as_i32(arg_dec.attr_dotted.args[1]);
 
 	if (arg_dec.attr_rounded.is_valid) {
 		if (arg_dec.attr_filled.is_valid) {
-			rectangle(img, x + rad, y, width - 2 * rad, rad, 1, true, color);
-			rectangle(img, x + rad, y + height - rad, width - 2 * rad, rad, 1, true, color);
-			rectangle(img, x, y + rad, width, height - 2 * rad, 1, true, color);
+			rectangle(img, x + rad, y, width - 2 * rad, rad, 1, 1, 0, 0, color);
+			rectangle(img, x + rad, y + height - rad, width - 2 * rad, rad, 1, 1, 0, 0, color);
+			rectangle(img, x, y + rad, width, height - 2 * rad, 1, 1, 0, 0, color);
 			fill_circle(img, x + rad, y + rad, rad, color);
 			fill_circle(img, x + rad, y + height - rad, rad, color);
 			fill_circle(img, x + width - rad, y + rad, rad, color);
 			fill_circle(img, x + width - rad, y + height - rad, rad, color);
 		} else {
-			line(img, x + rad, y, x + width - rad, y, thickness, color);
-			line(img, x + rad, y + height, x + width - rad, y + height, thickness, color);
-			line(img, x, y + rad, x, y + height - rad, thickness, color);
-			line(img, x + width, y + rad, x + width, y + height - rad, thickness, color);
-			arc(img, x + rad, y + rad, rad, 180, 270, thickness, false, color);
-			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, false, color);
-			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, false, color);
-			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, false, color);
+			line(img, x + rad, y, x + width - rad, y, thickness, dot1, dot2, color);
+			arc(img, x + rad, y + rad, rad, 180, 270, thickness, false, dot1, dot2, color);
+			line(img, x + rad, y + height, x + width - rad, y + height, thickness, dot1, dot2, color);
+			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, false, dot1, dot2, color);
+			line(img, x, y + rad, x, y + height - rad, thickness, dot1, dot2, color);
+			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, false, dot1, dot2, color);
+			line(img, x + width, y + rad, x + width, y + height - rad, thickness, dot1, dot2, color);
+			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, false, dot1, dot2, color);
 		}
 	} else {
 		rectangle(img,
@@ -1018,6 +1085,7 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 				width, height,
 				arg_dec.attr_filled.is_valid,
 				thickness,
+				dot1, dot2,
 				color);
 	}
 
@@ -1039,14 +1107,16 @@ static lbm_value ext_triangle(lbm_value *args, lbm_uint argn) {
 	int x2 = lbm_dec_as_i32(arg_dec.args[4]);
 	int y2 = lbm_dec_as_i32(arg_dec.args[5]);
 	int thickness = lbm_dec_as_i32(arg_dec.attr_thickness.args[0]);
+	int dot1 = lbm_dec_as_i32(arg_dec.attr_dotted.args[0]);
+	int dot2 = lbm_dec_as_i32(arg_dec.attr_dotted.args[1]);
 	uint32_t color = lbm_dec_as_i32(arg_dec.args[6]);
 
 	if (arg_dec.attr_filled.is_valid) {
 		fill_triangle(img, x0, y0, x1, y1, x2, y2, color);
 	} else {
-		line(img, x0, y0, x1, y1, thickness, color);
-		line(img, x1, y1, x2, y2, thickness, color);
-		line(img, x2, y2, x0, y0, thickness, color);
+		line(img, x0, y0, x1, y1, thickness, dot1, dot2, color);
+		line(img, x1, y1, x2, y2, thickness, dot1, dot2, color);
+		line(img, x2, y2, x0, y0, thickness, dot1, dot2, color);
 	}
 
 	return ENC_SYM_TRUE;
