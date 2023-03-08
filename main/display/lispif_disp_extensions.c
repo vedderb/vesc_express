@@ -38,6 +38,12 @@ static lbm_uint symbol_indexed4 = 0;
 static lbm_uint symbol_rgb332 = 0;
 static lbm_uint symbol_rgb565 = 0;
 static lbm_uint symbol_rgb888 = 0;
+static lbm_uint symbol_thickness = 0;
+static lbm_uint symbol_filled = 0;
+static lbm_uint symbol_rounded = 0;
+static lbm_uint symbol_dotted = 0;
+static lbm_uint symbol_scale = 0;
+static lbm_uint symbol_rotate = 0;
 
 static color_format_t sym_to_color_format(lbm_value v) {
 	lbm_uint s = lbm_dec_sym(v);
@@ -130,6 +136,12 @@ static bool register_symbols(void) {
 	res = res && lbm_add_symbol_const("rgb332", &symbol_rgb332);
 	res = res && lbm_add_symbol_const("rgb565", &symbol_rgb565);
 	res = res && lbm_add_symbol_const("rgb888", &symbol_rgb888);
+	res = res && lbm_add_symbol_const("thickness", &symbol_thickness);
+	res = res && lbm_add_symbol_const("filled", &symbol_filled);
+	res = res && lbm_add_symbol_const("rounded", &symbol_rounded);
+	res = res && lbm_add_symbol_const("dotted", &symbol_dotted);
+	res = res && lbm_add_symbol_const("scale", &symbol_scale);
+	res = res && lbm_add_symbol_const("rotate", &symbol_rotate);
 	return res;
 }
 
@@ -534,8 +546,10 @@ static void img_putc(image_buffer_t *img, int x, int y, uint32_t fg, uint32_t bg
 	}
 }
 
-static void blit_rot_scale(image_buffer_t *img_dest, image_buffer_t *img_src, int x,
-		int y, // Where on display
+static void blit_rot_scale(
+		image_buffer_t *img_dest,
+		image_buffer_t *img_src,
+		int x, int y, // Where on display
 		float xr, float yr, // Pixel to rotate around
 		float rot, // Rotation angle in degrees
 		float scale, // Scale factor
@@ -646,21 +660,131 @@ static void blit_rot_scale(image_buffer_t *img_dest, image_buffer_t *img_src, in
 
 // Extensions
 
-static lbm_value ext_image_dims(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if (argn == 1 &&
-		lispif_disp_is_image_buffer(args[0])) {
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+#define ATTR_MAX_ARGS	3
+#define ARG_MAX_NUM		8
 
-		lbm_value dims = lbm_heap_allocate_list(2);
-		if (lbm_is_symbol(dims)) return dims;
-		lbm_value curr = dims;
-		lbm_set_car(curr, lbm_enc_i(img->width));
-		curr = lbm_cdr(curr);
-		lbm_set_car(curr, lbm_enc_i(img->height));
-		res = dims;
+typedef struct {
+	bool is_valid;
+	uint16_t arg_num;
+	lbm_value args[ATTR_MAX_ARGS];
+} attr_t;
+
+typedef struct {
+	bool is_valid;
+	image_buffer_t *img;
+	lbm_value args[ARG_MAX_NUM];
+	attr_t attr_thickness;
+	attr_t attr_filled;
+	attr_t attr_rounded;
+	attr_t attr_dotted;
+	attr_t attr_scale;
+	attr_t attr_rotate;
+} img_args_t;
+
+static img_args_t decode_args(lbm_value *args, lbm_uint argn, int num_expected) {
+	img_args_t res;
+	memset(&res, 0, sizeof(res));
+
+	if (!lispif_disp_is_image_buffer(args[0])) {
+		return res;
 	}
+
+	res.img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+
+	int num_dec = 0;
+	for (int i = 1;i < argn;i++) {
+		if (!lbm_is_number(args[i]) && !lbm_is_cons(args[i])) {
+			return res;
+		}
+
+		if (lbm_is_number(args[i])) {
+			res.args[num_dec] = args[i];
+			num_dec++;
+
+			if (num_dec > ARG_MAX_NUM) {
+				return res;
+			}
+		} else {
+			lbm_value curr = args[i];
+			int attr_ind = 0;
+			attr_t *attr_now = 0;
+			while (lbm_is_cons(curr)) {
+				lbm_value  arg = lbm_car(curr);
+
+				if (attr_ind == 0) {
+					if (!lbm_is_symbol(arg)) {
+						return res;
+					}
+
+					if (lbm_dec_sym(arg) == symbol_thickness) {
+						attr_now = &res.attr_thickness;
+						attr_now->arg_num = 1;
+					} else if (lbm_dec_sym(arg) == symbol_filled) {
+						attr_now = &res.attr_filled;
+						attr_now->arg_num = 0;
+					} else if (lbm_dec_sym(arg) == symbol_rounded) {
+						attr_now = &res.attr_rounded;
+						attr_now->arg_num = 1;
+					} else if (lbm_dec_sym(arg) == symbol_dotted) {
+						attr_now = &res.attr_dotted;
+						attr_now->arg_num = 2;
+					} else if (lbm_dec_sym(arg) == symbol_scale) {
+						attr_now = &res.attr_scale;
+						attr_now->arg_num = 1;
+					} else if (lbm_dec_sym(arg) == symbol_rotate) {
+						attr_now = &res.attr_rotate;
+						attr_now->arg_num = 3;
+					} else {
+						return res;
+					}
+				} else {
+					if (!lbm_is_number(arg)) {
+						return res;
+					}
+
+					attr_now->args[attr_ind - 1] = arg;
+				}
+
+				attr_ind++;
+				if (attr_ind > (ATTR_MAX_ARGS + 1)) {
+					return res;
+				}
+
+				curr = lbm_cdr(curr);
+			}
+
+			if ((attr_ind - 1) == attr_now->arg_num) {
+				attr_now->is_valid = true;
+			} else {
+				return res;
+			}
+		}
+	}
+
+	if (num_dec != num_expected) {
+		return res;
+	}
+
+	res.is_valid = true;
 	return res;
+}
+
+static lbm_value ext_image_dims(lbm_value *args, lbm_uint argn) {
+	img_args_t arg_dec = decode_args(args, argn, 0);
+
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
+	}
+
+	lbm_value dims = lbm_heap_allocate_list(2);
+	if (lbm_is_symbol(dims)) {
+		return dims;
+	}
+	lbm_value curr = dims;
+	lbm_set_car(curr, lbm_enc_i(arg_dec.img->width));
+	curr = lbm_cdr(curr);
+	lbm_set_car(curr, lbm_enc_i(arg_dec.img->height));
+	return dims;
 }
 
 static lbm_value ext_image_buffer(lbm_value *args, lbm_uint argn) {
@@ -733,168 +857,114 @@ static lbm_value ext_clear(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_putpixel(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if (argn == 4 &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1]) &&
-		lbm_is_number(args[2]) &&
-		lbm_is_number(args[3])) {
+	img_args_t arg_dec = decode_args(args, argn, 3);
 
-		uint16_t x = (uint16_t)lbm_dec_as_u32(args[1]);
-		uint16_t y = (uint16_t)lbm_dec_as_u32(args[2]);
-		uint32_t c = lbm_dec_as_u32(args[3]);
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-		putpixel(img, x, y, c);
-		res = ENC_SYM_TRUE;
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
 	}
-	return res;
+
+	putpixel(arg_dec.img,
+			lbm_dec_as_i32(arg_dec.args[0]),
+			lbm_dec_as_i32(arg_dec.args[1]),
+			lbm_dec_as_i32(arg_dec.args[2]));
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_line(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if ((argn == 6 || (argn == 7 && lbm_is_number(args[6]))) &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1]) &&
-		lbm_is_number(args[2]) &&
-		lbm_is_number(args[3]) &&
-		lbm_is_number(args[4]) &&
-		lbm_is_number(args[5])) {
+	img_args_t arg_dec = decode_args(args, argn, 5);
 
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-
-		int x0 = lbm_dec_as_u32(args[1]);
-		int y0 = lbm_dec_as_u32(args[2]);
-		int x1 = lbm_dec_as_u32(args[3]);
-		int y1 = lbm_dec_as_u32(args[4]);
-		uint32_t fg = lbm_dec_as_u32(args[5]);
-
-		int thickness = 1;
-		if (argn == 7) {
-			thickness = lbm_dec_as_u32(args[6]);
-		}
-
-		line(img, x0, y0, x1, y1, thickness, fg);
-
-		res = ENC_SYM_TRUE;
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
 	}
-	return res;
+
+	line(arg_dec.img,
+			lbm_dec_as_i32(arg_dec.args[0]),
+			lbm_dec_as_i32(arg_dec.args[1]),
+			lbm_dec_as_i32(arg_dec.args[2]),
+			lbm_dec_as_i32(arg_dec.args[3]),
+			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+			lbm_dec_as_i32(arg_dec.args[4]));
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_circle(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if (argn == 6 &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1]) &&
-		lbm_is_number(args[2]) &&
-		lbm_is_number(args[3]) &&
-		lbm_is_number(args[4]) &&
-		lbm_is_number(args[5])) {
+	img_args_t arg_dec = decode_args(args, argn, 4);
 
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-
-		int x = lbm_dec_as_i32(args[1]);
-		int y = lbm_dec_as_i32(args[2]);
-		int radius = lbm_dec_as_u32(args[3]);
-		int fill = lbm_dec_as_u32(args[4]);
-		uint32_t fg = lbm_dec_as_u32(args[5]);
-		if (fill == 1) {
-			fill_circle(img, x, y, radius, fg);
-		} else {
-			circle(img, x, y, radius, fill, fg);
-		}
-		res = ENC_SYM_TRUE;
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
 	}
-	return res;
+
+	if (arg_dec.attr_filled.is_valid) {
+		fill_circle(arg_dec.img,
+				lbm_dec_as_i32(arg_dec.args[0]),
+				lbm_dec_as_i32(arg_dec.args[1]),
+				lbm_dec_as_i32(arg_dec.args[2]),
+				lbm_dec_as_i32(arg_dec.args[3]));
+	} else {
+		circle(arg_dec.img,
+				lbm_dec_as_i32(arg_dec.args[0]),
+				lbm_dec_as_i32(arg_dec.args[1]),
+				lbm_dec_as_i32(arg_dec.args[2]),
+				lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+				lbm_dec_as_i32(arg_dec.args[3]));
+	}
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_arc(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if ((argn == 7 || (argn == 8 && lbm_is_number(args[7]))) &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1]) &&
-		lbm_is_number(args[2]) &&
-		lbm_is_number(args[3]) &&
-		lbm_is_number(args[4]) &&
-		lbm_is_number(args[5]) &&
-		lbm_is_number(args[6])) {
+	img_args_t arg_dec = decode_args(args, argn, 6);
 
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-
-		int x = lbm_dec_as_u32(args[1]);
-		int y = lbm_dec_as_u32(args[2]);
-		int rad = lbm_dec_as_i32(args[3]);
-		float ang_start = lbm_dec_as_float(args[4]);
-		float ang_end = lbm_dec_as_float(args[5]);
-		uint32_t fg = lbm_dec_as_u32(args[6]);
-
-		int thickness = 1;
-		if (argn == 8) {
-			thickness = lbm_dec_as_u32(args[7]);
-		}
-
-		arc(img, x, y, rad, ang_start, ang_end, thickness, fg);
-
-		res = ENC_SYM_TRUE;
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
 	}
-	return res;
+
+	arc(arg_dec.img,
+			lbm_dec_as_i32(arg_dec.args[0]),
+			lbm_dec_as_i32(arg_dec.args[1]),
+			lbm_dec_as_i32(arg_dec.args[2]),
+			lbm_dec_as_float(arg_dec.args[3]),
+			lbm_dec_as_float(arg_dec.args[4]),
+			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+			lbm_dec_as_i32(arg_dec.args[5]));
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if (argn == 7 &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1]) &&
-		lbm_is_number(args[2]) &&
-		lbm_is_number(args[3]) &&
-		lbm_is_number(args[4]) &&
-		lbm_is_number(args[5]) &&
-		lbm_is_number(args[6])) {
+	img_args_t arg_dec = decode_args(args, argn, 5);
 
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-
-		int x = lbm_dec_as_i32(args[1]);
-		int y = lbm_dec_as_i32(args[2]);
-		int width = lbm_dec_as_u32(args[3]);
-		int height = lbm_dec_as_u32(args[4]);
-		int fill = lbm_dec_as_u32(args[5]);
-		uint32_t fg = lbm_dec_as_u32(args[6]);
-		rectangle(img, x, y, width, height, fill, fg);
-		res = ENC_SYM_TRUE;
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
 	}
-	return res;
-}
 
-static lbm_value ext_rectangle_rounded(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TERROR;
-	if (argn == 7 &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1]) &&
-		lbm_is_number(args[2]) &&
-		lbm_is_number(args[3]) &&
-		lbm_is_number(args[4]) &&
-		lbm_is_number(args[5]) &&
-		lbm_is_number(args[6])) {
+	if (arg_dec.attr_rounded.is_valid) {
+		int x = lbm_dec_as_i32(arg_dec.args[0]);
+		int y = lbm_dec_as_i32(arg_dec.args[1]);
+		int width = lbm_dec_as_i32(arg_dec.args[2]);
+		int height = lbm_dec_as_i32(arg_dec.args[3]);
+		int rad = lbm_dec_as_i32(arg_dec.attr_rounded.args[0]);
+		uint32_t fg = lbm_dec_as_i32(arg_dec.args[4]);
 
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-
-		int x = lbm_dec_as_i32(args[1]);
-		int y = lbm_dec_as_i32(args[2]);
-		int width = lbm_dec_as_u32(args[3]);
-		int height = lbm_dec_as_u32(args[4]);
-		int rad = lbm_dec_as_u32(args[5]);
-		uint32_t fg = lbm_dec_as_u32(args[6]);
-
-		rectangle(img, x + rad, y, width - 2 * rad, rad, true, fg);
-		rectangle(img, x + rad, y + height - rad, width - 2 * rad, rad, true, fg);
-		rectangle(img, x, y + rad, width, height - 2 * rad, true, fg);
-		fill_circle(img, x + rad, y + rad, rad, fg);
-		fill_circle(img, x + rad, y + height - rad, rad, fg);
-		fill_circle(img, x + width - rad, y + rad, rad, fg);
-		fill_circle(img, x + width - rad, y + height - rad, rad, fg);
-
-		res = ENC_SYM_TRUE;
+		rectangle(arg_dec.img, x + rad, y, width - 2 * rad, rad, true, fg);
+		rectangle(arg_dec.img, x + rad, y + height - rad, width - 2 * rad, rad, true, fg);
+		rectangle(arg_dec.img, x, y + rad, width, height - 2 * rad, true, fg);
+		fill_circle(arg_dec.img, x + rad, y + rad, rad, fg);
+		fill_circle(arg_dec.img, x + rad, y + height - rad, rad, fg);
+		fill_circle(arg_dec.img, x + width - rad, y + rad, rad, fg);
+		fill_circle(arg_dec.img, x + width - rad, y + height - rad, rad, fg);
+	} else {
+		rectangle(arg_dec.img,
+				lbm_dec_as_i32(arg_dec.args[0]),
+				lbm_dec_as_i32(arg_dec.args[1]),
+				lbm_dec_as_i32(arg_dec.args[2]),
+				lbm_dec_as_i32(arg_dec.args[3]),
+				arg_dec.attr_filled.is_valid,
+				lbm_dec_as_i32(arg_dec.args[4]));
 	}
-	return res;
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
@@ -937,47 +1007,33 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_blit(lbm_value *args, lbm_uint argn) {
-	if ((argn != 5 && argn != 6 && argn != 9) ||
-			!lispif_disp_is_image_buffer(args[0]) ||
-			!lispif_disp_is_image_buffer(args[1]) ||
-			!lbm_is_number(args[2]) ||
-			!lbm_is_number(args[3]) ||
-			!lbm_is_number(args[4])) {
+	img_args_t arg_dec = decode_args(args + 1, argn - 1, 3);
+
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (!lispif_disp_is_image_buffer(args[0])) {
 		return ENC_SYM_TERROR;
 	}
 
 	image_buffer_t *dest = (image_buffer_t*)lbm_get_custom_value(args[0]);
-	image_buffer_t *src  = (image_buffer_t*)lbm_get_custom_value(args[1]);
-	int32_t x = lbm_dec_as_i32(args[2]);
-	int32_t y = lbm_dec_as_i32(args[3]);
 
-	float xr = 0.0;
-	float yr = 0.0;
-	float rot = 0.0;
 	float scale = 1.0;
-	int tc = -1;
-
-	if (argn == 9 &&
-			lbm_is_number(args[5]) &&
-			lbm_is_number(args[6]) &&
-			lbm_is_number(args[7]) &&
-			lbm_is_number(args[8])) {
-		xr = lbm_dec_as_float(args[4]);
-		yr = lbm_dec_as_float(args[5]);
-		rot = lbm_dec_as_float(args[6]);
-		scale = lbm_dec_as_float(args[7]);
-		tc = lbm_dec_as_u32(args[8]);
-	} else if (argn == 6 &&
-			lbm_is_number(args[5])) {
-		scale = lbm_dec_as_float(args[4]);
-		tc = lbm_dec_as_u32(args[5]);
-	} else if (argn == 5) {
-		tc = lbm_dec_as_u32(args[4]);
-	} else {
-		return ENC_SYM_TERROR;
+	if (arg_dec.attr_scale.is_valid) {
+		scale = lbm_dec_as_float(arg_dec.attr_scale.args[0]);
 	}
 
-	blit_rot_scale(dest,src,x,y,xr,yr,rot,scale, tc);
+	blit_rot_scale(
+			dest,
+			arg_dec.img,
+			lbm_dec_as_i32(arg_dec.args[0]),
+			lbm_dec_as_i32(arg_dec.args[1]),
+			lbm_dec_as_float(arg_dec.attr_rotate.args[0]),
+			lbm_dec_as_float(arg_dec.attr_rotate.args[1]),
+			lbm_dec_as_float(arg_dec.attr_rotate.args[2]),
+			scale,
+			lbm_dec_as_i32(arg_dec.args[2]));
 
 	return ENC_SYM_TRUE;
 }
@@ -1261,7 +1317,6 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-circle", ext_circle);
 	lbm_add_extension("img-arc", ext_arc);
 	lbm_add_extension("img-rectangle", ext_rectangle);
-	lbm_add_extension("img-rectangle-rounded", ext_rectangle_rounded);
 	lbm_add_extension("img-blit", ext_blit);
 
 	lbm_add_extension("disp-load-sh8501b", ext_disp_load_sh8501b);
