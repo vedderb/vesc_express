@@ -435,6 +435,9 @@ static void circle(image_buffer_t *img, int x, int y, int radius, int thickness,
 	}
 }
 
+// TODO: This should be more efficient
+// http://homepages.enterprise.net/murphy/thickline/index.html
+// https://github.com/ArminJo/STMF3-Discovery-Demos/blob/master/lib/BlueDisplay/LocalGUI/ThickLine.hpp
 static void line(image_buffer_t *img, int x0, int y0, int x1, int y1, int thickness, uint32_t c) {
 	int dx = abs(x1 - x0);
 	int sx = x0 < x1 ? 1 : -1;
@@ -489,7 +492,33 @@ static void rectangle(image_buffer_t *img, int x, int y, int width, int height, 
 	}
 }
 
-static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end, int thickness, uint32_t color) {
+#define NMIN(a, b) ((a) < (b) ? (a) : (b))
+#define NMAX(a, b) ((a) > (b) ? (a) : (b))
+
+static bool triangle_edge(int ax, int ay, int bx, int by, int cx, int cy) {
+	return ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) >= 0;
+}
+
+static void fill_triangle(image_buffer_t *img, int x0, int y0, int x1, int y1, int x2, int y2, uint32_t color) {
+	int x_min = NMIN(x0, NMIN(x1, x2));
+	int x_max = NMAX(x0, NMAX(x1, x2));
+	int y_min = NMIN(y0, NMIN(y1, y2));
+	int y_max = NMAX(y0, NMAX(y1, y2));
+
+	for (int y = y_min;y <= y_max;y++) {
+		for (int x = x_min;x <= x_max;x++) {
+			bool w0 = triangle_edge(x1, y1, x2, y2, x, y);
+			bool w1 = triangle_edge(x2, y2, x0, y0, x, y);
+			bool w2 = triangle_edge(x0, y0, x1, y1, x, y);
+
+			if (w0 && w1 && w2) {
+				putpixel(img, x, y, color);
+			}
+		}
+	}
+}
+
+static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end, int thickness, bool filled, uint32_t color) {
 	ang_start *= M_PI / 180.0;
 	ang_end *= M_PI / 180.0;
 
@@ -521,8 +550,16 @@ static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, flo
 		px = px * ca - py * sa;
 		py = py * ca + px_before * sa;
 
-		line(img, x + px_before, y + py_before,
-				x + px, y + py, thickness, color);
+		if (filled) {
+			fill_triangle(img,
+					x + px_before, y + py_before,
+					x + px, y + py,
+					x, y,
+					color);
+		} else {
+			line(img, x + px_before, y + py_before,
+					x + px, y + py, thickness, color);
+		}
 	}
 }
 
@@ -934,6 +971,7 @@ static lbm_value ext_arc(lbm_value *args, lbm_uint argn) {
 			lbm_dec_as_float(arg_dec.args[3]),
 			lbm_dec_as_float(arg_dec.args[4]),
 			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+			arg_dec.attr_filled.is_valid,
 			lbm_dec_as_i32(arg_dec.args[5]));
 
 	return ENC_SYM_TRUE;
@@ -969,10 +1007,10 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 			line(img, x + rad, y + height, x + width - rad, y + height, thickness, color);
 			line(img, x, y + rad, x, y + height - rad, thickness, color);
 			line(img, x + width, y + rad, x + width, y + height - rad, thickness, color);
-			arc(img, x + rad, y + rad, rad, 180, 270, thickness, color);
-			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, color);
-			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, color);
-			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, color);
+			arc(img, x + rad, y + rad, rad, 180, 270, thickness, false, color);
+			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, false, color);
+			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, false, color);
+			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, false, color);
 		}
 	} else {
 		rectangle(img,
@@ -981,6 +1019,34 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 				arg_dec.attr_filled.is_valid,
 				thickness,
 				color);
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_triangle(lbm_value *args, lbm_uint argn) {
+	img_args_t arg_dec = decode_args(args, argn, 7);
+
+	if (!arg_dec.is_valid) {
+		return ENC_SYM_TERROR;
+	}
+
+	image_buffer_t *img = arg_dec.img;
+	int x0 = lbm_dec_as_i32(arg_dec.args[0]);
+	int y0 = lbm_dec_as_i32(arg_dec.args[1]);
+	int x1 = lbm_dec_as_i32(arg_dec.args[2]);
+	int y1 = lbm_dec_as_i32(arg_dec.args[3]);
+	int x2 = lbm_dec_as_i32(arg_dec.args[4]);
+	int y2 = lbm_dec_as_i32(arg_dec.args[5]);
+	int thickness = lbm_dec_as_i32(arg_dec.attr_thickness.args[0]);
+	uint32_t color = lbm_dec_as_i32(arg_dec.args[6]);
+
+	if (arg_dec.attr_filled.is_valid) {
+		fill_triangle(img, x0, y0, x1, y1, x2, y2, color);
+	} else {
+		line(img, x0, y0, x1, y1, thickness, color);
+		line(img, x1, y1, x2, y2, thickness, color);
+		line(img, x2, y2, x0, y0, thickness, color);
 	}
 
 	return ENC_SYM_TRUE;
@@ -1336,6 +1402,7 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-circle", ext_circle);
 	lbm_add_extension("img-arc", ext_arc);
 	lbm_add_extension("img-rectangle", ext_rectangle);
+	lbm_add_extension("img-triangle", ext_triangle);
 	lbm_add_extension("img-blit", ext_blit);
 
 	lbm_add_extension("disp-load-sh8501b", ext_disp_load_sh8501b);
