@@ -22,8 +22,6 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
-#include "hal/i2c_hal.h"
-#include "soc/i2c_periph.h"
 
 #include "disp_ssd1306.h"
 #include "driver/i2c.h"
@@ -83,6 +81,7 @@ void disp_ssd1306_clear(uint32_t color) {
 
 	memset(&buffer[1], color ? 1 : 0 , 1024);
 	i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS, buffer, 1025, 2000);
+	free(buffer);
 }
 
 void disp_ssd1306_reset(void) {
@@ -102,34 +101,33 @@ bool disp_ssd1306_render_image(image_buffer_t *img, uint32_t *color_map, uint16_
 
 	uint8_t *buffer = NULL;
 
-	buffer = malloc(1025);
-
-	if (!buffer) return false;
-
-	buffer[0] = 0x40;
-	int pos = 1;
-
-	for (int y = 0; y < 64; y += 8) {
-		for (int x = 0; x < 128; x ++) {
-			int byte_ix = ((y * 128) + x) >> 3;
-			int bit_ix  = 7 - (x & 0x7);
-
-			uint8_t b = 0;
-			b = (((img->data[byte_ix] >> bit_ix) & 1));
-			b |= (((img->data[byte_ix + 16] >> bit_ix) & 1) << 1);
-			b |= (((img->data[byte_ix + 32] >> bit_ix) & 1) << 2);
-			b |= (((img->data[byte_ix + 48] >> bit_ix) & 1) << 3);
-			b |= (((img->data[byte_ix + 64] >> bit_ix) & 1) << 4);
-			b |= (((img->data[byte_ix + 80] >> bit_ix) & 1) << 5);
-			b |= (((img->data[byte_ix + 96] >> bit_ix) & 1) << 6);
-			b |= (((img->data[byte_ix + 112] >> bit_ix) & 1) << 7);
-			buffer[pos++] = b;
-		}
-	}
-
 	switch(img->fmt) {
 	case indexed2: {
+		buffer = malloc(1025);
+		if (!buffer) return false;
+		buffer[0] = 0x40;
+		int pos = 1;
+
+		for (int y = 0; y < 64; y += 8) {
+			for (int x = 0; x < 128; x ++) {
+				int byte_ix = ((y * 128) + x) >> 3;
+				int bit_ix  = 7 - (x & 0x7);
+
+				uint8_t b = 0;
+				b = (((img->data[byte_ix] >> bit_ix) & 1));
+				b |= (((img->data[byte_ix + 16] >> bit_ix) & 1) << 1);
+				b |= (((img->data[byte_ix + 32] >> bit_ix) & 1) << 2);
+				b |= (((img->data[byte_ix + 48] >> bit_ix) & 1) << 3);
+				b |= (((img->data[byte_ix + 64] >> bit_ix) & 1) << 4);
+				b |= (((img->data[byte_ix + 80] >> bit_ix) & 1) << 5);
+				b |= (((img->data[byte_ix + 96] >> bit_ix) & 1) << 6);
+				b |= (((img->data[byte_ix + 112] >> bit_ix) & 1) << 7);
+				buffer[pos++] = b;
+			}
+		}
+
 		i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS, buffer, 1025, 2000);
+		free(buffer);
 	}
 	break;
 	default:

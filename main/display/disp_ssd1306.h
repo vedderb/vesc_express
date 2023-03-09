@@ -27,7 +27,6 @@
 #include "lispif_disp_extensions.h"
 
 void disp_ssd1306_init(int pin_sda, int pin_scl);
-void disp_ssd1306_command(uint8_t command, uint8_t *args, int argn);
 bool disp_ssd1306_render_image(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y);
 void disp_ssd1306_clear(uint32_t color);
 void disp_ssd1306_reset(void);
