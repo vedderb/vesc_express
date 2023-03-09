@@ -52,20 +52,6 @@ void disp_ssd1306_init(int pin_sda, int pin_scl) {
 	i2c_driver_install(0, conf.mode, 0, 0, 0);
 }
 
-static esp_err_t i2c_tx_rx(uint8_t addr,
-		const uint8_t* write_buffer, size_t write_size,
-		uint8_t* read_buffer, size_t read_size) {
-
-	esp_err_t res;
-	if (read_buffer != NULL) {
-		res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
-	} else {
-		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 2000);
-	}
-
-	return res;
-}
-
 static const uint8_t disp_ssd1306_init_sequence[19][5] = {
 		{2, 0x0, 0xAE},
 		{3, 0x0, 0xD5, 0x80},
@@ -100,12 +86,10 @@ void disp_ssd1306_clear(uint32_t color) {
 }
 
 void disp_ssd1306_reset(void) {
-	uint8_t rx_buf[1];
 	for (int i = 0; i < 19; i ++ ) {
-		i2c_tx_rx(DISPLAY_I2C_ADDRESS,
-				  &disp_ssd1306_init_sequence[i][1],
-				  disp_ssd1306_init_sequence[i][0],
-				  rx_buf, 1);
+		i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS,
+				&disp_ssd1306_init_sequence[i][1],
+				disp_ssd1306_init_sequence[i][0], 2000);
 	}
 	disp_ssd1306_clear(0);
 }
