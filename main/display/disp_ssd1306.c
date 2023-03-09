@@ -93,7 +93,8 @@ void disp_ssd1306_reset(void) {
 	disp_ssd1306_clear(0);
 }
 
-bool disp_ssd1306_render_image(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y) {
+bool disp_ssd1306_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
+	(void)colors;
 
 	uint32_t num_pix = img->width * img->height;
 

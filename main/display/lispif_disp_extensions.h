@@ -43,6 +43,25 @@ typedef struct {
 	uint8_t  data_offset;
 } image_buffer_t;
 
+typedef enum {
+	COLOR_REGULAR = 0,
+	COLOR_GRADIENT_X,
+	COLOR_GRADIENT_Y,
+} COLOR_TYPE;
+
+typedef struct {
+	int color1;
+	int color2;
+	uint16_t param1;
+	uint16_t param2;
+	COLOR_TYPE type;
+} color_t;
+
+#define COLOR_TO_RGB888(color, x, y) (color.type == COLOR_REGULAR ? color.color1 : lispif_disp_rgb888_from_color(color, x, y))
+
+// Utilities
+uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y);
+
 // Interface
 bool lispif_disp_is_image_buffer(lbm_value v);
 

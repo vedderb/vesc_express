@@ -27,7 +27,7 @@
 
 void disp_sh8501b_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int clock_mhz);
 void disp_sh8501b_command(uint8_t command, uint8_t *args, int argn);
-bool disp_sh8501b_render_image(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y);
+bool disp_sh8501b_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors);
 void disp_sh8501b_clear(uint32_t color);
 void disp_sh8501b_reset(void);
 

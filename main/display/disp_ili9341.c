@@ -70,46 +70,43 @@ static uint16_t to_disp_color(uint32_t rgb) {
 	return color;
 }
 
-static void blast_indexed2(uint8_t *data, uint32_t *color_map, uint32_t num_pix) {
-	uint16_t colors[2];
-	colors[0] = to_disp_color(color_map[0]);
-	colors[1] = to_disp_color(color_map[1]);
-
+static void blast_indexed2(image_buffer_t *img, color_t *colors) {
 	command_start(0x2C);
 	hwspi_data_stream_start();
+
+	uint8_t *data = img->data;
+	int num_pix = img->width * img->height;
 
 	for (int i = 0; i < num_pix; i ++) {
 		int byte = i >> 3;
 		int bit  = 7 - (i & 0x7);
-		if (data[byte] & (1 << bit)) {
-			hwspi_data_stream_write((uint8_t)(colors[1]));
-			hwspi_data_stream_write((uint8_t)(colors[1] >> 8));
-		} else {
-			hwspi_data_stream_write((uint8_t)(colors[0]));
-			hwspi_data_stream_write((uint8_t)(colors[0] >> 8));
-		}
+		int color_ind = (data[byte] & (1 << bit)) >> bit;
+
+		uint16_t c = to_disp_color(
+				COLOR_TO_RGB888(colors[color_ind],
+						i % img->width, i / img->width));
+		hwspi_data_stream_write((uint8_t)c);
+		hwspi_data_stream_write((uint8_t)(c >> 8));
 	}
 
 	hwspi_data_stream_finish();
 }
 
-static void blast_indexed4(uint8_t *data, uint32_t* color_map, uint32_t num_pix) {
-	uint16_t colors[4];
-	colors[0] = to_disp_color(color_map[0]);
-	colors[1] = to_disp_color(color_map[1]);
-	colors[2] = to_disp_color(color_map[2]);
-	colors[3] = to_disp_color(color_map[3]);
-
-	const uint8_t indexed4_mask[4] = {0x03, 0x0C, 0x30, 0xC0};
-	const uint8_t indexed4_shift[4] = {0, 2, 4, 6};
-
+static void blast_indexed4(image_buffer_t *img, color_t *colors) {
 	command_start(0x2C);
 	hwspi_data_stream_start();
 
+	uint8_t *data = img->data;
+	int num_pix = img->width * img->height;
+
 	for (int i = 0; i < num_pix; i ++) {
 		int byte = i >> 2;
-		int mask_ix = (3 - (i & 0x03));
-		uint16_t c = colors[(data[byte] & indexed4_mask[mask_ix]) >> indexed4_shift[mask_ix]];
+		int bit = (3 - (i & 0x03)) * 2;
+		int color_ind = (data[byte] & (0x03 << bit)) >> bit;
+
+		uint16_t c = to_disp_color(
+				COLOR_TO_RGB888(colors[color_ind],
+						i % img->width, i / img->width));
 		hwspi_data_stream_write((uint8_t)c);
 		hwspi_data_stream_write((uint8_t)(c >> 8));
 	}
@@ -174,7 +171,7 @@ static void blast_rgb888(uint8_t *data, uint32_t num_pix) {
 	hwspi_data_stream_finish();
 }
 
-bool disp_ili9341_render_image(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y) {
+bool disp_ili9341_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
 	uint16_t cs = x;
 	uint16_t ce = x + img->width - 1;
 	uint16_t ps = y;
@@ -195,10 +192,12 @@ bool disp_ili9341_render_image(image_buffer_t *img, uint32_t *color_map, uint16_
 	hwspi_begin();
 	switch(img->fmt) {
 	case indexed2:
-		blast_indexed2(img->data + img->data_offset, color_map, num_pix);
+		if (!colors) return false;
+		blast_indexed2(img, colors);
 		break;
 	case indexed4:
-		blast_indexed4(img->data + img->data_offset, color_map, num_pix);
+		if (!colors) return false;
+		blast_indexed4(img, colors);
 		break;
 	case rgb332:
 		blast_rgb332(img->data + img->data_offset, num_pix);

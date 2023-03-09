@@ -32,6 +32,59 @@
 
 #include <math.h>
 
+static const uint8_t cos_tab_256[] = {
+		255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251,
+		250, 250, 249, 248, 246, 245, 244, 243, 241, 240, 238, 237, 235, 234,
+		232, 230, 228, 226, 224, 222, 220, 218, 215, 213, 211, 208, 206, 203,
+		201, 198, 196, 193, 190, 188, 185, 182, 179, 176, 173, 170, 167, 165,
+		162, 158, 155, 152, 149, 146, 143, 140, 137, 134, 131, 127, 124, 121,
+		118, 115, 112, 109, 106, 103, 100, 97, 93, 90, 88, 85, 82, 79, 76, 73,
+		70, 67, 65, 62, 59, 57, 54, 52, 49, 47, 44, 42, 40, 37, 35, 33, 31, 29,
+		27, 25, 23, 21, 20, 18, 17, 15, 14, 12, 11, 10, 9, 7, 6, 5, 5, 4, 3, 2,
+		2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 4, 5, 5, 6, 7, 9, 10,
+		11, 12, 14, 15, 17, 18, 20, 21, 23, 25, 27, 29, 31, 33, 35, 37, 40, 42,
+		44, 47, 49, 52, 54, 57, 59, 62, 65, 67, 70, 73, 76, 79, 82, 85, 88, 90,
+		93, 97, 100, 103, 106, 109, 112, 115, 118, 121, 124, 128, 131, 134, 137,
+		140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173, 176, 179,
+		182, 185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215,
+		218, 220, 222, 224, 226, 228, 230, 232, 234, 235, 237, 238, 240, 241,
+		243, 244, 245, 246, 248, 249, 250, 250, 251, 252, 253, 253, 254, 254,
+		254, 255, 255, 255
+};
+
+uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
+	switch (color.type) {
+	case COLOR_REGULAR:
+		return color.color1;
+
+	case COLOR_GRADIENT_X:
+	case COLOR_GRADIENT_Y: {
+		uint32_t res;
+		uint32_t r1 = color.color1 >> 16;
+		uint32_t g1 = (color.color1) >> 8 & 0xFF;
+		uint32_t b1 = color.color1 & 0xff;
+
+		uint32_t r2 = color.color2 >> 16;
+		uint32_t g2 = (color.color2) >> 8 & 0xFF;
+		uint32_t b2 = color.color2 & 0xff;
+
+		int pos = color.type == COLOR_GRADIENT_X ? x : y;
+		int tab_pos = ((pos * 256) / color.param1 + color.param2) % 256;
+		int tab_val = cos_tab_256[tab_pos];
+
+		uint32_t r = (r1 * tab_val + r2 * (255 - tab_val)) / 255;
+		uint32_t g = (g1 * tab_val + g2 * (255 - tab_val)) / 255;
+		uint32_t b = (b1 * tab_val + b2 * (255 - tab_val)) / 255;
+
+		res = r << 16 | g << 8 | b;
+		return res;
+	}
+
+	default:
+		return 0;
+	}
+}
+
 static const char *image_buffer_desc = "Image-Buffer";
 
 static lbm_uint symbol_indexed2 = 0;
@@ -1293,7 +1346,7 @@ static bool gpio_is_valid(int pin) {
 	}
 }
 
-static bool(* volatile disp_render_image)(image_buffer_t *img, uint32_t *color_map, uint16_t x, uint16_t y) = 0;
+static bool(* volatile disp_render_image)(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) = 0;
 static void(* volatile disp_clear)(uint32_t color) = 0;
 static void(* volatile disp_reset)(void) = 0;
 
@@ -1346,36 +1399,42 @@ static lbm_value ext_disp_render(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	lbm_value res = ENC_SYM_TERROR;
-	uint32_t colors[4] = {0};
-	if (argn >= 3 &&
-		lispif_disp_is_image_buffer(args[0]) &&
-		lbm_is_number(args[1]) &&
-		lbm_is_number(args[2])) {
-
-		if (argn == 4 &&
-			lbm_is_list(args[3])) {
-			int i = 0;
-			lbm_value curr = args[3];
-			while (lbm_is_cons(curr) && i < 4) {
-				// Interpret "anything" as a 32bit value
-				colors[i] = lbm_dec_as_u32(lbm_car(curr));
-				curr = lbm_cdr(curr);
-				i++;
-			}
-		}
-		image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
-		bool render_res = disp_render_image(img, colors, lbm_dec_as_u32(args[1]), lbm_dec_as_u32(args[2]));
-
-		if (!render_res) {
-			lbm_set_error_reason("Could not render image. Check if the format and location is compatible with the display.");
-			return ENC_SYM_EERROR;
-		}
-
-		res = ENC_SYM_TRUE;
+	if ((argn != 3 && argn != 4) ||
+			!lispif_disp_is_image_buffer(args[0]) ||
+			!lbm_is_number(args[1]) ||
+			!lbm_is_number(args[2])) {
+		return ENC_SYM_TERROR;
 	}
 
-	return res;
+	image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
+
+	color_t colors[4];
+	memset(colors, 0, sizeof(color_t) * 4);
+
+	if (argn == 4 &&
+			lbm_is_list(args[3])) {
+		int i = 0;
+		lbm_value curr = args[3];
+		while (lbm_is_cons(curr) && i < 4) {
+			// Interpret "anything" as a 32bit value
+			colors[i].color1 = lbm_dec_as_u32(lbm_car(curr));
+			curr = lbm_cdr(curr);
+			i++;
+		}
+	}
+
+//	colors[1].type = COLOR_GRADIENT_Y;
+//	colors[1].color2 = 0x0000FF;
+//	colors[1].param1 = 200;
+
+	bool render_res = disp_render_image(img, lbm_dec_as_u32(args[1]), lbm_dec_as_u32(args[2]), colors);
+
+	if (!render_res) {
+		lbm_set_error_reason("Could not render image. Check if the format and location is compatible with the display.");
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
@@ -1508,7 +1567,7 @@ int jpg_output_func (	/* 1:Ok, 0:Aborted */
 	img.height = rect->bottom - rect->top + 1;
 	img.data = bitmap;
 
-	disp_render_image(&img, 0, rect->left + dev->ofs_x, rect->top + dev->ofs_y);
+	disp_render_image(&img, rect->left + dev->ofs_x, rect->top + dev->ofs_y, 0);
 
 	return 1;
 }
