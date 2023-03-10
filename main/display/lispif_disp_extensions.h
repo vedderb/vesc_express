@@ -47,6 +47,8 @@ typedef enum {
 	COLOR_REGULAR = 0,
 	COLOR_GRADIENT_X,
 	COLOR_GRADIENT_Y,
+	COLOR_PRE_X,
+	COLOR_PRE_Y,
 } COLOR_TYPE;
 
 typedef struct {
@@ -58,16 +60,18 @@ typedef struct {
 	uint32_t *precalc;
 } color_t;
 
-static inline uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
+#define COLOR_PRECALC_LEN	512
+
+static inline uint32_t color_apply_precalc(color_t color, int x, int y) {
 	uint32_t res = 0;
 
 	switch (color.type) {
-	case COLOR_GRADIENT_X:
-		res = color.precalc[x % 256];
+	case COLOR_PRE_X:
+		res = color.precalc[x % COLOR_PRECALC_LEN];
 		break;
 
-	case COLOR_GRADIENT_Y:
-		res = color.precalc[y % 256];
+	case COLOR_PRE_Y:
+		res = color.precalc[y % COLOR_PRECALC_LEN];
 		break;
 
 	default:
@@ -77,11 +81,13 @@ static inline uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y
 	return res;
 }
 
-#define COLOR_TO_RGB888(color, x, y) (color.type == COLOR_REGULAR ? color.color1 : lispif_disp_rgb888_from_color(color, x, y))
+#define COLOR_CHECK_PRE(color, x, y) (color.precalc ? color_apply_precalc(color, x, y) : lispif_disp_rgb888_from_color(color, x, y))
+#define COLOR_TO_RGB888(color, x, y) (color.type == COLOR_REGULAR ? color.color1 : COLOR_CHECK_PRE(color, x, y))
 
 // Interface
 bool lispif_disp_is_image_buffer(lbm_value v);
 bool lispif_disp_is_color(lbm_value v);
+uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y);
 
 // Load extensions
 void lispif_load_disp_extensions(void);
