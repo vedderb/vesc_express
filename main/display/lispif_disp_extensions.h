@@ -55,15 +55,33 @@ typedef struct {
 	uint16_t param1;
 	uint16_t param2;
 	COLOR_TYPE type;
+	uint32_t *precalc;
 } color_t;
+
+static inline uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
+	uint32_t res = 0;
+
+	switch (color.type) {
+	case COLOR_GRADIENT_X:
+		res = color.precalc[x % 256];
+		break;
+
+	case COLOR_GRADIENT_Y:
+		res = color.precalc[y % 256];
+		break;
+
+	default:
+		break;
+	}
+
+	return res;
+}
 
 #define COLOR_TO_RGB888(color, x, y) (color.type == COLOR_REGULAR ? color.color1 : lispif_disp_rgb888_from_color(color, x, y))
 
-// Utilities
-uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y);
-
 // Interface
 bool lispif_disp_is_image_buffer(lbm_value v);
+bool lispif_disp_is_color(lbm_value v);
 
 // Load extensions
 void lispif_load_disp_extensions(void);

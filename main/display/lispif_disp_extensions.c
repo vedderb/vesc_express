@@ -52,7 +52,7 @@ static const uint8_t cos_tab_256[] = {
 		254, 255, 255, 255
 };
 
-uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
+static uint32_t rgb888_from_color(color_t color, int pos) {
 	switch (color.type) {
 	case COLOR_REGULAR:
 		return color.color1;
@@ -68,7 +68,6 @@ uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
 		uint32_t g2 = (color.color2) >> 8 & 0xFF;
 		uint32_t b2 = color.color2 & 0xff;
 
-		int pos = color.type == COLOR_GRADIENT_X ? x : y;
 		int tab_pos = ((pos * 256) / color.param1 + color.param2) % 256;
 		int tab_val = cos_tab_256[tab_pos];
 
@@ -86,18 +85,24 @@ uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
 }
 
 static const char *image_buffer_desc = "Image-Buffer";
+static const char *color_desc = "Color";
 
 static lbm_uint symbol_indexed2 = 0;
 static lbm_uint symbol_indexed4 = 0;
 static lbm_uint symbol_rgb332 = 0;
 static lbm_uint symbol_rgb565 = 0;
 static lbm_uint symbol_rgb888 = 0;
+
 static lbm_uint symbol_thickness = 0;
 static lbm_uint symbol_filled = 0;
 static lbm_uint symbol_rounded = 0;
 static lbm_uint symbol_dotted = 0;
 static lbm_uint symbol_scale = 0;
 static lbm_uint symbol_rotate = 0;
+
+static lbm_uint symbol_regular = 0;
+static lbm_uint symbol_gradient_x = 0;
+static lbm_uint symbol_gradient_y = 0;
 
 static color_format_t sym_to_color_format(lbm_value v) {
 	lbm_uint s = lbm_dec_sym(v);
@@ -160,6 +165,50 @@ static lbm_value image_buffer_lift(uint8_t *buf, uint8_t buf_offset, color_forma
 	return res;
 }
 
+static bool color_destructor(lbm_uint value) {
+	color_t *color = (color_t*)value;
+	lbm_free((void*)color->precalc);
+	lbm_free((void*)color);
+	return true;
+}
+
+static lbm_value color_allocate(COLOR_TYPE type, uint32_t color1, uint32_t color2, int param1, int param2) {
+	color_t *color = lbm_malloc(sizeof(color_t));
+	if (!color) {
+		return ENC_SYM_MERROR;
+	}
+
+	uint32_t *pre = 0;
+
+	if (type != COLOR_REGULAR) {
+		pre = lbm_malloc(256 * sizeof(uint32_t));
+		if (!pre) {
+			lbm_free(color);
+			return ENC_SYM_MERROR;
+		}
+	}
+
+	color->type = type;
+	color->color1 = color1;
+	color->color2 = color2;
+	color->param1 = param1;
+	color->param2 = param2;
+	color->precalc = pre;
+
+	if (pre) {
+		for (int i = 0;i < 256;i++) {
+			pre[i] = rgb888_from_color(*color, i);
+		}
+	}
+
+	lbm_value res;
+	lbm_custom_type_create((lbm_uint)color,
+			color_destructor,
+			color_desc,
+			&res);
+	return res;
+}
+
 static lbm_value image_buffer_allocate(color_format_t fmt, uint16_t width, uint16_t height) {
 	uint32_t size_bytes = image_dims_to_size_bytes(fmt, width, height);
 
@@ -181,6 +230,10 @@ bool lispif_disp_is_image_buffer(lbm_value v) {
 	return ((lbm_uint)lbm_get_custom_descriptor(v) == (lbm_uint)image_buffer_desc);
 }
 
+bool lispif_disp_is_color(lbm_value v) {
+	return ((lbm_uint)lbm_get_custom_descriptor(v) == (lbm_uint)color_desc);
+}
+
 // Register symbols
 
 static bool register_symbols(void) {
@@ -190,12 +243,17 @@ static bool register_symbols(void) {
 	res = res && lbm_add_symbol_const("rgb332", &symbol_rgb332);
 	res = res && lbm_add_symbol_const("rgb565", &symbol_rgb565);
 	res = res && lbm_add_symbol_const("rgb888", &symbol_rgb888);
+
 	res = res && lbm_add_symbol_const("thickness", &symbol_thickness);
 	res = res && lbm_add_symbol_const("filled", &symbol_filled);
 	res = res && lbm_add_symbol_const("rounded", &symbol_rounded);
 	res = res && lbm_add_symbol_const("dotted", &symbol_dotted);
 	res = res && lbm_add_symbol_const("scale", &symbol_scale);
 	res = res && lbm_add_symbol_const("rotate", &symbol_rotate);
+
+	res = res && lbm_add_symbol_const("regular", &symbol_regular);
+	res = res && lbm_add_symbol_const("gradient_x", &symbol_gradient_x);
+	res = res && lbm_add_symbol_const("gradient_y", &symbol_gradient_y);
 	return res;
 }
 
@@ -1010,6 +1068,59 @@ static lbm_value ext_image_buffer_from_bin(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+static lbm_value ext_color_create(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_TERROR;
+
+	if (argn >= 2 && argn <= 5 &&
+			lbm_is_symbol(args[0]) &&
+			lbm_is_number(args[1])) {
+
+		uint32_t color1 = lbm_dec_as_i32(args[1]);
+
+		uint32_t color2 = 0;
+		if (argn >= 3) {
+			if (lbm_is_number(args[2])) {
+				color2 = lbm_dec_as_i32(args[2]);
+			} else {
+				return ENC_SYM_TERROR;
+			}
+		}
+
+		uint32_t param1 = 0;
+		if (argn >= 4) {
+			if (lbm_is_number(args[3])) {
+				param1 = lbm_dec_as_i32(args[3]);
+			} else {
+				return ENC_SYM_TERROR;
+			}
+		}
+
+		uint32_t param2 = 0;
+		if (argn >= 5) {
+			if (lbm_is_number(args[4])) {
+				param2 = lbm_dec_as_i32(args[4]);
+			} else {
+				return ENC_SYM_TERROR;
+			}
+		}
+
+		COLOR_TYPE t;
+		if (lbm_dec_sym(args[0]) == symbol_regular) {
+			t = COLOR_REGULAR;
+		} else if (lbm_dec_sym(args[0]) == symbol_gradient_x) {
+			t = COLOR_GRADIENT_X;
+		} else if (lbm_dec_sym(args[0]) == symbol_gradient_y) {
+			t = COLOR_GRADIENT_Y;
+		} else {
+			return ENC_SYM_TERROR;
+		}
+
+		res = color_allocate(t, color1, color2, param1, param2);
+	}
+
+	return res;
+}
+
 static lbm_value ext_clear(lbm_value *args, lbm_uint argn) {
 	if ((argn != 1 && argn != 2) ||
 			!lispif_disp_is_image_buffer(args[0]) ||
@@ -1411,21 +1522,24 @@ static lbm_value ext_disp_render(lbm_value *args, lbm_uint argn) {
 	color_t colors[4];
 	memset(colors, 0, sizeof(color_t) * 4);
 
-	if (argn == 4 &&
-			lbm_is_list(args[3])) {
+	if (argn == 4 && lbm_is_list(args[3])) {
 		int i = 0;
 		lbm_value curr = args[3];
 		while (lbm_is_cons(curr) && i < 4) {
-			// Interpret "anything" as a 32bit value
-			colors[i].color1 = lbm_dec_as_u32(lbm_car(curr));
+			lbm_value arg = lbm_car(curr);
+
+			if (lbm_is_number(arg)) {
+				colors[i].color1 = lbm_dec_as_u32(arg);
+			} else if (lispif_disp_is_color(arg)) {
+				colors[i] = *((color_t*)lbm_get_custom_value(arg));
+			} else {
+				return ENC_SYM_TERROR;
+			}
+
 			curr = lbm_cdr(curr);
 			i++;
 		}
 	}
-
-//	colors[1].type = COLOR_GRADIENT_Y;
-//	colors[1].color2 = 0x0000FF;
-//	colors[1].param1 = 200;
 
 	bool render_res = disp_render_image(img, lbm_dec_as_u32(args[1]), lbm_dec_as_u32(args[2]), colors);
 
@@ -1620,6 +1734,7 @@ void lispif_load_disp_extensions(void) {
 
 	lbm_add_extension("img-buffer", ext_image_buffer);
 	lbm_add_extension("img-buffer-from-bin", ext_image_buffer_from_bin);
+	lbm_add_extension("img-color-create", ext_color_create);
 	lbm_add_extension("img-dims", ext_image_dims);
 	lbm_add_extension("img-setpix", ext_putpixel);
 	lbm_add_extension("img-line", ext_line);
