@@ -34,7 +34,7 @@
 #define DISPLAY_I2C_ADDRESS 0x3C
 
 
-void disp_ssd1306_init(int pin_sda, int pin_scl) {
+void disp_ssd1306_init(int pin_sda, int pin_scl, uint32_t clk_speed) {
 
 	i2c_config_t conf = {
 			.mode = I2C_MODE_MASTER,
@@ -42,9 +42,8 @@ void disp_ssd1306_init(int pin_sda, int pin_scl) {
 			.scl_io_num = pin_scl,
 			.sda_pullup_en = GPIO_PULLUP_ENABLE,
 			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = 200000,
+			.master.clk_speed = clk_speed,
 	};
-	conf.master.clk_speed = 700000;
 
 	i2c_param_config(0, &conf);
 	i2c_driver_install(0, conf.mode, 0, 0, 0);

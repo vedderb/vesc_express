@@ -1502,7 +1502,7 @@ static void(* volatile disp_clear)(uint32_t color) = 0;
 static void(* volatile disp_reset)(void) = 0;
 
 static char *msg_invalid_gpio = "Invalid GPIO";
-static char *msg_invalid_spi_speed = "Invalid SPI speed";
+static char *msg_invalid_clk_speed = "Invalid clock speed";
 static char *msg_not_supported = "Command not supported or display driver not initialized";
 
 static lbm_value ext_disp_reset(lbm_value *args, lbm_uint argn) {
@@ -1611,7 +1611,7 @@ static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
 	int spi_mhz = lbm_dec_as_i32(args[4]);
 
 	if (spi_mhz > 40) {
-		lbm_set_error_reason(msg_invalid_spi_speed);
+		lbm_set_error_reason(msg_invalid_clk_speed);
 		return ENC_SYM_EERROR;
 	}
 
@@ -1646,7 +1646,7 @@ static lbm_value ext_disp_load_ili9341(lbm_value *args, lbm_uint argn) {
 	int spi_mhz = lbm_dec_as_i32(args[5]);
 
 	if (spi_mhz > 40) {
-		lbm_set_error_reason(msg_invalid_spi_speed);
+		lbm_set_error_reason(msg_invalid_clk_speed);
 		return ENC_SYM_EERROR;
 	}
 
@@ -1660,11 +1660,11 @@ static lbm_value ext_disp_load_ili9341(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_disp_load_ssd1306(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(2);
+	LBM_CHECK_ARGN_NUMBER(3);
 
-	int gpio_sda, gpio_scl;
-	gpio_sda = lbm_dec_as_i32(args[0]);
-	gpio_scl = lbm_dec_as_i32(args[1]);
+	int gpio_sda = lbm_dec_as_i32(args[0]);
+	int gpio_scl = lbm_dec_as_i32(args[1]);
+	uint32_t clk_speed = lbm_dec_as_u32(args[2]);
 
 	if (!gpio_is_valid(gpio_sda) ||
 			!gpio_is_valid(gpio_scl)) {
@@ -1672,7 +1672,12 @@ static lbm_value ext_disp_load_ssd1306(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	disp_ssd1306_init(gpio_sda, gpio_scl);
+	if (clk_speed > 8000000) {
+		lbm_set_error_reason(msg_invalid_clk_speed);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_ssd1306_init(gpio_sda, gpio_scl, clk_speed);
 
 	disp_render_image = disp_ssd1306_render_image;
 	disp_clear = disp_ssd1306_clear;
