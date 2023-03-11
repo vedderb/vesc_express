@@ -4,7 +4,7 @@
 # Introduction
 
 The graphics library provides a set of functions for drawing onto rectangular
-images from LispBM. 
+images, called Image-buffers, from LispBM. 
 
 Drivers for a specific display is loaded with the associated `disp-load` function:
 
@@ -15,10 +15,11 @@ Drivers for a specific display is loaded with the associated `disp-load` functio
 Each disp-load function takes arguments specific to the display. These are
 explained below.
 
-Each display driver provides a "rendering", "clearing" and "reset" function
-that is connected to the extensions `disp-render`, `disp-clear` and `disp-reset`
-upon loading. The render, clear and reset functions are the display dependent
-interface that must be implemented per display.
+Each display driver provides a "rendering", "clearing" and "reset"
+function that is connected to the LispBM extensions `disp-render`,
+`disp-clear` and `disp-reset` upon loading. The render, clear and
+reset functions are the display dependent interface that must be
+implemented per display.
 
 ## Image-buffers
 
@@ -30,6 +31,16 @@ image-buffers are:
 3. rgb332   - 8Bit color
 4. rgb565   - 16Bit color
 5. rgb888   - 24Bit color
+
+When drawing on `indexed2` or `indexed4` image-buffers, collors are expressed
+as an integer. 0,1 for `indexed2` and 0,1,2,3 for `indexed4`. For `rgb332`, `rgb565`
+and `rgb888` image-buffers a color is given in hex notation 0xRRGGBB. 
+
+When an image-buffer is rendered onto the display (using the
+disp-render function) the colors of the image-buffer are mapped to the
+color space of the display.  In the case of `indexed2` and `indexed4`
+this mapping is performed using a list of target colors expressed in
+RGB888 format. 
 
 Note that the RAM requirement of a 100x100 image is:
 1. at indexed2: 1250 Bytes
@@ -59,9 +70,6 @@ The purpose of most of these are given by their names. `img-blit` draws an
 image onto another image and can while doing so rotate and scale the image it
 is drawing. More details on each of these functions are available in the later
 reference sections. 
-
-# Colors
-
 
 
 # Displays
