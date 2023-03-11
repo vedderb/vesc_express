@@ -24,7 +24,7 @@ implemented per display.
 ## Image-buffers
 
 The graphics library is based on image-buffers, that are rectangular arrays
-of pixels where each pixel is of a certain format. The formats we support in
+of pixels where all pixels are of a certain format. The formats we support in
 image-buffers are:
 1. indexed2 - 2 colors (1 bit per pixel) 
 2. indexed4 - 4 colors (2 bits per pixel)
@@ -32,9 +32,25 @@ image-buffers are:
 4. rgb565   - 16Bit color
 5. rgb888   - 24Bit color
 
-When drawing on `indexed2` or `indexed4` image-buffers, collors are expressed
+Image-buffers can be created in two ways using the graphics library:
+1. `img-buffer` - allocates a blank image-buffer in lbm memory.
+2. `img-buffer-from-bin` - creates an image-buffer from an image imported into the script.
+
+For example, creating a 100x100 image-buffer of `indexed2` colors is done as:
+
+```clj
+(def my-img (img-buf 'indexed2 100 100))
+```
+
+When drawing on `indexed2` or `indexed4` image-buffers, colors are expressed
 as an integer. 0,1 for `indexed2` and 0,1,2,3 for `indexed4`. For `rgb332`, `rgb565`
 and `rgb888` image-buffers a color is given in hex notation 0xRRGGBB. 
+
+Example that draws a line from pos (0,0) to pos (90,90) in color 1 on an `indexed2` image-buffer:
+
+```clj
+(img-line my-img 10 10 90 90 1)
+```
 
 When an image-buffer is rendered onto the display (using the
 disp-render function) the colors of the image-buffer are mapped to the
@@ -48,10 +64,6 @@ Note that the RAM requirement of a 100x100 image is:
 3. at rgb332:   10000 Bytes
 4. at rgb565:   20000 Bytes
 5. at rgb888:   30000 Bytes
-
-Image-buffers can be created in two ways using the graphics library:
-1. `img-buffer` - allocates a blank image-buffer in lbm memory.
-2. `img-buffer-from-bin` - creates an image-buffer from an image imported into the script.
 
 There are a number of function for drawing onto an image-buffer:
 1. img-setpix
@@ -71,6 +83,44 @@ image onto another image and can while doing so rotate and scale the image it
 is drawing. More details on each of these functions are available in the later
 reference sections. 
 
+The functions that draw onto an image-buffer takes optional arguments
+that specify extra attributes to apply when drawing. These attributes are:
+
+1. `thickness` - `'(thickness w)`
+2. `dotted`    - `'(dotted d-len d-space-len)`
+3. `filled`    - `'(filled)`
+4. `rounded`   - `'(rounded angle)`
+5. `scale`     - `'(scale scale-f)`
+6. `rotate`    - `'(rotate cx cy deg)`
+ 
+Many of the attributes take a numerical argument. For example '(thickness 3)
+indicates a line thickness of 3. Attri
+
+Not all attributes are applicable to all drawing functions. The
+applicable attributes for each drawing-function is listed in the
+description of the function in the reference section. 
+
+## Rendering and color mapping
+
+An image-buffer can be rendered to the display using `disp-render`.
+If the image is an `indexed2` or `indexed4` color image, it is when
+rendering the image you decide what color each index in the image represents. 
+
+For example you can draw an indexed2 image using a very red and a green color as:
+```clj
+(disp-render my-img 10 10 '(0x00FF00 0xFF0000))
+```
+
+The code above draws `my-img` at location (10,10). Zeroes in the image will be drawn
+using color `0x00FF00`, maximum green, and ones will be drawn as `0xFF0000` maximum red.
+
+For rgb332, rgb565 and rgb888 formats the color mapping list is ignored and
+can be empty.
+
+More advanced color mapping schemes can be represented using a color type
+that is created using the `img-color` or `img-color-setpre` functions. The color
+type can represent normal colors, such as 0xFF0000, but can also represent
+gradients to be applied to the image in x or y direction upon rendering.
 
 # Displays
  
@@ -150,16 +200,70 @@ Example using GPIO pins 7 and 6 for serial data and clock.
 (disp-load-ssd1306 7 6)
 ```
 
-## Common display operations
+# Common display operations
 
-### disp-reset
+## disp-reset
 
-### disp-clear
+```clj
+(disp-reset)
+```
 
-### disp-render
+Resets and clears the display.
 
-### disp-render-jpg
+## disp-clear
+
+```clj
+(disp-clear)
+```
+
+Clears the display by writing zero to all pixel locations.
+
+```clj
+(disp-clear color)
+
+Clears the display to the given color. The color is expressed in hex rgb888 format
+0xRRGGBB.
+
+## disp-render
+
+```clj
+(disp-render img pos-x pos-y colors)
+```
+
+## disp-render-jpg
 
 
 
 # Graphics library
+
+## img-arc
+
+## img-blit
+
+## img-buffer
+
+## img-buffer-from-bin
+
+## img-circle
+
+## img-circle-sector
+
+## img-circle-segment
+
+## img-clear
+
+## img-color
+
+## img-color-setpre
+
+## img-dims
+
+## img-line
+
+## img-rectangle
+
+## img-setpix
+
+## img-text
+
+## img-triangle
