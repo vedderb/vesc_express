@@ -86,16 +86,13 @@ reference sections.
 The functions that draw onto an image-buffer takes optional arguments
 that specify extra attributes to apply when drawing. These attributes are:
 
-1. `thickness` - `'(thickness w)`
-2. `dotted`    - `'(dotted d-len d-space-len)`
-3. `filled`    - `'(filled)`
-4. `rounded`   - `'(rounded angle)`
-5. `scale`     - `'(scale scale-f)`
-6. `rotate`    - `'(rotate cx cy deg)`
+1. `'(thickness w)`: Line thickness w 
+2. `'(dotted d-len d-space-len)`: Dotted or dashed lines with `d-len` long line segments separated by `d-space-len`.
+3. `'(filled)` : Specifies that the shape should be filled. 
+4. `'(rounded radius)` : Specifies that the shape should have rounded corners. 
+5. `'(scale scale-f)` : Scale the image by factor `scale-f`
+6. `'(rotate rx ry deg)` : Rotate an image around point (`rx`,`ry`), `deg` degrees. 
  
-Many of the attributes take a numerical argument. For example '(thickness 3)
-indicates a line thickness of 3. Attri
-
 Not all attributes are applicable to all drawing functions. The
 applicable attributes for each drawing-function is listed in the
 description of the function in the reference section. 
