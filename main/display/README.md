@@ -123,9 +123,9 @@ gradients to be applied to the image in x or y direction upon rendering.
  
 ## sh8501b
 
-Resolution: 194 * 368
-Colors: 16Bit
-Interface: SPI
+* Resolution: 194 * 368
+* Colors: 16Bit
+* Interface: SPI
 
 Compatible with all image formats supported by the graphics library.
 
@@ -148,9 +148,9 @@ SPI clock at 40MHz:
 
 ## ili9341
 
-Resolution: 320 * 240
-Colors: 16Bit
-Interface: SPI
+* Resolution: 320 * 240
+* Colors: 16Bit
+* Interface: SPI
 
 Compatible with all image formats supported by the graphics library.
 
@@ -175,9 +175,9 @@ The SPI clock is set to 40MHz.
 
 ## ssd1306
 
-Resolution: 128 * 64
-Colors: B/W  (1bpp)
-Interface: I2C
+* Resolution: 128 * 64
+* Colors: B/W  (1bpp)
+* Interface: I2C
 
 Can display images of `indexed2` format and is limited to displaying
 only full screen images starting at position (0, 0). 
@@ -428,6 +428,7 @@ Clears an image-buffer to zero or optionally to a color value given as argument.
 
 ```clj
 (img-color kind arg1 opt-arg2 ... opt-arg4)
+```
 
 Create a color object for use with `disp-render`. `img-color` takes between
 2 and 5 arguments depending on what kind of color-mapping that is being set up.
