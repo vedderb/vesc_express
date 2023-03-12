@@ -87,7 +87,7 @@ static void code_check(int ind) {
 	code_checks[ind].check_done = true;
 }
 
-bool flash_helper_erase_code(int ind) {
+bool flash_helper_erase_code(int ind, int size) {
 	const esp_partition_t *part = get_partition(ind);
 
 	if (!part) {
@@ -98,7 +98,16 @@ bool flash_helper_erase_code(int ind) {
 	code_checks[ind].check_done = false;
 	code_checks[ind].ok = false;
 
-	return esp_partition_erase_range(part, 0, part->size) == ESP_OK;
+	uint32_t erase_size = part->size;
+
+	if (size > 0) {
+		erase_size = 0;
+		while (erase_size < size && erase_size < part->size) {
+			erase_size += part->erase_size;
+		}
+	}
+
+	return esp_partition_erase_range(part, 0, erase_size) == ESP_OK;
 }
 
 bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len) {

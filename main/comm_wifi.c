@@ -302,7 +302,7 @@ void comm_wifi_init(void) {
 	if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {
 		esp_wifi_set_mode(WIFI_MODE_AP);
 	} else {
-		esp_wifi_set_mode(WIFI_MODE_STA);
+		esp_wifi_set_mode(WIFI_MODE_APSTA);
 	}
 
 	if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {

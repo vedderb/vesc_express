@@ -1634,8 +1634,6 @@ static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
-	lbm_value res = ENC_SYM_TRUE;
-
 	if (!esp_now_initialized) {
 		lbm_set_error_reason(esp_init_msg);
 		return ENC_SYM_EERROR;
@@ -1675,11 +1673,14 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 
 		if (send_res != ESP_OK) {
 			lbm_undo_block_ctx_from_extension();
-			res = ENC_SYM_NIL;
+			return ENC_SYM_NIL;
 		}
+	} else {
+		lbm_set_error_reason("Argument must be an array");
+		return ENC_SYM_TERROR;
 	}
 
-	return res;
+	return ENC_SYM_TRUE;
 }
 
 static bool i2c_started = false;

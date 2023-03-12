@@ -657,9 +657,15 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			lispif_restart(false, false);
 		}
 
-		bool flash_res = flash_helper_erase_code(packet_id == COMM_QMLUI_ERASE ? CODE_IND_QML : CODE_IND_LISP);
-
 		int32_t ind = 0;
+		int erase_size = -1;
+		if (len >= 4) {
+			erase_size = buffer_get_int32(data, &ind);
+		}
+
+		bool flash_res = flash_helper_erase_code(packet_id == COMM_QMLUI_ERASE ? CODE_IND_QML : CODE_IND_LISP, erase_size);
+
+		ind = 0;
 		uint8_t send_buffer[50];
 		send_buffer[ind++] = packet_id;
 		send_buffer[ind++] = flash_res ? 1 : 0;
