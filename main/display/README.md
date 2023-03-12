@@ -217,6 +217,7 @@ Clears the display by writing zero to all pixel locations.
 
 ```clj
 (disp-clear color)
+```
 
 Clears the display to the given color. The color is expressed in hex rgb888 format
 0xRRGGBB.
@@ -224,43 +225,356 @@ Clears the display to the given color. The color is expressed in hex rgb888 form
 ## disp-render
 
 ```clj
-(disp-render img pos-x pos-y colors)
+(disp-render img px py colors)
 ```
+
+Renders an image `img` at position (`px`, `py`).
+If the picture is of `'indexed2` or `'indexed4` format
+the `colors` argument is used to map the values of the image to colors on
+the display.
+
+`colors` can be a list of numbers expressed int hex rgb888 format. For example:
+```clj
+'(0x000000 0xFFFFFF)
+```
+
+Or for a 4 color image (`'indexed4):
+
+```clj
+'(0x000000 0xFF0000 0x00FF00 0x0000FF)
+```
+
+The `colors` argument can also be made up of colors created using the `img-color` function.
+
+As an example, the two programs below render an image using colors black and red:
+
+*using a list of numbers representing colors*
+```clj
+(disp-render img 0 0 '(0x000000 0xFF0000))
+```
+*using a list of colors* 
+```clj
+(disp-render img 0 0 (list (img-color 'regular 0x000000) 
+                           (img-color 'regular 0xFF0000)))
+```
+
+A gradient can be applied to the picture when rendering.
+This is done using the arguments `'gradient_x`, `'gradient_y`
+to img-color. look up `img-color` for more information.
 
 ## disp-render-jpg
 
+```clj
+(dips-render-jpg img-jpg px py)
+```
+Decodes and displays a jpg at position (`px`, `py`).
 
+Example that imports and displays a jpg image. 
+```clj
+(import "img_test_jpg.jpg" 'img-jpg)
+(disp-render-jpg img-jpg 0 0)
+``` 
 
 # Graphics library
 
 ## img-arc
 
+```clj
+(img-arc img cx cy r ang-s ang-e color opt-attr1 ... opt-attrN)
+```
+
+Draws an arc with its center at (`cx`, `cy`) and radius r. The
+arc extends from angle `ang-s` to `ang-e`. Additional attributes
+are optional. 
+
+Applicable attributes:
+1. dotted
+2. filled
+3. thickness
+
+Example drawing a dashed (dotted) arc:
+```clj
+(img-arc img 100 100 50 160 320 1 '(dotted 15 15))
+``` 
+
 ## img-blit
+
+```clj
+(img-blit img-dst img-src px py tc opt-attr1 ... opt-attrN) 
+```
+
+Draws the source image `img-src` onto the destination image `img-dst`
+starting with the top left corner of source at position (`px`, `py`)
+of the destination image. Additional attributes are optional.
+
+Applicable attributes:
+1. rotate
+2. scale
+
+Example drawing a scaled and rotated image onto an image-buffer.
+```clj
+(img-blit img img2 60 100 -1 '(rotate 50 10 60) '(scale 2.2))
+```
+
+In the example, `img2` is drawn onto `img1` at position (60, 100).
+`img2` is rotated around point (50,10), 60 degrees and scaled by a
+factor 2.2.
 
 ## img-buffer
 
+```clj
+(img-buffer color-fmt width height)
+```
+
+Creates an image-buffer of size `width` * `height` of colors of format `color-fmt`.
+
+`color-fmt` can be one of the following symbols:
+1. indexed2
+2. indexed4
+3. rgb332
+4. rgb565
+5. rgb888
+
+Image-buffers are allocated from the lbm-memory, not heap.
+
+Example that creates and names an image-buffer:
+```clj
+(def img (img-buffer 'indexed2 100 100))
+``` 
+
 ## img-buffer-from-bin
+
+```clj
+(img-buffer-from-bin bin-data)
+```
+
+Creates an image-buffer from an imported bin file. The binary data must be a valid
+representation of a picture and must contain a header indicating the width, height
+and color format of the image. The bin files exported by "Display Tool" in VESC tool
+follows this format.
+
+Example that imports a bin file and creates an image-buffer:
+
+```clj
+(import "llama.bin" 'llama-data)
+(def llama (img-buffer-from-bin llama-data))
+```
 
 ## img-circle
 
+```clj
+test-op (img-circle img cx cy r color opt-attr1 ... opt-attrN)
+```
+
+Draws a circle with its center at (`cx`, `cy`) and radius r in color `color`.
+Additional attributes are optional. 
+
+Applicable attributes:
+1. dotted
+2. filled
+3. thickness
+
+Example drawing a filled circle with radius 80:
+```clj
+(img-circle img 100 100 80 1 '(filled))
+``` 
+
 ## img-circle-sector
+
+```clj
+(img-circle-sector img cx cy r ang-s ang-e color opt-attr1 ... opt-attrN)
+```
+
+Draw a circle-sector, a piece of pie. Draws a piece of a circle positioned
+at (`cx`, `cy`) with radius `r`. The piece drawn extends across the angles `ang-s`
+to `and-e`.
+
+Applicable attributes:
+1. dotted
+2. filled
+3. thickness
+
+Example drawing a thick circle-sector of 45 degrees and radius 80.
+```clj
+(img-circle-sector img 100 100 80 0  1 '(thickness 3))
+```
 
 ## img-circle-segment
 
+```clj
+(img-circle-segment img cx cy r ang-s ang-e color opt-attr1 ... opt-attrN)
+``` 
+
+Draw a circle-segment. Imagine a line (chord) drawn between the points of the circle
+at angle `ang-s` and `ang-e` cutting off a circle segment. The segment is the part
+of the circle that is enclosed by the arc from `ang-s` to `ang-e` and the line drawn
+between those points on the circle.
+
+Example drawing a filled circle segment.
+```clj
+(img-circle-segment img 100 100 80 0 100 1 '(filled))
+```
+
 ## img-clear
+
+```clj
+(img-clear img opt-color)
+```
+
+Clears an image-buffer to zero or optionally to a color value given as argument.
+
 
 ## img-color
 
+```clj
+(img-color kind arg1 opt-arg2 ... opt-arg4)
+
+Create a color object for use with `disp-render`. `img-color` takes between
+2 and 5 arguments depending on what kind of color-mapping that is being set up.
+
+### regular
+```clj
+(img-color 'regular 0xRRGGBB)
+```
+
+Creates a regular color for 1-1 mapping between values of an indexed image
+and the display color space.
+
+### gradient_x
+```clj
+(img-color 'gradient_x c0 c1 period phase)
+```
+
+Creates a color gradient in the horizontal direction across the image.
+The pixel x position will influence the final color displayed on the screen.
+`period` dictates the amount of pixels it takes to go from `c0` to `c1` (after which
+the pattern repeats. `phase` alters the starting point in the interval `c0` - `c1`.
+
+### gradient_y
+```clj
+(img-color 'gradient_y c0 c1 period phase)
+```
+
+Creates a color gradient in the vertical direction across the image.
+The pixel x position will influence the final color displayed on the screen.
+`period` dictates the amount of pixels it takes to go from `c0` to `c1` (after which
+the pattern repeats. `phase` alters the starting point in the interval `c0` - `c1`.
+
+### gradient_x_pre
+```clj
+(img-color 'gradient_x c0 c1 period phase)
+```
+
+See `gradient_x`. `gradient_x_pre` precalculates and buffers the color mapping.
+
+### gradient_y_pre
+```clj
+(img-color 'gradient_y c0 c1 period phase)
+```
+
+See `gradient_y`. `gradient_y_pre` precalculates and buffers the color mapping.
+
 ## img-color-setpre
+
+```clj
+(img-color-setpre color pos new-color)
+```
+
+Changes the a color at a position in a precalculated color mapping.
+The color should be created by `img-color` and using one of the
+precalculated gradient formats. 
 
 ## img-dims
 
+```clj
+(img-dims img)
+
+Returns the dimensions of the image, its width and height, as a list. 
+
 ## img-line
+
+```clj
+(img-line img x1 y1 x2 y2 color opt-attr1 ... opt-attrN)
+```
+Draws a line between points (`x1`, `y1`) and (`x2`, `y2`) in color `color`.
+
+Applicable attributes:
+1. dotted
+2. thickness
+
+Example that draws a thick dashed (dotted) line:
+```clj
+(img-line img 10 10 120 220 1 '(dotted 15 15) '(thickness 3))
+```
 
 ## img-rectangle
 
+```clj
+(img-rectangle img x y width height color opt-attr1 ... opt-attrN)
+``` 
+Draws a rectangle with its upper left corner in point (`x`,`y`) and
+width `width` and height `height` in color `color`.  
+
+Applicable attributes:
+1. dotted
+2. filled
+3. rounded
+4. thickness
+
+Example drawing a filled rectangle with rounded corners:
+
+```clj
+(img-rectangle img 10 10 120 180 1 '(filled) '(rounded 45) )
+``` 
+
+Note that the argument to rounded should be at most 45 degrees. 
+
 ## img-setpix
+
+```clj
+(img-setpix x y color)
+```
+
+Set pixel (`x`,`y`) in image `img` to color `color`.
+
+example that sets a pixel:
+```clj
+(img-setpix 10 10 1)
+``` 
 
 ## img-text
 
+```clj
+(img-text img x y fg bg font str)
+```
+
+Draws the text from the string  `str` at position (`x`,`y`) using font-data
+`font` with foreground color `fg` and background color `bg`.
+
+fonts can be loaded using the import facility.
+
+Example that imports a font and draws some text to an image-buffer:
+
+```clj
+(import "font_16_24_all.bin" 'font-small)
+(img-text img 10 10 1 0 font-small "LispBM")
+```
+
 ## img-triangle
+
+```clj
+(img-triangle img x1 y1 x2 y2 x3 y3 color opt-attr1 ... opt-attrN)
+```
+
+Draws the triangle (`x1`,`y1`), (`x2`,`y2`), (`x3`,`y3`) in color `color'.
+
+Applicable attributes:
+1. dotted
+2. filled
+3. thickness
+
+Example that draws a filled triangle:
+
+```clj
+(img-triangle img 30 60 160 120 10 220 1 '(filled))
+``` 
