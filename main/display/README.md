@@ -489,6 +489,7 @@ precalculated gradient formats.
 
 ```clj
 (img-dims img)
+```
 
 Returns the dimensions of the image, its width and height, as a list. 
 
