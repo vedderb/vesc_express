@@ -152,7 +152,16 @@ static uint32_t image_dims_to_size_bytes(color_format_t fmt, uint16_t width, uin
 
 static lbm_value image_buffer_lift(uint8_t *buf, uint8_t buf_offset, color_format_t fmt, uint16_t width, uint16_t height) {
 	image_buffer_t *img = lbm_malloc(sizeof(image_buffer_t));
-	if (!img) return ENC_SYM_MERROR;
+	if (!img) {
+		return ENC_SYM_MERROR;
+	}
+
+	lbm_value res;
+	if (!lbm_custom_type_create((lbm_uint) img, image_buffer_destructor,
+			image_buffer_desc, &res)) {
+		lbm_free(img);
+		return ENC_SYM_MERROR;
+	}
 
 	img->data_offset = buf_offset;
 	img->data = buf;
@@ -160,11 +169,6 @@ static lbm_value image_buffer_lift(uint8_t *buf, uint8_t buf_offset, color_forma
 	img->width = width;
 	img->height = height;
 
-	lbm_value res;
-	lbm_custom_type_create((lbm_uint)img,
-			image_buffer_destructor,
-			image_buffer_desc,
-			&res);
 	return res;
 }
 
@@ -184,13 +188,22 @@ static lbm_value color_allocate(COLOR_TYPE type, uint32_t color1, uint32_t color
 	}
 
 	uint32_t *pre = 0;
-
 	if (type == COLOR_PRE_X || type == COLOR_PRE_Y) {
 		pre = lbm_malloc(COLOR_PRECALC_LEN * sizeof(uint32_t));
 		if (!pre) {
 			lbm_free(color);
 			return ENC_SYM_MERROR;
 		}
+	}
+
+	lbm_value res;
+	if (!lbm_custom_type_create((lbm_uint)color,
+			color_destructor, color_desc, &res)) {
+		lbm_free(color);
+		if (pre) {
+			lbm_free(pre);
+		}
+		return ENC_SYM_MERROR;
 	}
 
 	color->type = type;
@@ -215,11 +228,6 @@ static lbm_value color_allocate(COLOR_TYPE type, uint32_t color1, uint32_t color
 		color->type = type_old;
 	}
 
-	lbm_value res;
-	lbm_custom_type_create((lbm_uint)color,
-			color_destructor,
-			color_desc,
-			&res);
 	return res;
 }
 
