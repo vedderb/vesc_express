@@ -185,7 +185,7 @@ only full screen images starting at position (0, 0).
 ### disp-load-ssd1306
 
 ```clj
-(disp-load-ssd1306 gpio-sda gpio-scl i2c-khz)
+(disp-load-ssd1306 gpio-sda gpio-scl i2c-hz)
 ```
 
 Load the ssd1306 driver. The ssd1306 talks I2C over the GPIOs
@@ -194,7 +194,7 @@ Load the ssd1306 driver. The ssd1306 talks I2C over the GPIOs
 Example using GPIO pins 7 and 6 for serial data and clock. 
 
 ```clj
-(disp-load-ssd1306 7 6)
+(disp-load-ssd1306 7 6 700000)
 ```
 
 # Common display operations
