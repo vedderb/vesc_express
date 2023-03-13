@@ -595,4 +595,4 @@ Example that draws a filled triangle:
 (disp-render img 0 0 (list 0x000000 0xFF0000))
 ```
 
-![Lines with different attributes](/resources/line_attributes.jpg)
+![Lines with different attributes](./resources/line_attributes.jpg)
