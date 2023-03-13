@@ -568,7 +568,7 @@ Example that imports a font and draws some text to an image-buffer:
 (img-triangle img x1 y1 x2 y2 x3 y3 color opt-attr1 ... opt-attrN)
 ```
 
-Draws the triangle (`x1`,`y1`), (`x2`,`y2`), (`x3`,`y3`) in color `color'.
+Draws the triangle (`x1`,`y1`), (`x2`,`y2`), (`x3`,`y3`) in color `color`.
 
 Applicable attributes:
 1. dotted
@@ -582,7 +582,7 @@ Example that draws a filled triangle:
 ```
 
 
-## Attribute reference
+# Attribute reference
 
 
 ## Lines
@@ -596,3 +596,96 @@ Example that draws a filled triangle:
 ```
 
 ![Lines with different attributes](./resources/line_attributes.jpg)
+
+
+## Cirlces
+
+```clj
+(img-circle img 40 40 40 1)
+(img-circle img 130 40 40 1 '(dotted 15 15))
+(img-circle img 220 40 40 1 '(thickness 3))
+(img-circle img 40 130 40 1 '(dotted 15 15) '(thickness 3))
+(img-circle img 130 130 40 1 '(filled))
+(disp-render img 0 0 (list 0x000000 0xFF0000))
+```
+
+![Circles with different attributes](./resources/circle_attributes.jpg)
+
+
+## Circle sectors
+
+```clj
+(img-circle-sector img 40 40 40 90 200 1)
+(img-circle-sector img 130 40 40 90 200 1 '(dotted 15 15))
+(img-circle-sector img 220 40 40 90 200 1 '(thickness 3)) 
+(img-circle-sector img 40 130 40 90 200 1 '(dotted 15 15) '(thickness 3))
+(img-circle-sector img 130 130 40 90 200 1 '(filled))
+(disp-render img 0 0 (list 0x000000 0xFF0000))
+```
+
+
+![Circle-sectors with different attributes](./resources/circle_sector_attributes.jpg)
+
+## Circle segments
+
+```clj
+(img-circle-segment img 40 40 40 90 200 1)
+(img-circle-segment img 130 40 40 90 200 1 '(dotted 15 15))
+(img-circle-segment img 220 40 40 90 200 1 '(thickness 3))
+(img-circle-segment img 40 130 40 90 200 1 '(dotted 15 15) '(thickness 3))
+(img-circle-segment img 130 130 40 90 200 1 '(filled))
+(disp-render img 0 0 (list 0x000000 0xFF0000))
+```
+
+![Circle-segments with different attributes](./resources/circle_segment_attributes.jpg)
+
+
+## Triangles
+
+```clj
+(img-triangle img 10 10 80 20 40 80 1)
+(img-triangle img 100 10 170 20 130 80 1 '(dotted 15 15))
+(img-triangle img 190 10 260 20 220 80 1 '(thickness 3))
+(img-triangle img 10 100 80 110 40 170 1 '(dotted 15 15) '(thickness 3)) 
+(img-triangle img 100 100 170 110 130 170 1 '(filled))
+(disp-render img 0 0 (list 0x000000 0xFF0000))
+```
+
+![Triangles with different attributes](./resources/triangle_attributes.jpg)
+
+
+## Rectangles
+
+```clj
+(img-rectangle img 10 10 70 70 1)
+(img-rectangle img 90 10 70 70 1 '(dotted 15 15))
+(img-rectangle img 170 10 70 70 1 '(thickness 3)) 
+(img-rectangle img 10 90 70 70 1 '(dotted 15 15) '(thickness 3))
+(img-rectangle img 90 90 70 70 1 '(filled)) 
+(img-rectangle img 170 90 70 70 1 '(rounded 10)) 
+(img-rectangle img 10 170 70 60 1 '(rounded 10) '(filled))
+(disp-render img 0 0 (list 0x000000 0xFF0000))
+```
+
+![Rectangles with different attributes](./resources/rectangle_attributes.jpg)
+
+
+## Bliting
+
+```clj
+(import "llama.bin" 'llama-data)
+(def llama (img-buffer-from-bin llama-data))
+
+(def llama-dims (img-dims llama))
+(def llama-w (first llama-dims))
+(def llama-h (second llama-dims))
+
+(img-blit img llama 10 10 -1)
+(img-blit img llama 120 10 -1 `(rotate ,(/ llama-w 2) ,(/ llama-h 2) 45))
+(img-blit img llama 10 120 -1 '(scale 0.5))
+(img-blit img llama 120 120 -1 '(scale 1.5))
+(img-blit img llama 20 60 -1 '(scale 1.5) `(rotate ,(/ llama-w 2) ,(/ llama-h 2) 45)) 
+(disp-render img 0 0 (list 0x000000 0xFF0000))
+```
+
+![Bliting with different attributes](./resources/blit_attributes.jpg)
