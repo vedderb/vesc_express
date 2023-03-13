@@ -579,4 +579,20 @@ Example that draws a filled triangle:
 
 ```clj
 (img-triangle img 30 60 160 120 10 220 1 '(filled))
-``` 
+```
+
+
+## Attribute reference
+
+
+## Lines
+
+```clj
+(img-line img 10 10 300 50 1)
+(img-line img 10 30 300 70 1 '(dotted 15 15)) 
+(img-line img 10 50 300 90 1 '(thickness 3))
+(img-line img 10 70 300 110 1 '(thickness 3) '(dotted 15 15)) 
+(disp-render img 0 0 (list 0x000000 0xFF0000))
+```
+
+![Lines with different attributes](/resources/line_attributes.jpg)
