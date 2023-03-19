@@ -39,7 +39,7 @@ Image-buffers can be created in two ways using the graphics library:
 For example, creating a 100x100 image-buffer of `indexed2` colors is done as:
 
 ```clj
-(def my-img (img-buf 'indexed2 100 100))
+(def my-img (img-buffer 'indexed2 100 100))
 ```
 
 When drawing on `indexed2` or `indexed4` image-buffers, colors are expressed
