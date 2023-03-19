@@ -23,14 +23,13 @@
 #include "driver/gpio.h"
 #include "soc/gpio_struct.h"
 
-#include "disp_ili9341.h"
+#include "disp_st7789.h"
 #include "hwspi.h"
 #include "lispif.h"
 #include "lispbm.h"
 
-
-static int display_width = 320;
-static int display_height = 240;
+static int display_width = 0;
+static int display_height = 0;
 
 // Private variables
 static int m_pin_reset = -1;
@@ -171,7 +170,7 @@ static void blast_rgb888(uint8_t *data, uint32_t num_pix) {
 	hwspi_data_stream_finish();
 }
 
-bool disp_ili9341_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
+bool disp_st7789_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
 	uint16_t cs = x;
 	uint16_t ce = x + img->width - 1;
 	uint16_t ps = y;
@@ -184,8 +183,8 @@ bool disp_ili9341_render_image(image_buffer_t *img, uint16_t x, uint16_t y, colo
 	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
 	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
 
-	disp_ili9341_command(0x2A, col, 4);
-	disp_ili9341_command(0x2B, row, 4);
+	disp_st7789_command(0x2A, col, 4);
+	disp_st7789_command(0x2B, row, 4);
 
 	uint32_t num_pix = img->width * img->height;
 
@@ -216,7 +215,7 @@ bool disp_ili9341_render_image(image_buffer_t *img, uint16_t x, uint16_t y, colo
 	return true;
 }
 
-void disp_ili9341_clear(uint32_t color) {
+void disp_st7789_clear(uint32_t color) {
 	uint16_t clear_color_disp = to_disp_color(color);
 
 	uint16_t cs = 0;
@@ -227,8 +226,8 @@ void disp_ili9341_clear(uint32_t color) {
 	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
 	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
 
-	disp_ili9341_command(0x2A, col, 4);
-	disp_ili9341_command(0x2B, row, 4);
+	disp_st7789_command(0x2A, col, 4);
+	disp_st7789_command(0x2B, row, 4);
 
 	hwspi_begin();
 	command_start(0x2C);
@@ -253,12 +252,12 @@ static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 			paras[i] = (uint8_t)lbm_dec_as_u32(args[i + 1]);
 		}
 
-		disp_ili9341_command(cmd, paras, argn - 1);
+		disp_st7789_command(cmd, paras, argn - 1);
 
 		res = ENC_SYM_TRUE;
 	} else if (argn == 1) {
 		uint8_t cmd = (uint8_t) lbm_dec_as_u32(args[0]);
-		disp_ili9341_command(cmd, 0, 0);
+		disp_st7789_command(cmd, 0, 0);
 		res = ENC_SYM_TRUE;
 	}
 
@@ -273,26 +272,26 @@ static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TRUE;
 	switch(orientation) {
 	case 0:
-		arg = 0x08;
-		disp_ili9341_command(0x36, &arg, 1);
+		arg = 0x00;
+		disp_st7789_command(0x36, &arg, 1);
 		display_width = 240;
 		display_height = 320;
 		break;
 	case 1:
-		arg = 0x68;
-		disp_ili9341_command(0x36, &arg, 1);
+		arg = 0x60;
+		disp_st7789_command(0x36, &arg, 1);
 		display_width = 320;
 		display_height = 240;
 		break;
 	case 2:
-		arg = 0xC8;
-		disp_ili9341_command(0x36, &arg, 1);
+		arg = 0xC0;
+		disp_st7789_command(0x36, &arg, 1);
 		display_width = 240;
 		display_height = 320;
 		break;
 	case 3:
-		arg = 0xA8;
-		disp_ili9341_command(0x36, &arg, 1);
+		arg = 0xA0;
+		disp_st7789_command(0x36, &arg, 1);
 		display_width = 320;
 		display_height = 240;
 		break;
@@ -303,7 +302,7 @@ static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
-void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int pin_dc, int clock_mhz) {
+void disp_st7789_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int pin_dc, int clock_mhz) {
 	hwspi_init(clock_mhz, 0, -1, pin_sd0, pin_clk, pin_cs);
 	m_pin_reset = pin_reset;
 	m_pin_dc    = pin_dc;
@@ -324,7 +323,8 @@ void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int 
 	lbm_add_extension("ext-disp-orientation", ext_disp_orientation);
 }
 
-void disp_ili9341_command(uint8_t command, uint8_t *args, int argn) {
+
+void disp_st7789_command(uint8_t command, uint8_t *args, int argn) {
 	hwspi_begin();
 	command_start(command);
 	if (args != NULL && argn > 0) {
@@ -333,43 +333,42 @@ void disp_ili9341_command(uint8_t command, uint8_t *args, int argn) {
 	hwspi_end();
 }
 
-static uint8_t ili9341_init_sequence[][7] = {
-		{4, 0xCF, 0x00, 0xD9, 0x30},
-		{5, 0xED, 0x64, 0x03, 0x12, 0x81},
-		{4, 0xE8, 0x85, 0x10, 0x7A},
-		{6, 0xCB, 0x39, 0x2C, 0x00, 0x34, 0x02},
-		{2, 0xF7, 0x20},
-		{3, 0xEA, 0x00, 0x00},
-		{2, 0xC0, 0x1B},
-		{2, 0xC1, 0x12},
-		{3, 0xC5, 0x08, 0x26},
-		{2, 0xC7, 0xB7},
-		{2, 0x36, 0x08},
-		{2, 0x3A, 0x55},
-		{3, 0xB1, 0x00, 0x1A},
-		{3, 0xB6, 0x0A, 0xA2},
-		{2, 0x36, 0xA8}
+static uint8_t init_cmds[][16] = {
+		{2, 0x36, 0x60}, // Memory Data Access Control
+		{2, 0x3A, 0x55}, // Interface Pixel Format
+		{6, 0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33}, // Porch Setting
+		{2, 0xB7, 0x35}, // Gate Control
+		{2, 0xBB, 0x32}, // VCOM Setting
+		{2, 0xC2, 0x01}, // VDV and VRH Command Enable
+		{2, 0xC3, 0x15}, // VRH Set
+		{2, 0xC4, 0x20}, // VDV Set
+		{2, 0xC6, 0x0F}, // Frame Rate Control in Normal Mode, 60 Hz
+		{3, 0xD0, 0xA4, 0xA1}, // Power Control 1
+		{15, 0xE0, 0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, // Positive Voltage Gamma Control
+		{15, 0xE1, 0xD0, 0x08, 0x0E, 0x09, 0x09, 0x15, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, // Negative Voltage Gamma Control
+		{1, 0x21}, // Display Inversion On
 };
 
-void disp_ili9341_reset(void) {
+void disp_st7789_reset(void) {
 	gpio_set_level(m_pin_reset, 0);
 	vTaskDelay(5);
 	gpio_set_level(m_pin_reset, 1);
 	vTaskDelay(120);
 
-	for (int i = 0; i < 15; i ++) {
-		int argn = ili9341_init_sequence[i][0] - 1;
-		uint8_t *args = &ili9341_init_sequence[i][2];
-		uint8_t  cmd  = ili9341_init_sequence[i][1];
-		disp_ili9341_command(cmd, args, argn);
+	for (int i = 0; i < 13; i ++) {
+		int argn = init_cmds[i][0] - 1;
+		uint8_t *args = &init_cmds[i][2];
+		uint8_t  cmd  = init_cmds[i][1];
+		disp_st7789_command(cmd, args, argn);
 	}
-	disp_ili9341_command(0x11, 0, 0);
-	vTaskDelay(100);
-	disp_ili9341_command(0x29, 0, 0);
-	vTaskDelay(100);
+
+	disp_st7789_command(0x11, 0, 0); // Exit Sleep
+	vTaskDelay(120);
+	disp_st7789_command(0x29, 0, 0); // Display on
+	vTaskDelay(120);
 
 	display_width = 320;
 	display_height = 240;
 
-	disp_ili9341_clear(0);
+	disp_st7789_clear(0);
 }

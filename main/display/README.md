@@ -197,6 +197,35 @@ Example using GPIO pins 7 and 6 for serial data and clock.
 (disp-load-ssd1306 7 6 700000)
 ```
 
+## st7789
+
+* Resolution: up to 320 * 240
+* Colors: 16Bit
+* Interface: SPI
+
+Compatible with all image formats supported by the graphics library.
+
+### disp-load-st7789
+
+```clj
+(disp-load-st7789 gpio-sd0 gpio-clk gpio-cs gpio-reset gpio-dc spi-mhz)
+```
+
+Loads the st7789 driver. The driver uses hardware-SPI at rate
+`spi-mhz` on the `gpio-sd0` and `gpio-clk` GPIO pins. In addition, the
+st7789 uses a data/command signal to discern between commands and
+data. The data/command signal is mapped to GPIO `gpio-cs`.
+
+Example using GPIO pins 6,5,19,18 and 7 for sd0,clk,cs,reset and dc.
+The SPI clock is set to 40MHz.
+
+```clj
+(disp-load-st7789 6 5 19 18 7 40)
+```
+
+**Note**  
+Many st7789-based displays do not have the full resolution that the driver supports in the panel. Some of them also have an offset where the panel starts. The panel size and offset has to be taken into account when using disp-render.
+
 # Common display operations
 
 ## disp-reset
