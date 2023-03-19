@@ -334,6 +334,7 @@ void disp_ili9341_command(uint8_t command, uint8_t *args, int argn) {
 }
 
 static uint8_t ili9341_init_sequence[][7] = {
+		{2, 0x36, 0xA8},
 		{4, 0xCF, 0x00, 0xD9, 0x30},
 		{5, 0xED, 0x64, 0x03, 0x12, 0x81},
 		{4, 0xE8, 0x85, 0x10, 0x7A},
@@ -357,7 +358,7 @@ void disp_ili9341_reset(void) {
 	gpio_set_level(m_pin_reset, 1);
 	vTaskDelay(120);
 
-	for (int i = 0; i < 15; i ++) {
+	for (int i = 0; i < 16; i ++) {
 		int argn = ili9341_init_sequence[i][0] - 1;
 		uint8_t *args = &ili9341_init_sequence[i][2];
 		uint8_t  cmd  = ili9341_init_sequence[i][1];
