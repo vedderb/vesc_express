@@ -84,6 +84,7 @@ void hwspi_init(int clk_mhz, int mode,
 	gpconf.intr_type =  GPIO_INTR_DISABLE;
 
 	gpio_config(&gpconf);
+	SET_CS();
 
 	if (m_init_done) {
 		static spi_transaction_t *tmp_ptr = 0;

@@ -334,7 +334,6 @@ void disp_st7789_command(uint8_t command, uint8_t *args, int argn) {
 }
 
 static uint8_t init_cmds[][16] = {
-		{2, 0x36, 0x60}, // The first command seems to get lost after boot for some reason, so send it twice
 		{2, 0x36, 0x60}, // Memory Data Access Control
 		{2, 0x3A, 0x55}, // Interface Pixel Format
 		{6, 0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33}, // Porch Setting
@@ -356,7 +355,7 @@ void disp_st7789_reset(void) {
 	gpio_set_level(m_pin_reset, 1);
 	vTaskDelay(120);
 
-	for (int i = 0; i < 14; i ++) {
+	for (int i = 0; i < 13; i ++) {
 		int argn = init_cmds[i][0] - 1;
 		uint8_t *args = &init_cmds[i][2];
 		uint8_t  cmd  = init_cmds[i][1];
