@@ -15,47 +15,49 @@
 (def nodes '((-1 -1 -1) (-1 -1 1) (-1 1 -1) (-1 1 1) (1 -1 -1) (1 -1 1) (1 1 -1) (1 1 1)))
 (def edges '((0  1) (1 3) (3 2) (2 0) (4 5) (5 7) (7 6) (6 4) (0 4) (1 5) (2 6) (3 7)))
 
-(defun draw-edges ()
-    (let (
-        (scale 50.0)
-        (ofs-x (/ 120 scale))
-        (ofs-y (/ 110 scale)))
-        (loopforeach e edges
-            (let (
-                (na (ix nodes (ix e 0)))
-                (nb (ix nodes (ix e 1))))
+(defun draw-edges () {
+        (var scale 50.0)
+        (var ofs-x (/ 120 scale))
+        (var ofs-y (/ 110 scale))
+        
+        (loopforeach e edges {
+                (var na (ix nodes (ix e 0)))
+                (var nb (ix nodes (ix e 1)))
+                
                 (apply line (map (fn (x) (to-i (* x scale))) (list
-                    (+ ofs-x (ix na 0)) (+ ofs-y (ix na 1))
-                    (+ ofs-x (ix nb 0)) (+ ofs-y (ix nb 1))
-)))))))
+                            (+ ofs-x (ix na 0)) (+ ofs-y (ix na 1))
+                            (+ ofs-x (ix nb 0)) (+ ofs-y (ix nb 1))
+                )))
+        })
+})
 
-(defun rotate (ax ay) (let (
-    (sx (sin ax))
-    (cx (cos ax))
-    (sy (sin ay))
-    (cy (cos ay)))
-    (loopforeach n nodes
-        (let (
-            (x (ix n 0))
-            (y (ix n 1))
-            (z (ix n 2)))
-            (progn
+(defun rotate (ax ay) {
+        (var sx (sin ax))
+        (var cx (cos ax))
+        (var sy (sin ay))
+        (var cy (cos ay))
+        
+        (loopforeach n nodes {
+                (var x (ix n 0))
+                (var y (ix n 1))
+                (var z (ix n 2))
+                
                 (setix n 0 (- (* x cx) (* z sx)))
                 (setix n 2 (+ (* z cx) (* x sx)))
-                (setvar 'z (ix n 2))
+                (setq z (ix n 2))
                 (setix n 1 (- (* y cy) (* z sy)))
                 (setix n 2 (+ (* z cy) (* y sy)))
-)))))
+        })
+})
 
 (def fps 0)
 
-(loopwhile t
-    (progn
-        (def t-start (systime))
+(loopwhile t {
+        (var t-start (systime))
         (img-text img 55 210 1 0 font (str-from-n fps "FPS %.1f "))
         (draw-edges)
         (rotate 0.1 0.05)
         (disp-render img 0 0 '(0 0xff0000))
         (img-clear img)
         (def fps (/ 1 (secs-since t-start)))
-))
+})
