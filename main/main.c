@@ -59,11 +59,6 @@ void app_main(void) {
 	tv.tv_usec = 0;
 	settimeofday(&tv, NULL);
 
-#ifdef HW_EARLY_LBM_INIT
-	HW_INIT_HOOK();
-	lispif_init();
-#endif
-
 	esp_err_t ret = nvs_flash_init();
 	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
 		nvs_flash_erase();
@@ -101,6 +96,11 @@ void app_main(void) {
 
 		nvs_close(my_handle);
 	}
+
+#ifdef HW_EARLY_LBM_INIT
+	HW_INIT_HOOK();
+	lispif_init();
+#endif
 
 	mempools_init();
 	bms_init();

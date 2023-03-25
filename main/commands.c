@@ -61,6 +61,7 @@
 
 // Private variables
 static SemaphoreHandle_t print_mutex;
+static bool init_done = false;
 
 static const esp_partition_t *update_partition = NULL;
 static esp_ota_handle_t update_handle = 0;
@@ -78,6 +79,7 @@ static void send_func_dummy(unsigned char *data, unsigned int len) {
 
 void commands_init(void) {
 	print_mutex = xSemaphoreCreateMutex();
+	init_done = true;
 }
 
 void commands_process_packet(unsigned char *data, unsigned int len,
@@ -729,6 +731,10 @@ void commands_send_packet_can_last(unsigned char *data, unsigned int len) {
 }
 
 int commands_printf(const char* format, ...) {
+	if (!init_done) {
+		return 0;
+	}
+
 	xSemaphoreTake(print_mutex, portMAX_DELAY);
 
 	va_list arg;
@@ -754,6 +760,10 @@ int commands_printf(const char* format, ...) {
 }
 
 int commands_printf_lisp(const char* format, ...) {
+	if (!init_done) {
+		return 0;
+	}
+
 	xSemaphoreTake(print_mutex, portMAX_DELAY);
 
 	va_list arg;

@@ -18,6 +18,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <malloc.h>
+
+#include "main.h"
 #include "lispif.h"
 #include "commands.h"
 #include "terminal.h"
@@ -27,19 +30,18 @@
 #include "flash_helper.h"
 #include "conf_general.h"
 
-#define HEAP_SIZE				(2048 + 256 + 160)
-#ifndef LISP_MEM_SIZE
-#define LISP_MEM_SIZE			LBM_MEMORY_SIZE_16K
-#define LISP_MEM_BITMAP_SIZE	LBM_MEMORY_BITMAP_SIZE_16K
-#endif
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
 #define EXTENSION_STORAGE_SIZE	250
 #define VARIABLE_STORAGE_SIZE	64
 
-static lbm_cons_t heap[HEAP_SIZE] __attribute__ ((aligned (8)));
-static uint32_t memory_array[LISP_MEM_SIZE];
-static uint32_t bitmap_array[LISP_MEM_BITMAP_SIZE];
+static size_t heap_size = 0;
+static size_t mem_size = 0;
+static size_t bitmap_size = 0;
+
+static lbm_cons_t *heap;
+static uint32_t *memory_array;
+static uint32_t *bitmap_array;
 static uint32_t gc_stack_storage[GC_STACK_SIZE];
 static uint32_t print_stack_storage[PRINT_STACK_SIZE];
 static extension_fptr extension_storage[EXTENSION_STORAGE_SIZE];
@@ -70,6 +72,26 @@ static void sleep_callback(uint32_t us);
 static void eval_thread(void *arg);
 
 void lispif_init(void) {
+	heap_size = 2048;
+	mem_size = LBM_MEMORY_SIZE_16K;
+	bitmap_size = LBM_MEMORY_BITMAP_SIZE_16K;
+
+	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
+			backup.config.ble_mode == BLE_MODE_DISABLED) {
+		heap_size *= 4;
+		mem_size *= 2;
+		bitmap_size *= 2;
+	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
+			backup.config.ble_mode == BLE_MODE_DISABLED) {
+		heap_size *= 2;
+		mem_size *= 2;
+		bitmap_size *= 2;
+	}
+
+	heap = memalign(8, heap_size * sizeof(lbm_cons_t));
+	memory_array = heap_caps_malloc(mem_size * sizeof(uint32_t), MALLOC_CAP_DMA);
+	bitmap_array = heap_caps_malloc(bitmap_size * sizeof(uint32_t), MALLOC_CAP_DMA);
+
 	memset(&buffered_tok_state, 0, sizeof(buffered_tok_state));
 	lbm_mutex = xSemaphoreCreateMutex();
 	lispif_restart(false, true);
@@ -168,7 +190,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		}
 
 		if (lbm_heap_state.gc_num > 0) {
-			heap_use = 100.0 * (float)(HEAP_SIZE - lbm_heap_state.gc_last_free) / (float)HEAP_SIZE;
+			heap_use = 100.0 * (float)(heap_size - lbm_heap_state.gc_last_free) / (float)heap_size;
 		}
 
 		mem_use = 100.0 * (float)(lbm_memory_num_words() - lbm_memory_num_free()) / (float)lbm_memory_num_words();
@@ -270,8 +292,8 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp(" ");
 			} else if (len >= 5 && strncmp(str, ":info", 5) == 0) {
 				commands_printf_lisp("--(LISP HEAP)--\n");
-				commands_printf_lisp("Heap size: %u Bytes\n", HEAP_SIZE * 8);
-				commands_printf_lisp("Used cons cells: %d\n", HEAP_SIZE - lbm_heap_num_free());
+				commands_printf_lisp("Heap size: %u Bytes\n", heap_size * 8);
+				commands_printf_lisp("Used cons cells: %d\n", heap_size - lbm_heap_num_free());
 				commands_printf_lisp("Free cons cells: %d\n", lbm_heap_num_free());
 				commands_printf_lisp("GC counter: %d\n", lbm_heap_state.gc_num);
 				commands_printf_lisp("Recovered: %d\n", lbm_heap_state.gc_recovered);
@@ -539,10 +561,10 @@ bool lispif_restart(bool print, bool load_code) {
 		lispif_disable_all_events();
 
 		if (!lisp_thd_running) {
-			lbm_init(heap, HEAP_SIZE,
+			lbm_init(heap, heap_size,
 					gc_stack_storage, GC_STACK_SIZE,
-					memory_array, LISP_MEM_SIZE,
-					bitmap_array, LISP_MEM_BITMAP_SIZE,
+					memory_array, mem_size,
+					bitmap_array, bitmap_size,
 					print_stack_storage, PRINT_STACK_SIZE,
 					extension_storage, EXTENSION_STORAGE_SIZE);
 			lbm_variables_init(variable_storage, VARIABLE_STORAGE_SIZE);
@@ -562,10 +584,10 @@ bool lispif_restart(bool print, bool load_code) {
 				vTaskDelay(1 / portTICK_PERIOD_MS);
 			}
 
-			lbm_init(heap, HEAP_SIZE,
+			lbm_init(heap, heap_size,
 					gc_stack_storage, GC_STACK_SIZE,
-					memory_array, LISP_MEM_SIZE,
-					bitmap_array, LISP_MEM_BITMAP_SIZE,
+					memory_array, mem_size,
+					bitmap_array, bitmap_size,
 					print_stack_storage, PRINT_STACK_SIZE,
 					extension_storage, EXTENSION_STORAGE_SIZE);
 			lbm_variables_init(variable_storage, VARIABLE_STORAGE_SIZE);
