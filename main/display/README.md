@@ -226,6 +226,14 @@ The SPI clock is set to 40MHz.
 **Note**  
 Many st7789-based displays do not have the full resolution that the driver supports in the panel. Some of them also have an offset where the panel starts. The panel size and offset has to be taken into account when using disp-render.
 
+## st7735
+
+* Resolution: up to 162 * 132
+* Colors: 16Bit
+* Interface: SPI
+
+Compatible with all image formats supported by the graphics library.
+
 ### disp-load-st7735
 
 ```clj
@@ -247,6 +255,14 @@ The SPI clock is set to 40MHz.
 **Note**  
 Many st7735-based displays do not have the full resolution that the driver supports in the panel. Some of them also have an offset where the panel starts. The panel size and offset has to be taken into account when using disp-render.
 
+## ili9488
+
+* Resolution: 480 ** 320
+* Colors: 24Bit
+* Interface: SPI
+
+Compatible with all image formats supported by the graphics library.
+
 ### disp-load-ili9488
 
 ```clj
@@ -262,7 +278,33 @@ Example using GPIO pins 6,5,19,18 and 7 for sd0,clk,cs,reset and dc.
 The SPI clock is set to 40MHz.
 
 ```clj
-(disp-load-ili9341 6 5 19 18 7 40)
+(disp-load-ili9488 6 5 19 18 7 40)
+```
+
+## ssd1351
+
+* Resolution: 128 * 128
+* Colors: 16Bit
+* Interface: SPI
+
+Compatible with all image formats supported by the graphics library.
+
+### disp-load-ssd1351
+
+```clj
+(disp-load-ssd1351 gpio-sd0 gpio-clk gpio-cs gpio-reset gpio-dc spi-mhz)
+```
+
+Loads the ssd1351 driver. The driver uses hardware-SPI at rate
+`spi-mhz` on the `gpio-sd0` and `gpio-clk` GPIO pins. In addition, the
+ssd1351 uses a data/command signal to discern between commands and
+data. The data/command signal is mapped to GPIO `gpio-cs`.
+
+Example using GPIO pins 6,5,19,18 and 7 for sd0,clk,cs,reset and dc.
+The SPI clock is set to 40MHz.
+
+```clj
+(disp-load-ssd1351 6 5 19 18 7 40)
 ```
 
 # Common display operations
