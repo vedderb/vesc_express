@@ -31,6 +31,7 @@
 #include "display/disp_st7789.h"
 #include "display/disp_ili9488.h"
 #include "display/disp_st7735.h"
+#include "display/disp_ssd1351.h"
 #include "display/tjpgd.h"
 
 #include <math.h>
@@ -1621,7 +1622,7 @@ static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
 
 	int spi_mhz = lbm_dec_as_i32(args[4]);
 
-	if (spi_mhz > 40) {
+	if (spi_mhz == 0 || spi_mhz > 40) {
 		lbm_set_error_reason(msg_invalid_clk_speed);
 		return ENC_SYM_EERROR;
 	}
@@ -1654,9 +1655,9 @@ static lbm_value ext_disp_load_ili9341(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	int spi_mhz = lbm_dec_as_i32(args[5]);
+	uint32_t spi_mhz = lbm_dec_as_u32(args[5]);
 
-	if (spi_mhz > 40) {
+	if (spi_mhz == 0 || spi_mhz > 40) {
 		lbm_set_error_reason(msg_invalid_clk_speed);
 		return ENC_SYM_EERROR;
 	}
@@ -1715,9 +1716,9 @@ static lbm_value ext_disp_load_st7789(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	int spi_mhz = lbm_dec_as_i32(args[5]);
+	uint32_t spi_mhz = lbm_dec_as_u32(args[5]);
 
-	if (spi_mhz > 40) {
+	if (spi_mhz == 0 || spi_mhz > 40) {
 		lbm_set_error_reason(msg_invalid_clk_speed);
 		return ENC_SYM_EERROR;
 	}
@@ -1750,9 +1751,9 @@ static lbm_value ext_disp_load_ili9488(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	int spi_mhz = lbm_dec_as_i32(args[5]);
+	uint32_t spi_mhz = lbm_dec_as_u32(args[5]);
 
-	if (spi_mhz > 40) {
+	if (spi_mhz == 0 || spi_mhz > 40) {
 		lbm_set_error_reason(msg_invalid_clk_speed);
 		return ENC_SYM_EERROR;
 	}
@@ -1784,9 +1785,9 @@ static lbm_value ext_disp_load_st7735(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	int spi_mhz = lbm_dec_as_i32(args[5]);
+	uint32_t spi_mhz = lbm_dec_as_u32(args[5]);
 
-	if (spi_mhz > 40) {
+	if (spi_mhz == 0 || spi_mhz > 40) {
 		lbm_set_error_reason(msg_invalid_clk_speed);
 		return ENC_SYM_EERROR;
 	}
@@ -1796,6 +1797,40 @@ static lbm_value ext_disp_load_st7735(lbm_value *args, lbm_uint argn) {
 	disp_render_image = disp_st7735_render_image;
 	disp_clear = disp_st7735_clear;
 	disp_reset = disp_st7735_reset;
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_disp_load_ssd1351(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(6);
+
+	int gpio_sd0 = lbm_dec_as_i32(args[0]);
+	int gpio_clk = lbm_dec_as_i32(args[1]);
+	int gpio_cs = lbm_dec_as_i32(args[2]);
+	int gpio_reset = lbm_dec_as_i32(args[3]);
+	int gpio_dc = lbm_dec_as_i32(args[4]);
+
+	if (!gpio_is_valid(gpio_sd0) ||
+			!gpio_is_valid(gpio_clk) ||
+			!gpio_is_valid(gpio_cs) ||
+			!gpio_is_valid(gpio_reset) ||
+			!gpio_is_valid(gpio_dc)) {
+		lbm_set_error_reason(msg_invalid_gpio);
+		return ENC_SYM_EERROR;
+	}
+
+	uint32_t spi_mhz = lbm_dec_as_u32(args[5]);
+
+	if (spi_mhz == 0 || spi_mhz > 40) {
+		lbm_set_error_reason(msg_invalid_clk_speed);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_ssd1351_init(gpio_sd0, gpio_clk, gpio_cs, gpio_reset, gpio_dc, spi_mhz);
+
+	disp_render_image = disp_ssd1351_render_image;
+	disp_clear = disp_ssd1351_clear;
+	disp_reset = disp_ssd1351_reset;
 
 	return ENC_SYM_TRUE;
 }
@@ -1913,6 +1948,7 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("disp-load-st7789", ext_disp_load_st7789);
 	lbm_add_extension("disp-load-ili9488", ext_disp_load_ili9488);
 	lbm_add_extension("disp-load-st7735", ext_disp_load_st7735);
+	lbm_add_extension("disp-load-ssd1351", ext_disp_load_ssd1351);
 	lbm_add_extension("disp-reset", ext_disp_reset);
 	lbm_add_extension("disp-clear", ext_disp_clear);
 	lbm_add_extension("disp-render", ext_disp_render);
