@@ -29,6 +29,7 @@
 #include "display/disp_ili9341.h"
 #include "display/disp_ssd1306.h"
 #include "display/disp_st7789.h"
+#include "display/disp_ili9488.h"
 #include "display/tjpgd.h"
 
 #include <math.h>
@@ -1729,6 +1730,41 @@ static lbm_value ext_disp_load_st7789(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_disp_load_ili9488(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(6);
+
+	int gpio_sd0, gpio_clk, gpio_cs, gpio_reset, gpio_dc;
+	gpio_sd0 = lbm_dec_as_i32(args[0]);
+	gpio_clk = lbm_dec_as_i32(args[1]);
+	gpio_cs = lbm_dec_as_i32(args[2]);
+	gpio_reset = lbm_dec_as_i32(args[3]);
+	gpio_dc = lbm_dec_as_i32(args[4]);
+
+	if (!gpio_is_valid(gpio_sd0) ||
+			!gpio_is_valid(gpio_clk) ||
+			!gpio_is_valid(gpio_cs) ||
+			!gpio_is_valid(gpio_reset) ||
+			!gpio_is_valid(gpio_dc)) {
+		lbm_set_error_reason(msg_invalid_gpio);
+		return ENC_SYM_EERROR;
+	}
+
+	int spi_mhz = lbm_dec_as_i32(args[5]);
+
+	if (spi_mhz > 40) {
+		lbm_set_error_reason(msg_invalid_clk_speed);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_ili9488_init(gpio_sd0, gpio_clk, gpio_cs, gpio_reset, gpio_dc, spi_mhz);
+
+	disp_render_image = disp_ili9488_render_image;
+	disp_clear = disp_ili9488_clear;
+	disp_reset = disp_ili9488_reset;
+
+	return ENC_SYM_TRUE;
+}
+
 // Jpg decoder
 
 typedef struct {
@@ -1840,6 +1876,7 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("disp-load-ili9341", ext_disp_load_ili9341);
 	lbm_add_extension("disp-load-ssd1306", ext_disp_load_ssd1306);
 	lbm_add_extension("disp-load-st7789", ext_disp_load_st7789);
+	lbm_add_extension("disp-load-ili9488", ext_disp_load_ili9488);
 	lbm_add_extension("disp-reset", ext_disp_reset);
 	lbm_add_extension("disp-clear", ext_disp_clear);
 	lbm_add_extension("disp-render", ext_disp_render);

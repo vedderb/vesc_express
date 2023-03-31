@@ -148,7 +148,7 @@ void hwspi_data_stream_finish(void) {
 //	}
 }
 
-void hwspi_send_data(uint8_t *data, int len) {
+void hwspi_send_data(const uint8_t *data, int len) {
 	spi_transaction_t t;
 	memset(&t, 0, sizeof(t));
 	t.length = len * 8;

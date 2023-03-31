@@ -61,6 +61,7 @@ set(COMPONENT_SRCS
 "display/disp_ili9341.c"
 "display/disp_ssd1306.c"
 "display/disp_st7789.c"
+"display/disp_ili9488.c"
 "display/tjpgd.c"
 )
 

@@ -45,7 +45,7 @@ void hwspi_init(int clk_mhz, int mode,
 void hwspi_begin(void);
 void hwspi_end(void);
 void hwspi_swap_buffer(void);
-void hwspi_send_data(uint8_t *data, int len);
+void hwspi_send_data(const uint8_t *data, int len);
 
 void hwspi_data_stream_start(void);
 static inline void hwspi_data_stream_write(uint8_t byte) {

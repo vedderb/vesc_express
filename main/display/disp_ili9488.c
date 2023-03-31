@@ -23,14 +23,14 @@
 #include "driver/gpio.h"
 #include "soc/gpio_struct.h"
 
-#include "disp_ili9341.h"
+#include "disp_ili9488.h"
 #include "hwspi.h"
 #include "lispif.h"
 #include "lispbm.h"
 
 
-static int display_width = 320;
-static int display_height = 240;
+static int display_width;
+static int display_height;
 
 // Private variables
 static int m_pin_reset = -1;
@@ -48,28 +48,6 @@ static void command_start(uint8_t cmd) {
 	DATA();
 }
 
-static uint16_t to_disp_color(uint32_t rgb) {
-	uint8_t b = (uint8_t)rgb;
-	uint8_t g = (uint8_t)(rgb >> 8);
-	uint8_t r = (uint8_t)(rgb >> 16);
-	r >>= 3;
-	g >>= 2;
-	b >>= 3;
-
-	uint8_t color_high = 0;
-	color_high = r << 3;
-	color_high |= (g >> 3);
-
-	uint8_t color_low = 0;
-	color_low = g << 5;
-	color_low |= b;
-
-	// the order of output is bit 7 - 0 : 15 - 8
-	uint16_t color = color_high;
-	color |= (((uint16_t)color_low) << 8);
-	return color;
-}
-
 static void blast_indexed2(image_buffer_t *img, color_t *colors) {
 	command_start(0x2C);
 	hwspi_data_stream_start();
@@ -82,11 +60,10 @@ static void blast_indexed2(image_buffer_t *img, color_t *colors) {
 		int bit  = 7 - (i & 0x7);
 		int color_ind = (data[byte] & (1 << bit)) >> bit;
 
-		uint16_t c = to_disp_color(
-				COLOR_TO_RGB888(colors[color_ind],
-						i % img->width, i / img->width));
-		hwspi_data_stream_write((uint8_t)c);
+		uint32_t c = COLOR_TO_RGB888(colors[color_ind], i % img->width, i / img->width);
+		hwspi_data_stream_write((uint8_t)(c >> 16));
 		hwspi_data_stream_write((uint8_t)(c >> 8));
+		hwspi_data_stream_write((uint8_t)(c >> 0));
 	}
 
 	hwspi_data_stream_finish();
@@ -104,11 +81,10 @@ static void blast_indexed4(image_buffer_t *img, color_t *colors) {
 		int bit = (3 - (i & 0x03)) * 2;
 		int color_ind = (data[byte] & (0x03 << bit)) >> bit;
 
-		uint16_t c = to_disp_color(
-				COLOR_TO_RGB888(colors[color_ind],
-						i % img->width, i / img->width));
-		hwspi_data_stream_write((uint8_t)c);
+		uint32_t c = COLOR_TO_RGB888(colors[color_ind], i % img->width, i / img->width);
+		hwspi_data_stream_write((uint8_t)(c >> 16));
 		hwspi_data_stream_write((uint8_t)(c >> 8));
+		hwspi_data_stream_write((uint8_t)(c >> 0));
 	}
 
 	hwspi_data_stream_finish();
@@ -123,10 +99,10 @@ static void blast_rgb332(uint8_t *data, uint32_t num_pix) {
 		uint32_t r = (uint32_t)((pix >> 5) & 0x7);
 		uint32_t g = (uint32_t)((pix >> 2) & 0x7);
 		uint32_t b = (uint32_t)(pix & 0x3);
-		uint32_t rgb888 = r << (16 + 5) | g << (8 + 5) | b << 6;
-		uint16_t disp = to_disp_color(rgb888);
-		hwspi_data_stream_write((uint8_t)disp);
-		hwspi_data_stream_write((uint8_t)(disp >> 8));
+		uint32_t c = r << (16 + 5) | g << (8 + 5) | b << 6;
+		hwspi_data_stream_write((uint8_t)(c >> 16));
+		hwspi_data_stream_write((uint8_t)(c >> 8));
+		hwspi_data_stream_write((uint8_t)(c >> 0));
 	}
 
 	hwspi_data_stream_finish();
@@ -142,11 +118,10 @@ static void blast_rgb565(uint8_t *data, uint32_t num_pix) {
 		uint32_t r = (uint32_t)(pix >> 11);
 		uint32_t g = (uint32_t)((pix >> 5) & 0x3F);
 		uint32_t b = (uint32_t)(pix & 0x1F);
-		uint32_t rgb888 = r << (16 + 3) | g << (8 + 2) | b << 3;
-		uint16_t disp = to_disp_color(rgb888);
-
-		hwspi_data_stream_write((uint8_t)disp);
-		hwspi_data_stream_write((uint8_t)(disp >> 8));
+		uint32_t c = r << (16 + 3) | g << (8 + 2) | b << 3;
+		hwspi_data_stream_write((uint8_t)(c >> 16));
+		hwspi_data_stream_write((uint8_t)(c >> 8));
+		hwspi_data_stream_write((uint8_t)(c >> 0));
 	}
 
 	hwspi_data_stream_finish();
@@ -157,21 +132,15 @@ static void blast_rgb888(uint8_t *data, uint32_t num_pix) {
 	hwspi_data_stream_start();
 
 	for (int i = 0; i < num_pix; i ++) {
-		uint32_t r = data[3 * i];
-		uint32_t g = data[3 * i + 1];
-		uint32_t b = data[3 * i + 2];
-
-		uint32_t rgb888 = r << 16 | g << 8 | b;
-		uint16_t disp = to_disp_color(rgb888);
-
-		hwspi_data_stream_write((uint8_t)disp);
-		hwspi_data_stream_write((uint8_t)(disp >> 8));
+		hwspi_data_stream_write(data[3 * i]);
+		hwspi_data_stream_write(data[3 * i + 1]);
+		hwspi_data_stream_write(data[3 * i + 2]);
 	}
 
 	hwspi_data_stream_finish();
 }
 
-bool disp_ili9341_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
+bool disp_ili9488_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
 	uint16_t cs = x;
 	uint16_t ce = x + img->width - 1;
 	uint16_t ps = y;
@@ -184,8 +153,8 @@ bool disp_ili9341_render_image(image_buffer_t *img, uint16_t x, uint16_t y, colo
 	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
 	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
 
-	disp_ili9341_command(0x2A, col, 4);
-	disp_ili9341_command(0x2B, row, 4);
+	disp_ili9488_command(0x2A, col, 4);
+	disp_ili9488_command(0x2B, row, 4);
 
 	uint32_t num_pix = img->width * img->height;
 
@@ -216,9 +185,7 @@ bool disp_ili9341_render_image(image_buffer_t *img, uint16_t x, uint16_t y, colo
 	return true;
 }
 
-void disp_ili9341_clear(uint32_t color) {
-	uint16_t clear_color_disp = to_disp_color(color);
-
+void disp_ili9488_clear(uint32_t color) {
 	uint16_t cs = 0;
 	uint16_t ce = display_width - 1;
 	uint16_t ps = 0;
@@ -227,15 +194,16 @@ void disp_ili9341_clear(uint32_t color) {
 	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
 	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
 
-	disp_ili9341_command(0x2A, col, 4);
-	disp_ili9341_command(0x2B, row, 4);
+	disp_ili9488_command(0x2A, col, 4);
+	disp_ili9488_command(0x2B, row, 4);
 
 	hwspi_begin();
 	command_start(0x2C);
 	hwspi_data_stream_start();
 	for (int i = 0; i < (display_width * display_height); i ++) {
-		hwspi_data_stream_write((uint8_t)(clear_color_disp));
-		hwspi_data_stream_write((uint8_t)(clear_color_disp >> 8));
+		hwspi_data_stream_write((uint8_t)(color >> 16));
+		hwspi_data_stream_write((uint8_t)(color >> 8));
+		hwspi_data_stream_write((uint8_t)(color >> 0));
 	}
 	hwspi_data_stream_finish();
 	hwspi_end();
@@ -253,12 +221,12 @@ static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 			paras[i] = (uint8_t)lbm_dec_as_u32(args[i + 1]);
 		}
 
-		disp_ili9341_command(cmd, paras, argn - 1);
+		disp_ili9488_command(cmd, paras, argn - 1);
 
 		res = ENC_SYM_TRUE;
 	} else if (argn == 1) {
 		uint8_t cmd = (uint8_t) lbm_dec_as_u32(args[0]);
-		disp_ili9341_command(cmd, 0, 0);
+		disp_ili9488_command(cmd, 0, 0);
 		res = ENC_SYM_TRUE;
 	}
 
@@ -273,28 +241,28 @@ static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TRUE;
 	switch(orientation) {
 	case 0:
-		arg = 0x08;
-		disp_ili9341_command(0x36, &arg, 1);
-		display_width = 240;
-		display_height = 320;
+		arg = 0x48;
+		disp_ili9488_command(0x36, &arg, 1);
+		display_width = 320;
+		display_height = 480;
 		break;
 	case 1:
-		arg = 0x68;
-		disp_ili9341_command(0x36, &arg, 1);
-		display_width = 320;
-		display_height = 240;
-		break;
-	case 2:
-		arg = 0xC8;
-		disp_ili9341_command(0x36, &arg, 1);
-		display_width = 240;
+		arg = 0x28;
+		disp_ili9488_command(0x36, &arg, 1);
+		display_width = 480;
 		display_height = 320;
 		break;
-	case 3:
-		arg = 0xA8;
-		disp_ili9341_command(0x36, &arg, 1);
+	case 2:
+		arg = 0x98;
+		disp_ili9488_command(0x36, &arg, 1);
 		display_width = 320;
-		display_height = 240;
+		display_height = 480;
+		break;
+	case 3:
+		arg = 0xE8;
+		disp_ili9488_command(0x36, &arg, 1);
+		display_width = 480;
+		display_height = 320;
 		break;
 	default:
 		res = ENC_SYM_EERROR;
@@ -303,7 +271,7 @@ static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
-void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int pin_dc, int clock_mhz) {
+void disp_ili9488_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int pin_dc, int clock_mhz) {
 	hwspi_init(clock_mhz, 0, -1, pin_sd0, pin_clk, pin_cs);
 	m_pin_reset = pin_reset;
 	m_pin_dc    = pin_dc;
@@ -324,7 +292,7 @@ void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int 
 	lbm_add_extension("ext-disp-orientation", ext_disp_orientation);
 }
 
-void disp_ili9341_command(uint8_t command, const uint8_t *args, int argn) {
+void disp_ili9488_command(uint8_t command, const uint8_t *args, int argn) {
 	hwspi_begin();
 	command_start(command);
 	if (args != NULL && argn > 0) {
@@ -333,43 +301,41 @@ void disp_ili9341_command(uint8_t command, const uint8_t *args, int argn) {
 	hwspi_end();
 }
 
-static const uint8_t ili9341_init_sequence[][7] = {
-		{4, 0xCF, 0x00, 0xD9, 0x30},
-		{5, 0xED, 0x64, 0x03, 0x12, 0x81},
-		{4, 0xE8, 0x85, 0x10, 0x7A},
-		{6, 0xCB, 0x39, 0x2C, 0x00, 0x34, 0x02},
-		{2, 0xF7, 0x20},
-		{3, 0xEA, 0x00, 0x00},
-		{2, 0xC0, 0x1B},
-		{2, 0xC1, 0x12},
-		{3, 0xC5, 0x08, 0x26},
-		{2, 0xC7, 0xB7},
-		{2, 0x36, 0x08},
-		{2, 0x3A, 0x55},
-		{3, 0xB1, 0x00, 0x1A},
-		{3, 0xB6, 0x0A, 0xA2},
-		{2, 0x36, 0xA8}
+static const uint8_t ili9488_init_sequence[][17] = {
+		{16, 0xE0, 0x00, 0x03, 0x09, 0x08, 0x16, 0x0A, 0x3F, 0x78, 0x4C, 0x09, 0x0A, 0x08, 0x16, 0x1A, 0x0F},
+		{16, 0xE1, 0x00, 0x16, 0x19, 0x03, 0x0F, 0x05, 0x32, 0x45, 0x46, 0x04, 0x0E, 0x0D, 0x35, 0x37, 0x0F},
+		{3, 0xC0, 0x17, 0x15},
+		{2, 0xC1, 0x41},
+		{4, 0xC5, 0x00, 0x12, 0x80},
+		{2, 0x36, 0x48},
+		{2, 0x3A, 0x66}, // NOTE: Only the 18-bit mode works, which actually is the 24-bit mode
+		{2, 0xB0, 0x00},
+		{2, 0xB1, 0xA0},
+		{2, 0xB4, 0x02},
+		{3, 0xB6, 0x05, 0x02},
+		{2, 0xE9, 0x00},
+		{5, 0xF7, 0xA9, 0x51, 0x2C, 0x82},
 };
 
-void disp_ili9341_reset(void) {
+void disp_ili9488_reset(void) {
 	gpio_set_level(m_pin_reset, 0);
 	vTaskDelay(5);
 	gpio_set_level(m_pin_reset, 1);
 	vTaskDelay(120);
 
-	for (int i = 0; i < 15; i ++) {
-		int argn = ili9341_init_sequence[i][0] - 1;
-		const uint8_t *args = &ili9341_init_sequence[i][2];
-		uint8_t  cmd  = ili9341_init_sequence[i][1];
-		disp_ili9341_command(cmd, args, argn);
+	for (int i = 0; i < 13; i ++) {
+		int argn = ili9488_init_sequence[i][0] - 1;
+		const uint8_t *args = &ili9488_init_sequence[i][2];
+		uint8_t cmd  = ili9488_init_sequence[i][1];
+		disp_ili9488_command(cmd, args, argn);
 	}
-	disp_ili9341_command(0x11, 0, 0);
+	disp_ili9488_command(0x11, 0, 0);
 	vTaskDelay(100);
-	disp_ili9341_command(0x29, 0, 0);
+	disp_ili9488_command(0x29, 0, 0);
 	vTaskDelay(100);
 
 	display_width = 320;
-	display_height = 240;
+	display_height = 480;
 
-	disp_ili9341_clear(0);
+	disp_ili9488_clear(0);
 }

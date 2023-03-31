@@ -324,7 +324,7 @@ void disp_st7789_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int p
 }
 
 
-void disp_st7789_command(uint8_t command, uint8_t *args, int argn) {
+void disp_st7789_command(uint8_t command, const uint8_t *args, int argn) {
 	hwspi_begin();
 	command_start(command);
 	if (args != NULL && argn > 0) {
@@ -333,7 +333,7 @@ void disp_st7789_command(uint8_t command, uint8_t *args, int argn) {
 	hwspi_end();
 }
 
-static uint8_t init_cmds[][16] = {
+static const uint8_t init_cmds[][16] = {
 		{2, 0x36, 0x60}, // Memory Data Access Control
 		{2, 0x3A, 0x55}, // Interface Pixel Format
 		{6, 0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33}, // Porch Setting
@@ -357,7 +357,7 @@ void disp_st7789_reset(void) {
 
 	for (int i = 0; i < 13; i ++) {
 		int argn = init_cmds[i][0] - 1;
-		uint8_t *args = &init_cmds[i][2];
+		const uint8_t *args = &init_cmds[i][2];
 		uint8_t  cmd  = init_cmds[i][1];
 		disp_st7789_command(cmd, args, argn);
 	}
