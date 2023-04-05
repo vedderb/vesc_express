@@ -59,7 +59,6 @@
 #include <stdarg.h>
 
 static void(*ext_callback)(void) = 0;
-static char print_val_buffer[256];
 
 typedef struct {
 	// BMS
@@ -230,30 +229,18 @@ static bool is_symbol_true_false(lbm_value v) {
 // Various commands
 
 static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
-	for (lbm_uint i = 0; i < argn; i ++) {
-		lbm_value t = args[i];
-
-		if (lbm_is_ptr(t) && lbm_type_of(t) == LBM_TYPE_ARRAY) {
-			lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(t);
-			switch (array->elt_type){
-			case LBM_TYPE_CHAR:
-				commands_printf_lisp("%s", (char*)array->data);
-				break;
-			default:
-				return ENC_SYM_NIL;
-				break;
-			}
-		} else if (lbm_type_of(t) == LBM_TYPE_CHAR) {
-			if (lbm_dec_char(t) =='\n') {
-				commands_printf_lisp(" ");
-			} else {
-				commands_printf_lisp("%c", lbm_dec_char(t));
-			}
-		}  else {
-			lbm_print_value(print_val_buffer, 256, t);
-			commands_printf_lisp("%s", print_val_buffer);
-		}
+	const int str_len = 256;
+	char *print_val_buffer = lbm_malloc_reserve(str_len);
+	if (!print_val_buffer) {
+		return ENC_SYM_MERROR;
 	}
+
+	for (lbm_uint i = 0; i < argn; i ++) {
+		lbm_print_value(print_val_buffer, str_len, args[i]);
+		commands_printf_lisp("%s", print_val_buffer);
+	}
+
+	lbm_free(print_val_buffer);
 
 	return ENC_SYM_TRUE;
 }
@@ -458,7 +445,7 @@ static lbm_value ext_secs_since(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_send_data(lbm_value *args, lbm_uint argn) {
-	if (argn != 1 || (!lbm_is_cons(args[0]) && !lbm_is_array(args[0]))) {
+	if (argn != 1 || (!lbm_is_cons(args[0]) && !lbm_is_array_r(args[0]))) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -468,12 +455,8 @@ static lbm_value ext_send_data(lbm_value *args, lbm_uint argn) {
 	uint8_t *to_send_ptr = to_send;
 	int ind = 0;
 
-	if (lbm_type_of(args[0]) == LBM_TYPE_ARRAY) {
+	if (lbm_is_array_r(args[0])) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
-		if (array->elt_type != LBM_TYPE_BYTE) {
-			return ENC_SYM_EERROR;
-		}
-
 		to_send_ptr = (uint8_t*)array->data;
 		ind = array->size;
 	} else {
@@ -616,7 +599,7 @@ static lbm_value ext_sysinfo(lbm_value *args, lbm_uint argn) {
 
 	if (compare_symbol(name, &syms_vesc.hw_name)) {
 		lbm_value lbm_res;
-		if (lbm_create_array(&lbm_res, LBM_TYPE_CHAR, strlen(HW_NAME) + 1)) {
+		if (lbm_create_array(&lbm_res, strlen(HW_NAME) + 1)) {
 			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(lbm_res);
 			strcpy((char*)arr->data, HW_NAME);
 			res = lbm_res;
@@ -871,12 +854,8 @@ static lbm_value ext_can_send(lbm_value *args, lbm_uint argn, bool is_eid) {
 	uint8_t to_send[8];
 	int ind = 0;
 
-	if (lbm_type_of(curr) == LBM_TYPE_ARRAY) {
+	if (lbm_is_array_r(curr)) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(curr);
-		if (array->elt_type != LBM_TYPE_BYTE) {
-			return ENC_SYM_EERROR;
-		}
-
 		ind = array->size;
 		if (ind > 8) {
 			ind = 0;
@@ -1442,7 +1421,7 @@ static void esp_rx_fun(void *arg) {
 			f_sym(&v, SYM_NIL);
 
 			f_cons(&v);
-			f_lbm_array(&v, data.len, LBM_TYPE_BYTE, data.data);
+			f_lbm_array(&v, data.len, data.data);
 
 			f_sym(&v, SYM_NIL);
 
@@ -1811,12 +1790,8 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 	}
 	addr = lbm_dec_as_u32(args[0]);
 
-	if (lbm_type_of(args[1]) == LBM_TYPE_ARRAY) {
+	if (lbm_is_array_r(args[1])) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
-		if (array->elt_type != LBM_TYPE_BYTE) {
-			return ENC_SYM_EERROR;
-		}
-
 		txbuf = (uint8_t*)array->data;
 		txlen = array->size;
 	} else {
@@ -1842,12 +1817,8 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
-	if (argn >= 3 && lbm_type_of(args[2]) == LBM_TYPE_ARRAY) {
+	if (argn >= 3 && lbm_is_array_rw(args[2])) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[2]);
-		if (array->elt_type != LBM_TYPE_BYTE) {
-			return ENC_SYM_EERROR;
-		}
-
 		rxbuf = (uint8_t*)array->data;
 		rxlen = array->size;
 	}
@@ -1978,15 +1949,11 @@ static lbm_value ext_main_init_done(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_crc16(lbm_value *args, lbm_uint argn) {
-	if ((argn != 1 && argn != 2) || !lbm_is_array(args[0])) {
+	if ((argn != 1 && argn != 2) || !lbm_is_array_r(args[0])) {
 		return ENC_SYM_TERROR;
 	}
 
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
-	if (array->elt_type != LBM_TYPE_BYTE) {
-		return ENC_SYM_TERROR;
-	}
-
 	unsigned int len = array->size;
 	if (argn == 2) {
 		if (!lbm_is_number(args[1])) {
@@ -2669,7 +2636,7 @@ void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 		f_sym(&v, is_ext ? sym_event_can_eid : sym_event_can_sid);
 		f_cons(&v);
 		f_i32(&v, can_id);
-		f_lbm_array(&v, len, LBM_TYPE_BYTE, data8);
+		f_lbm_array(&v, len, data8);
 		lbm_finish_flatten(&v);
 		if (!lbm_event(&v)) {
 			lbm_free(v.buf);
@@ -2686,7 +2653,7 @@ void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
 	if (lbm_start_flatten(&v, 30 + len)) {
 		f_cons(&v);
 		f_sym(&v, sym_event_data_rx);
-		f_lbm_array(&v, len, LBM_TYPE_BYTE, data);
+		f_lbm_array(&v, len, data);
 		lbm_finish_flatten(&v);
 		if (!lbm_event(&v)) {
 			lbm_free(v.buf);

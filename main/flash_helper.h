@@ -30,6 +30,8 @@ bool flash_helper_erase_code(int ind, int size);
 bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len);
 bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t len);
 const uint8_t *flash_helper_code_data_ptr(int ind);
+uint8_t* flash_helper_code_data_raw(int ind);
+int flash_helper_code_size_raw(int ind);
 uint32_t flash_helper_code_size(int ind);
 uint16_t flash_helper_code_flags(int ind);
 

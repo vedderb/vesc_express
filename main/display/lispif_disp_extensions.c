@@ -1066,7 +1066,7 @@ static lbm_value ext_image_buffer_from_bin(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TERROR;
 
 	if (argn == 1 &&
-		lbm_is_array(args[0])) {
+		lbm_is_array_r(args[0])) {
 
 		lbm_value arr = args[0];
 		//color_format_t fmt = sym_to_color_format(args[1]);
@@ -1428,9 +1428,6 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 	lbm_array_header_t *font = 0;
 	if (lbm_type_of(args[5]) == LBM_TYPE_ARRAY) {
 		font = (lbm_array_header_t *)lbm_car(args[5]);
-		if (font->elt_type != LBM_TYPE_BYTE) {
-			font = 0;
-		}
 	}
 
 	char *txt = lbm_dec_str(args[6]);
@@ -1886,7 +1883,7 @@ static lbm_value ext_disp_render_jpg(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (argn != 3 ||
-			!lbm_is_byte_array(args[0]) ||
+			!lbm_is_array_r(args[0]) ||
 			!lbm_is_number(args[1]) ||
 			!lbm_is_number(args[2])) {
 		return ENC_SYM_TERROR;

@@ -43,6 +43,24 @@ static const esp_partition_t* get_partition(int ind) {
 			ind == CODE_IND_QML ? "qml" : "lisp");
 }
 
+static bool perform_mmap(int ind) {
+	if (code_checks[ind].mmap_done)  {
+		return true;
+	}
+
+	const esp_partition_t *part = get_partition(ind);
+
+	if (!part) {
+		return false;
+	}
+
+	esp_err_t res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA,
+			&code_checks[ind].addr, &code_checks[ind].handle);
+
+	code_checks[ind].mmap_done = res == ESP_OK;
+	return code_checks[ind].mmap_done;
+}
+
 static void code_check(int ind) {
 	if (code_checks[ind].check_done) {
 		return;
@@ -54,15 +72,8 @@ static void code_check(int ind) {
 		return;
 	}
 
-	if (!code_checks[ind].mmap_done)  {
-		esp_err_t res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA,
-				&code_checks[ind].addr, &code_checks[ind].handle);
-
-		if (res == ESP_OK) {
-			code_checks[ind].mmap_done = true;
-		} else {
-			return;
-		}
+	if (!perform_mmap(ind))  {
+		return;
 	}
 
 	uint8_t *base = (uint8_t*)code_checks[ind].addr;
@@ -89,6 +100,8 @@ static void code_check(int ind) {
 }
 
 bool flash_helper_erase_code(int ind, int size) {
+	(void)size;
+
 	const esp_partition_t *part = get_partition(ind);
 
 	if (!part) {
@@ -99,22 +112,37 @@ bool flash_helper_erase_code(int ind, int size) {
 	code_checks[ind].check_done = false;
 	code_checks[ind].ok = false;
 
-	uint32_t erase_size = part->size;
+	if (!perform_mmap(ind)) {
+		return false;
+	}
 
-	if (size > 0) {
-		erase_size = 0;
-		while (erase_size < size && erase_size < part->size) {
-			erase_size += part->erase_size;
+	// Always erase the entire partition as that allows using it as constant storage. To speed
+	// up the process erase is only performed on sectors that are not already erased.
+
+	esp_partition_erase_range(part, 0, part->erase_size);
+	uint8_t *erased_data = malloc(part->erase_size);
+	if (!erased_data) {
+		return false;
+	}
+
+	esp_partition_read(part, 0, erased_data, part->erase_size);
+
+	for (uint32_t i = part->erase_size; i < part->size; i += part->erase_size) {
+		if (memcmp(code_checks[ind].addr + i, erased_data, part->erase_size) != 0) {
+			esp_partition_erase_range(part, i, part->erase_size);
 		}
 	}
 
-	return esp_partition_erase_range(part, 0, erase_size) == ESP_OK;
+	free(erased_data);
+	return true;
 }
 
 bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len) {
-	code_checks[ind].size = 0;
-	code_checks[ind].check_done = false;
-	code_checks[ind].ok = false;
+	if (offset < (code_checks[ind].size + 8)) {
+		code_checks[ind].size = 0;
+		code_checks[ind].check_done = false;
+		code_checks[ind].ok = false;
+	}
 
 	const esp_partition_t *part = get_partition(ind);
 
@@ -149,6 +177,21 @@ const uint8_t *flash_helper_code_data_ptr(int ind) {
 	}
 
 	return (uint8_t*)code_checks[ind].addr + 8;
+}
+
+uint8_t* flash_helper_code_data_raw(int ind) {
+	perform_mmap(ind);
+	return (uint8_t*)code_checks[ind].addr;
+}
+
+int flash_helper_code_size_raw(int ind) {
+	const esp_partition_t *part = get_partition(ind);
+
+	if (!part) {
+		return 0;
+	}
+
+	return part->size;
 }
 
 uint32_t flash_helper_code_size(int ind) {
