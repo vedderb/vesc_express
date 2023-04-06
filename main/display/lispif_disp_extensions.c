@@ -952,7 +952,7 @@ static img_args_t decode_args(lbm_value *args, lbm_uint argn, int num_expected) 
 
 	int num_dec = 0;
 	for (int i = 1;i < argn;i++) {
-		if (!lbm_is_number(args[i]) && !lbm_is_cons_general(args[i])) {
+		if (!lbm_is_number(args[i]) && !lbm_is_cons(args[i])) {
 			return res;
 		}
 
@@ -967,7 +967,7 @@ static img_args_t decode_args(lbm_value *args, lbm_uint argn, int num_expected) 
 			lbm_value curr = args[i];
 			int attr_ind = 0;
 			attr_t *attr_now = 0;
-			while (lbm_is_cons_general(curr)) {
+			while (lbm_is_cons(curr)) {
 				lbm_value  arg = lbm_car(curr);
 
 				if (attr_ind == 0) {
@@ -1574,7 +1574,7 @@ static lbm_value ext_disp_render(lbm_value *args, lbm_uint argn) {
 	if (argn == 4 && lbm_is_list(args[3])) {
 		int i = 0;
 		lbm_value curr = args[3];
-		while (lbm_is_cons_general(curr) && i < 4) {
+		while (lbm_is_cons(curr) && i < 4) {
 			lbm_value arg = lbm_car(curr);
 
 			if (lbm_is_number(arg)) {
