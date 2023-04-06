@@ -445,7 +445,7 @@ static lbm_value ext_secs_since(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_send_data(lbm_value *args, lbm_uint argn) {
-	if (argn != 1 || (!lbm_is_cons(args[0]) && !lbm_is_array_r(args[0]))) {
+	if (argn != 1 || (!lbm_is_cons_general(args[0]) && !lbm_is_array_r(args[0]))) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -460,7 +460,7 @@ static lbm_value ext_send_data(lbm_value *args, lbm_uint argn) {
 		to_send_ptr = (uint8_t*)array->data;
 		ind = array->size;
 	} else {
-		while (lbm_is_cons(curr)) {
+		while (lbm_is_cons_general(curr)) {
 			lbm_value  arg = lbm_car(curr);
 
 			if (lbm_is_number(arg)) {
@@ -863,7 +863,7 @@ static lbm_value ext_can_send(lbm_value *args, lbm_uint argn, bool is_eid) {
 
 		memcpy(to_send, array->data, ind);
 	} else {
-		while (lbm_is_cons(curr)) {
+		while (lbm_is_cons_general(curr)) {
 			lbm_value  arg = lbm_car(curr);
 
 			if (lbm_is_number(arg)) {
@@ -1514,7 +1514,7 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	int ind = 0;
 
 	lbm_value curr = args[0];
-	while (lbm_is_cons(curr)) {
+	while (lbm_is_cons_general(curr)) {
 		lbm_value  arg = lbm_car(curr);
 
 		if (lbm_is_number(arg)) {
@@ -1653,7 +1653,7 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	int ind = 0;
 
 	lbm_value curr = args[0];
-	while (lbm_is_cons(curr)) {
+	while (lbm_is_cons_general(curr)) {
 		lbm_value  arg = lbm_car(curr);
 
 		if (lbm_is_number(arg)) {
@@ -1796,7 +1796,7 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 		txlen = array->size;
 	} else {
 		lbm_value curr = args[1];
-		while (lbm_is_cons(curr)) {
+		while (lbm_is_cons_general(curr)) {
 			lbm_value  arg = lbm_car(curr);
 
 			if (lbm_is_number(arg)) {
@@ -2318,9 +2318,9 @@ static lbm_value log_send_fxx(bool is_64, lbm_value *args, lbm_uint argn) {
 				mempools_free_packet_buffer(buffer);
 				return ENC_SYM_EERROR;
 			}
-		} else if (lbm_is_cons(args[arg_now])) {
+		} else if (lbm_is_cons_general(args[arg_now])) {
 			lbm_value curr = args[arg_now];
-			while (lbm_is_cons(curr)) {
+			while (lbm_is_cons_general(curr)) {
 				lbm_value  val = lbm_car(curr);
 				if (lbm_is_number(val)) {
 					if (is_64) {

@@ -29,11 +29,11 @@
 #define FW_TEST_VERSION_NUMBER		0
 
 #if !defined(HW_SOURCE) && !defined(HW_HEADER)
-//#define HW_HEADER					"hw_xp_t.h"
-//#define HW_SOURCE					"hw_xp_t.c"
+#define HW_HEADER					"hw_xp_t.h"
+#define HW_SOURCE					"hw_xp_t.c"
 
-#define HW_HEADER					"hw_devkit_c3.h"
-#define HW_SOURCE					"hw_devkit_c3.c"
+//#define HW_HEADER					"hw_devkit_c3.h"
+//#define HW_SOURCE					"hw_devkit_c3.c"
 
 //#define HW_HEADER					"hw_lb_hc.h"
 //#define HW_SOURCE					"hw_lb_hc.c"
