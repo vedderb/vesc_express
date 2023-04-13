@@ -1,9 +1,14 @@
 (import "font_16_26.bin" 'font)
 
+; sd0 clk cs reset dc spi-mhz
 (disp-load-ili9488 6 5 19 18 7 40)
-(disp-reset)
 
+(disp-reset)
 (ext-disp-orientation 0)
+
+; Invert display. Must be used for some displays using this driver.
+(ext-disp-cmd 0x21)
+
 (def img (img-buffer 'indexed2 320 480))
 
 (defun line (x0 y0 x1 y1)
