@@ -42,13 +42,29 @@ lbm_cid eval_cps_load_and_eval(lbm_char_channel_t *tokenizer, bool program, bool
       read_mode = ENC_SYM_READ_PROGRAM;
     }
   }
-  /* LISP ZONE */
+  /*
+   read-eval-program finishes with the result of the final expression in
+   the program. This should not be passed to eval-program as it is most likely
+   not a program. Even if it is a program, its not one we want to evaluate.
+  */
 
-  lbm_value launcher = lbm_cons(stream, lbm_enc_sym(SYM_NIL));
+  /* LISP ZONE */
+  lbm_value launcher = lbm_cons(stream, ENC_SYM_NIL);
   launcher = lbm_cons(read_mode, launcher);
-  lbm_value evaluator = lbm_cons(launcher, lbm_enc_sym(SYM_NIL));
-  evaluator = lbm_cons(lbm_enc_sym(program ? SYM_EVAL_PROGRAM : SYM_EVAL), evaluator);
-  lbm_value start_prg = lbm_cons(evaluator, lbm_enc_sym(SYM_NIL));
+  lbm_value evaluator;
+  lbm_value start_prg;
+  if (read_mode == ENC_SYM_READ) {
+    evaluator = lbm_cons(launcher, ENC_SYM_NIL);
+    evaluator = lbm_cons(ENC_SYM_EVAL, evaluator);
+    start_prg = lbm_cons(evaluator, ENC_SYM_NIL);
+  } else if (read_mode == ENC_SYM_READ_PROGRAM) {
+    evaluator = lbm_cons(launcher, ENC_SYM_NIL);
+    evaluator = lbm_cons(ENC_SYM_EVAL_PROGRAM, evaluator);
+    start_prg = lbm_cons(evaluator, ENC_SYM_NIL);
+  } else { // ENC_SYM_READ_AND_EVAL_PROGRAM
+    evaluator = launcher; // dummy so check below passes
+    start_prg = lbm_cons(launcher, ENC_SYM_NIL);
+  }
 
   /* LISP ZONE ENDS */
 
@@ -58,7 +74,7 @@ lbm_cid eval_cps_load_and_eval(lbm_char_channel_t *tokenizer, bool program, bool
     //lbm_explicit_free_token_stream(stream);
     return 0;
   }
-  return lbm_create_ctx(start_prg, lbm_enc_sym(SYM_NIL), 256);
+  return lbm_create_ctx(start_prg, ENC_SYM_NIL, 256);
 }
 
 lbm_cid eval_cps_load_and_define(lbm_char_channel_t *tokenizer, char *symbol, bool program) {
@@ -239,6 +255,25 @@ int lbm_undefine(char *symbol) {
 
 int lbm_share_array(lbm_value *value, char *data, lbm_uint num_elt) {
   return lbm_lift_array(value, data, num_elt);
+}
+
+int lbm_share_const_array(lbm_value *res, char *flash_ptr, lbm_uint num_elt) {
+  lbm_value arr = 0;
+  arr = LBM_PTR_BIT | LBM_TYPE_ARRAY;
+
+  lbm_value flash_arr = 0;
+  lbm_flash_status r = request_flash_storage_cell(arr, &flash_arr);
+  if (r == LBM_FLASH_WRITE_OK) {
+    if (!lift_array_flash(flash_arr, flash_ptr, num_elt)) {
+      return 0;
+    }
+  }
+
+  if (r == LBM_FLASH_WRITE_OK) {
+    *res = flash_arr;
+    return 1;
+  }
+  return 0;
 }
 
 int lbm_create_array(lbm_value *value, lbm_uint num_elt) {
