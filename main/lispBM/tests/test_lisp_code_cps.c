@@ -113,9 +113,9 @@ void context_done_callback(eval_context_t *ctx) {
   if (test_cid == ctx->id)
     experiment_done = true;
 
-  int res = lbm_print_value(output, 128, t);
+  (void)lbm_print_value(output, 128, t);
 
-  printf("Thread %d finished: %s\n", ctx->id, output);
+  printf("Thread %d finished: %s\n", (int32_t)ctx->id, output);
 }
 
 bool dyn_load(const char *str, const char **code) {
@@ -347,7 +347,7 @@ LBM_EXTENSION(ext_check, args, argn) {
     printf("Test: Failed!\n");
     printf("Result: %s\n", output);
   }
-  return res;
+  return ENC_SYM_TRUE;
 }
 
 char *const_prg = "(define a 10) (+ a 1)";
@@ -357,13 +357,18 @@ LBM_EXTENSION(ext_const_prg, args, argn) {
   (void) argn;
   lbm_value v = ENC_SYM_NIL;
 
-  char *str = const_prg;
-
   if (!lbm_share_const_array(&v, const_prg, strlen(const_prg)+1))
     return ENC_SYM_NIL;
   return v;
 }
 
+LBM_EXTENSION(ext_trigger, args, argn) {
+  if (argn == 1 && lbm_is_number(args[0])) {
+    lbm_trigger_flags(lbm_dec_as_u32(args[0]));
+    return ENC_SYM_TRUE;
+  }
+  return ENC_SYM_NIL;
+}
 
 
 int main(int argc, char **argv) {
@@ -681,6 +686,14 @@ int main(int argc, char **argv) {
     return 0;
   }
 
+  res = lbm_add_extension("trigger", ext_trigger);
+  if (res)
+    printf("Extension added.\n");
+  else {
+    printf("Error adding extension.\n");
+    return 0;
+  }
+
   lbm_set_dynamic_load_callback(dyn_load);
   lbm_set_timestamp_us_callback(timestamp_callback);
   lbm_set_usleep_callback(sleep_callback);
@@ -694,13 +707,19 @@ int main(int argc, char **argv) {
     printf("Error creating evaluation thread\n");
     return 1;
   }
-
+  sleep_callback(50);
   lbm_cid cid;
 
   lbm_pause_eval_with_gc(20);
+  int wait_count = 0;
   while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED) {
-    printf("wait for pause init\n");
-    sleep_callback(1000);
+    if (wait_count >= 10) {
+      printf("Could not pause the evaluator\n");
+      return 1;
+    }
+    printf("Wait for pause init\n");
+    sleep_callback(100);
+    wait_count++;
   }
   if (stream_source) {
     lbm_create_buffered_char_channel(&buffered_tok_state,

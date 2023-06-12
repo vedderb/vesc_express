@@ -995,7 +995,7 @@ Example that moves an array to flash storage:
 (define a [1 2 3 4 5 6])
 
 (move-to-flash a)
----
+```
 
 Example that moves a list to flash storage:
 
@@ -1012,6 +1012,8 @@ Functions can be moved to flash storage as well:
 
 (move-to-flash f)
 ```
+
+---
 
 ## Lists and cons cells
 
@@ -1251,6 +1253,40 @@ Now change the value in the cdr field of apa to 42.
 (setcdr apa 42)
 ```
 The `apa` pair is now `(1 . 42)`.
+
+---
+
+### take
+
+`take` creates a list containing the `n` first elements of another list.
+The form of a `take` expression is `(take list-exp n-exp)`.
+
+Example that takes 5 elements from a list:
+```clj
+(define ls (list 1 2 3 4 5 6 7 8 9 10))
+
+(take ls 5)
+```
+
+In the example above, the result of `(take ls 5)` is `(1 2 3 4 5)`.
+
+---
+
+### drop
+
+`drop` creates a list from another list by dropping the `n` first elements of that list.
+The form of a `drop` expression is `(drop list-exp n-exp)`.
+
+Example that drops 5 elements from a list:
+```clj
+(define ls (list 1 2 3 4 5 6 7 8 9 10))
+
+(drop ls 5)
+```
+
+Here `(drop ls 5)` evaluates to the list `(6 7 8 9 10)`.
+
+---
 
 ## Associations lists (alists)
 

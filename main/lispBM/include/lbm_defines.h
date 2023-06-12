@@ -208,7 +208,8 @@
 #define SYM_EXIT_ERROR    0x15C
 #define SYM_MAP           0x15D
 #define SYM_REVERSE       0x15E
-#define APPLY_FUNS_END    0x15E
+#define SYM_WAIT_FOR      0x15F
+#define APPLY_FUNS_END    0x15F
 
 #define FUNDAMENTALS_START 0x20E
 #define SYM_ADD           0x20E
@@ -267,7 +268,9 @@
 #define SYM_LIST_LENGTH         0x243
 #define SYM_RANGE               0x244
 #define SYM_REG_EVENT_HANDLER   0x245
-#define FUNDAMENTALS_END         0x245
+#define SYM_TAKE                0x246
+#define SYM_DROP                0x247
+#define FUNDAMENTALS_END         0x247
 
 
 
@@ -366,6 +369,7 @@
 #define ENC_SYM_PROGN_VAR           ENC_SYM(SYM_PROGN_VAR)
 #define ENC_SYM_SETQ                ENC_SYM(SYM_SETQ)
 #define ENC_SYM_MOVE_TO_FLASH       ENC_SYM(SYM_MOVE_TO_FLASH)
+#define ENC_SYM_IN_ENV              ENC_SYM(SYM_IN_ENV)
 
 #define ENC_SYM_SETVAR        ENC_SYM(SYM_SETVAR)
 #define ENC_SYM_READ          ENC_SYM(SYM_READ)
@@ -382,6 +386,10 @@
 #define ENC_SYM_EXIT_ERROR    ENC_SYM(SYM_EXIT_ERROR)
 #define ENC_SYM_MAP           ENC_SYM(SYM_MAP)
 #define ENC_SYM_REVERSE       ENC_SYM(SYM_REVERSE)
+#define ENC_SYM_WAIT_FOR      ENC_SYM(SYM_WAIT_FOR)
+#define ENC_SYM_GET_ENV       ENC_SYM(SYM_GET_ENV)
+#define ENC_SYM_SET_ENV       ENC_SYM(SYM_SET_ENV)
+
 
 #define ENC_SYM_ADD           ENC_SYM(SYM_ADD)
 #define ENC_SYM_SUB           ENC_SYM(SYM_SUB)
@@ -439,6 +447,9 @@
 #define ENC_SYM_LIST_LENGTH         ENC_SYM(SYM_LIST_LENGTH)
 #define ENC_SYM_RANGE               ENC_SYM(SYM_RANGE)
 #define ENC_SYM_REG_EVENT_HANDLER   ENC_SYM(SYM_REG_EVENT_HANDLER)
+#define ENC_SYM_TAKE                ENC_SYM(SYM_TAKE)
+#define ENC_SYM_DROP                ENC_SYM(SYM_DROP)
+
 
 
 #endif
