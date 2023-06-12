@@ -37,4 +37,18 @@ int64_t utils_ms_tot(void);
 // For double precision literals
 #define D(x) 				((double)x##L)
 
+/**
+ * A simple low pass filter.
+ *
+ * @param value
+ * The filtered value.
+ *
+ * @param sample
+ * Next sample.
+ *
+ * @param filter_constant
+ * Filter constant. Range 0.0 to 1.0, where 1.0 gives the unfiltered value.
+ */
+#define UTILS_LP_FAST(value, sample, filter_constant)	(value -= (filter_constant) * ((value) - (sample)))
+
 #endif /* MAIN_UTILS_H_ */

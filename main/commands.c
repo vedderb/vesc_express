@@ -32,8 +32,19 @@
 #include "comm_can.h"
 #include "terminal.h"
 #include "mempools.h"
+
+#ifdef OVR_CONF_PARSER_H
+#include OVR_CONF_PARSER_H
+#else
 #include "confparser.h"
+#endif
+
+#ifdef OVR_CONF_XML_H
+#include OVR_CONF_XML_H
+#else
 #include "confxml.h"
+#endif
+
 #include "packet.h"
 #include "buffer.h"
 #include "main.h"
@@ -238,14 +249,22 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if (packet_id == COMM_GET_CUSTOM_CONFIG) {
 			*conf = backup.config;
 		} else {
+#ifdef OVR_CONF_SET_DEFAULTS
+			OVR_CONF_SET_DEFAULTS(conf);
+#else
 			confparser_set_defaults_main_config_t(conf);
+#endif
 		}
 
 		uint8_t *send_buffer_global = mempools_get_packet_buffer();
 		int32_t ind = 0;
 		send_buffer_global[ind++] = packet_id;
 		send_buffer_global[ind++] = conf_ind;
+#ifdef OVR_CONF_SERIALIZE
+		int32_t len = OVR_CONF_SERIALIZE(send_buffer_global + ind, conf);
+#else
 		int32_t len = confparser_serialize_main_config_t(send_buffer_global + ind, conf);
+#endif
 		commands_send_packet(send_buffer_global, len + ind);
 		mempools_free_packet_buffer(send_buffer_global);
 
@@ -258,7 +277,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		int conf_ind = data[0];
 
+#ifdef OVR_CONF_DESERIALIZE
+		if (conf_ind == 0 && OVR_CONF_DESERIALIZE(data + 1, conf)) {
+#else
 		if (conf_ind == 0 && confparser_deserialize_main_config_t(data + 1, conf)) {
+#endif
 			backup.config = *conf;
 
 			main_store_backup_data();

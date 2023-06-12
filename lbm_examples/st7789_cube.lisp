@@ -1,5 +1,4 @@
-
-(import "font_16_26.bin" 'font)
+(import "pkg::font_16_26@://vesc_packages/lib_files/files.vescpkg" 'font)
 
 (disp-load-st7789 6 5 19 18 7 40)
 (disp-reset)

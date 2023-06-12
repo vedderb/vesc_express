@@ -18,7 +18,4 @@
     */
 
 #include "conf_general.h"
-
 #include HW_SOURCE
-
-

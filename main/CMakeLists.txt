@@ -25,8 +25,7 @@ set(COMPONENT_SRCS
 "log_comm.c"
 "hwspi.c"
 
-"config/confparser.c"
-"config/confxml.c"
+"config/confsrc.c"
 "hwconf/hw.c"
 
 "lispif.c"
@@ -72,6 +71,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "config"
 "hwconf"
 "hwconf/trampa"
+"hwconf/trampa/bms_rb"
 
 "lispBM"
 "lispBM/include"

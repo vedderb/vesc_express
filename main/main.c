@@ -28,7 +28,13 @@
 #include "comm_can.h"
 #include "comm_wifi.h"
 #include "commands.h"
+
+#ifdef OVR_CONF_PARSER_H
+#include OVR_CONF_PARSER_H
+#else
 #include "confparser.h"
+#endif
+
 #include "log.h"
 #include "adc.h"
 #include "ublox.h"
@@ -88,7 +94,11 @@ void app_main(void) {
 		}
 
 		if (backup.config_init_flag != MAIN_CONFIG_T_SIGNATURE) {
+#ifdef OVR_CONF_SET_DEFAULTS
+			OVR_CONF_SET_DEFAULTS((main_config_t*)(&backup.config));
+#else
 			confparser_set_defaults_main_config_t((main_config_t*)(&backup.config));
+#endif
 			backup.config_init_flag = MAIN_CONFIG_T_SIGNATURE;
 			backup.config.controller_id = backup.controller_id;
 			backup.config.can_baud_rate = backup.can_baud_rate;
@@ -130,7 +140,7 @@ void app_main(void) {
 	lispif_init();
 #endif
 
-#ifndef HW_OVERRIDE_UART
+#ifndef HW_NO_UART
 #ifdef HW_UART_COMM
 	comm_uart_init();
 #else

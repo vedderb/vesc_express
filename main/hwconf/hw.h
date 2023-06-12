@@ -38,4 +38,12 @@
 #define HW_INIT_HOOK()
 #endif
 
+#ifndef UART_NUM
+#define HW_NO_UART
+#define UART_NUM					0
+#define UART_BAUDRATE				115200
+#define UART_TX						21
+#define UART_RX						20
+#endif
+
 #endif /* MAIN_HWCONF_HW_H_ */
