@@ -10,19 +10,17 @@ Instructions for how to set up the toolchain can be found here:
 **Note**  
 ESP-IDF version 5.0 or later is required for building this project.
 
-### Get Release 5.0
+### Get Release 5.0.2
 
 The instructions linked above will install the master branch of ESP-IDF. To install the stable release you can navigate to the installation directory and use the following commands:
 
 ```bash
-git fetch
-git checkout release/v5.0
-git pull
-git submodule update --init --recursive
+git clone -b v5.0.2 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.0.2
+cd esp-idf-v5.0.2/
 ./install.sh esp32c3
 ```
 
-At the moment the development is done using the stable 5.0-release.
+At the moment development is done using the stable 5.0.2-release.
 
 ## Compiling
 
