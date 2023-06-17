@@ -94,13 +94,13 @@ that specify extra attributes to apply when drawing. These attributes are:
 6. `'(rotate rx ry deg)`: Rotate an image around point (`rx`,`ry`), `deg`
    degrees.
 7. `'(resolution steps)`: How many lines arcs are simplified into when drawn.
-   When drawing arcs, they are simplified into a series of lines. The actual
-   amount of steps is scaled based on the arc span, with 360° specifying 100%
-   and 0° specifying 0%.
-   The default is `80`.
+   When drawing any kind of arcs, they are simplified into a series of lines
+   where the actual amount of steps is scaled from `0` to `steps` based on the arc
+   angle span.
    Note that this isn't just limited to `img-arc`, but every function that
    draws any kind of arc, like actual arcs, circle segments and sectors, rounded
    shapes, or dotted circles.
+   The default is `80`.
 
  
 Not all attributes are applicable to all drawing functions. The
