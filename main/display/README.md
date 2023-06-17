@@ -88,10 +88,20 @@ that specify extra attributes to apply when drawing. These attributes are:
 
 1. `'(thickness w)`: Line thickness w 
 2. `'(dotted d-len d-space-len)`: Dotted or dashed lines with `d-len` long line segments separated by `d-space-len`.
-3. `'(filled)` : Specifies that the shape should be filled. 
-4. `'(rounded radius)` : Specifies that the shape should have rounded corners. 
-5. `'(scale scale-f)` : Scale the image by factor `scale-f`
-6. `'(rotate rx ry deg)` : Rotate an image around point (`rx`,`ry`), `deg` degrees. 
+3. `'(filled)`: Specifies that the shape should be filled. 
+4. `'(rounded radius)`: Specifies that the shape should have rounded corners. 
+5. `'(scale scale-f)`: Scale the image by factor `scale-f`
+6. `'(rotate rx ry deg)`: Rotate an image around point (`rx`,`ry`), `deg`
+   degrees.
+7. `'(resolution steps)`: How many lines arcs are simplified into when drawn.
+   When drawing arcs, they are simplified into a series of lines. The actual
+   amount of steps is scaled based on the arc span, with 360° specifying 100%
+   and 0° specifying 0%.
+   The default is `80`.
+   Note that this isn't just limited to `img-arc`, but every function that
+   draws any kind of arc, like actual arcs, circle segments and sectors, rounded
+   shapes, or dotted circles.
+
  
 Not all attributes are applicable to all drawing functions. The
 applicable attributes for each drawing-function is listed in the
@@ -401,6 +411,7 @@ Applicable attributes:
 1. dotted
 2. filled
 3. thickness
+4. resolution
 
 Example drawing a dashed (dotted) arc:
 ```clj
@@ -483,6 +494,7 @@ Applicable attributes:
 1. dotted
 2. filled
 3. thickness
+4. resolution
 
 Example drawing a filled circle with radius 80:
 ```clj
@@ -503,6 +515,7 @@ Applicable attributes:
 1. dotted
 2. filled
 3. thickness
+4. resolution
 
 Example drawing a thick circle-sector of 45 degrees and radius 80.
 ```clj
@@ -519,6 +532,12 @@ Draw a circle-segment. Imagine a line (chord) drawn between the points of the ci
 at angle `ang-s` and `ang-e` cutting off a circle segment. The segment is the part
 of the circle that is enclosed by the arc from `ang-s` to `ang-e` and the line drawn
 between those points on the circle.
+
+Applicable attributes:
+1. dotted
+2. filled
+3. thickness
+4. resolution
 
 Example drawing a filled circle segment.
 ```clj
@@ -632,6 +651,7 @@ Applicable attributes:
 2. filled
 3. rounded
 4. thickness
+5. resolution
 
 Example drawing a filled rectangle with rounded corners:
 
