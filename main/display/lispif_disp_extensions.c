@@ -721,7 +721,8 @@ static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, flo
 		ang_range += 2.0 * M_PI;
 	}
 
-	float steps = 40.0 * ang_range * (0.5 / M_PI);
+	
+	float steps = ceil(80.0 * ang_range * (0.5 / M_PI));
 
 	float ang_step = ang_range / steps;
 	float sa = sinf(ang_step);
