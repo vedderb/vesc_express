@@ -104,6 +104,7 @@ static lbm_uint symbol_rounded = 0;
 static lbm_uint symbol_dotted = 0;
 static lbm_uint symbol_scale = 0;
 static lbm_uint symbol_rotate = 0;
+static lbm_uint symbol_resolution = 0;
 
 static lbm_uint symbol_regular = 0;
 static lbm_uint symbol_gradient_x = 0;
@@ -276,6 +277,7 @@ static bool register_symbols(void) {
 	res = res && lbm_add_symbol_const("dotted", &symbol_dotted);
 	res = res && lbm_add_symbol_const("scale", &symbol_scale);
 	res = res && lbm_add_symbol_const("rotate", &symbol_rotate);
+	res = res && lbm_add_symbol_const("resolution", &symbol_resolution);
 
 	res = res && lbm_add_symbol_const("regular", &symbol_regular);
 	res = res && lbm_add_symbol_const("gradient_x", &symbol_gradient_x);
@@ -708,7 +710,7 @@ static void fill_triangle(image_buffer_t *img, int x0, int y0,
 }
 
 static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end,
-		int thickness, bool filled, int dot1, int dot2, bool sector, bool segment, uint32_t color) {
+		int thickness, bool filled, int dot1, int dot2, int res, bool sector, bool segment, uint32_t color) {
 	ang_start *= M_PI / 180.0;
 	ang_end *= M_PI / 180.0;
 
@@ -721,7 +723,11 @@ static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, flo
 		ang_range += 2.0 * M_PI;
 	}
 
-	float steps = 40.0 * ang_range * (0.5 / M_PI);
+	if (res <= 0) {
+		res = 80;
+	}
+	
+	float steps = ceilf(res * ang_range * (0.5 / M_PI));
 
 	float ang_step = ang_range / steps;
 	float sa = sinf(ang_step);
@@ -938,6 +944,7 @@ typedef struct {
 	attr_t attr_dotted;
 	attr_t attr_scale;
 	attr_t attr_rotate;
+	attr_t attr_resolution;
 } img_args_t;
 
 static img_args_t decode_args(lbm_value *args, lbm_uint argn, int num_expected) {
@@ -993,6 +1000,9 @@ static img_args_t decode_args(lbm_value *args, lbm_uint argn, int num_expected) 
 					} else if (lbm_dec_sym(arg) == symbol_rotate) {
 						attr_now = &res.attr_rotate;
 						attr_now->arg_num = 3;
+					} else if (lbm_dec_sym(arg) == symbol_resolution) {
+						attr_now = &res.attr_resolution;
+						attr_now->arg_num = 1;
 					} else {
 						return res;
 					}
@@ -1249,6 +1259,7 @@ static lbm_value ext_circle(lbm_value *args, lbm_uint argn) {
 				false,
 				lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
 				lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
+				lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
 				false, false,
 				lbm_dec_as_i32(arg_dec.args[3]));
 	} else {
@@ -1280,6 +1291,7 @@ static lbm_value ext_arc(lbm_value *args, lbm_uint argn) {
 			arg_dec.attr_filled.is_valid,
 			lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
 			lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
+			lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
 			false, false,
 			lbm_dec_as_i32(arg_dec.args[5]));
 
@@ -1303,6 +1315,7 @@ static lbm_value ext_circle_sector(lbm_value *args, lbm_uint argn) {
 			arg_dec.attr_filled.is_valid,
 			lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
 			lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
+			lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
 			true, false,
 			lbm_dec_as_i32(arg_dec.args[5]));
 
@@ -1317,17 +1330,18 @@ static lbm_value ext_circle_segment(lbm_value *args, lbm_uint argn) {
 	}
 
 	arc(arg_dec.img,
-			lbm_dec_as_i32(arg_dec.args[0]),
-			lbm_dec_as_i32(arg_dec.args[1]),
-			lbm_dec_as_i32(arg_dec.args[2]),
-			lbm_dec_as_float(arg_dec.args[3]),
-			lbm_dec_as_float(arg_dec.args[4]),
-			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
-			arg_dec.attr_filled.is_valid,
-			lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
-			lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
-			false, true,
-			lbm_dec_as_i32(arg_dec.args[5]));
+		lbm_dec_as_i32(arg_dec.args[0]),
+		lbm_dec_as_i32(arg_dec.args[1]),
+		lbm_dec_as_i32(arg_dec.args[2]),
+		lbm_dec_as_float(arg_dec.args[3]),
+		lbm_dec_as_float(arg_dec.args[4]),
+		lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+		arg_dec.attr_filled.is_valid,
+		lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
+		lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
+		lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
+		false, true,
+		lbm_dec_as_i32(arg_dec.args[5]));
 
 	return ENC_SYM_TRUE;
 }
@@ -1349,6 +1363,7 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 	uint32_t color = lbm_dec_as_i32(arg_dec.args[4]);
 	int dot1 = lbm_dec_as_i32(arg_dec.attr_dotted.args[0]);
 	int dot2 = lbm_dec_as_i32(arg_dec.attr_dotted.args[1]);
+	int resolution = lbm_dec_as_i32(arg_dec.attr_resolution.args[0]);
 
 	if (arg_dec.attr_rounded.is_valid) {
 		if (arg_dec.attr_filled.is_valid) {
@@ -1361,13 +1376,13 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 			fill_circle(img, x + width - rad, y + height - rad, rad, color);
 		} else {
 			line(img, x + rad, y, x + width - rad, y, thickness, dot1, dot2, color);
-			arc(img, x + rad, y + rad, rad, 180, 270, thickness, false, dot1, dot2, false, false, color);
+			arc(img, x + rad, y + rad, rad, 180, 270, thickness, false, dot1, dot2, resolution, false, false, color);
 			line(img, x + rad, y + height, x + width - rad, y + height, thickness, dot1, dot2, color);
-			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, false, dot1, dot2, false, false, color);
+			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, false, dot1, dot2, resolution, false, false, color);
 			line(img, x, y + rad, x, y + height - rad, thickness, dot1, dot2, color);
-			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, false, dot1, dot2, false, false, color);
+			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, false, dot1, dot2, resolution, false, false, color);
 			line(img, x + width, y + rad, x + width, y + height - rad, thickness, dot1, dot2, color);
-			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, false, dot1, dot2, false, false, color);
+			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, false, dot1, dot2, resolution, false, false, color);
 		}
 	} else {
 		rectangle(img,
