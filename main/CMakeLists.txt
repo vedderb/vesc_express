@@ -36,7 +36,6 @@ set(COMPONENT_SRCS
 "lispBM/src/heap.c"
 "lispBM/src/lbm_memory.c"
 "lispBM/src/print.c"
-"lispBM/src/qq_expand.c"
 "lispBM/src/stack.c"
 "lispBM/src/symrepr.c"
 "lispBM/src/tokpar.c"
