@@ -572,37 +572,41 @@ and the display color space.
 
 ### gradient_x
 ```clj
-(img-color 'gradient_x c0 c1 period phase)
+(img-color 'gradient_x c0 c1 width offset)
 ```
 
 Creates a color gradient in the horizontal direction across the image.
 The pixel x position will influence the final color displayed on the screen.
-`period` dictates the amount of pixels it takes to go from `c0` to `c1` (after which
-the pattern repeats. `phase` alters the starting point in the interval `c0` - `c1`.
+`width` dictates the amount of pixels it takes to go from `c0` to `c1` (after which
+the pattern repeats). `offset` applies an offset to the starting point of
+the interval `c0` to `c1`.
 
 ### gradient_y
 ```clj
-(img-color 'gradient_y c0 c1 period phase)
+(img-color 'gradient_y c0 c1 width offset)
 ```
 
 Creates a color gradient in the vertical direction across the image.
-The pixel x position will influence the final color displayed on the screen.
-`period` dictates the amount of pixels it takes to go from `c0` to `c1` (after which
-the pattern repeats. `phase` alters the starting point in the interval `c0` - `c1`.
+The pixel y position will influence the final color displayed on the screen.
+`width` dictates the amount of pixels it takes to go from `c0` to `c1` (after which
+the pattern repeats). `offset` applies an offset to the starting point of
+the interval `c0` to `c1`.
 
 ### gradient_x_pre
 ```clj
-(img-color 'gradient_x c0 c1 period phase)
+(img-color 'gradient_x_pre c0 c1 period phase)
 ```
 
 See `gradient_x`. `gradient_x_pre` precalculates and buffers the color mapping.
+This buffer can be modified using `img-color-setpre`
 
 ### gradient_y_pre
 ```clj
-(img-color 'gradient_y c0 c1 period phase)
+(img-color 'gradient_y_pre c0 c1 period phase)
 ```
 
 See `gradient_y`. `gradient_y_pre` precalculates and buffers the color mapping.
+This buffer can be modified using `img-color-setpre`
 
 ## img-color-setpre
 
