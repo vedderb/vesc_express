@@ -27,6 +27,10 @@ extern "C" {
 #define M_PI 3.14159265358979323846
 #endif
 
+#ifndef M_3PI_2
+#define M_3PI_2 4.71238898038469
+#endif
+
 #define DEG2RAD_f(deg) ((deg) * (float)(M_PI / 180.0))
 #define RAD2DEG_f(rad) ((rad) * (float)(180.0 / M_PI))
 

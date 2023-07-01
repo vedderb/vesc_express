@@ -36,6 +36,45 @@
 
 #include <math.h>
 
+static int sign(int v) {
+	if (v > 0) {
+		return 1;
+	}
+	else if (v < 0)
+	{
+		return -1;
+	} else {
+		return 0;
+	}
+}
+
+// Geometry utility functions
+
+// Checks if a point is past a line formed by the given end and start points.
+// The returned value is 1 if it is past, -1 if it's on the other side of the
+// line, or 0 if it's exactly on the line.
+// Don't ask me what is considered the "positive" side of the line ;)
+static int point_past_line(int x, int y, int line_start_x, int line_start_y, int line_end_x, int line_end_y) {
+	// source: https://stackoverflow.com/a/11908158/15507414
+
+	// this is not really a cross product, but whatever...
+	int cross_prod = (x - line_start_x) * (line_end_y - line_start_y)
+		- (y - line_start_y) * (line_end_x - line_start_x);
+	
+	if (cross_prod > 0) {
+		return 1;
+	} else if (cross_prod < 0) {
+		return -1;
+	} else {
+		return 0;
+	}
+}
+
+bool points_same_quadrant(int x0, int y0, int x1, int y1) {
+	return (sign(x0) == sign(x1) || sign(x0) == 0 || sign(x1) == 0)
+		&& (sign(y0) == sign(y1) || sign(y0) == 0 || sign(y1) == 0);
+}
+
 static const uint8_t cos_tab_256[] = {
 		255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251,
 		250, 250, 249, 248, 246, 245, 244, 243, 241, 240, 238, 237, 235, 234,
@@ -294,6 +333,11 @@ static inline void norm_angle(float *angle) {
 	while (*angle >=  M_PI) { *angle -= 2.0 * M_PI; }
 }
 
+static inline void norm_angle_0_2pi(float *angle) {
+	while (*angle < 0) { *angle += 2.0 * M_PI; }
+	while (*angle >= 2 * M_PI) { *angle -= 2.0 * M_PI; }
+}
+
 static uint8_t rgb888to332(uint32_t rgb) {
 	uint8_t r = (uint8_t)(rgb >> (16 + 5));
 	uint8_t g = (uint8_t)(rgb >> (8 + 5));
@@ -485,54 +529,100 @@ static void v_line(image_buffer_t* img, int16_t x, int16_t y, uint16_t len, uint
 static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t color) {
 	switch (radius) {
 	case 0:
-		putpixel(img, x, y, color);
 		break;
 
 	case 1:
+		putpixel(img, x - 1, y - 1, color);
+		putpixel(img, x, y - 1, color);
 		putpixel(img, x - 1, y, color);
 		putpixel(img, x, y, color);
 		break;
 
 	case 2:
-		putpixel(img, x - 1, y - 1, color);
-		putpixel(img, x, y - 1, color);
-		putpixel(img, x - 2, y, color);
-		putpixel(img, x - 1, y, color);
-		putpixel(img, x, y, color);
-		putpixel(img, x + 1, y, color);
-		putpixel(img, x - 1, y + 1, color);
-		putpixel(img, x, y + 1, color);
+		h_line(img, x - 1, y - 2, 2, color);
+		h_line(img, x - 2, y - 1, 4, color);
+		h_line(img, x - 2, y, 4, color);
+		h_line(img, x - 1, y + 1, 2, color);
+
+		// putpixel(img, x - 1, y - 1, color);
+		// putpixel(img, x, y - 1, color);
+		// putpixel(img, x - 2, y, color);
+		// putpixel(img, x - 1, y, color);
+		// putpixel(img, x, y, color);
+		// putpixel(img, x + 1, y, color);
+		// putpixel(img, x - 1, y + 1, color);
+		// putpixel(img, x, y + 1, color);
 		break;
 
 	case 3:
-		h_line(img, x - 2, y - 2, 4, color);
-		h_line(img, x - 2, y - 1, 4, color);
-		h_line(img, x - 3, y, 6, color);
-		h_line(img, x - 2, y + 1, 4, color);
-		h_line(img, x - 2, y + 2, 4, color);
-		break;
-
-	case 4:
 		h_line(img, x - 2, y - 3, 4, color);
 		h_line(img, x - 3, y - 2, 6, color);
 		h_line(img, x - 3, y - 1, 6, color);
-		h_line(img, x - 4, y, 8, color);
+		h_line(img, x - 3, y, 6, color);
 		h_line(img, x - 3, y + 1, 6, color);
+		h_line(img, x - 2, y + 2, 4, color);
+	
+		// h_line(img, x - 2, y - 2, 4, color);
+		// h_line(img, x - 2, y - 1, 4, color);
+		// h_line(img, x - 3, y, 6, color);
+		// h_line(img, x - 2, y + 1, 4, color);
+		// h_line(img, x - 2, y + 2, 4, color);
+		break;
+
+	case 4:
+		h_line(img, x - 2, y - 4, 4, color);
+		h_line(img, x - 3, y - 3, 6, color);
+		h_line(img, x - 4, y - 2, 8, color);
+		h_line(img, x - 4, y - 1, 8, color);
+		h_line(img, x - 4, y, 8, color);
+		h_line(img, x - 4, y + 1, 8, color);
 		h_line(img, x - 3, y + 2, 6, color);
 		h_line(img, x - 2, y + 3, 4, color);
+
+		// h_line(img, x - 2, y - 3, 4, color);
+		// h_line(img, x - 3, y - 2, 6, color);
+		// h_line(img, x - 3, y - 1, 6, color);
+		// h_line(img, x - 4, y, 8, color);
+		// h_line(img, x - 3, y + 1, 6, color);
+		// h_line(img, x - 3, y + 2, 6, color);
+		// h_line(img, x - 2, y + 3, 4, color);
 		break;
 
 	default: {
-		int r2 = radius * radius;
-		for(int y1 = -radius;y1 <= 0;y1++) {
-			for(int x1 =- radius;x1 <= 0;x1++) {
-				if(x1 * x1 + y1 * y1 <= r2) {
+		// to offset the coordinaets by 0.5, we double all sizes and add one to
+		// each coordinate
+
+		int r_dbl_sq = (radius * radius) * 4;
+		for (int y1 = -radius; y1 <= 0; y1++) {
+			int y_dbl_offs = 2 * y1 + 1;
+			int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
+			for(int x1 = -radius;x1 <= 0;x1++) {
+				int x_dbl_offs = 2 * x1 + 1;
+				if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= r_dbl_sq)
+				{
 					h_line(img, x + x1, y + y1, 2 * (-x1), color);
-					h_line(img, x + x1, y - y1, 2 * (-x1), color);
+					if (y1 != 0) {
+						h_line(img, x + x1, y - y1 - 1, 2 * (-x1), color);
+					}
 					break;
 				}
 			}
 		}
+		/*
+		radius_sq = radius * radius
+		radius_dbl_sq = radius_sq * 4
+		for y1 in range(-radius, 1):
+			for x1 in range(-radius, 1):
+				x_dbl_offs = 2 * x1 + 1
+				y_dbl_offs = 2 * y1 + 1
+				if x_dbl_offs * x_dbl_offs + y_dbl_offs * y_dbl_offs <= radius_dbl_sq:
+					# print(f"drew @ ({x + x1}, {y - y1}) width: {2 * (-x1)}")
+					h_line(image, x + x1, y + y1, 2 * (-x1), color)
+					if y1 != 0:
+						h_line(image, x + x1, y - y1 - 1, 2 * (-x1), color)
+
+					break
+		*/
 	} break;
 	}
 }
@@ -709,7 +799,763 @@ static void fill_triangle(image_buffer_t *img, int x0, int y0,
 	}
 }
 
-static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end,
+/*
+def draw_arc_minimized(image: Image.Image, c_x: int, c_y: int, radius: int, angle0: float, angle1: float, thickness: int, rounded: bool, filled: bool, color: Tuple[int, int, int]):
+    # returns pair of bools representing (is_past_line, is_on_line)
+    def point_past_line(x: int, y: int, line_start_x: int, line_start_y: int, line_end_x: int, line_end_y: int) -> int:
+        # source: https://stackoverflow.com/a/11908158/15507414
+
+        # this is not really a cross product, but whatever...
+        cross_prod = (x - line_start_x) * (line_end_y - line_start_y)\
+            - (y - line_start_y) * (line_end_x - line_start_x)
+
+        if cross_prod > 0:
+            return 1
+        elif cross_prod < 0:
+            return -1
+        else:
+            return 0
+
+    def points_are_same_quadrant(x0: int, y0: int, x1: int, y1: int) -> bool:
+        return (sign(x0) == sign(x1) or (sign(x0) == 0 or sign(x1) == 0))\
+            and (sign(y0) == sign(y1) or (sign(y0) == 0 or sign(y1) == 0))
+
+    # handles the horizontal line at the given outer arc point
+    def handle_line(outer_x: int, outer_y: int):
+        if outer_y > max_y or outer_y < min_y:
+            return
+
+        line_is_past_0 = point_past_line(
+            outer_x, outer_y, 0, 0, outer_x0, outer_y0)
+        line_is_past_1 = -point_past_line(
+            outer_x, outer_y, 0, 0, outer_x1, outer_y1)
+
+        if filled:
+            in_cap0 = outer_y <= cap0_max_y\
+                and sign(outer_y0) == sign(outer_y)\
+                and sign(outer_x0) == sign(outer_x)
+            in_cap1 = outer_y <= cap1_max_y\
+                and sign(outer_y1) == sign(outer_y)\
+                and sign(outer_x1) == sign(outer_x)
+        else:
+            in_cap0 = outer_y >= cap0_min_y\
+                and outer_y <= cap0_max_y\
+                and sign(outer_x) == sign(outer_x0)
+            in_cap1 = outer_y >= cap1_min_y\
+                and outer_y <= cap1_max_y\
+                and sign(outer_x) == sign(outer_x1)
+        in_both = in_cap0 and in_cap1
+
+        slice_is_split = False
+
+        caps_in_same_quadrant = points_are_same_quadrant(
+            outer_x0, outer_y0, outer_x1, outer_y1)
+
+        in_cap0_quadrant = points_are_same_quadrant(
+            outer_x, outer_y, outer_x0, outer_y0)
+        in_cap1_quadrant = points_are_same_quadrant(
+            outer_x, outer_y, outer_x1, outer_y1)
+
+        # Check if slice is outside caps and drawn sections of the arc
+        if not in_cap0 and not in_cap1:
+            if angle_is_closed:
+                if line_is_past_0 == 1 and line_is_past_1 == 1\
+                        and (not caps_in_same_quadrant
+                             or (in_cap0_quadrant and in_cap1_quadrant)):  # failsafe for closed angles with a very small differences
+                    return
+            else:
+                if line_is_past_0 == 1 or line_is_past_1 == 1:
+                    return
+
+        # Find slice width given no arcs
+        if filled:
+            slice_filled = True
+        else:
+            if outer_y < 0:
+                slice_filled = -outer_y > radius_inner
+            else:
+                slice_filled = outer_y >= radius_inner
+
+        if slice_filled:
+            if outer_x < 0:
+                x = outer_x
+                width = -x
+            else:
+                x = 0
+                width = outer_x + 1
+        else:
+            x = outer_x
+            cur_x = outer_x
+            delta = -1 if outer_x > 0 else 1
+
+            # TODO: this can probably be binary searched
+            y_dbl_off = outer_y * 2 + 1
+            y_dbl_off_sq = y_dbl_off * y_dbl_off
+            while True:
+                cur_x += delta
+                x_dbl_off = cur_x * 2 + 1
+                if x_dbl_off * x_dbl_off + y_dbl_off_sq <= radius_inner_dbl_sq \
+                        or abs(x) > 2000:  # failsafe
+                    break
+            width = abs(cur_x - x)
+            if outer_x > 0:
+                x = cur_x + 1
+
+        if in_cap0 or in_cap1:
+            # Check which cap lines intersects this slice
+            x_start = x
+            x_end = x_start + width  # should this have 1 subtracted?
+
+            # when a point is "past" a line, it is on the wrong cleared side of it
+            start_is_past0 = point_past_line(
+                x_start, outer_y, 0, 0, outer_x0, outer_y0)
+            end_is_past0 = point_past_line(
+                x_end, outer_y, 0, 0, outer_x0, outer_y0)
+
+            start_is_past1 = -point_past_line(
+                x_start, outer_y, 0, 0, outer_x1, outer_y1)
+            end_is_past1 = -point_past_line(
+                x_end, outer_y, 0, 0, outer_x1, outer_y1)
+
+            slice_overlaps0 = start_is_past0 != end_is_past0 and (
+                start_is_past0 != 0 or end_is_past0 != 0)
+            slice_overlaps1 = start_is_past1 != end_is_past1 and (
+                start_is_past1 != 0 or end_is_past1 != 0)
+
+            if (in_cap0 and not in_cap1 and start_is_past0 == 1 and end_is_past0 == 1)\
+                    or (not in_cap0 and in_cap1 and start_is_past1 == 1 and end_is_past1 == 1)\
+                    or (in_both and not angle_is_closed and (
+                        start_is_past0 == 1 and end_is_past0 == 1
+                        or start_is_past1 == 1 and end_is_past1 == 1)):
+                return
+
+            if (in_both and slice_overlaps0 and not slice_overlaps1)\
+                    or (in_cap0 and not in_cap1 and slice_overlaps0):
+                # intersect with cap line 0
+                if start_is_past0 != -1 and end_is_past0 != 1:
+                    while start_is_past0 == 1:
+                        x_start += 1
+                        start_is_past0 = point_past_line(
+                            x_start, outer_y, 0, 0, outer_x0, outer_y0)
+                else:
+                    while end_is_past0 == 1:
+                        x_end -= 1
+                        end_is_past0 = point_past_line(
+                            x_end, outer_y, 0, 0, outer_x0, outer_y0)
+            elif (in_both and not slice_overlaps0 and slice_overlaps1)\
+                    or (not in_cap0 and in_cap1 and slice_overlaps1):
+                # intersect with cap line 1
+                if start_is_past1 != -1 and end_is_past1 != 1:
+                    while start_is_past1 == 1:
+                        x_start += 1
+                        start_is_past1 = -point_past_line(
+                            x_start, outer_y, 0, 0, outer_x1, outer_y1)
+                else:
+                    while True:
+                        x_end -= 1
+                        end_is_past1 = -point_past_line(
+                            x_end, outer_y, 0, 0, outer_x1, outer_y1)
+                        if end_is_past1 != 1:
+                            break
+            elif in_both and slice_overlaps0 and slice_overlaps1:
+                # intersect with both cap lines
+                if angle0 < angle1:
+                    if angle0 < pi:
+                        while start_is_past1 == 1:
+                            x_start += 1
+                            start_is_past1 = -point_past_line(
+                                x_start, outer_y, 0, 0, outer_x1, outer_y1)
+                        while True:
+                            x_end -= 1
+                            end_is_past0 = point_past_line(
+                                x_end, outer_y, 0, 0, outer_x0, outer_y0)
+                            if end_is_past0 != 1:
+                                break
+                    else:
+                        while start_is_past0 == 1:
+                            x_start += 1
+                            start_is_past0 = point_past_line(
+                                x_start, outer_y, 0, 0, outer_x0, outer_y0)
+                        while True:
+                            x_end -= 1
+                            end_is_past1 = -point_past_line(
+                                x_end, outer_y, 0, 0, outer_x1, outer_y1)
+                            if end_is_past1 != 1:
+                                break
+                else:
+                    # split slice into two
+
+                    slice_is_split = True
+
+                    x_start0 = x_start
+                    x_end0 = x_end
+                    x_start1 = x_start
+                    x_end1 = x_end
+
+                    if angle0 < pi:
+                        while end_is_past0 == 1:
+                            x_end0 -= 1
+                            end_is_past0 = point_past_line(
+                                x_end0, outer_y, 0, 0, outer_x0, outer_y0)
+                        while start_is_past1 == 1:
+                            x_start1 += 1
+                            start_is_past1 = -point_past_line(
+                                x_start1, outer_y, 0, 0, outer_x1, outer_y1)
+                    else:
+                        while end_is_past1 == 1:
+                            x_end1 -= 1
+                            end_is_past1 = -point_past_line(
+                                x_end1, outer_y, 0, 0, outer_x1, outer_y1)
+                        while start_is_past0 == 1:
+                            x_start0 += 1
+                            start_is_past0 = point_past_line(
+                                x_start0, outer_y, 0, 0, outer_x0, outer_y0)
+                    x_start = x_start0
+                    x_end = x_end0
+                    x1 = x_start1
+                    width1 = x_end1 - x_start1
+            width = x_end - x_start
+            x = x_start
+
+        h_line(image, c_x + x, c_y + outer_y, width, color)
+        if slice_is_split:
+            h_line(image, c_x + x1, c_y + outer_y, width1, color)
+
+    if angle0 == angle1\
+            or radius == 0:
+        return
+
+    should_print = False
+
+    angle0 *= pi / 180.0
+    angle1 *= pi / 180.0
+
+    radius_outer = radius + thickness
+    radius_inner = radius - thickness
+    radius_outer_dbl_sq = radius_outer * radius_outer * 4
+    radius_inner_dbl_sq = radius_inner * radius_inner * 4
+
+    angle0 = norm_angle(angle0)
+    angle1 = norm_angle(angle1)
+
+    # if the angle of the filled in part of the arc is greater than 180°
+    if angle1 - angle0 > 0.0:
+        angle_is_closed = abs(angle1 - angle0) > pi
+    else:
+        angle_is_closed = abs(angle1 - angle0) < pi
+
+    outer_x0_f = cos(angle0) * (radius_outer + 1)
+    outer_y0_f = sin(angle0) * (radius_outer + 1)
+
+    outer_x0 = int(outer_x0_f)
+    outer_y0 = int(outer_y0_f)
+
+    outer_x1_f = cos(angle1) * (radius_outer + 1)
+    outer_y1_f = sin(angle1) * (radius_outer + 1)
+
+    outer_x1 = int(outer_x1_f)
+    outer_y1 = int(outer_y1_f)
+
+    if filled:
+        inner_x0 = 0
+        inner_y0 = 0
+
+        inner_x1 = 0
+        inner_y1 = 0
+    else:
+        inner_x0_f = cos(angle0) * radius_inner
+        inner_y0_f = sin(angle0) * radius_inner
+
+        inner_x0 = int(inner_x0_f)
+        inner_y0 = int(inner_y0_f)
+
+        inner_x1_f = cos(angle1) * radius_inner
+        inner_y1_f = sin(angle1) * radius_inner
+
+        inner_x1 = int(inner_x1_f)
+        inner_y1 = int(inner_y1_f)
+
+    cap0_min_y = min(inner_y0, outer_y0)
+    cap0_max_y = max(inner_y0, outer_y0)
+
+    cap1_min_y = min(inner_y1, outer_y1)
+    cap1_max_y = max(inner_y1, outer_y1)
+
+    # Highest and lowest (y coord wise) drawn line of the base arc (excluding
+    # the circular end caps). This range is *inclusive*!
+    # Note that these might be slightly off due to inconsistent rounding between
+    # Bresenhamn's algorithm and point rotation.
+    min_y = min(outer_y0, outer_y1, inner_y0, inner_y1)
+    max_y = max(outer_y0, outer_y1, inner_y0, inner_y1)
+    if angle0 < angle1:
+        if angle0 < pi_halves and angle1 >= pi_three_halves:
+            min_y = -radius_outer
+            max_y = radius_outer
+        elif angle0 < pi_three_halves and angle1 > pi_three_halves:
+            min_y = -radius_outer
+        elif angle0 < pi_halves and angle1 > pi_halves:
+            max_y = radius_outer
+    else:
+        if angle0 < pi_three_halves and angle1 >= pi_halves\
+                or angle0 < pi_halves\
+                or angle1 > pi_three_halves:
+            min_y = -radius_outer
+            max_y = radius_outer
+        elif angle0 < pi_three_halves and angle1 < pi_halves:
+            min_y = -radius_outer
+        elif angle0 > pi_halves and angle1 > pi_halves:
+            max_y = radius_outer
+
+    for y_hi in range(radius_outer):
+        # print(y_hi)
+        y_dbl_offs = 2 * y_hi + 1
+        y_dbl_offs_sq = y_dbl_offs * y_dbl_offs
+        for x_hi in range(-radius_outer, 1):
+            x_dbl_offs = 2 * x_hi + 1
+            if x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= radius_outer_dbl_sq:
+                handle_line(x_hi, y_hi)
+                handle_line(-x_hi - 1, y_hi)
+                # if y_hi != 0:
+                handle_line(x_hi, -y_hi - 1)
+                handle_line(-x_hi - 1, -y_hi - 1)
+                break
+
+    # draw rounded line corners
+    if rounded and not filled:
+        cap0_center_x = int(cos(angle0) * (radius_inner + thickness + 0.5))
+        cap0_center_y = int(sin(angle0) * (radius_inner + thickness + 0.5))
+
+        cap1_center_x = int(cos(angle1) * (radius_inner + thickness + 0.5))
+        cap1_center_y = int(sin(angle1) * (radius_inner + thickness + 0.5))
+
+        draw_circle(image, c_x + cap0_center_x, c_y +
+                    cap0_center_y, thickness, color)
+        draw_circle(image, c_x + cap1_center_x, c_y +
+                    cap1_center_y, thickness, color)
+
+*/
+
+// arc helper function
+// handles the horizontal slice at the given outer arc point
+static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int c_x, int c_y, uint32_t color,
+		int outer_x0, int outer_y0, int outer_x1, int outer_y1,
+		int inner_x0, int inner_y0, int inner_x1, int inner_y1,
+		int cap0_min_y, int cap0_max_y, int cap1_min_y, int cap1_max_y,
+		int radius_outer, int radius_inner,
+		int min_y, int max_y,
+		float angle0, float angle1, bool angle_is_closed, bool filled,
+		int radius_inner_dbl_sq) {
+	if (outer_y > max_y || outer_y < min_y) {
+		return;
+	}
+			
+	int line_is_past_0 = point_past_line(outer_x, outer_y, 0, 0, outer_x0, outer_y0);
+	int line_is_past_1 = -point_past_line(outer_x, outer_y, 0, 0, outer_x1, outer_y1);
+
+	int outer_x_sign = sign(outer_x);
+	int outer_y_sign = sign(outer_y);
+
+	int outer_x0_sign = sign(outer_x0);
+	int outer_y0_sign = sign(outer_y0);
+	
+	int outer_x1_sign = sign(outer_x1);
+	int outer_y1_sign = sign(outer_y1);
+
+	bool in_cap0, in_cap1, in_both_caps;
+	if (filled) {
+		in_cap0 = outer_y <= cap0_max_y
+			&& outer_x0_sign == outer_x_sign
+			&& outer_y0_sign == outer_y_sign;
+		in_cap1 = outer_y <= cap1_max_y
+			&& outer_x1_sign == outer_x_sign
+			&& outer_y1_sign == outer_y_sign;
+	} else {
+		in_cap0 = outer_y >= cap0_min_y
+			&& outer_y <= cap0_max_y
+			&& outer_x_sign == outer_x0_sign;
+		in_cap1 = outer_y >= cap1_min_y
+			&& outer_y <= cap1_max_y
+			&& outer_x_sign == outer_x1_sign;
+	}
+	// if (in_cap0) {
+	// 	color = 2;
+	// }
+	// if (in_cap1) {
+	// 	color = 3;
+	// }
+	in_both_caps = in_cap0 && in_cap1;
+
+	bool in_cap0_quadrant = points_same_quadrant(outer_x, outer_y, outer_x0, outer_y0);
+	bool in_cap1_quadrant = points_same_quadrant(outer_x, outer_y, outer_x1, outer_y1);
+
+	bool caps_in_same_quadrant = points_same_quadrant(outer_x0, outer_y0, outer_x1, outer_y1);
+
+	// Check if slice is outside caps and drawn sections of the arc.
+	if (!in_cap0 && !in_cap1) {
+		if (angle_is_closed) {
+			if (line_is_past_0 == 1 && line_is_past_1 == 1
+				// Failsafe for closed angles with a very small difference.
+				// Otherwise a tiny section at the opposite side of the arc
+				// might get skipped.
+				&& (!caps_in_same_quadrant || (in_cap0_quadrant && in_cap1_quadrant))) {
+				return;
+			} 
+		} else {
+			if (line_is_past_0 == 1 || line_is_past_1 == 1) {
+				return;
+			}
+		}
+	}
+
+	// Find slice width if arc spanned the complete circle.
+	int x, x1;
+	int width, width1;
+	bool slice_is_split = false;
+	
+	bool slice_filled;
+	if (filled) {
+		slice_filled = true;
+	} else {
+		if (outer_y < 0) {
+			slice_filled = -outer_y > radius_inner;
+		} else {
+			slice_filled = outer_y >= radius_inner;
+		}
+	}
+
+	if (slice_filled) {
+		if (outer_x < 0) {
+			x = outer_x;
+			width = -x;
+		} else {
+			x = 0;
+			width = outer_x + 1;
+		}
+	} else {
+		x = outer_x;
+		int cur_x = outer_x;
+		int delta = outer_x > 0 ? -1 : 1;
+
+		// TODO: this can probably be binary searched
+		int y_dbl_off = outer_y * 2 + 1;
+		int y_dbl_off_sq = y_dbl_off * y_dbl_off;
+		while (true) {
+			cur_x += delta;
+			int x_dbl_off = cur_x * 2 + 1;
+			if (x_dbl_off * x_dbl_off + y_dbl_off_sq <= radius_inner_dbl_sq
+				|| abs(x) > 2000) { // failsafe
+				break;
+			}
+		}
+		width = abs(cur_x - x);
+		if (outer_x > 0) {
+			x = cur_x + 1;
+		}
+	}
+
+	// Check which cap lines intersects this slice
+	if (in_cap0 || in_cap1) {
+		int x_start = x;
+		int x_end = x_start + width;
+
+		int x_start1;
+		int x_end1;
+
+		// when a point is "past" a line, it is on the wrong cleared side of it
+		int start_is_past0 = point_past_line(x_start, outer_y,
+			0, 0,
+			outer_x0, outer_y0);
+		int end_is_past0 = point_past_line(x_end, outer_y,
+			0, 0,
+			outer_x0, outer_y0);
+
+		int start_is_past1 = -point_past_line(x_start, outer_y,
+			0, 0,
+			outer_x1, outer_y1);
+		int end_is_past1 = -point_past_line(x_end, outer_y,
+			0, 0,
+			outer_x1, outer_y1);
+		
+		bool slice_overlaps0 = start_is_past0 != end_is_past0
+			&& (start_is_past0 != 0 || end_is_past0 != 0);
+		bool slice_overlaps1 = start_is_past1 != end_is_past1
+			&& (start_is_past1 != 0 || end_is_past1 != 0);
+		
+		if ((in_cap0 && !in_cap1 && start_is_past0 == 1 && end_is_past0 == 1)
+			|| (!in_cap0 && in_cap1 && start_is_past1 == 1 && end_is_past1 == 1)
+			|| (in_both_caps && !angle_is_closed && (
+				(start_is_past0 == 1 && end_is_past0 == 1)
+				|| (start_is_past1 == 1 && end_is_past1 == 1)
+			))) {
+			return;
+		}
+
+		// The repetition in all these cases can probably be reduced...
+		if ((in_both_caps && slice_overlaps0 && !slice_overlaps1)
+			|| (in_cap0 && !in_cap1 && slice_overlaps0)) {
+			// intersect with cap line 0
+			if (start_is_past0 != -1 && end_is_past0 != 1) {
+				while (start_is_past0 == 1) {
+					x_start += 1;
+					start_is_past0 = point_past_line(x_start, outer_y,
+						0, 0,
+						outer_x0, outer_y0);
+				}
+			} else {
+				// 1
+				while (end_is_past0 == 1) {
+					x_end -= 1;
+					end_is_past0 = point_past_line(x_end, outer_y,
+						0, 0,
+						outer_x0, outer_y0);
+				}
+			}
+		} else if ((in_both_caps && !slice_overlaps0 && slice_overlaps1)
+			|| (!in_cap0 && in_cap1 && slice_overlaps1)) {
+			// intersect with cap line 1
+			if (start_is_past1 != -1 && end_is_past1 != 1) {
+				// 2
+				while (start_is_past1 == 1) {
+					x_start += 1;
+					start_is_past1 = -point_past_line(x_start, outer_y,
+						0, 0,
+						outer_x1, outer_y1);
+				}
+			} else {
+				while (end_is_past1 == 1) {
+					x_end -= 1;
+					end_is_past1 = -point_past_line(x_end, outer_y,
+						0, 0,
+						outer_x1, outer_y1);
+				}
+			}
+		} else if (in_both_caps && slice_overlaps0 && slice_overlaps1) {
+			// intersect with both cap lines
+			if (angle0 < angle1) {
+				if (angle0 < M_PI) {
+					while (start_is_past1 == 1) {
+						x_start += 1;
+						start_is_past1 = -point_past_line(x_start, outer_y,
+							0, 0,
+							outer_x1, outer_y1);
+					}
+					while (end_is_past0 == 1) {
+						x_end -= 1;
+						end_is_past0 = point_past_line(x_end, outer_y,
+							0, 0,
+							outer_x0, outer_y0);
+					}
+				} else {
+					while (start_is_past0 == 1) {
+						x_start += 1;
+						start_is_past0 = point_past_line(x_start, outer_y,
+							0, 0,
+							outer_x0, outer_y0);
+					}
+					while (end_is_past1 == 1) {
+						x_end -= 1;
+						end_is_past1 = -point_past_line(x_end, outer_y,
+							0, 0,
+							outer_x1, outer_y1);
+					}
+				}
+			} else {
+				// split slice into two
+
+				slice_is_split = true;
+
+				x_start1 = x_start;
+				x_end1 = x_end;
+
+				if (angle0 < M_PI) {
+					// 9
+					while (end_is_past0 == 1) {
+						x_end -= 1;
+						end_is_past0 = point_past_line(x_end, outer_y,
+							0, 0,
+							outer_x0, outer_y0);
+					}
+					while (start_is_past1 == 1) {
+						x_start1 += 1;
+						start_is_past1 = -point_past_line(x_start1, outer_y,
+							0, 0,
+							outer_x1, outer_y1);
+					}
+				} else {
+					while (end_is_past1 == 1) {
+						x_end1 -= 1;
+						end_is_past1 = -point_past_line(x_end1, outer_y,
+							0, 0,
+							outer_x1, outer_y1);
+					}
+					while (start_is_past0 == 1) {
+						x_start += 1;
+						start_is_past0 = point_past_line(x_start, outer_y,
+							0, 0,
+							outer_x0, outer_y0);
+					}
+				}
+
+				x1 = x_start1;
+				width1 = x_end1 - x_start1;
+			}
+		}
+		x = x_start;
+		width = x_end - x_start;
+	}
+
+	h_line(img, c_x + x, c_y + outer_y, width, color); 
+	if (slice_is_split) {
+		h_line(img, c_x + x1, c_y + outer_y, width1, color);
+	}
+}
+
+static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0, float angle1,
+		int thickness, bool rounded, bool filled, bool sector, uint32_t color) {
+	if (angle0 == angle1
+		|| radius == 0
+		|| thickness == 0) {
+		return;
+	}
+
+	angle0 *= M_PI / 180.0;
+	angle1 *= M_PI / 180.0;
+	norm_angle_0_2pi(&angle0);
+	norm_angle_0_2pi(&angle1);
+
+	bool angle_is_closed;
+
+	// if the angle of the filled in part of the arc is greater than 180°
+	if (angle1 - angle0 > 0.0) {
+		angle_is_closed = fabsf(angle1 - angle0) > M_PI;
+	} else {
+		angle_is_closed = fabsf(angle1 - angle0) < M_PI;
+	}
+
+	int radius_outer = radius + thickness;
+	int radius_inner = radius - thickness;
+	int radius_outer_dbl_sq = radius_outer * radius_outer * 4;
+	int radius_inner_dbl_sq = radius_inner * radius_inner * 4;
+
+	float angle0_cos = cosf(angle0);
+	float angle0_sin = sinf(angle0);
+	float angle1_cos = cosf(angle1);
+	float angle1_sin = sinf(angle1);
+	
+	int outer_x0 = (int)(angle0_cos * (float)(radius_outer + 1));
+	int outer_y0 = (int)(angle0_sin * (float)(radius_outer + 1));
+
+	int outer_x1 = (int)(angle1_cos * (float)(radius_outer + 1));
+	int outer_y1 = (int)(angle1_sin * (float)(radius_outer + 1));
+
+	int inner_x0, inner_y0;
+	int inner_x1, inner_y1;
+
+	if (filled) {
+		inner_x0 = 0;
+		inner_y0 = 0;
+
+		inner_x1 = 0;
+		inner_y1 = 0;
+	} else {
+		inner_x0 = (int)(angle0_cos * (float)radius_inner);
+		inner_y0 = (int)(angle0_sin * (float)radius_inner);
+
+		inner_x1 = (int)(angle1_cos * (float)radius_inner);
+		inner_y1 = (int)(angle1_sin * (float)radius_inner);
+	}
+
+	int cap0_min_y = MIN(inner_y0, outer_y0);
+	int cap0_max_y = MAX(inner_y0, outer_y0);
+	
+	int cap1_min_y = MIN(inner_y1, outer_y1);
+	int cap1_max_y = MAX(inner_y1, outer_y1);
+	
+	// Highest and lowest (y coord wise) drawn line of the base arc (excluding
+	// the circular end caps). This range is *inclusive*!
+	// Note that these might be slightly off due to inconsistent rounding between
+	// Bresenhamn's algorithm and point rotation.
+	int min_y = MIN(outer_y0, MIN(outer_y1, MIN(inner_y0, inner_y1)));
+	int max_y = MAX(outer_y0, MAX(outer_y1, MAX(inner_y0, inner_y1)));
+	if (angle0 < angle1) {
+		if (angle0 < M_PI_2 && angle1 >= M_3PI_2) {
+			min_y = -radius_outer;
+			max_y = radius_outer;
+		} else if (angle0 < M_3PI_2 && angle1 > M_3PI_2) {
+			min_y = -radius_outer;
+		} else if (angle0 < M_PI_2 && angle1 > M_PI_2) {
+			max_y = radius_outer; 
+		}
+	} else {
+		if ((angle0 < M_3PI_2 && angle1 >= M_PI_2)
+			|| (angle0 < M_PI_2)
+			|| (angle1 > M_3PI_2)) {
+			min_y = -radius_outer;
+			max_y = radius_outer;
+		} else if (angle0 < M_3PI_2 && angle1 < M_PI_2) {
+			min_y = -radius_outer;
+		} else if (angle0 > M_PI_2 && angle1 > M_PI_2) {
+			max_y = radius_outer;
+		}
+	}
+
+	for (int y = 0; y < radius_outer; y++) {
+		int y_dbl_offs = 2 * y + 1;
+		int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
+
+		for (int x = -radius_outer; x <= 0; x++) {
+			int x_dbl_offs = 2 * x + 1;
+			if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= radius_outer_dbl_sq) {
+				// This is horrible...
+				handle_arc_slice(img, x, y,
+					c_x, c_y, color, outer_x0, outer_y0, outer_x1, outer_y1, inner_x0, inner_y0, inner_x1, inner_y1, cap0_min_y, cap0_max_y, cap1_min_y, cap1_max_y, radius_outer, radius_inner, min_y, max_y, angle0, angle1, angle_is_closed, filled, radius_inner_dbl_sq);
+				handle_arc_slice(img, -x - 1, y,
+					c_x, c_y, color, outer_x0, outer_y0, outer_x1, outer_y1, inner_x0, inner_y0, inner_x1, inner_y1, cap0_min_y, cap0_max_y, cap1_min_y, cap1_max_y, radius_outer, radius_inner, min_y, max_y, angle0, angle1, angle_is_closed, filled, radius_inner_dbl_sq);
+
+				handle_arc_slice(img, x, -y - 1,
+					c_x, c_y, color, outer_x0, outer_y0, outer_x1, outer_y1, inner_x0, inner_y0, inner_x1, inner_y1, cap0_min_y, cap0_max_y, cap1_min_y, cap1_max_y, radius_outer, radius_inner, min_y, max_y, angle0, angle1, angle_is_closed, filled, radius_inner_dbl_sq);
+				handle_arc_slice(img, -x - 1, -y - 1,
+					c_x, c_y, color, outer_x0, outer_y0, outer_x1, outer_y1, inner_x0, inner_y0, inner_x1, inner_y1, cap0_min_y, cap0_max_y, cap1_min_y, cap1_max_y, radius_outer, radius_inner, min_y, max_y, angle0, angle1, angle_is_closed, filled, radius_inner_dbl_sq);
+
+				break;
+			}
+		}
+	}
+
+	// draw rounded line corners
+	if (rounded && !filled) {
+		float radius = (float)(radius_inner + thickness) + 0.5;
+
+		int cap0_center_x = (int)(angle0_cos * radius);
+		int cap0_center_y = (int)(angle0_sin * radius);
+
+		int cap1_center_x = (int)(angle1_cos * radius);
+		int cap1_center_y = (int)(angle1_sin * radius);
+
+		fill_circle(img, c_x + cap0_center_x, c_y + cap0_center_y, thickness, color);
+		fill_circle(img, c_x + cap1_center_x, c_y + cap1_center_y, thickness, color);
+	}
+
+	// draw sector arc cap to center lines
+	// (sectors are always rounded)
+	if (sector && !filled) {
+		float radius = (float)(radius_inner + thickness) + 0.5;
+
+		int cap0_center_x = (int)(angle0_cos * radius);
+		int cap0_center_y = (int)(angle0_sin * radius);
+
+		int cap1_center_x = (int)(angle1_cos * radius);
+		int cap1_center_y = (int)(angle1_sin * radius);
+
+		line(img, c_x + cap0_center_x, c_y + cap0_center_y,
+			c_x, c_y, thickness, 0, 0, color);
+		line(img, c_x + cap1_center_x, c_y + cap1_center_y,
+			c_x, c_y, thickness, 0, 0, color);
+	}
+}
+
+
+static void generic_arc(image_buffer_t *img, int x, int y, int rad, float ang_start, float ang_end,
 		int thickness, bool filled, int dot1, int dot2, int res, bool sector, bool segment, uint32_t color) {
 	ang_start *= M_PI / 180.0;
 	ang_end *= M_PI / 180.0;
@@ -735,6 +1581,7 @@ static void arc(image_buffer_t *img, int x, int y, int rad, float ang_start, flo
 
 	float px_start = cosf(ang_start) * (float)rad;
 	float py_start = sinf(ang_start) * (float)rad;
+	
 
 	float px = px_start;
 	float py = py_start;
@@ -1022,6 +1869,12 @@ static img_args_t decode_args(lbm_value *args, lbm_uint argn, int num_expected) 
 				curr = lbm_cdr(curr);
 			}
 
+			// does this really compare the pointer addresses?
+			if (attr_now == &res.attr_rounded && attr_ind == 1) {
+				attr_now->arg_num = 0; // the `rounded` attribute may be empty
+			}
+
+
 			if ((attr_ind - 1) == attr_now->arg_num) {
 				attr_now->is_valid = true;
 			} else {
@@ -1250,7 +2103,7 @@ static lbm_value ext_circle(lbm_value *args, lbm_uint argn) {
 				lbm_dec_as_i32(arg_dec.args[2]),
 				lbm_dec_as_i32(arg_dec.args[3]));
 	} if (arg_dec.attr_dotted.is_valid) {
-		arc(arg_dec.img,
+		generic_arc(arg_dec.img,
 				lbm_dec_as_i32(arg_dec.args[0]),
 				lbm_dec_as_i32(arg_dec.args[1]),
 				lbm_dec_as_i32(arg_dec.args[2]),
@@ -1281,7 +2134,8 @@ static lbm_value ext_arc(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	arc(arg_dec.img,
+	if (lbm_dec_as_i32(arg_dec.attr_dotted.args[0]) > 0) {
+		generic_arc(arg_dec.img,
 			lbm_dec_as_i32(arg_dec.args[0]),
 			lbm_dec_as_i32(arg_dec.args[1]),
 			lbm_dec_as_i32(arg_dec.args[2]),
@@ -1294,6 +2148,19 @@ static lbm_value ext_arc(lbm_value *args, lbm_uint argn) {
 			lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
 			false, false,
 			lbm_dec_as_i32(arg_dec.args[5]));
+	} else {
+		arc(arg_dec.img,
+			lbm_dec_as_i32(arg_dec.args[0]),
+			lbm_dec_as_i32(arg_dec.args[1]),
+			lbm_dec_as_i32(arg_dec.args[2]),
+			lbm_dec_as_float(arg_dec.args[3]),
+			lbm_dec_as_float(arg_dec.args[4]),
+			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+			arg_dec.attr_rounded.is_valid,
+			arg_dec.attr_filled.is_valid,
+			false,
+			lbm_dec_as_i32(arg_dec.args[5]));
+	}
 
 	return ENC_SYM_TRUE;
 }
@@ -1305,7 +2172,8 @@ static lbm_value ext_circle_sector(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	arc(arg_dec.img,
+	if (lbm_dec_as_i32(arg_dec.attr_dotted.args[0]) > 0) {
+		generic_arc(arg_dec.img,
 			lbm_dec_as_i32(arg_dec.args[0]),
 			lbm_dec_as_i32(arg_dec.args[1]),
 			lbm_dec_as_i32(arg_dec.args[2]),
@@ -1318,6 +2186,19 @@ static lbm_value ext_circle_sector(lbm_value *args, lbm_uint argn) {
 			lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
 			true, false,
 			lbm_dec_as_i32(arg_dec.args[5]));
+	} else {
+		arc(arg_dec.img,
+			lbm_dec_as_i32(arg_dec.args[0]),
+			lbm_dec_as_i32(arg_dec.args[1]),
+			lbm_dec_as_i32(arg_dec.args[2]),
+			lbm_dec_as_float(arg_dec.args[3]),
+			lbm_dec_as_float(arg_dec.args[4]),
+			lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+			true,
+			arg_dec.attr_filled.is_valid,
+			true,
+			lbm_dec_as_i32(arg_dec.args[5]));
+	}
 
 	return ENC_SYM_TRUE;
 }
@@ -1329,19 +2210,19 @@ static lbm_value ext_circle_segment(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	arc(arg_dec.img,
-		lbm_dec_as_i32(arg_dec.args[0]),
-		lbm_dec_as_i32(arg_dec.args[1]),
-		lbm_dec_as_i32(arg_dec.args[2]),
-		lbm_dec_as_float(arg_dec.args[3]),
-		lbm_dec_as_float(arg_dec.args[4]),
-		lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
-		arg_dec.attr_filled.is_valid,
-		lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
-		lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
-		lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
-		false, true,
-		lbm_dec_as_i32(arg_dec.args[5]));
+	generic_arc(arg_dec.img,
+				lbm_dec_as_i32(arg_dec.args[0]),
+				lbm_dec_as_i32(arg_dec.args[1]),
+				lbm_dec_as_i32(arg_dec.args[2]),
+				lbm_dec_as_float(arg_dec.args[3]),
+				lbm_dec_as_float(arg_dec.args[4]),
+				lbm_dec_as_i32(arg_dec.attr_thickness.args[0]),
+				arg_dec.attr_filled.is_valid,
+				lbm_dec_as_i32(arg_dec.attr_dotted.args[0]),
+				lbm_dec_as_i32(arg_dec.attr_dotted.args[1]),
+				lbm_dec_as_i32(arg_dec.attr_resolution.args[0]),
+				false, true,
+				lbm_dec_as_i32(arg_dec.args[5]));
 
 	return ENC_SYM_TRUE;
 }
@@ -1375,14 +2256,15 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 			fill_circle(img, x + width - rad, y + rad, rad, color);
 			fill_circle(img, x + width - rad, y + height - rad, rad, color);
 		} else {
+			// TODO: These should probably use the new arc algorithm unless dotted
 			line(img, x + rad, y, x + width - rad, y, thickness, dot1, dot2, color);
-			arc(img, x + rad, y + rad, rad, 180, 270, thickness, false, dot1, dot2, resolution, false, false, color);
+			generic_arc(img, x + rad, y + rad, rad, 180, 270, thickness, false, dot1, dot2, resolution, false, false, color);
 			line(img, x + rad, y + height, x + width - rad, y + height, thickness, dot1, dot2, color);
-			arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, false, dot1, dot2, resolution, false, false, color);
+			generic_arc(img, x + rad, y + height - rad, rad, 90, 180, thickness, false, dot1, dot2, resolution, false, false, color);
 			line(img, x, y + rad, x, y + height - rad, thickness, dot1, dot2, color);
-			arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, false, dot1, dot2, resolution, false, false, color);
+			generic_arc(img, x + width - rad, y + height - rad, rad, 0, 90, thickness, false, dot1, dot2, resolution, false, false, color);
 			line(img, x + width, y + rad, x + width, y + height - rad, thickness, dot1, dot2, color);
-			arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, false, dot1, dot2, resolution, false, false, color);
+			generic_arc(img, x + width - rad, y + rad, rad, 270, 0, thickness, false, dot1, dot2, resolution, false, false, color);
 		}
 	} else {
 		rectangle(img,
