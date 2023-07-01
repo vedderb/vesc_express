@@ -112,7 +112,12 @@ uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
 		uint32_t b2 = color.color2 & 0xff;
 
 		int pos = color.type == COLOR_GRADIENT_X ? x : y;
-		int tab_pos = ((pos * 256) / color.param1 + color.param2) % 256;
+		// int tab_pos = ((pos * 256) / color.param1 + color.param2) % 256;
+		int tab_pos = (((pos - color.param2) * 256) / color.param1 / 2) % 256;
+		if (tab_pos < 0) {
+			tab_pos = 256 + tab_pos;
+		}
+
 		int tab_val = cos_tab_256[tab_pos];
 
 		uint32_t r = (r1 * tab_val + r2 * (255 - tab_val)) / 255;
