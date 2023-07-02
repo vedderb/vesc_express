@@ -86,10 +86,16 @@ reference sections.
 The functions that draw onto an image-buffer takes optional arguments
 that specify extra attributes to apply when drawing. These attributes are:
 
-1. `'(thickness w)`: Line thickness w 
+1. `'(thickness w)`: Line thickness `w`. Note that this specifies the thickness
+   from the line center to edge. So the total line thickness is actually equal
+   to two times `w`
 2. `'(dotted d-len d-space-len)`: Dotted or dashed lines with `d-len` long line segments separated by `d-space-len`.
 3. `'(filled)`: Specifies that the shape should be filled. 
-4. `'(rounded radius)`: Specifies that the shape should have rounded corners. 
+4. `'(rounded radius)`: Specifies that the shape should have rounded corners.
+   Additionaly, the `img-arc` function can take this argument in the form
+   `'(rounded)` to specify that, when the arc isn't filled, the line ends
+   should be rounded. Sadly, this is the only function that can draw lines
+   with square ends right now.
 5. `'(scale scale-f)`: Scale the image by factor `scale-f`
 6. `'(rotate rx ry deg)`: Rotate an image around point (`rx`,`ry`), `deg`
    degrees.
@@ -97,6 +103,8 @@ that specify extra attributes to apply when drawing. These attributes are:
    When drawing any kind of arcs, they are simplified into a series of lines
    where the actual amount of steps is scaled from `0` to `steps` based on the arc
    angle span.
+   This is only relevant when drawing dotted arcs, because non dotted arcs use a
+   newer pixel perfect algorithm.
    Note that this isn't just limited to `img-arc`, but every function that
    draws any kind of arc, like actual arcs, circle segments and sectors, rounded
    shapes, or dotted circles.
@@ -412,6 +420,17 @@ Applicable attributes:
 2. filled
 3. thickness
 4. resolution
+5. rounded
+
+Example drawing an arc with square corners
+```clj
+(img-arc img 100 100 50 160 320 1)
+```
+
+Example drawing an arc with rounded corners
+```clj
+(img-arc img 100 100 50 160 320 1 '(rounded))
+```
 
 Example drawing a dashed (dotted) arc:
 ```clj
