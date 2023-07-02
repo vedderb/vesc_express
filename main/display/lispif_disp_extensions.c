@@ -1080,9 +1080,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 
 static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0, float angle1,
 		int thickness, bool rounded, bool filled, bool sector, uint32_t color) {
-	if (angle0 == angle1
-		|| radius == 0
-		|| thickness == 0) {
+	if (radius == 0 || thickness == 0) {
 		return;
 	}
 
@@ -1090,6 +1088,10 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	angle1 *= M_PI / 180.0;
 	norm_angle_0_2pi(&angle0);
 	norm_angle_0_2pi(&angle1);
+
+	if (angle0 == angle1) {
+		return;
+	}
 
 	bool angle_is_closed;
 
