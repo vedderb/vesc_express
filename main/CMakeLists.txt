@@ -63,6 +63,9 @@ set(COMPONENT_SRCS
 "display/disp_st7735.c"
 "display/disp_ssd1351.c"
 "display/tjpgd.c"
+
+"drivers/bme280/bme280.c"
+"drivers/bme280/bme280_if.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS
@@ -76,6 +79,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "lispBM/include"
 "lispBM/platform/freertos/include"
 "display"
+"drivers"
+"drivers/bme280"
 )
 
 register_component()
