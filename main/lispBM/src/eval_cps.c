@@ -170,7 +170,6 @@ typedef struct {
   eval_context_t *last;
 } eval_context_queue_t;
 
-
 static int gc(void);
 void error_ctx(lbm_value);
 static void enqueue_ctx(eval_context_queue_t *q, eval_context_t *ctx);
@@ -656,6 +655,28 @@ static void block_current_ctx(lbm_uint sleep_us, uint32_t wait_mask, bool do_con
   ctx_running->app_cont = do_cont;
   enqueue_ctx(&blocked, ctx_running);
   ctx_running = NULL;
+}
+
+lbm_flash_status lbm_write_const_array_padded(uint8_t *data, lbm_uint n, lbm_uint *res) {
+  lbm_uint full_words = n / sizeof(lbm_uint);
+  lbm_uint n_mod = n % sizeof(lbm_uint);
+
+  if (n_mod == 0) { // perfect fit.
+    return lbm_write_const_raw((lbm_uint*)data, full_words, res);
+  } else {
+    lbm_uint last_word = 0;
+    memcpy(&last_word, &data[full_words * sizeof(lbm_uint)], n_mod);
+    if (full_words >= 1) {
+      lbm_flash_status s = lbm_write_const_raw((lbm_uint*)data, full_words, res);
+      if ( s == LBM_FLASH_WRITE_OK) {
+        lbm_uint dummy;
+        s = lbm_write_const_raw(&last_word, 1, &dummy);
+      }
+      return s;
+    } else {
+      return lbm_write_const_raw(&last_word, 1, res);
+    }
+  }
 }
 
 /****************************************************/
@@ -2786,6 +2807,15 @@ static void read_finish(lbm_char_channel_t *str, eval_context_t *ctx) {
      In case 2, we should find the READ_DONE at sp - 5.
 
   */
+
+  if (lbm_is_symbol(ctx->r)) {
+    lbm_uint sym_val = lbm_dec_sym(ctx->r);
+    if (sym_val >= TOKENIZER_SYMBOLS_START &&
+        sym_val <= TOKENIZER_SYMBOLS_END) {
+      read_error_ctx(lbm_channel_row(str), lbm_channel_column(str));
+    }
+  }
+
   if (ctx->K.data[ctx->K.sp-1] == READ_DONE &&
       lbm_dec_u(ctx->K.data[ctx->K.sp-3]) == 0) {
     /* successfully finished reading an expression  (CASE 3) */
@@ -2878,6 +2908,7 @@ static void cont_read_next_token(eval_context_t *ctx) {
                    stream,
                    READ_APPEND_CONTINUE);
       stack_push_3(&ctx->K, stream, lbm_enc_u(0), READ_NEXT_TOKEN);
+      ctx->r = ENC_SYM_OPENPAR;
       return;
     case TOKCLOSEPAR: {
       lbm_stack_drop(&ctx->K, 2);
@@ -2888,6 +2919,7 @@ static void cont_read_next_token(eval_context_t *ctx) {
       sptr[1] = READ_START_ARRAY;
       //stack_push_2(&ctx->K, stream, READ_START_ARRAY);
       stack_push_3(&ctx->K, stream, lbm_enc_u(0), READ_NEXT_TOKEN);
+      ctx->r = ENC_SYM_OPENBRACK;
       return;
     case TOKCLOSEBRACK:
       lbm_stack_drop(&ctx->K, 2);
@@ -2941,6 +2973,13 @@ static void cont_read_next_token(eval_context_t *ctx) {
       return;
     case TOKCONSTEND:
       ctx->flags &= ~EVAL_CPS_CONTEXT_FLAG_CONST;
+      sptr[0] = stream;
+      sptr[1] = lbm_enc_u(0);
+      stack_push(&ctx->K, READ_NEXT_TOKEN);
+      ctx->app_cont = true;
+      return;
+    case TOKCONSTSYMSTR:
+      ctx->flags |= EVAL_CPS_CONTEXT_FLAG_CONST_SYMBOL_STRINGS;
       sptr[0] = stream;
       sptr[1] = lbm_enc_u(0);
       stack_push(&ctx->K, READ_NEXT_TOKEN);
@@ -3052,15 +3091,18 @@ static void cont_read_next_token(eval_context_t *ctx) {
 
     if (lbm_get_symbol_by_name(tokpar_sym_str, &symbol_id)) {
       res = lbm_enc_sym(symbol_id);
-    }
-    else {
+    } else {
       int r = 0;
       if (strncmp(tokpar_sym_str,"ext-",4) == 0) {
         r = lbm_add_extension_symbol(tokpar_sym_str, &symbol_id);
       } else if (tokpar_sym_str[0] == '#') {
         r = lbm_add_variable_symbol(tokpar_sym_str, &symbol_id);
       } else {
-        r = lbm_add_symbol(tokpar_sym_str, &symbol_id);
+        if (ctx->flags & EVAL_CPS_CONTEXT_FLAG_CONST_SYMBOL_STRINGS) {
+          r = lbm_add_symbol_flash(tokpar_sym_str, &symbol_id);
+        } else {
+          r = lbm_add_symbol(tokpar_sym_str, &symbol_id);
+        }
       }
       if (r) {
         res = lbm_enc_sym(symbol_id);
@@ -3337,7 +3379,14 @@ static void cont_read_done(eval_context_t *ctx) {
   }
 
   lbm_channel_reader_close(str);
-
+  if (lbm_is_symbol(ctx->r)) {
+    lbm_uint sym_val = lbm_dec_sym(ctx->r);
+    if (sym_val >= TOKENIZER_SYMBOLS_START &&
+        sym_val <= TOKENIZER_SYMBOLS_END) {
+      read_error_ctx(lbm_channel_row(str), lbm_channel_column(str));
+    }
+  }
+  
   ctx->row0 = -1;
   ctx->row1 = -1;
   ctx->app_cont = true;
@@ -3638,26 +3687,9 @@ static void cont_move_val_to_flash_dispatch(eval_context_t *ctx) {
       } break;
       case SYM_ARRAY_TYPE: {
         lbm_array_header_t *arr = (lbm_array_header_t*)ref->car;
-
-        lbm_uint full_words = arr->size / sizeof(lbm_uint); // array size always in bytes
-
         // arbitrary address: flash_arr.
         lbm_uint flash_arr;
-        if ( arr->size % sizeof(lbm_uint) == 0) {
-          handle_flash_status(lbm_write_const_raw(arr->data, full_words, &flash_arr));
-        } else {
-          lbm_uint last_word = 0;
-          memcpy(&last_word, &arr->data[full_words],arr->size % sizeof(lbm_uint));
-
-          if (full_words >= 1) {
-            handle_flash_status(lbm_write_const_raw(arr->data, full_words, &flash_arr));
-            lbm_uint dummy;
-            handle_flash_status(lbm_write_const_raw(&last_word, 1, &dummy));
-          } else {
-            handle_flash_status(lbm_write_const_raw(&last_word, 1, &flash_arr));
-          }
-        }
-
+        handle_flash_status(lbm_write_const_array_padded((uint8_t*)arr->data, arr->size, &flash_arr));
         lift_array_flash(flash_cell,
                          (char *)flash_arr,
                          arr->size);
@@ -3730,11 +3762,8 @@ lbm_value quote_it(lbm_value qquoted) {
   if (lbm_is_symbol(qquoted) &&
       lbm_is_special(qquoted)) return qquoted;
 
-  lbm_value val;
-  WITH_GC_RMBR(val, lbm_cons(qquoted, ENC_SYM_NIL), 1, qquoted);
-  lbm_value q;
-  WITH_GC_RMBR(q, lbm_cons(ENC_SYM_QUOTE, val), 1, val);
-  return q;
+  lbm_value val = cons_with_gc(qquoted, ENC_SYM_NIL, ENC_SYM_NIL);
+  return cons_with_gc(ENC_SYM_QUOTE, val, ENC_SYM_NIL);
 }
 
 bool is_append(lbm_value a) {
@@ -3768,20 +3797,15 @@ lbm_value append(lbm_value front, lbm_value back) {
 
   if (is_append(back)) {
     back  = lbm_cdr(back);
-    lbm_value new;
-    WITH_GC_RMBR(new, lbm_cons(front, back), 2, front, back);
-    lbm_value tmp;
-    WITH_GC_RMBR(tmp, lbm_cons(ENC_SYM_APPEND, new), 1, new);
-    return tmp;
+    lbm_value new = cons_with_gc(front, back, ENC_SYM_NIL);
+    return cons_with_gc(ENC_SYM_APPEND, new, ENC_SYM_NIL);
   }
 
-  lbm_value t0, t1, t2;
+  lbm_value t0, t1;
 
-  WITH_GC(t0, lbm_cons(back, ENC_SYM_NIL));
-  WITH_GC_RMBR(t1, lbm_cons(front, t0), 1, t0);
-  WITH_GC_RMBR(t2, lbm_cons(ENC_SYM_APPEND, t1), 1, t1);
-  
-  return t2;
+  t0 = cons_with_gc(back, ENC_SYM_NIL, ENC_SYM_NIL);
+  t1 = cons_with_gc(front, t0, ENC_SYM_NIL);
+  return cons_with_gc(ENC_SYM_APPEND, t1, ENC_SYM_NIL);
 }
 
 /* Bawden's qq-expand implementation
@@ -3888,12 +3912,9 @@ static void cont_qq_expand_list(eval_context_t* ctx) {
     
   } break;
   default: {
-    lbm_value a_list;
-    WITH_GC(a_list, lbm_cons(l, ENC_SYM_NIL));
-    lbm_value tl;
-    WITH_GC_RMBR(tl, lbm_cons(a_list, ENC_SYM_NIL), 1, a_list);
-    lbm_value tmp;
-    WITH_GC_RMBR(tmp, lbm_cons(ENC_SYM_QUOTE, tl), 1, tl);
+    lbm_value a_list = cons_with_gc(l, ENC_SYM_NIL, ENC_SYM_NIL);
+    lbm_value tl = cons_with_gc(a_list, ENC_SYM_NIL, ENC_SYM_NIL);
+    lbm_value tmp = cons_with_gc(ENC_SYM_QUOTE, tl, ENC_SYM_NIL);
     ctx->r = append(ctx->r, tmp);
     ctx->app_cont = true;
   }
@@ -3902,10 +3923,8 @@ static void cont_qq_expand_list(eval_context_t* ctx) {
 
 static void cont_qq_list(eval_context_t *ctx) {
   lbm_value val = ctx->r;
-  lbm_value apnd_app;
-  lbm_value tmp;
-  WITH_GC(apnd_app, lbm_cons(val, ENC_SYM_NIL));
-  WITH_GC_RMBR(tmp, lbm_cons(ENC_SYM_LIST, apnd_app), 1, apnd_app);
+  lbm_value apnd_app = cons_with_gc(val, ENC_SYM_NIL, ENC_SYM_NIL);
+  lbm_value tmp = cons_with_gc(ENC_SYM_LIST, apnd_app, ENC_SYM_NIL);
   ctx->r = tmp;
   ctx->app_cont = true;
 }
