@@ -339,7 +339,12 @@ static inline void norm_angle(float *angle) {
 
 static inline void norm_angle_0_2pi(float *angle) {
 	while (*angle < 0) { *angle += 2.0 * M_PI; }
-	while (*angle >= 2 * M_PI) { *angle -= 2.0 * M_PI; }
+	while (*angle >= 2.0 * M_PI) { *angle -= 2.0 * M_PI; }
+}
+
+static inline void norm_angle_degrees_0_360(float *angle) {
+	while (*angle < 0) { *angle += 360.0; }
+	while (*angle >= 360.0) { *angle -= 360.0; }
 }
 
 static uint8_t rgb888to332(uint32_t rgb) {
@@ -1270,26 +1275,46 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 		
 		return;
 	}
+
 	if (radius == 0) {
 		return;
 	}
 
 	angle0 *= M_PI / 180.0;
 	angle1 *= M_PI / 180.0;
-	norm_angle_0_2pi(&angle0);
-	norm_angle_0_2pi(&angle1);
+	norm_angle_0_2pi(&angle0); // theses are probably unecessary?
+	norm_angle_0_2pi(&angle1); // but who knows with floating point imprecision...
 
 	if (angle0 == angle1) {
 		return;
 	}
 
 	bool angle_is_closed;
-
 	// if the angle of the filled in part of the arc is greater than 180°
 	if (angle1 - angle0 > 0.0) {
 		angle_is_closed = fabsf(angle1 - angle0) > M_PI;
 	} else {
 		angle_is_closed = fabsf(angle1 - angle0) < M_PI;
+	}
+
+	// angles smaller than 1 degree seem to cause issues
+	// this is kinda ugly though, and it will probably still break at larger
+	// radii or something...
+	if (!angle_is_closed && fabsf(angle1 - angle0) < 0.0174532925) { // one degree in radians
+		if (rounded) {
+			// compiler complains about uninitialized variables if this is named
+			// `radius` for some reason...
+			float radius_local = (float)(radius) + 0.5;
+
+			float angle = (angle0 + angle1) / 2.0;
+			// angle *= M_PI / 180.0;
+
+			int cap_center_x = (int)(cosf(angle) * radius_local);
+			int cap_center_y = (int)(sinf(angle) * radius_local);
+
+			fill_circle(img, c_x + cap_center_x, c_y + cap_center_y, thickness, color);
+		}
+		return;
 	}
 
 	int radius_outer, radius_inner;
