@@ -820,12 +820,19 @@ static void handle_thin_arc_pixel(image_buffer_t *img, int x, int y,
 	int line_is_past_0 = point_past_line(x, y, 0, 0, cap0_x, cap0_y);
     int line_is_past_1 = -point_past_line(x, y, 0, 0, cap1_x, cap1_y);
 
+	bool in_cap0_quadrant = points_same_quadrant(
+		x, y, cap0_x, cap0_y);
+	bool in_cap1_quadrant = points_same_quadrant(
+		x, y, cap1_x, cap1_y);
+
 	if (angle_is_closed) {
 		if (line_is_past_0 == 1 && line_is_past_1 == 1) {
 			return;
 		}
 	} else {
-		if (line_is_past_0 == 1 || line_is_past_1 == 1) {
+		if (line_is_past_0 == 1 || line_is_past_1 == 1
+			|| (line_is_past_0 == 0 && !in_cap0_quadrant)
+			|| (line_is_past_1 == 0 && !in_cap1_quadrant)) {
 			return;
 		}
 	}
@@ -1020,7 +1027,9 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 				return;
 			}
 		} else {
-			if (line_is_past_0 == 1 || line_is_past_1 == 1) {
+			if (line_is_past_0 == 1 || line_is_past_1 == 1
+				|| (line_is_past_0 == 0 && !in_cap0_quadrant)
+				|| (line_is_past_1 == 0 && !in_cap1_quadrant)) {
 				return;
 			}
 		}
@@ -1059,7 +1068,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 		int cur_x = outer_x;
 		int delta = outer_x > 0 ? -1 : 1;
 
-		// TODO: this can probably be binary searched
+		// TODO: this could probably be binary searched
 		int y_dbl_off = outer_y * 2 + 1;
 		int y_dbl_off_sq = y_dbl_off * y_dbl_off;
 		while (true) {
@@ -1078,8 +1087,9 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 
 	// Check which cap lines intersects this slice
 	if ((in_cap0 || in_cap1) && !(segment && filled)) {
+		// the range from x_start to x_end is *inclusive*
 		int x_start = x;
-		int x_end = x_start + width;
+		int x_end = x_start + width - 1;
 
 		int x_start1;
 		int x_end1;
@@ -1183,7 +1193,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 					}
 				}
 			} else {
-				// split slice into two
+				// split the slice into two
 
 				slice_is_split = true;
 
@@ -1220,14 +1230,15 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 				}
 
 				x1 = x_start1;
-				width1 = x_end1 - x_start1;
+				width1 = x_end1 + 1 - x_start1 ;
 			}
 		}
 		x = x_start;
-		width = x_end - x_start;
+		width = x_end + 1 - x_start;
 	} else if (in_cap0 && segment && filled) {
+		// the range from x_start to x_end is *inclusive*
 		int x_start = x;
-		int x_end = x_start + width;
+		int x_end = x_start + width - 1;
 
 		// when a point is "past" a line, it is on the wrong cleared side of it
 		int start_is_past = -point_past_line(x_start, outer_y,
@@ -1259,7 +1270,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 		}
 
 		x = x_start;
-		width = x_end - x_start;
+		width = x_end + 1 - x_start;
 	}
 
 	h_line(img, c_x + x, c_y + outer_y, width, color); 
