@@ -1279,6 +1279,8 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 	}
 }
 
+// TODO: Fix unwanted slice with angles 130 to 115 (I think, angles might be
+// slightly off).
 static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0, float angle1,
 		int thickness, bool rounded, bool filled, bool sector, bool segment, uint32_t color) {
 	if (thickness == 0 && !filled) {
