@@ -858,7 +858,7 @@ static void thin_arc(image_buffer_t *img, int c_x, int c_y, int radius, float an
 
 	bool angle_is_closed;
 	// if the angle of the filled in part of the arc is greater than 180°
-	// TODO: it would probably be better if this was called angle_is_open
+	// honestly unsure if it'd be better if this was called angle_is_open
 	if (angle1 - angle0 > 0.0) {
 		angle_is_closed = fabsf(angle1 - angle0) > M_PI;
 	} else {
