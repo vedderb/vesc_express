@@ -864,11 +864,11 @@ static void thin_arc(image_buffer_t *img, int c_x, int c_y, int radius, float an
 		angle_is_closed = fabsf(angle1 - angle0) < M_PI;
 	}
 
-	int cap0_x = (int)(cosf(angle0) * (float)(radius + 1));
-	int cap0_y = (int)(sinf(angle0) * (float)(radius + 1));
+	int cap0_x = (int)(cosf(angle0) * (float)(radius));
+	int cap0_y = (int)(sinf(angle0) * (float)(radius));
 
-	int cap1_x = (int)(cosf(angle1) * (float)(radius + 1));
-	int cap1_y = (int)(sinf(angle1) * (float)(radius + 1));
+	int cap1_x = (int)(cosf(angle1) * (float)(radius));
+	int cap1_y = (int)(sinf(angle1) * (float)(radius));
 	
 	// Highest and lowest (y coord wise) drawn line of the base arc (excluding
 	// the circular end caps). This range is *inclusive*!
@@ -1281,6 +1281,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 
 // TODO: Fix unwanted slice with angles 130 to 115 (I think, angles might be
 // slightly off).
+// TODO: Look into buggy filled circle sector rendering.
 static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0, float angle1,
 		int thickness, bool rounded, bool filled, bool sector, bool segment, uint32_t color) {
 	if (thickness == 0 && !filled) {
