@@ -236,6 +236,17 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		mempools_free_packet_buffer(send_buffer_global);
 	} break;
 
+	case COMM_CAN_FWD_FRAME: {
+		int32_t ind = 0;
+		uint32_t id = buffer_get_uint32(data, &ind);
+		bool is_ext = data[ind++];
+
+		if (is_ext) {
+			comm_can_transmit_eid(id, data + ind, len - ind);
+		} else {
+			comm_can_transmit_sid(id, data + ind, len - ind);
+		}
+	} break;
 
 	case COMM_GET_CUSTOM_CONFIG:
 	case COMM_GET_CUSTOM_CONFIG_DEFAULT: {
