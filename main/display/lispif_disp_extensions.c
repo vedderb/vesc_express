@@ -25,6 +25,7 @@
 #include "lbm_utils.h"
 #include "lbm_custom_type.h"
 #include "commands.h"
+#include "utils.h"
 
 #include "display/disp_sh8501b.h"
 #include "display/disp_ili9341.h"

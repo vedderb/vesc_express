@@ -1,5 +1,6 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder		benjamin@vedder.se
+    Copyright 2023 Rasmus Söderhielm	rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -27,6 +28,10 @@ int32_t utils_ms_today(void);
 int64_t utils_ms_tot(void);
 
 #define UTILS_AGE_S(x)		((float)(xTaskGetTickCount() - x) / ((float)portTICK_PERIOD_MS * 1000.0))
+
+#ifndef M_3PI_2
+#define M_3PI_2 4.71238898038469
+#endif
 
 // Return the sign of the argument. -1.0 if negative, 1.0 if zero or positive.
 #define SIGN(x)				(((x) < 0.0) ? -1.0 : 1.0)
