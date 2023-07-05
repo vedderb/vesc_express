@@ -964,14 +964,8 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 	}
 
 	int line_is_past_0, line_is_past_1;	
-	if (segment && filled) {
-		line_is_past_0 = -point_past_line(
-			outer_x, outer_y, outer_x0, outer_y0, outer_x1, outer_y1);
-		line_is_past_1 = 0;
-	} else {
-		line_is_past_0 = point_past_line(outer_x, outer_y, 0, 0, outer_x0, outer_y0);
-		line_is_past_1 = -point_past_line(outer_x, outer_y, 0, 0, outer_x1, outer_y1);
-	}
+	line_is_past_0 = point_past_line(outer_x, outer_y, 0, 0, outer_x0, outer_y0);
+	line_is_past_1 = -point_past_line(outer_x, outer_y, 0, 0, outer_x1, outer_y1);
 
 	int outer_x_sign = sign(outer_x);
 	int outer_y_sign = sign(outer_y);
@@ -1003,12 +997,6 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 			&& outer_y <= cap1_max_y
 			&& outer_x_sign == outer_x1_sign;
 	}
-	// if (in_cap0) {
-	// 	color = 2;
-	// }
-	// if (in_cap1) {
-	// 	color = 3;
-	// }
 	in_both_caps = in_cap0 && in_cap1;
 
 	bool in_cap0_quadrant = points_same_quadrant(outer_x, outer_y, outer_x0, outer_y0);
@@ -1017,7 +1005,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 	bool caps_in_same_quadrant = points_same_quadrant(outer_x0, outer_y0, outer_x1, outer_y1);
 
 	// Check if slice is outside caps and drawn sections of the arc.
-	if (!in_cap0 && !in_cap1 && !(segment && filled)) {
+	if (!in_cap0 && !in_cap1) {
 		if (angle_is_closed) {
 			if (line_is_past_0 == 1 && line_is_past_1 == 1
 				// Failsafe for closed angles with a very small difference.
@@ -1032,10 +1020,6 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 				|| (line_is_past_1 == 0 && !in_cap1_quadrant)) {
 				return;
 			}
-		}
-	} else if (!in_cap0 && (segment && filled)) {
-		if (line_is_past_0 == 1) {
-			return;
 		}
 	}
 
@@ -1254,7 +1238,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 		}
 
 		if (slice_overlaps) {
-			if (start_is_past != -1 && end_is_past == 1) {
+			if (start_is_past != -1 && end_is_past != 1) {
 				while (start_is_past == 1) {
 					x_start += 1;
 					start_is_past = -point_past_line(x_start, outer_y,
@@ -1281,7 +1265,7 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 
 // TODO: Fix unwanted slice with angles 130 to 115 (I think, angles might be
 // slightly off).
-// TODO: Look into buggy filled circle sector rendering.
+// TODO: Look into buggy filled circle sector and segment rendering.
 static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0, float angle1,
 		int thickness, bool rounded, bool filled, bool sector, bool segment, uint32_t color) {
 	if (thickness == 0 && !filled) {
@@ -1347,11 +1331,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	float angle1_cos = cosf(angle1);
 	float angle1_sin = sinf(angle1);
 	
-	int outer_x0 = (int)(angle0_cos * (float)(radius_outer + 1));
-	int outer_y0 = (int)(angle0_sin * (float)(radius_outer + 1));
+	int outer_x0 = (int)(angle0_cos * (float)(radius_outer));
+	int outer_y0 = (int)(angle0_sin * (float)(radius_outer));
 
-	int outer_x1 = (int)(angle1_cos * (float)(radius_outer + 1));
-	int outer_y1 = (int)(angle1_sin * (float)(radius_outer + 1));
+	int outer_x1 = (int)(angle1_cos * (float)(radius_outer));
+	int outer_y1 = (int)(angle1_sin * (float)(radius_outer));
 
 	int inner_y0;
 	int inner_y1;
