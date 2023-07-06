@@ -602,19 +602,58 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 	}
 }
 
+// Circle helper function, to draw a circle with an inner and outer radius.
+// Draws the slice at the given outer radius point.
+static void handle_circle_slice(int outer_x, int outer_y, image_buffer_t *img, int c_x, int c_y, int radius_inner, uint32_t color, int radius_inner_dbl_sq) {
+	int width;
+	
+	bool slice_filled;
+	if (outer_y < 0) {
+		slice_filled = -outer_y > radius_inner;
+	} else {
+		slice_filled = outer_y >= radius_inner;
+	}
+
+	if (slice_filled) {
+		if (outer_x < 0) {
+			width = -outer_x;
+		} else {
+			width = outer_x + 1;
+			outer_x = 0;
+		}
+	} else {
+		int cur_x = outer_x;
+		int delta = outer_x > 0 ? -1 : 1;
+		
+		// TODO: this could probably be binary searched
+		int y_dbl_off = outer_y * 2 + 1;
+		int y_dbl_off_sq = y_dbl_off * y_dbl_off;
+		while (true) {
+			cur_x += delta;
+			int x_dbl_off = cur_x * 2 + 1;
+			if (x_dbl_off * x_dbl_off + y_dbl_off_sq <= radius_inner_dbl_sq
+				|| abs(cur_x) > 2000) { // failsafe
+				break;
+			}
+		}
+		width = abs(cur_x - outer_x);
+		if (outer_x > 0) {
+			outer_x = cur_x + 1;
+		}
+	}
+	
+	h_line(img, outer_x + c_x, outer_y + c_y, width, color);
+}
+
 // thickness extends inwards from the given radius circle
 static void circle(image_buffer_t *img, int x, int y, int radius, int thickness, uint32_t color) {
-	// TODO: Implement a better algorithm, similar to the one for arcs.
-	thickness /= 2;
-	radius -= thickness;
-	
-	int x0 = 0;
-	int y0 = radius;
-	int d = 5 - 4*radius;
-	int da = 12;
-	int db = 20 - 8*radius;
-
 	if (thickness <= 0) {
+		int x0 = 0;
+		int y0 = radius;
+		int d = 5 - 4*radius;
+		int da = 12;
+		int db = 20 - 8*radius;
+		
 		while (x0 < y0) {
 			putpixel(img, x + x0, y + y0, color);
 			putpixel(img, x + x0, y - y0, color);
@@ -630,20 +669,45 @@ static void circle(image_buffer_t *img, int x, int y, int radius, int thickness,
 			da = da + 8;
 		}
 	} else {
-		while (x0 < y0) {
-			fill_circle(img, x + x0, y + y0, thickness, color);
-			fill_circle(img, x + x0, y - y0, thickness, color);
-			fill_circle(img, x - x0, y + y0, thickness, color);
-			fill_circle(img, x - x0, y - y0, thickness, color);
-			fill_circle(img, x + y0, y + x0, thickness, color);
-			fill_circle(img, x + y0, y - x0, thickness, color);
-			fill_circle(img, x - y0, y + x0, thickness, color);
-			fill_circle(img, x - y0, y - x0, thickness, color);
-			if (d < 0) { d = d + da; db = db+8; }
-			else  { y0 = y0 - 1; d = d+db; db = db + 16; }
-			x0 = x0+1;
-			da = da + 8;
+		int radius_inner = radius - thickness;
+		
+		int radius_outer_dbl_sq = radius * radius * 4;
+		int radius_inner_dbl_sq = radius_inner * radius_inner * 4;
+		
+		for (int y0 = 0; y0 < radius; y0++) {
+			int y_dbl_offs = 2 * y0 + 1;
+			int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
+
+			for (int x0 = -radius; x0 <= 0; x0++) {
+				int x_dbl_offs = 2 * x0 + 1;
+				if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= radius_outer_dbl_sq) {
+					// This is horrible...
+					handle_circle_slice(x0, y0,
+						img, x, y, radius_inner, color, radius_inner_dbl_sq);
+					handle_circle_slice(-x0 - 1, y0,
+						img, x, y, radius_inner, color, radius_inner_dbl_sq);
+					handle_circle_slice(x0, -y0 - 1,
+						img, x, y, radius_inner, color, radius_inner_dbl_sq);
+					handle_circle_slice(-x0 - 1, -y0 - 1,
+						img, x, y, radius_inner, color, radius_inner_dbl_sq);
+					break;
+				}
+			}
 		}
+		// while (x0 < y0) {
+		// 	fill_circle(img, x + x0, y + y0, thickness, color);
+		// 	fill_circle(img, x + x0, y - y0, thickness, color);
+		// 	fill_circle(img, x - x0, y + y0, thickness, color);
+		// 	fill_circle(img, x - x0, y - y0, thickness, color);
+		// 	fill_circle(img, x + y0, y + x0, thickness, color);
+		// 	fill_circle(img, x + y0, y - x0, thickness, color);
+		// 	fill_circle(img, x - y0, y + x0, thickness, color);
+		// 	fill_circle(img, x - y0, y - x0, thickness, color);
+		// 	if (d < 0) { d = d + da; db = db+8; }
+		// 	else  { y0 = y0 - 1; d = d+db; db = db + 16; }
+		// 	x0 = x0+1;
+		// 	da = da + 8;
+		// }
 	}
 }
 
@@ -767,10 +831,6 @@ static void rectangle(image_buffer_t *img, int x, int y, int width, int height,
 
 #define NMIN(a, b) ((a) < (b) ? (a) : (b))
 #define NMAX(a, b) ((a) > (b) ? (a) : (b))
-
-static bool triangle_edge(int ax, int ay, int bx, int by, int cx, int cy) {
-	return ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) >= 0;
-}
 
 static void fill_triangle(image_buffer_t *img, int x0, int y0,
 		int x1, int y1, int x2, int y2, uint32_t color) {
