@@ -86,25 +86,24 @@ reference sections.
 The functions that draw onto an image-buffer takes optional arguments
 that specify extra attributes to apply when drawing. These attributes are:
 
-1. `'(thickness w)`: Line thickness `w`. Note that this specifies the thickness
-   from the line center to edge. So the total line thickness is actually equal
-   to two times `w`
+1. `'(thickness w)`: Line thickness `w`. For most shapes, the thickness extends
+   inwards. But for `img-triangle` and `img-line`, it extends equal outwards and inwards,
+   so the total line thickness is actually equal to two times `w`.
 2. `'(dotted d-len d-space-len)`: Dotted or dashed lines with `d-len` long line segments separated by `d-space-len`.
 3. `'(filled)`: Specifies that the shape should be filled. 
 4. `'(rounded radius)`: Specifies that the shape should have rounded corners.
-   Additionaly, the `img-arc` function can take this argument in the form
-   `'(rounded)` to specify that, when the arc isn't filled, the line ends
+   Additionally, the `img-arc` function can take this argument in the form
+   `'(rounded)` to specify that, when the arc isn't filled or dotted, the line ends
    should be rounded. Sadly, this is the only function that can draw lines
    with square ends right now.
 5. `'(scale scale-f)`: Scale the image by factor `scale-f`
 6. `'(rotate rx ry deg)`: Rotate an image around point (`rx`,`ry`), `deg`
    degrees.
-7. `'(resolution steps)`: How many lines arcs are simplified into when drawn.
-   When drawing any kind of arcs, they are simplified into a series of lines
+7. `'(resolution steps)`: How many lines dotted arcs are simplified into when
+   drawn. Non-dotted arcs use a newer algorithm that's pixel perfect.
+   When drawing dotted arcs, they are simplified into a series of lines
    where the actual amount of steps is scaled from `0` to `steps` based on the arc
    angle span.
-   This is only relevant when drawing dotted arcs, because non dotted arcs use a
-   newer pixel perfect algorithm.
    Note that this isn't just limited to `img-arc`, but every function that
    draws any kind of arc, like actual arcs, circle segments and sectors, rounded
    shapes, or dotted circles.
@@ -413,7 +412,7 @@ Example that imports and displays a jpg image.
 
 Draws an arc with its center at (`cx`, `cy`) and radius r. The
 arc extends from angle `ang-s` to `ang-e`. Additional attributes
-are optional. 
+are optional.
 
 Applicable attributes:
 1. dotted
