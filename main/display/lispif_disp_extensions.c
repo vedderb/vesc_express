@@ -694,20 +694,6 @@ static void circle(image_buffer_t *img, int x, int y, int radius, int thickness,
 				}
 			}
 		}
-		// while (x0 < y0) {
-		// 	fill_circle(img, x + x0, y + y0, thickness, color);
-		// 	fill_circle(img, x + x0, y - y0, thickness, color);
-		// 	fill_circle(img, x - x0, y + y0, thickness, color);
-		// 	fill_circle(img, x - x0, y - y0, thickness, color);
-		// 	fill_circle(img, x + y0, y + x0, thickness, color);
-		// 	fill_circle(img, x + y0, y - x0, thickness, color);
-		// 	fill_circle(img, x - y0, y + x0, thickness, color);
-		// 	fill_circle(img, x - y0, y - x0, thickness, color);
-		// 	if (d < 0) { d = d + da; db = db+8; }
-		// 	else  { y0 = y0 - 1; d = d+db; db = db + 16; }
-		// 	x0 = x0+1;
-		// 	da = da + 8;
-		// }
 	}
 }
 
@@ -841,9 +827,6 @@ static void fill_triangle(image_buffer_t *img, int x0, int y0,
 
 	for (int y = y_min;y <= y_max;y++) {
 		for (int x = x_min;x <= x_max;x++) {
-			// bool w0 = triangle_edge(x1, y1, x2, y2, x, y);
-			// bool w1 = triangle_edge(x2, y2, x0, y0, x, y);
-			// bool w2 = triangle_edge(x0, y0, x1, y1, x, y);
 			int w0 = point_past_line(x, y, x1, y1, x2, y2);
 			int w1 = point_past_line(x, y, x2, y2, x0, y0);
 			int w2 = point_past_line(x, y, x0, y0, x1, y1);
