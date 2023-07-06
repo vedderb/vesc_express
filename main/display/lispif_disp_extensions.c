@@ -554,15 +554,6 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 		h_line(img, x - 2, y - 1, 4, color);
 		h_line(img, x - 2, y, 4, color);
 		h_line(img, x - 1, y + 1, 2, color);
-
-		// putpixel(img, x - 1, y - 1, color);
-		// putpixel(img, x, y - 1, color);
-		// putpixel(img, x - 2, y, color);
-		// putpixel(img, x - 1, y, color);
-		// putpixel(img, x, y, color);
-		// putpixel(img, x + 1, y, color);
-		// putpixel(img, x - 1, y + 1, color);
-		// putpixel(img, x, y + 1, color);
 		break;
 
 	case 3:
@@ -572,12 +563,6 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 		h_line(img, x - 3, y, 6, color);
 		h_line(img, x - 3, y + 1, 6, color);
 		h_line(img, x - 2, y + 2, 4, color);
-	
-		// h_line(img, x - 2, y - 2, 4, color);
-		// h_line(img, x - 2, y - 1, 4, color);
-		// h_line(img, x - 3, y, 6, color);
-		// h_line(img, x - 2, y + 1, 4, color);
-		// h_line(img, x - 2, y + 2, 4, color);
 		break;
 
 	case 4:
@@ -589,14 +574,6 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 		h_line(img, x - 4, y + 1, 8, color);
 		h_line(img, x - 3, y + 2, 6, color);
 		h_line(img, x - 2, y + 3, 4, color);
-
-		// h_line(img, x - 2, y - 3, 4, color);
-		// h_line(img, x - 3, y - 2, 6, color);
-		// h_line(img, x - 3, y - 1, 6, color);
-		// h_line(img, x - 4, y, 8, color);
-		// h_line(img, x - 3, y + 1, 6, color);
-		// h_line(img, x - 3, y + 2, 6, color);
-		// h_line(img, x - 2, y + 3, 4, color);
 		break;
 
 	default: {
@@ -619,21 +596,6 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 				}
 			}
 		}
-		/*
-		radius_sq = radius * radius
-		radius_dbl_sq = radius_sq * 4
-		for y1 in range(-radius, 1):
-			for x1 in range(-radius, 1):
-				x_dbl_offs = 2 * x1 + 1
-				y_dbl_offs = 2 * y1 + 1
-				if x_dbl_offs * x_dbl_offs + y_dbl_offs * y_dbl_offs <= radius_dbl_sq:
-					# print(f"drew @ ({x + x1}, {y - y1}) width: {2 * (-x1)}")
-					h_line(image, x + x1, y + y1, 2 * (-x1), color)
-					if y1 != 0:
-						h_line(image, x + x1, y - y1 - 1, 2 * (-x1), color)
-
-					break
-		*/
 	} break;
 	}
 }
@@ -1121,7 +1083,6 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 						outer_x0, outer_y0);
 				}
 			} else {
-				// 1
 				while (end_is_past0 == 1) {
 					x_end -= 1;
 					end_is_past0 = point_past_line(x_end, outer_y,
@@ -1133,7 +1094,6 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 			|| (!in_cap0 && in_cap1 && slice_overlaps1)) {
 			// intersect with cap line 1
 			if (start_is_past1 != -1 && end_is_past1 != 1) {
-				// 2
 				while (start_is_past1 == 1) {
 					x_start += 1;
 					start_is_past1 = -point_past_line(x_start, outer_y,
@@ -1187,7 +1147,6 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 				x_end1 = x_end;
 
 				if (angle0 < M_PI) {
-					// 9
 					while (end_is_past0 == 1) {
 						x_end -= 1;
 						end_is_past0 = point_past_line(x_end, outer_y,
@@ -1308,7 +1267,6 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 			float radius_local = (float)(radius) + 0.5;
 
 			float angle = (angle0 + angle1) / 2.0;
-			// angle *= M_PI / 180.0;
 
 			int cap_center_x = (int)(cosf(angle) * radius_local);
 			int cap_center_y = (int)(sinf(angle) * radius_local);
