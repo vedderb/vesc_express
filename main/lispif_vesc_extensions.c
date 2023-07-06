@@ -2594,7 +2594,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("sleep-deep", ext_sleep_deep);
 	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
 
-        // Disp extensions
+	// Disp extensions
 	lispif_load_disp_extensions();
 
 	// TODO:

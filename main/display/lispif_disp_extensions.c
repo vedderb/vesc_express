@@ -38,46 +38,6 @@
 
 #include <math.h>
 
-static int sign(int v) {
-	if (v > 0) {
-		return 1;
-	}
-	else if (v < 0) {
-		return -1;
-	} else {
-		return 0;
-	}
-}
-
-// Geometry utility functions
-
-// Checks if a point is past a line formed by the given end and start points.
-// The returned value is 1 if it is past, -1 if it's on the other side of the
-// line, or 0 if it's exactly on the line.
-// Don't ask me what is considered the "positive" side of the line ;)
-//
-// It would probably be more logical if the sign of the result was flipped...
-static int point_past_line(int x, int y, int line_start_x, int line_start_y, int line_end_x, int line_end_y) {
-	// source: https://stackoverflow.com/a/11908158/15507414
-
-	// this is not really a cross product, but whatever...
-	int cross_prod = (x - line_start_x) * (line_end_y - line_start_y)
-		- (y - line_start_y) * (line_end_x - line_start_x);
-	
-	if (cross_prod > 0) {
-		return 1;
-	} else if (cross_prod < 0) {
-		return -1;
-	} else {
-		return 0;
-	}
-}
-
-bool points_same_quadrant(int x0, int y0, int x1, int y1) {
-	return (sign(x0) == sign(x1) || sign(x0) == 0 || sign(x1) == 0)
-		&& (sign(y0) == sign(y1) || sign(y0) == 0 || sign(y1) == 0);
-}
-
 static const uint8_t cos_tab_256[] = {
 		255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251,
 		250, 250, 249, 248, 246, 245, 244, 243, 241, 240, 238, 237, 235, 234,
@@ -336,6 +296,45 @@ static bool register_symbols(void) {
 
 // Internal functions
 
+static int sign(int v) {
+	if (v > 0) {
+		return 1;
+	} else if (v < 0) {
+		return -1;
+	} else {
+		return 0;
+	}
+}
+
+// Geometry utility functions
+
+// Checks if a point is past a line formed by the given end and start points.
+// The returned value is 1 if it is past, -1 if it's on the other side of the
+// line, or 0 if it's exactly on the line.
+// Don't ask me what is considered the "positive" side of the line ;)
+//
+// It would probably be more logical if the sign of the result was flipped...
+static int point_past_line(int x, int y, int line_start_x, int line_start_y, int line_end_x, int line_end_y) {
+	// source: https://stackoverflow.com/a/11908158/15507414
+
+	// this is not really a cross product, but whatever...
+	int cross_prod = (x - line_start_x) * (line_end_y - line_start_y)
+		- (y - line_start_y) * (line_end_x - line_start_x);
+
+	if (cross_prod > 0) {
+		return 1;
+	} else if (cross_prod < 0) {
+		return -1;
+	} else {
+		return 0;
+	}
+}
+
+static bool points_same_quadrant(int x0, int y0, int x1, int y1) {
+	return (sign(x0) == sign(x1) || sign(x0) == 0 || sign(x1) == 0)
+		&& (sign(y0) == sign(y1) || sign(y0) == 0 || sign(y1) == 0);
+}
+
 static inline void norm_angle(float *angle) {
 	while (*angle < -M_PI) { *angle += 2.0 * M_PI; }
 	while (*angle >=  M_PI) { *angle -= 2.0 * M_PI; }
@@ -344,11 +343,6 @@ static inline void norm_angle(float *angle) {
 static inline void norm_angle_0_2pi(float *angle) {
 	while (*angle < 0) { *angle += 2.0 * M_PI; }
 	while (*angle >= 2.0 * M_PI) { *angle -= 2.0 * M_PI; }
-}
-
-static inline void norm_angle_degrees_0_360(float *angle) {
-	while (*angle < 0) { *angle += 360.0; }
-	while (*angle >= 360.0) { *angle -= 360.0; }
 }
 
 static uint8_t rgb888to332(uint32_t rgb) {
@@ -434,8 +428,8 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 	}
 }
 
-static uint8_t indexed4_mask[4] = {0x03, 0x0C, 0x30, 0xC0};
-static uint8_t indexed4_shift[4] = {0, 2, 4, 6};
+static const uint8_t indexed4_mask[4] = {0x03, 0x0C, 0x30, 0xC0};
+static const uint8_t indexed4_shift[4] = {0, 2, 4, 6};
 
 static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 	uint16_t w = img->width;
