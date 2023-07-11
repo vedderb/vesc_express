@@ -44,11 +44,14 @@
 //#define HW_HEADER					"hw_lb_hc.h"
 //#define HW_SOURCE					"hw_lb_hc.c"
 
-//#define HW_HEADER					"hw_lb_log.h"
-//#define HW_SOURCE					"hw_lb_log.c"
-
 //#define HW_HEADER					"hw_lb_if.h"
 //#define HW_SOURCE					"hw_lb_if.c"
+
+//#define HW_HEADER					"hw_lb_bms_wifi.h"
+//#define HW_SOURCE					"hw_lb_bms_wifi.c"
+
+//#define HW_HEADER					"hw_lb_ant.h"
+//#define HW_SOURCE					"hw_lb_ant.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
@@ -58,8 +61,6 @@
 #ifndef HW_HEADER
 #error "No hardware header file set"
 #endif
-
-#define HW_DEFAULT_ID				2
 
 #include "main.h"
 #include "hw.h"

@@ -24,6 +24,10 @@
 
 #include HW_HEADER
 
+#ifndef HW_DEFAULT_ID
+#define HW_DEFAULT_ID				2
+#endif
+
 #ifndef LED_RED_ON
 #define LED_RED_ON()
 #define LED_RED_OFF()
