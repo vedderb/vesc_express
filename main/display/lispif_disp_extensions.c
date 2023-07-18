@@ -1584,7 +1584,11 @@ static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t 
 	uint8_t w = font_data[0];
 	uint8_t h = font_data[1];
 	uint8_t char_num = font_data[2];
-//	uint8_t bits_per_pixel = font_data[3];
+	int bytes_per_char = (w * h) / 8;
+	
+	if ((w * h) % 8 != 0) {
+		bytes_per_char += 1;
+	}
 
 	if (char_num == 10) {
 		ch -= '0';
@@ -1596,15 +1600,14 @@ static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t 
 		return;
 	}
 
-	for (int i = 0; i < w; i ++) {
-		for (int j = 0; j < h; j ++) {
-			int f_ind = (j * w + i);
-			int f_pos = 4 + ch * (w * h) / 8 + (f_ind / 8);
-			int bit_pos = f_ind % 8;
-			int bit = font_data[f_pos] & (1 << bit_pos);
-			if (bit || bg >= 0) {
-				putpixel(img, x+i, y+j, bit ? fg : bg);
-			}
+	for (int i = 0; i < w * h; i++) {
+		uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 8)];
+		uint8_t bit_pos = i % 8;
+		uint8_t bit = byte & (1 << bit_pos);
+		if (bit || bg >= 0) {
+			int x0 = i % w;
+			int y0 = i / w;
+			putpixel(img, x + x0, y + y0, bit ? fg : bg);
 		}
 	}
 }
