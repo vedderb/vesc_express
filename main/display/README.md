@@ -324,6 +324,31 @@ The SPI clock is set to 40MHz.
 (disp-load-ssd1351 6 5 19 18 7 40)
 ```
 
+## icna3306
+
+* Resolution: 194 * 368
+* Colors: 16Bit
+* Interface: SPI
+
+Compatible with all image formats supported by the graphics library.
+
+
+### disp-load-icna3306
+
+```clj
+(disp-load-icna3306 gpio-sd0 gpio-clk gpio-cs gpio-reset spi-mhz)
+```
+
+Loads the icna3306 driver. The driver uses hardware-SPI at rate `spi-mhz` on the
+`gpio-sd0` and `gpio-clk` GPIO pins.
+
+Example using GPIO pins 6,5,7 and 8 for sd0,clk,cs and reset running the
+SPI clock at 40MHz:
+
+```clj
+(disp-load-icna3306 6 5 7 8 40)
+``` 
+
 # Common display operations
 
 ## disp-reset

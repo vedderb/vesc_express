@@ -62,6 +62,7 @@ set(COMPONENT_SRCS
 "display/disp_ili9488.c"
 "display/disp_st7735.c"
 "display/disp_ssd1351.c"
+"display/disp_icna3306.c"
 "display/tjpgd.c"
 
 "drivers/bme280/bme280.c"
