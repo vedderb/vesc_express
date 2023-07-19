@@ -1407,21 +1407,21 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 		angle_is_closed = fabsf(angle1 - angle0) < M_PI;
 	}
 
-	// angles smaller than 1 degree seem to cause issues
+	// angles smaller than 1 degree seem to cause issues (with a radius of 62)
 	// this is kinda ugly though, and it will probably still break at larger
 	// radii or something...
 	if (!angle_is_closed && fabsf(angle1 - angle0) < 0.0174532925) { // one degree in radians
 		if (rounded) {
 			// compiler complains about uninitialized variables if this is named
 			// `radius` for some reason...
-			float radius_local = (float)(radius) + 0.5;
+			float radius_local = ((float)radius - (float)thickness / 2.0) + 0.5;
 
 			float angle = (angle0 + angle1) / 2.0;
 
 			int cap_center_x = (int)(cosf(angle) * radius_local);
 			int cap_center_y = (int)(sinf(angle) * radius_local);
 
-			fill_circle(img, c_x + cap_center_x, c_y + cap_center_y, thickness, color);
+			fill_circle(img, c_x + cap_center_x, c_y + cap_center_y, thickness / 2, color);
 		}
 		return;
 	}
