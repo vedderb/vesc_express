@@ -56,6 +56,7 @@ typedef struct {
 	int color2;
 	uint16_t param1;
 	uint16_t param2;
+	bool mirrored;
 	COLOR_TYPE type;
 	uint32_t *precalc;
 } color_t;
@@ -63,22 +64,37 @@ typedef struct {
 #define COLOR_PRECALC_LEN	512
 
 static inline uint32_t color_apply_precalc(color_t color, int x, int y) {
-	uint32_t res = 0;
-
+	int pos;
 	switch (color.type) {
-	case COLOR_PRE_X:
-		res = color.precalc[x % COLOR_PRECALC_LEN];
-		break;
-
-	case COLOR_PRE_Y:
-		res = color.precalc[y % COLOR_PRECALC_LEN];
-		break;
-
-	default:
-		break;
+		case COLOR_PRE_X: {
+			pos = x;
+			break;
+		}
+		case COLOR_PRE_Y: {
+			pos = y;
+			break;
+		}
+		default: {
+			return 0;
+		}
 	}
-
-	return res;
+	
+	int i;
+	if (color.mirrored) {
+		i = (pos - color.param2) % (color.param1 * 2);
+		if (i < 0) {
+			i += color.param1 * 2;
+		}
+		if (i >= color.param1) {
+			i = color.param1 * 2 - i - 1;
+		}
+	} else {
+		i = (pos - color.param2) % (color.param1);
+		if (i < 0) {
+			i += color.param1;
+		}
+	}
+	return color.precalc[i];
 }
 
 #define COLOR_CHECK_PRE(color, x, y) (color.precalc ? color_apply_precalc(color, x, y) : lispif_disp_rgb888_from_color(color, x, y))
