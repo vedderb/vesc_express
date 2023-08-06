@@ -358,6 +358,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Profiler stopped. Issue command ':prof report' for statistics\n");
 			} else if (strncmp(str, ":prof report", 12) == 0) {
 				lbm_uint num_sleep = lbm_prof_get_num_sleep_samples();
+				lbm_uint num_system = lbm_prof_get_num_system_samples();
 				lbm_uint tot_samples = lbm_prof_get_num_samples();
 				lbm_uint tot_gc = 0;
 				commands_printf_lisp("CID\tName\tSamples\t%%Load\t%%GC");
@@ -372,9 +373,10 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 							(double)(100.0 * ((float)prof_data[i].gc_count) / (float)prof_data[i].count));
 				}
 				commands_printf_lisp(" ");
-				commands_printf_lisp("GC:\t%u\t%f%%", tot_gc, (double)(100.0 * (float)tot_gc / (float)tot_samples));
-				commands_printf_lisp("sleep:\t%u\t%f%%", num_sleep, (double)(100.0 * (float)num_sleep/(float)tot_samples));
-				commands_printf_lisp("total:\t%u samples", tot_samples);
+				commands_printf_lisp("GC:\t%u\t%f%%\n", tot_gc, (double)(100.0 * ((float)tot_gc / (float)tot_samples)));
+				commands_printf_lisp("System:\t%u\t%f%%\n", num_system, (double)(100.0 * ((float)num_system / (float)tot_samples)));
+				commands_printf_lisp("Sleep:\t%u\t%f%%\n", num_sleep, (double)(100.0 * ((float)num_sleep / (float)tot_samples)));
+				commands_printf_lisp("Total:\t%u samples\n", tot_samples);
 			} else if (strncmp(str, ":env", 4) == 0) {
 				lbm_value curr = *lbm_get_env_ptr();
 				char output[128];
