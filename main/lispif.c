@@ -347,7 +347,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 					lbm_prof_init(prof_data, PROF_DATA_NUM);
 					prof_running = true;
 					esp_timer_create(&periodic_timer_args, &prof_timer);
-					esp_timer_start_periodic(prof_timer, 200);
+					esp_timer_start_periodic(prof_timer, 571);
 					commands_printf_lisp("Profiler started\n");
 				}
 			} else if (strncmp(str, ":prof stop", 10) == 0) {
