@@ -106,7 +106,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	data++;
 	len--;
 
-	send_func = reply_func;
+	if (packet_id != COMM_LISP_RMSG) {
+		send_func = reply_func;
+	}
 
 	if (!send_func_can_fwd) {
 		send_func_can_fwd = reply_func;
@@ -644,7 +646,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	case COMM_LISP_SET_RUNNING:
 	case COMM_LISP_GET_STATS:
 	case COMM_LISP_REPL_CMD:
-	case COMM_LISP_STREAM_CODE: {
+	case COMM_LISP_STREAM_CODE:
+	case COMM_LISP_RMSG: {
 		lispif_process_cmd(data - 1, len + 1, reply_func);
 		break;
 	}

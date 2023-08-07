@@ -832,6 +832,11 @@ static lbm_value ext_can_list_devs(lbm_value *args, lbm_uint argn) {
 	return dev_list;
 }
 
+static lbm_value ext_can_local_id(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return lbm_enc_i(backup.config.controller_id);
+}
+
 static lbm_value ext_can_scan(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	lbm_value dev_list = ENC_SYM_NIL;
@@ -2453,10 +2458,119 @@ static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// Remote Messages
+#define RMSG_SLOT_NUM	5
+
+typedef struct {
+	lbm_cid cid;
+	TickType_t start_time;
+	float timeout_secs;
+} rmsg_state;
+
+static volatile bool event_task_running = false;
+static SemaphoreHandle_t rmsg_mutex;
+static volatile rmsg_state rmsg_slots[RMSG_SLOT_NUM];
+
+static void event_task(void *arg) {
+	for (;;) {
+		xSemaphoreTake(rmsg_mutex, portMAX_DELAY);
+		for (int i = 0;i < RMSG_SLOT_NUM;i++) {
+			volatile rmsg_state *s = &rmsg_slots[i];
+			if (s->cid >= 0 && s->timeout_secs > 0.0 && UTILS_AGE_S(s->start_time) > s->timeout_secs) {
+				lbm_unblock_ctx_unboxed(s->cid, ENC_SYM_TIMEOUT);
+				s->cid = -1;
+			}
+		}
+		xSemaphoreGive(rmsg_mutex);
+
+		vTaskDelay(1 / portTICK_PERIOD_MS);
+	}
+
+	vTaskDelete(NULL);
+}
+
+// Remote Messages
+
+// (rmsg-wait slot timeout)
+static lbm_value ext_rmsg_wait(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int slot = lbm_dec_as_i32(args[0]);
+	float timeout = lbm_dec_as_float(args[1]);
+
+	if (slot < 0 || slot >= RMSG_SLOT_NUM) {
+		return ENC_SYM_TERROR;
+	}
+
+	xSemaphoreTake(rmsg_mutex, portMAX_DELAY);
+	rmsg_slots[slot].cid = lbm_get_current_cid();
+	rmsg_slots[slot].start_time = xTaskGetTickCount();
+	rmsg_slots[slot].timeout_secs = timeout;
+	xSemaphoreGive(rmsg_mutex);
+
+	lbm_block_ctx_from_extension();
+
+	return ENC_SYM_TRUE;
+}
+
+// (rmsg-send-can can-id slot msg)
+static lbm_value ext_rmsg_send_can(lbm_value *args, lbm_uint argn) {
+	if (argn != 3 ||
+			!lbm_is_number(args[0]) ||
+			!lbm_is_number(args[1]) ||
+			!lbm_is_array_r(args[2])) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = lbm_dec_as_i32(args[0]);
+	int slot = lbm_dec_as_i32(args[1]);
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[2]);
+
+	if (can_id < 0 || can_id > 254) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (slot < 0 || slot >= RMSG_SLOT_NUM) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (array == NULL) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (array->size > 500) {
+		return ENC_SYM_TERROR;
+	}
+
+	uint8_t *buf = mempools_get_packet_buffer();
+	buf[0] = COMM_LISP_RMSG;
+	buf[1] = slot;
+	memcpy(buf + 2, array->data, array->size);
+	comm_can_send_buffer(can_id, buf, array->size + 2, 2);
+	mempools_free_packet_buffer(buf);
+
+	return ENC_SYM_TRUE;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
 		i2c_mutex_init_done = true;
+	}
+
+	if (!event_task_running) {
+		rmsg_mutex = xSemaphoreCreateMutex();
+
+		xSemaphoreTake(rmsg_mutex, portMAX_DELAY);
+		for (int i = 0;i < RMSG_SLOT_NUM;i++) {
+			rmsg_slots[i].cid = -1;
+			rmsg_slots[i].timeout_secs = -1.0;
+		}
+		xSemaphoreGive(rmsg_mutex);
+
+		xTaskCreatePinnedToCore(event_task, "LBM Events", 512, NULL, 7, NULL, tskNO_AFFINITY);
+		event_task_running = true;
 	}
 
 	lbm_add_symbol_const("hw-express", &sym_hw_express);
@@ -2501,6 +2615,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("can-send-eid", ext_can_send_eid);
 	lbm_add_extension("can-cmd", ext_can_cmd);
 	lbm_add_extension("can-list-devs", ext_can_list_devs);
+	lbm_add_extension("can-local-id", ext_can_local_id);
 
 	lbm_add_extension("canget-current", ext_can_get_current);
 	lbm_add_extension("canget-current-dir", ext_can_get_current_dir);
@@ -2597,6 +2712,10 @@ void lispif_load_vesc_extensions(void) {
 	// Disp extensions
 	lispif_load_disp_extensions();
 
+	// Remote Messages
+	lbm_add_extension("rmsg-wait", ext_rmsg_wait);
+	lbm_add_extension("rmsg-send-can", ext_rmsg_send_can);
+
 	// TODO:
 	// - file system
 	// - uart?
@@ -2616,6 +2735,15 @@ void lispif_set_ext_load_callback(void (*p_func)(void)) {
 }
 
 void lispif_disable_all_events(void) {
+	if (event_task_running) {
+		xSemaphoreTake(rmsg_mutex, portMAX_DELAY);
+		for (int i = 0;i < RMSG_SLOT_NUM;i++) {
+			rmsg_slots[i].cid = -1;
+			rmsg_slots[i].timeout_secs = -1.0;
+		}
+		xSemaphoreGive(rmsg_mutex);
+	}
+
 	event_can_sid_en = false;
 	event_can_eid_en = false;
 	event_data_rx_en = false;
@@ -2661,3 +2789,29 @@ void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
 	}
 }
 
+void lispif_process_rmsg(int slot, unsigned char *data, unsigned int len) {
+	if (!event_task_running) {
+		return;
+	}
+
+	xSemaphoreTake(rmsg_mutex, portMAX_DELAY);
+
+	if (slot < 0 || slot >= RMSG_SLOT_NUM || rmsg_slots[slot].cid < 0) {
+		xSemaphoreGive(rmsg_mutex);
+		return;
+	}
+
+	lbm_flat_value_t v;
+	if (lbm_start_flatten(&v, 10 + len)) {
+		f_lbm_array(&v, len, data);
+		lbm_finish_flatten(&v);
+
+		if (!lbm_unblock_ctx(rmsg_slots[slot].cid, &v)) {
+			lbm_free(v.buf);
+		}
+
+		rmsg_slots[slot].cid = -1;
+	}
+
+	xSemaphoreGive(rmsg_mutex);
+}

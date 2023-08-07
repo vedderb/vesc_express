@@ -347,6 +347,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 					lbm_prof_init(prof_data, PROF_DATA_NUM);
 					prof_running = true;
 					esp_timer_create(&periodic_timer_args, &prof_timer);
+					// Use a period that isn't a multiple if the eval thread periods
 					esp_timer_start_periodic(prof_timer, 571);
 					commands_printf_lisp("Profiler started\n");
 				}
@@ -603,6 +604,10 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		}
 
 		reply_func(send_buffer, send_ind);
+	} break;
+
+	case COMM_LISP_RMSG: {
+		lispif_process_rmsg(data[0], data + 1, len - 1);
 	} break;
 
 	default:
