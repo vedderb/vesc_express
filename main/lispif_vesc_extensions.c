@@ -1712,11 +1712,15 @@ static lbm_value ext_esp_now_recv(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (argn != 1 || !lbm_is_number(args[0])) {
-		lbm_set_error_reason((char*)lbm_error_str_no_number);
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 	}
 
-	float timeout = lbm_dec_as_float(args[0]);
+	float timeout = -1.0;
+	if (argn == 1) {
+		timeout = lbm_dec_as_float(args[0]);
+	}
+
 	esp_now_recv_cid = lbm_get_current_cid();
 
 	if (timeout > 0.0) {
