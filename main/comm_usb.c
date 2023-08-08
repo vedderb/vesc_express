@@ -43,7 +43,13 @@ static void send_packet_raw(unsigned char *buffer, unsigned int len) {
 		if (to_send > 150) {
 			to_send = 150;
 		}
-		sent += usb_serial_jtag_write_bytes(buffer + sent, to_send, portMAX_DELAY);
+
+		unsigned int sent_now = usb_serial_jtag_write_bytes(buffer + sent, to_send, 10);
+		sent += sent_now;
+
+		if (sent_now == 0) {
+			break;
+		}
 	}
 }
 
