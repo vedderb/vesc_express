@@ -1380,7 +1380,8 @@ static lbm_value ext_ioboard_set_pwm(lbm_value *args, lbm_uint argn) {
 // ESP NOW
 
 static bool esp_now_initialized = false;
-static volatile lbm_cid esp_now_send_cid;
+static volatile lbm_cid esp_now_send_cid = -1;
+static volatile lbm_cid esp_now_recv_cid = -1;
 static char *esp_init_msg = "ESP-NOW not initialized";
 
 typedef struct {
@@ -1388,6 +1389,7 @@ typedef struct {
 	int len;
 	uint8_t src[6];
 	uint8_t des[6];
+	int rssi;
 } esp_now_send_data;
 
 #define ESP_NOW_RX_BUFFER_ELEMENTS		10
@@ -1428,12 +1430,21 @@ static void esp_rx_fun(void *arg) {
 			f_cons(&v);
 			f_lbm_array(&v, data.len, data.data);
 
+			f_cons(&v);
+			f_i(&v, data.rssi);
+
 			f_sym(&v, SYM_NIL);
 
 			lbm_finish_flatten(&v);
 
-			if (!lbm_event(&v)) {
-				lbm_free(v.buf);
+			if (esp_now_recv_cid >= 0) {
+				if (!lbm_unblock_ctx(esp_now_recv_cid, &v)) {
+					lbm_free(v.buf);
+				}
+			} else {
+				if (!lbm_event(&v)) {
+					lbm_free(v.buf);
+				}
 			}
 		}
 
@@ -1446,7 +1457,7 @@ static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status
 }
 
 static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
-	if (event_esp_now_rx_en) {
+	if (event_esp_now_rx_en || esp_now_recv_cid >= 0) {
 		esp_now_send_data sdata;
 
 		sdata.data = malloc(data_len);
@@ -1458,6 +1469,7 @@ static void espnow_recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_
 		memcpy(sdata.data, data, data_len);
 		memcpy(sdata.src, esp_now_info->src_addr, 6);
 		memcpy(sdata.des, esp_now_info->des_addr, 6);
+		sdata.rssi = esp_now_info->rx_ctrl->rssi;
 
 		if (rb_insert(&esp_now_rx_rb, &sdata)) {
 			xSemaphoreGive(esp_now_rx_sem);
@@ -1496,6 +1508,7 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 		esp_now_rx_sem = xSemaphoreCreateBinary();
 		rb_init(&esp_now_rx_rb, esp_now_rx_data, sizeof(esp_now_send_data), ESP_NOW_RX_BUFFER_ELEMENTS);
 		xTaskCreate(esp_rx_fun, "esp_rx", 2048, NULL, 3, NULL);
+		esp_now_recv_cid = -1;
 
 		esp_now_register_send_cb(espnow_send_cb);
 		esp_now_register_recv_cb(espnow_recv_cb);
@@ -1688,6 +1701,28 @@ static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	} else {
 		lbm_set_error_reason("Argument must be an array");
 		return ENC_SYM_TERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_esp_now_recv(lbm_value *args, lbm_uint argn) {
+	if (!esp_now_initialized) {
+		lbm_set_error_reason(esp_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	if (argn != 1 || !lbm_is_number(args[0])) {
+		lbm_set_error_reason((char*)lbm_error_str_no_number);
+	}
+
+	float timeout = lbm_dec_as_float(args[0]);
+	esp_now_recv_cid = lbm_get_current_cid();
+
+	if (timeout > 0.0) {
+		lbm_block_ctx_from_extension_timeout(timeout);
+	} else {
+		lbm_block_ctx_from_extension();
 	}
 
 	return ENC_SYM_TRUE;
@@ -2679,6 +2714,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("esp-now-start", ext_esp_now_start);
 	lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
 	lbm_add_extension("esp-now-send", ext_esp_now_send);
+	lbm_add_extension("esp-now-recv", ext_esp_now_recv);
 	lbm_add_extension("get-mac-addr", ext_get_mac_addr);
 	lbm_add_extension("wifi-get-chan", ext_wifi_get_chan);
 	lbm_add_extension("wifi-set-chan", ext_wifi_set_chan);
@@ -2747,6 +2783,7 @@ void lispif_disable_all_events(void) {
 	event_can_sid_en = false;
 	event_can_eid_en = false;
 	event_data_rx_en = false;
+	esp_now_recv_cid = -1;
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
