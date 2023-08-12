@@ -678,6 +678,12 @@ static lbm_value ext_bms_set_param(lbm_value *args, lbm_uint argn) {
 	return bms_get_set_param(true, args, argn);
 }
 
+static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	main_store_backup_data();
+	return ENC_SYM_TRUE;
+}
+
 static void load_extensions(void) {
 	// Wake up and initialize hardware
 	lbm_add_extension("bms-init", ext_bms_init);
@@ -726,6 +732,7 @@ static void load_extensions(void) {
 	// Configuration
 	lbm_add_extension("bms-get-param", ext_bms_get_param);
 	lbm_add_extension("bms-set-param", ext_bms_set_param);
+	lbm_add_extension("bms-store-cfg", ext_bms_store_cfg);
 }
 
 static void bal_task(void *arg) {
