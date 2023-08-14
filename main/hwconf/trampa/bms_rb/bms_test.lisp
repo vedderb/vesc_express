@@ -14,7 +14,7 @@
 })
 
 (defun psw-on () {
-        (var res nil)
+        (var res false)
         (var v-tot (apply + (bms-get-vcells)))
         
         (bms-set-pchg 0)
@@ -52,16 +52,16 @@
 })
 
 ; PSW Control
-(spawn 100 (fn () (loopwhile t {
-                (if (and (= (bms-get-btn) 0) psw-state) {
-                        (psw-off)
-                })
-                
-                (if (and (= (bms-get-btn) 1) (not psw-state)) {
-                        (psw-on)
-                })
-                
-                (sleep 0.1)
+(loopwhile-thd 100 t {
+        (if (and (= (bms-get-btn) 0) psw-state) {
+                (psw-off)
+        })
+        
+        (if (and (= (bms-get-btn) 1) (not psw-state)) {
+                (psw-on)
+        })
+        
+        (sleep 0.1)
 })))
 
 (set-bms-val 'bms-cell-num 13)
