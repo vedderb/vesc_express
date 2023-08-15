@@ -74,12 +74,14 @@ uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y) {
 		uint32_t r2 = color.color2 >> 16;
 		uint32_t g2 = (color.color2) >> 8 & 0xFF;
 		uint32_t b2 = color.color2 & 0xff;
+		
+		int used_len = color.mirrored ? 256 : 128;
 
 		int pos = color.type == COLOR_GRADIENT_X ? x : y;
 		// int tab_pos = ((pos * 256) / color.param1 + color.param2) % 256;
-		int tab_pos = (((pos - color.param2) * 256) / color.param1 / 2) % 256;
+		int tab_pos = (((pos - color.param2) * 256) / color.param1 / 2) % used_len;
 		if (tab_pos < 0) {
-			tab_pos = 256 + tab_pos;
+			tab_pos += used_len;
 		}
 
 		int tab_val = cos_tab_256[tab_pos];
@@ -119,6 +121,14 @@ static lbm_uint symbol_gradient_x = 0;
 static lbm_uint symbol_gradient_y = 0;
 static lbm_uint symbol_gradient_x_pre = 0;
 static lbm_uint symbol_gradient_y_pre = 0;
+static lbm_uint symbol_repeat = 0;
+static lbm_uint symbol_mirrored = 0;
+
+static lbm_uint symbol_color_0 = 0;
+static lbm_uint symbol_color_1 = 0;
+static lbm_uint symbol_width = 0;
+static lbm_uint symbol_offset = 0;
+static lbm_uint symbol_repeat_type = 0;
 
 static color_format_t sym_to_color_format(lbm_value v) {
 	lbm_uint s = lbm_dec_sym(v);
@@ -194,7 +204,7 @@ static bool color_destructor(lbm_uint value) {
 	return true;
 }
 
-static lbm_value color_allocate(COLOR_TYPE type, uint32_t color1, uint32_t color2, int param1, int param2) {
+static lbm_value color_allocate(COLOR_TYPE type, uint32_t color1, uint32_t color2, int param1, int param2, bool mirrored) {
 	color_t *color = lbm_malloc(sizeof(color_t));
 	if (!color) {
 		return ENC_SYM_MERROR;
@@ -222,8 +232,9 @@ static lbm_value color_allocate(COLOR_TYPE type, uint32_t color1, uint32_t color
 	color->type = type;
 	color->color1 = color1;
 	color->color2 = color2;
-	color->param1 = param1;
+	color->param1 = param1 < 0 ? 0 : param1;
 	color->param2 = param2;
+	color->mirrored = mirrored;
 	color->precalc = pre;
 
 	if (pre) {
@@ -233,9 +244,13 @@ static lbm_value color_allocate(COLOR_TYPE type, uint32_t color1, uint32_t color
 		} else if (type == COLOR_PRE_Y) {
 			color->type = COLOR_GRADIENT_Y;
 		}
+		
+		if (color->param1 > COLOR_PRECALC_LEN) {
+			color->param1 = COLOR_PRECALC_LEN;
+		}
 
-		for (int i = 0;i < COLOR_PRECALC_LEN;i++) {
-			pre[i] = lispif_disp_rgb888_from_color(*color, i, i);
+		for (int i = 0;i < color->param1;i++) {
+			pre[i] = lispif_disp_rgb888_from_color(*color, i + color->param2, i + color->param2);
 		}
 
 		color->type = type_old;
@@ -292,6 +307,15 @@ static bool register_symbols(void) {
 	res = res && lbm_add_symbol_const("gradient_y", &symbol_gradient_y);
 	res = res && lbm_add_symbol_const("gradient_x_pre", &symbol_gradient_x_pre);
 	res = res && lbm_add_symbol_const("gradient_y_pre", &symbol_gradient_y_pre);
+	res = res && lbm_add_symbol_const("mirrored", &symbol_mirrored);
+	res = res && lbm_add_symbol_const("repeat", &symbol_repeat);
+	
+	res = res && lbm_add_symbol_const("color-0", &symbol_color_0);
+	res = res && lbm_add_symbol_const("color-1", &symbol_color_1);
+	res = res && lbm_add_symbol_const("width", &symbol_width);
+	res = res && lbm_add_symbol_const("offset", &symbol_offset);
+	res = res && lbm_add_symbol_const("repeat-type", &symbol_repeat_type);
+	
 	return res;
 }
 
@@ -1917,7 +1941,7 @@ static lbm_value ext_image_buffer_from_bin(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_color(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TERROR;
 
-	if (argn >= 2 && argn <= 5 &&
+	if (argn >= 2 && argn <= 6 &&
 			lbm_is_symbol(args[0]) &&
 			lbm_is_number(args[1])) {
 
@@ -1949,6 +1973,22 @@ static lbm_value ext_color(lbm_value *args, lbm_uint argn) {
 				return ENC_SYM_TERROR;
 			}
 		}
+		
+		bool mirrored = false;
+		if (argn >= 6) {
+			if (lbm_is_symbol(args[5])) {
+				lbm_uint sym = lbm_dec_sym(args[5]);
+				if (sym == symbol_repeat) {
+					mirrored = false;
+				} else if (sym == symbol_mirrored) {
+					mirrored = true;
+				} else {
+					return ENC_SYM_TERROR;
+				}
+			} else {
+				return ENC_SYM_TERROR;
+			}
+		}
 
 		COLOR_TYPE t;
 		if (lbm_dec_sym(args[0]) == symbol_regular) {
@@ -1965,10 +2005,104 @@ static lbm_value ext_color(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_TERROR;
 		}
 
-		res = color_allocate(t, color1, color2, param1, param2);
+		res = color_allocate(t, color1, color2, param1, param2, mirrored);
 	}
 
 	return res;
+}
+
+static lbm_value ext_color_set(lbm_value *args, lbm_uint argn) {
+	if (argn != 3 || !lispif_disp_is_color(args[0]) ||
+			!lbm_is_symbol(args[1])) {
+		return ENC_SYM_TERROR;
+	}
+
+	color_t *color = (color_t*)lbm_get_custom_value(args[0]);
+	
+	bool is_regular = color->type == COLOR_REGULAR;
+	bool is_gradient = color->type == COLOR_GRADIENT_X || color->type == COLOR_GRADIENT_Y;
+	bool is_pre = color->type == COLOR_PRE_X || color->type == COLOR_PRE_Y;
+	
+	lbm_uint prop = lbm_dec_sym(args[1]);
+	if (prop == symbol_color_0) {
+		if (!lbm_is_number(args[2]) || !(is_regular || is_gradient)) {
+			return ENC_SYM_TERROR;
+		}
+		color->color1 = lbm_dec_as_i32(args[2]);
+	} else if (prop == symbol_color_1) {
+		if (!lbm_is_number(args[2]) || !is_gradient) {
+			return ENC_SYM_TERROR;
+		}
+		color->color2 = lbm_dec_as_i32(args[2]);
+	} else if (prop == symbol_width) {
+		if (!lbm_is_number(args[2]) || !is_gradient) {
+			return ENC_SYM_TERROR;
+		}
+		color->param1 = lbm_dec_as_u32(args[2]);
+	} else if (prop == symbol_offset) {
+		if (!lbm_is_number(args[2]) || !(is_gradient || is_pre)) {
+			return ENC_SYM_TERROR;
+		}
+		color->param2 = lbm_dec_as_u32(args[2]);		
+	} else if (prop == symbol_repeat_type) {
+		if (!lbm_is_symbol(args[2]) || !(is_gradient || is_pre)) {
+			return ENC_SYM_TERROR;
+		}
+		lbm_uint sym = lbm_dec_sym(args[2]);
+		if (sym == symbol_repeat) {
+			color->mirrored = false;
+		} else if (sym == symbol_mirrored) {
+			color->mirrored = true;
+		} else {
+			return ENC_SYM_TERROR;
+		}
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_color_get(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 || !lispif_disp_is_color(args[0]) ||
+			!lbm_is_symbol(args[1])) {
+		return ENC_SYM_TERROR;
+	}
+
+	color_t *color = (color_t*)lbm_get_custom_value(args[0]);
+	
+	bool is_gradient = color->type == COLOR_GRADIENT_X || color->type == COLOR_GRADIENT_Y;
+	bool is_pre = color->type == COLOR_PRE_X || color->type == COLOR_PRE_Y;
+	
+	lbm_uint prop = lbm_dec_sym(args[1]);
+	if (prop == symbol_color_0) {
+		// always allowed
+		return lbm_enc_u32(color->color1);
+	} else if (prop == symbol_color_1) {
+		if (!is_gradient && !is_pre) {
+			return ENC_SYM_TERROR;
+		}
+		return lbm_enc_u32(color->color2);
+	} else if (prop == symbol_width) {
+		if (!is_gradient && !is_pre) {
+			return ENC_SYM_TERROR;
+		}
+		return lbm_enc_i32(color->param1);
+	} else if (prop == symbol_offset) {
+		if (!is_gradient && !is_pre) {
+			return ENC_SYM_TERROR;
+		}
+		return lbm_enc_i32(color->param2);
+	} else if (prop == symbol_repeat_type) {
+		if (!is_gradient && !is_pre) {
+			return ENC_SYM_TERROR;
+		}
+		return lbm_enc_sym(color->mirrored ? symbol_mirrored : symbol_repeat);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_color_setpre(lbm_value *args, lbm_uint argn) {
@@ -1989,6 +2123,23 @@ static lbm_value ext_color_setpre(lbm_value *args, lbm_uint argn) {
 	color->precalc[pos] = new_color;
 
 	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_color_getpre(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 || !lispif_disp_is_color(args[0]) ||
+			!lbm_is_number(args[1])) {
+		return ENC_SYM_TERROR;
+	}
+
+	color_t *color = (color_t*)lbm_get_custom_value(args[0]);
+
+	uint32_t pos = lbm_dec_as_u32(args[1]);
+
+	if (color->precalc == 0 || pos >= COLOR_PRECALC_LEN) {
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_u32(color->precalc[pos]);
 }
 
 static lbm_value ext_clear(lbm_value *args, lbm_uint argn) {
@@ -2809,7 +2960,10 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("img-buffer", ext_image_buffer);
 	lbm_add_extension("img-buffer-from-bin", ext_image_buffer_from_bin);
 	lbm_add_extension("img-color", ext_color);
+	lbm_add_extension("img-color-set", ext_color_set);
+	lbm_add_extension("img-color-get", ext_color_get);
 	lbm_add_extension("img-color-setpre", ext_color_setpre);
+	lbm_add_extension("img-color-getpre", ext_color_getpre);
 	lbm_add_extension("img-dims", ext_image_dims);
 	lbm_add_extension("img-setpix", ext_putpixel);
 	lbm_add_extension("img-line", ext_line);
