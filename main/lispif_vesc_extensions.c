@@ -2530,8 +2530,8 @@ static void event_task(void *arg) {
 
 // Remote Messages
 
-// (rmsg-wait slot timeout)
-static lbm_value ext_rmsg_wait(lbm_value *args, lbm_uint argn) {
+// (canmsg-recv slot timeout)
+static lbm_value ext_canmsg_recv(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 
 	int slot = lbm_dec_as_i32(args[0]);
@@ -2552,8 +2552,8 @@ static lbm_value ext_rmsg_wait(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-// (rmsg-send-can can-id slot msg)
-static lbm_value ext_rmsg_send_can(lbm_value *args, lbm_uint argn) {
+// (canmsg-send can-id slot msg)
+static lbm_value ext_canmsg_send(lbm_value *args, lbm_uint argn) {
 	if (argn != 3 ||
 			!lbm_is_number(args[0]) ||
 			!lbm_is_number(args[1]) ||
@@ -2752,9 +2752,9 @@ void lispif_load_vesc_extensions(void) {
 	// Disp extensions
 	lispif_load_disp_extensions();
 
-	// Remote Messages
-	lbm_add_extension("rmsg-wait", ext_rmsg_wait);
-	lbm_add_extension("rmsg-send-can", ext_rmsg_send_can);
+	// CAN-Messages
+	lbm_add_extension("canmsg-recv", ext_canmsg_recv);
+	lbm_add_extension("canmsg-send", ext_canmsg_send);
 
 	// TODO:
 	// - file system
