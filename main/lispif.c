@@ -31,6 +31,7 @@
 #include "conf_general.h"
 #include "lbm_prof.h"
 #include "esp_timer.h"
+#include "utils.h"
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
@@ -63,6 +64,7 @@ static bool lisp_thd_running = false;
 static SemaphoreHandle_t lbm_mutex;
 
 static int repl_cid = -1;
+static volatile TickType_t repl_time = 0;
 static int restart_cnt = 0;
 
 static esp_timer_handle_t prof_timer;
@@ -263,6 +265,10 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_LISP_REPL_CMD: {
+		if (UTILS_AGE_S(repl_time) <= 0.5) {
+			return;
+		}
+
 		if (!lisp_thd_running) {
 			lispif_restart(true, false);
 		}
@@ -445,10 +451,10 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 					lbm_continue_eval();
 
 					if (reply_func != NULL) {
-						lbm_wait_ctx(repl_cid, 500);
+						repl_time = xTaskGetTickCount();
+					} else {
+						repl_cid = -1;
 					}
-
-					repl_cid = -1;
 				} else {
 					commands_printf_lisp("Could not pause");
 				}
@@ -620,9 +626,13 @@ static void done_callback(eval_context_t *ctx) {
 	lbm_value t = ctx->r;
 
 	if (cid == repl_cid) {
-		char output[128];
-		lbm_print_value(output, sizeof(output), t);
-		commands_printf_lisp("> %s", output);
+		if (UTILS_AGE_S(repl_time) < 0.5) {
+			char output[128];
+			lbm_print_value(output, sizeof(output), t);
+			commands_printf_lisp("> %s", output);
+		} else {
+			repl_cid = -1;
+		}
 	}
 }
 
