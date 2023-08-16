@@ -1227,6 +1227,10 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 			|| (in_both_caps && !angle_is_closed && (
 				(start_is_past0 == 1 && end_is_past0 == 1)
 				|| (start_is_past1 == 1 && end_is_past1 == 1)
+			))
+			|| (in_both_caps && angle_is_closed && (
+				(start_is_past0 == 1 && end_is_past0 == 1)
+				&& (start_is_past1 == 1 && end_is_past1 == 1)				
 			))) {
 			return;
 		}
@@ -1470,12 +1474,12 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	float angle1_cos = cosf(angle1);
 	float angle1_sin = sinf(angle1);
 	
-	int outer_x0 = (int)(angle0_cos * (float)(radius_outer));
-	int outer_y0 = (int)(angle0_sin * (float)(radius_outer));
+	int outer_x0 = (int)(angle0_cos * (float)(radius_outer + 1));
+	int outer_y0 = (int)(angle0_sin * (float)(radius_outer + 1));
 
-	int outer_x1 = (int)(angle1_cos * (float)(radius_outer));
-	int outer_y1 = (int)(angle1_sin * (float)(radius_outer));
-
+	int outer_x1 = (int)(angle1_cos * (float)(radius_outer + 1));
+	int outer_y1 = (int)(angle1_sin * (float)(radius_outer + 1));
+	
 	int inner_y0;
 	int inner_y1;
 
@@ -1498,7 +1502,9 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	// Highest and lowest (y coord wise) drawn line of the base arc (excluding
 	// the circular end caps). This range is *inclusive*!
 	// Note that these might be slightly off due to inconsistent rounding between
-	// Bresenhamn's algorithm and point rotation.
+	// Bresenhamn's algorithm and point rotation. (I don't think the point about
+	// Bresenhamn is relevant as we don't use it anymore. Still wouldn't trust
+	// them completely though...)
 	int min_y = MIN(outer_y0, MIN(outer_y1, MIN(inner_y0, inner_y1)));
 	int max_y = MAX(outer_y0, MAX(outer_y1, MAX(inner_y0, inner_y1)));
 	if (angle0 < angle1) {
@@ -1508,7 +1514,7 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 		} else if (angle0 < M_3PI_2 && angle1 > M_3PI_2) {
 			min_y = -radius_outer;
 		} else if (angle0 < M_PI_2 && angle1 > M_PI_2) {
-			max_y = radius_outer; 
+			max_y = radius_outer;
 		}
 	} else {
 		if ((angle0 < M_3PI_2 && angle1 >= M_PI_2)
