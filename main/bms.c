@@ -41,6 +41,9 @@ static volatile bms_soc_soh_temp_stat m_stat_temp_max;
 static volatile bms_soc_soh_temp_stat m_stat_soc_min;
 static volatile bms_soc_soh_temp_stat m_stat_soc_max;
 
+// Function pointers
+static void(*cmd_handler)(COMM_PACKET_ID cmd, int param1, int param2) = 0;
+
 void bms_init(void) {
 	memset((void*)&m_values, 0, sizeof(m_values));
 	memset((void*)&m_stat_temp_max, 0, sizeof(m_stat_temp_max));
@@ -326,21 +329,39 @@ void bms_process_cmd(unsigned char *data, unsigned int len,
 		break;
 	}
 
-	if (UTILS_AGE_S(m_values.update_time) < MAX_CAN_AGE_SEC) {
-		switch (packet_id) {
-		case COMM_BMS_SET_CHARGE_ALLOWED:
-		case COMM_BMS_SET_BALANCE_OVERRIDE:
-		case COMM_BMS_RESET_COUNTERS:
-		case COMM_BMS_FORCE_BALANCE:
-		case COMM_BMS_ZERO_CURRENT_OFFSET: {
-			comm_can_send_buffer(m_values.can_id, data - 1, len + 1, 0);
-		} break;
+	switch (packet_id) {
+	case COMM_BMS_SET_CHARGE_ALLOWED:
+	case COMM_BMS_SET_BALANCE_OVERRIDE:
+	case COMM_BMS_RESET_COUNTERS:
+	case COMM_BMS_FORCE_BALANCE:
+	case COMM_BMS_ZERO_CURRENT_OFFSET: {
+		if (cmd_handler) {
+			int param1 = -1;
+			int param2 = -1;
 
-		default:
-			break;
+			if (len >= 1) {
+				param1 = data[0];
+			}
+
+			if (len >= 2) {
+				param2 = data[1];
+			}
+
+			cmd_handler(packet_id, param1, param2);
+		} else {
+			if (UTILS_AGE_S(m_values.update_time) < MAX_CAN_AGE_SEC) {
+				comm_can_send_buffer(m_values.can_id, data - 1, len + 1, 0);
+			}
 		}
-	}
+	} break;
 
+	default:
+		break;
+	}
+}
+
+void bms_register_cmd_handler(void (*handler)(COMM_PACKET_ID cmd, int param1, int param2)) {
+	cmd_handler = handler;
 }
 
 volatile bms_values *bms_get_values(void) {

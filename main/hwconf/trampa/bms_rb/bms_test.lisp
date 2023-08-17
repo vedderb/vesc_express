@@ -62,7 +62,22 @@
         })
         
         (sleep 0.1)
-})))
+})
+
+(defun event-handler ()
+    (loopwhile t
+        (recv
+            ((event-bms-chg-allow (? allow)) (bms-set-chg allow))
+            ((? a) (print a))
+)))
+
+(event-register-handler (spawn event-handler))
+
+(event-enable 'event-bms-chg-allow)
+(event-enable 'event-bms-bal-ovr)
+(event-enable 'event-bms-reset-cnt)
+(event-enable 'event-bms-force-bal)
+(event-enable 'event-bms-zero-ofs)
 
 (set-bms-val 'bms-cell-num 13)
 (set-bms-val 'bms-temp-adc-num 3)

@@ -1078,10 +1078,115 @@ static volatile bool event_can_sid_en = false;
 static volatile bool event_can_eid_en = false;
 static volatile bool event_data_rx_en = false;
 static volatile bool event_esp_now_rx_en = false;
+
+static volatile bool event_bms_chg_allow_en = false;
+static volatile bool event_bms_bal_ovr_en = false;
+static volatile bool event_bms_reset_cnt_en = false;
+static volatile bool event_bms_force_bal_en = false;
+static volatile bool event_bms_zero_ofs_en = false;
+
 static lbm_uint sym_event_can_sid;
 static lbm_uint sym_event_can_eid;
 static lbm_uint sym_event_data_rx;
 static lbm_uint sym_event_esp_now_rx;
+
+static lbm_uint sym_bms_chg_allow;
+static lbm_uint sym_bms_bal_ovr;
+static lbm_uint sym_bms_reset_cnt;
+static lbm_uint sym_bms_force_bal;
+static lbm_uint sym_bms_zero_ofs;
+
+static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
+	switch (cmd) {
+	case COMM_BMS_SET_CHARGE_ALLOWED: {
+		if (event_bms_chg_allow_en) {
+			lbm_flat_value_t v;
+			if (lbm_start_flatten(&v, 50)) {
+				f_cons(&v);
+				f_sym(&v, sym_bms_chg_allow);
+				f_cons(&v);
+				f_i(&v, param1);
+				f_sym(&v, ENC_SYM_NIL);
+
+				if (!lbm_event(&v)) {
+					lbm_free(v.buf);
+				}
+			}
+		}
+	} break;
+
+	case COMM_BMS_SET_BALANCE_OVERRIDE: {
+		if (event_bms_bal_ovr_en) {
+			lbm_flat_value_t v;
+			if (lbm_start_flatten(&v, 50)) {
+				f_cons(&v);
+				f_sym(&v, sym_bms_bal_ovr);
+				f_cons(&v);
+				f_i(&v, param1);
+				f_cons(&v);
+				f_i(&v, param2);
+				f_sym(&v, ENC_SYM_NIL);
+
+				if (!lbm_event(&v)) {
+					lbm_free(v.buf);
+				}
+			}
+		}
+	} break;
+
+	case COMM_BMS_RESET_COUNTERS: {
+		if (event_bms_reset_cnt_en) {
+			lbm_flat_value_t v;
+			if (lbm_start_flatten(&v, 50)) {
+				f_cons(&v);
+				f_sym(&v, sym_bms_reset_cnt);
+				f_cons(&v);
+				f_i(&v, param1);
+				f_cons(&v);
+				f_i(&v, param2);
+				f_sym(&v, ENC_SYM_NIL);
+
+				if (!lbm_event(&v)) {
+					lbm_free(v.buf);
+				}
+			}
+		}
+	} break;
+
+	case COMM_BMS_FORCE_BALANCE: {
+		if (event_bms_force_bal_en) {
+			lbm_flat_value_t v;
+			if (lbm_start_flatten(&v, 50)) {
+				f_cons(&v);
+				f_sym(&v, sym_bms_force_bal);
+				f_cons(&v);
+				f_i(&v, param1);
+				f_sym(&v, ENC_SYM_NIL);
+
+				if (!lbm_event(&v)) {
+					lbm_free(v.buf);
+				}
+			}
+		}
+	} break;
+
+	case COMM_BMS_ZERO_CURRENT_OFFSET: {
+		if (event_bms_zero_ofs_en) {
+			lbm_flat_value_t v;
+			if (lbm_start_flatten(&v, 50)) {
+				f_sym(&v, sym_bms_zero_ofs);
+
+				if (!lbm_event(&v)) {
+					lbm_free(v.buf);
+				}
+			}
+		}
+	} break;
+
+	default:
+		break;
+	}
+}
 
 static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 && argn != 2) {
@@ -1107,8 +1212,25 @@ static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 		event_data_rx_en = en;
 	} else if (name == sym_event_esp_now_rx) {
 		event_esp_now_rx_en = en;
+	} else if (name == sym_bms_chg_allow) {
+		event_bms_chg_allow_en = en;
+	} else if (name == sym_bms_bal_ovr) {
+		event_bms_bal_ovr_en = en;
+	} else if (name == sym_bms_reset_cnt) {
+		event_bms_reset_cnt_en = en;
+	} else if (name == sym_bms_force_bal) {
+		event_bms_force_bal_en = en;
+	} else if (name == sym_bms_zero_ofs) {
+		event_bms_zero_ofs_en = en;
 	} else {
 		return ENC_SYM_EERROR;
+	}
+
+	if (event_bms_chg_allow_en || event_bms_bal_ovr_en ||
+			event_bms_reset_cnt_en || event_bms_force_bal_en || event_bms_zero_ofs_en) {
+		bms_register_cmd_handler(bms_cmd_handler);
+	} else {
+		bms_register_cmd_handler(NULL);
 	}
 
 	return ENC_SYM_TRUE;
@@ -2688,6 +2810,12 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_symbol_const("event-data-rx", &sym_event_data_rx);
 	lbm_add_symbol_const("event-esp-now-rx", &sym_event_esp_now_rx);
 
+	lbm_add_symbol_const("event-bms-chg-allow", &sym_bms_chg_allow);
+	lbm_add_symbol_const("event-bms-bal-ovr", &sym_bms_bal_ovr);
+	lbm_add_symbol_const("event-bms-reset-cnt", &sym_bms_reset_cnt);
+	lbm_add_symbol_const("event-bms-force-bal", &sym_bms_force_bal);
+	lbm_add_symbol_const("event-bms-zero-ofs", &sym_bms_zero_ofs);
+
 	lbm_add_symbol_const("a01", &sym_res);
 	lbm_add_symbol_const("a02", &sym_loop);
 	lbm_add_symbol_const("break", &sym_break);
@@ -2860,6 +2988,15 @@ void lispif_disable_all_events(void) {
 	event_can_sid_en = false;
 	event_can_eid_en = false;
 	event_data_rx_en = false;
+
+	event_bms_chg_allow_en = false;
+	event_bms_bal_ovr_en = false;
+	event_bms_reset_cnt_en = false;
+	event_bms_force_bal_en = false;
+	event_bms_zero_ofs_en = false;
+
+	bms_register_cmd_handler(NULL);
+
 	esp_now_recv_cid = -1;
 	can_recv_sid_cid = -1;
 	can_recv_eid_cid = -1;
