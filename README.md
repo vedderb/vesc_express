@@ -4,7 +4,7 @@ The is the codebase for the VESC Express, which is a WiFi and Bluetooth-enabled 
 
 ## Toolchain
 
-Instructions for how to set up the toolchain can be found here:
+Follow the instructions for how to set up the ESP-IDF toolchain but stop when you get to the part where you install then go to the next step:
 [https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html)
 
 **Note**  
@@ -27,6 +27,8 @@ At the moment development is done using the stable 5.0.2-release.
 Once the toolchain is set up in the current path, the project can be built with
 
 ```bash
+cd esp-idf-v5.0.2/
+. ./export.sh #the two dots are important.  This will start the esp environment. 
 idf.py build
 ```
 
