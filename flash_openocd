@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -e
+
+openocd -f board/esp32c3-builtin.cfg -c "program_esp build/partition_table/partition-table.bin 0x8000 verify reset exit"
+openocd -f board/esp32c3-builtin.cfg -c "program_esp build/bootloader/bootloader.bin 0 verify reset exit"
+openocd -f board/esp32c3-builtin.cfg -c "program_esp build/vesc_express.bin 0x20000 verify reset exit"
