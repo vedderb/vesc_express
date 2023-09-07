@@ -7,6 +7,8 @@ Some ESP32-C3 chips refuse to flash over USB using esptool for the first time fo
 ```bash
 git clone https://github.com/ntfreak/openocd.git openocd
 cd openocd
+sudo apt install libusb-1.0-0-dev libtool
+./bootstrap
 ./configure
 make -j8
 sudo make install
