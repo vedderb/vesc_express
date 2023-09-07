@@ -25,6 +25,8 @@ sudo udevadm trigger
 4. Use the following openocd-commands to flash a firmware after compiling it
 
 ```bash
+get_idf # Get idf environment
+
 openocd -f board/esp32c3-builtin.cfg -c "program_esp build/partition_table/partition-table.bin 0x8000 verify reset exit"
 
 openocd -f board/esp32c3-builtin.cfg -c "program_esp build/bootloader/bootloader.bin 0 verify reset exit"
