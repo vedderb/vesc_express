@@ -82,9 +82,6 @@ static esp_ota_handle_t update_handle = 0;
 static void(* volatile send_func)(unsigned char *data, unsigned int len) = 0;
 static void(* volatile send_func_can_fwd)(unsigned char *data, unsigned int len) = 0;
 
-// Private functions
-static bool rmtree(const char *path);
-
 static void send_func_dummy(unsigned char *data, unsigned int len) {
 	(void)data; (void)len;
 }
@@ -407,7 +404,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 						buffer_append_int32(send_buffer_global, size, &ind);
 
 						strcpy((char*)send_buffer_global + ind, dir->d_name);
-						ind += strlen(dir->d_name) + 1;
+						ind += len_f + 1;
 					} else {
 						send_buffer_global[1] = 1; // There are more files to list
 						break;
@@ -606,7 +603,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		ind = 0;
 		uint8_t send_buffer[50];
 		send_buffer[ind++] = packet_id;
-		send_buffer[ind++] = rmtree(path_full);
+		send_buffer[ind++] = utils_rmtree(path_full);
 		reply_func(send_buffer, ind);
 	} break;
 
@@ -941,39 +938,4 @@ void commands_send_app_data(unsigned char *data, unsigned int len) {
 	index += len;
 	commands_send_packet(send_buffer_global, index);
 	mempools_free_packet_buffer(send_buffer_global);
-}
-
-static bool rmtree(const char *path) {
-	struct stat stat_path;
-	DIR *dir;
-
-	stat(path, &stat_path);
-
-	if (S_ISDIR(stat_path.st_mode) == 0) {
-		return unlink(path) == 0;
-	}
-
-	if ((dir = opendir(path)) == NULL) {
-		return false;
-	}
-
-	size_t path_len = strlen(path);
-
-	struct dirent *entry;
-	while ((entry = readdir(dir)) != NULL) {
-		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
-			continue;
-		}
-		char *path_full = malloc(path_len + strlen(entry->d_name) + 2);
-		strcpy(path_full, path);
-		strcat(path_full, "/");
-		strcat(path_full, entry->d_name);
-		rmtree(path_full);
-		free(path_full);
-	}
-
-	int res = rmdir(path);
-	closedir(dir);
-
-	return res == 0;
 }
