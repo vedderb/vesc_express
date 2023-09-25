@@ -2839,6 +2839,7 @@ static lbm_value ext_canmsg_send(lbm_value *args, lbm_uint argn) {
 #define MAX_FILES 5
 static FILE *files_open[MAX_FILES + 1] = {0};
 static int file_now = 0;
+static const char* str_f_not_open = "File not open.";
 
 static char* dec_str_check(lbm_value val) {
 	char *res = 0;
@@ -2853,6 +2854,19 @@ static char* dec_str_check(lbm_value val) {
 		}
 	}
 	return res;
+}
+
+static FILE* file_from_arg(lbm_value arg) {
+	uint32_t fn = lbm_dec_as_u32(arg);
+	FILE *f = 0;
+	for (int i = 0;i < MAX_FILES;i++) {
+		if ((FILE*)fn == files_open[i]) {
+			f = files_open[i];
+			break;
+		}
+	}
+
+	return f;
 }
 
 // (f-open path mode) -> file
@@ -2881,7 +2895,7 @@ static lbm_value ext_f_open(lbm_value *args, lbm_uint argn) {
 		files_open[file_now++] = f;
 		return lbm_enc_u32((uint32_t)f);
 	} else {
-		return ENC_SYM_EERROR;
+		return ENC_SYM_NIL;
 	}
 }
 
@@ -2901,6 +2915,7 @@ static lbm_value ext_f_close(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
 		return ENC_SYM_EERROR;
 	}
 
@@ -2919,16 +2934,9 @@ static lbm_value ext_f_close(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_f_read(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 
-	uint32_t fn = lbm_dec_as_u32(args[0]);
-	FILE *f = 0;
-	for (int i = 0;i < MAX_FILES;i++) {
-		if ((FILE*)fn == files_open[i]) {
-			f = files_open[i];
-			break;
-		}
-	}
-
+	FILE *f = file_from_arg(args[0]);
 	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
 		return ENC_SYM_EERROR;
 	}
 
@@ -2937,7 +2945,7 @@ static lbm_value ext_f_read(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_MERROR;
 	if (lbm_create_array(&res, sz)) {
 		lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
-		int rd = read(fileno(f), arr->data, sz);
+		int rd = fread(arr->data, 1, sz, f);
 		if (rd == 0) {
 			lbm_free(arr->data);
 			arr->data = 0;
@@ -2961,16 +2969,9 @@ static lbm_value ext_f_read(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_f_readline(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 
-	uint32_t fn = lbm_dec_as_u32(args[0]);
-	FILE *f = 0;
-	for (int i = 0;i < MAX_FILES;i++) {
-		if ((FILE*)fn == files_open[i]) {
-			f = files_open[i];
-			break;
-		}
-	}
-
+	FILE *f = file_from_arg(args[0]);
 	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
 		return ENC_SYM_EERROR;
 	}
 
@@ -3004,16 +3005,9 @@ static lbm_value ext_f_write(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	uint32_t fn = lbm_dec_as_u32(args[0]);
-	FILE *f = 0;
-	for (int i = 0;i < MAX_FILES;i++) {
-		if ((FILE*)fn == files_open[i]) {
-			f = files_open[i];
-			break;
-		}
-	}
-
+	FILE *f = file_from_arg(args[0]);
 	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
 		return ENC_SYM_EERROR;
 	}
 
@@ -3023,10 +3017,45 @@ static lbm_value ext_f_write(lbm_value *args, lbm_uint argn) {
 		int wr = fwrite(array->data, 1, array->size, f);
 		if (wr == array->size) {
 			res = ENC_SYM_TRUE;
+		} else {
+			lbm_set_error_reason("Could not write to file.");
 		}
 	}
 
 	return res;
+}
+
+// (f-tell file) -> position
+static lbm_value ext_f_tell(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_i32(ftell(f));
+}
+
+// (f-seek file pos) -> t, nil
+static lbm_value ext_f_seek(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	int32_t pos = lbm_dec_as_i32(args[1]);
+	int32_t pos_now = ftell(f);
+	if ((pos_now + pos) < 0) {
+		lbm_set_error_reason("Cannot seek past the beginning of file.");
+		return ENC_SYM_EERROR;
+	}
+
+	return fseek(f, pos, pos >= 0 ? SEEK_SET : SEEK_END) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 // (f-mkdir path) -> t, nil
@@ -3137,26 +3166,40 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 	}
 }
 
-// (f-size path) -> size
+// (f-size path/file) -> size
 static lbm_value ext_f_size(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(1);
 
-	char *path = dec_str_check(args[0]);
-	if (!path) {
-		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
-		return ENC_SYM_TERROR;
-	}
-
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
-	strcat(path_full, path);
-
-	FILE *f = fopen(path_full, "r");
 	int32_t sz = -1;
-	if (f) {
+
+	if (lbm_is_number(args[0])) {
+		FILE *f = file_from_arg(args[0]);
+		if (!f) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+
+		uint32_t pos_old = ftell(f);
 		fseek(f, 0, SEEK_END);
 		sz = ftell(f);
-		fclose(f);
+		fseek(f, pos_old, SEEK_SET);
+	} else {
+		char *path = dec_str_check(args[0]);
+		if (!path) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+
+		char path_full[strlen(path) + strlen("/sdcard/") + 1];
+		strcpy(path_full, "/sdcard/");
+		strcat(path_full, path);
+
+		FILE *f = fopen(path_full, "r");
+		if (f) {
+			fseek(f, 0, SEEK_END);
+			sz = ftell(f);
+			fclose(f);
+		}
 	}
 
 	return lbm_enc_i32(sz);
@@ -3361,6 +3404,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("f-read", ext_f_read);
 	lbm_add_extension("f-readline", ext_f_readline);
 	lbm_add_extension("f-write", ext_f_write);
+	lbm_add_extension("f-tell", ext_f_tell);
+	lbm_add_extension("f-seek", ext_f_seek);
 	lbm_add_extension("f-mkdir", ext_f_mkdir);
 	lbm_add_extension("f-rm", ext_f_rm);
 	lbm_add_extension("f-ls", ext_f_ls);
