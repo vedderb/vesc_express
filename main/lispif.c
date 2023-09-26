@@ -64,6 +64,8 @@ static bool lisp_thd_running = false;
 static SemaphoreHandle_t lbm_mutex;
 
 static int repl_cid = -1;
+static lbm_cid repl_cid_for_buffer = -1;
+static char *repl_buffer = 0;
 static volatile TickType_t repl_time = 0;
 static int restart_cnt = 0;
 
@@ -446,14 +448,21 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				ok = timeout_cnt > 0;
 
 				if (ok) {
-					lbm_create_string_char_channel(&string_tok_state, &string_tok, (char*)data);
-					repl_cid = lbm_load_and_eval_expression(&string_tok);
-					lbm_continue_eval();
+					repl_buffer = lbm_malloc_reserve(len);
+					if (repl_buffer) {
+						memcpy(repl_buffer, data, len);
+						lbm_create_string_char_channel(&string_tok_state, &string_tok, repl_buffer);
+						repl_cid = lbm_load_and_eval_expression(&string_tok);
+						repl_cid_for_buffer = repl_cid;
+						lbm_continue_eval();
 
-					if (reply_func != NULL) {
-						repl_time = xTaskGetTickCount();
+						if (reply_func != NULL) {
+							repl_time = xTaskGetTickCount();
+						} else {
+							repl_cid = -1;
+						}
 					} else {
-						repl_cid = -1;
+						commands_printf_lisp("Not enough memory");
 					}
 				} else {
 					commands_printf_lisp("Could not pause");
@@ -634,6 +643,11 @@ static void done_callback(eval_context_t *ctx) {
 			repl_cid = -1;
 		}
 	}
+
+	if (cid == repl_cid_for_buffer && repl_buffer) {
+		lbm_free(repl_buffer);
+		repl_buffer = 0;
+	}
 }
 
 bool lispif_restart(bool print, bool load_code) {
@@ -741,6 +755,11 @@ bool lispif_restart(bool print, bool load_code) {
 		lbm_continue_eval();
 
 		res = true;
+	}
+
+	if (repl_buffer) {
+		lbm_free(repl_buffer);
+		repl_buffer = 0;
 	}
 
 	return res;
