@@ -15,7 +15,7 @@ p, li { white-space: pre-wrap; }
             <maxLen>0</maxLen>
         </config_name>
         <hw_name>
-            <longName>VESC Express</longName>
+            <longName>VESC BMS</longName>
             <type>0</type>
             <transmittable>0</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -105,7 +105,7 @@ p, li { white-space: pre-wrap; }
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NOTE:&lt;/span&gt;&lt;/p&gt;
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Wifi-settings will be applied after a reboot.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
             <cDefine>CONF_WIFI_MODE</cDefine>
-            <valInt>2</valInt>
+            <valInt>0</valInt>
             <enumNames>WiFi Disabled</enumNames>
             <enumNames>Station</enumNames>
             <enumNames>Access Point</enumNames>
@@ -283,7 +283,7 @@ p, li { white-space: pre-wrap; }
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NOTE:&lt;/span&gt;&lt;/p&gt;
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Bluetooth and wifi settings will be applied after a reboot.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
             <cDefine>CONF_BLE_NAME</cDefine>
-            <valString>ExpressT</valString>
+            <valString>VESC BMS</valString>
             <maxLen>8</maxLen>
         </ble_name>
         <ble_pin>
@@ -353,7 +353,7 @@ p, li { white-space: pre-wrap; }
             <minInt>0</minInt>
             <showDisplay>0</showDisplay>
             <stepInt>1</stepInt>
-            <valInt>11</valInt>
+            <valInt>5</valInt>
             <suffix></suffix>
             <vTx>4</vTx>
         </max_bal_ch>
@@ -518,7 +518,7 @@ p, li { white-space: pre-wrap; }
             <minDouble>0</minDouble>
             <showDisplay>0</showDisplay>
             <stepDouble>0.01</stepDouble>
-            <valDouble>3</valDouble>
+            <valDouble>1</valDouble>
             <vTxDoubleScale>1</vTxDoubleScale>
             <suffix> A</suffix>
             <vTx>9</vTx>
@@ -540,7 +540,7 @@ p, li { white-space: pre-wrap; }
             <minDouble>0</minDouble>
             <showDisplay>0</showDisplay>
             <stepDouble>0.01</stepDouble>
-            <valDouble>0.8</valDouble>
+            <valDouble>0.3</valDouble>
             <vTxDoubleScale>1</vTxDoubleScale>
             <suffix> A</suffix>
             <vTx>9</vTx>
@@ -562,7 +562,7 @@ p, li { white-space: pre-wrap; }
             <minDouble>0</minDouble>
             <showDisplay>0</showDisplay>
             <stepDouble>0.01</stepDouble>
-            <valDouble>0.5</valDouble>
+            <valDouble>0.3</valDouble>
             <vTxDoubleScale>1</vTxDoubleScale>
             <suffix> A</suffix>
             <vTx>9</vTx>
@@ -862,6 +862,12 @@ p, li { white-space: pre-wrap; }
                     <param>ble_name</param>
                     <param>ble_mode</param>
                     <param>ble_pin</param>
+                </subgroupParams>
+            </subgroup>
+            <subgroup>
+                <subgroupName>General</subgroupName>
+                <subgroupParams>
+                    <param>soc_filter_const</param>
                 </subgroupParams>
             </subgroup>
             <subgroup>
