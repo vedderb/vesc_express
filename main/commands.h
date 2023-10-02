@@ -37,4 +37,14 @@ void commands_plot_set_graph(int graph);
 void commands_send_plot_points(float x, float y);
 void commands_send_app_data(unsigned char *data, unsigned int len);
 
+// TODO: remove this
+// Rasmus debug stuff
+typedef void (*send_func_t)(unsigned char*,unsigned int);
+void commands_start_send_func_overwrite(
+    void (*new_send_func)(unsigned char *data, unsigned int len)
+);
+void commands_restore_send_func();
+send_func_t commands_get_send_func();
+
+
 #endif /* MAIN_COMMANDS_H_ */

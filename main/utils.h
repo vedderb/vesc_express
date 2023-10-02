@@ -39,6 +39,13 @@ int64_t utils_ms_tot(void);
 // Squared
 #define SQ(x)				((x) * (x))
 
+#ifndef MIN
+#define MIN(a,b) (((a) > (b)) ? (b) : (a))
+#endif
+#ifndef MAX
+#define MAX(a,b) (((a) < (b)) ? (b) : (a))
+#endif
+
 // For double precision literals
 #define D(x) 				((double)x##L)
 
