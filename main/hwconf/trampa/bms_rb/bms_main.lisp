@@ -58,7 +58,7 @@
             })
     })
     
-    (if (and (< soc 0.05) (< ichg 0.3)) (setq do-sleep true))
+    (if (and (< soc 0.05) (not charge-at-boot)) (setq do-sleep true))
     
 ;    (sleep 5)
 ;    (print v-cells)
@@ -273,6 +273,7 @@
 ; [OK] Ah cnt
 ; [OK] Wh cnt
 ; [OK] Save cnt in sleep
+; PSW error when voltage rises too fast
 
 (def t-last (systime))
 (loopwhile-thd 200 t {
