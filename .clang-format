@@ -1,0 +1,11 @@
+# BasedOnStyle: Google
+IndentWidth: 4
+AlignAfterOpenBracket: BlockIndent
+AlwaysBreakAfterReturnType: None
+PenaltyReturnTypeOnItsOwnLine: 1000
+SortIncludes: false
+BreakBeforeBinaryOperators: NonAssignment
+IndentCaseLabels: true
+UseTab: Always
+TabWidth: 4
+AllowShortFunctionsOnASingleLine: false
