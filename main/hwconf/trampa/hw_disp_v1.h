@@ -17,13 +17,15 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_HWCONF_TRAMPA_HW_XP_T_H_
-#define MAIN_HWCONF_TRAMPA_HW_XP_T_H_
+#ifndef MAIN_HWCONF_TRAMPA_HW_DISP_V1_H_
+#define MAIN_HWCONF_TRAMPA_HW_DISP_V1_H_
 
 #include "driver/gpio.h"
 #include "adc.h"
 
 #define HW_NAME						"VDisp"
+
+#define HW_NO_UART
 
 #define HW_INIT_HOOK()				hw_init()
 
@@ -39,4 +41,4 @@
 // Functions
 void hw_init(void);
 
-#endif /* MAIN_HWCONF_TRAMPA_HW_XP_T_H_ */
+#endif /* MAIN_HWCONF_TRAMPA_HW_DISP_V1_H_ */

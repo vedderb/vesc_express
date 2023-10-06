@@ -17,7 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#include "hw_xp_t.h"
+#include "hw_disp_v1.h"
 
 void hw_init(void) {
 

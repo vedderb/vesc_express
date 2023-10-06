@@ -46,7 +46,6 @@ static size_t bitmap_size = 0;
 static lbm_cons_t *heap;
 static uint32_t *memory_array;
 static uint32_t *bitmap_array;
-static uint32_t gc_stack_storage[GC_STACK_SIZE];
 static uint32_t print_stack_storage[PRINT_STACK_SIZE];
 static extension_fptr extension_storage[EXTENSION_STORAGE_SIZE];
 static lbm_value variable_storage[VARIABLE_STORAGE_SIZE];
@@ -60,7 +59,7 @@ static lbm_buffered_channel_state_t buffered_tok_state;
 static lbm_char_channel_t buffered_string_tok;
 
 static TaskHandle_t eval_task;
-static bool lisp_thd_running = false;
+static volatile bool lisp_thd_running = false;
 static SemaphoreHandle_t lbm_mutex;
 
 static int repl_cid = -1;
@@ -334,6 +333,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Recovered: %d\n", lbm_heap_state.gc_recovered);
 				commands_printf_lisp("Recovered arrays: %u\n", lbm_heap_state.gc_recovered_arrays);
 				commands_printf_lisp("Marked: %d\n", lbm_heap_state.gc_marked);
+				commands_printf_lisp("GC SP max: %u (size %u)\n", lbm_heap_state.gc_stack.max_sp, lbm_heap_state.gc_stack.size);
 				commands_printf_lisp("--(Symbol and Array memory)--\n");
 				commands_printf_lisp("Memory size: %u Words\n", lbm_memory_num_words());
 				commands_printf_lisp("Memory free: %u Words\n", lbm_memory_num_free());
@@ -668,7 +668,7 @@ bool lispif_restart(bool print, bool load_code) {
 
 		if (!lisp_thd_running) {
 			lbm_init(heap, heap_size,
-					gc_stack_storage, GC_STACK_SIZE,
+					GC_STACK_SIZE,
 					memory_array, mem_size,
 					bitmap_array, bitmap_size,
 					print_stack_storage, PRINT_STACK_SIZE,
@@ -691,7 +691,7 @@ bool lispif_restart(bool print, bool load_code) {
 			}
 
 			lbm_init(heap, heap_size,
-					gc_stack_storage, GC_STACK_SIZE,
+					GC_STACK_SIZE,
 					memory_array, mem_size,
 					bitmap_array, bitmap_size,
 					print_stack_storage, PRINT_STACK_SIZE,
@@ -797,4 +797,6 @@ static void eval_thread(void *arg) {
 	(void)arg;
 	eval_task = xTaskGetCurrentTaskHandle();
 	lbm_run_eval();
+	lisp_thd_running = false;
+	vTaskDelete(NULL);
 }

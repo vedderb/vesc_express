@@ -37,6 +37,8 @@
 
 #define HW_NAME						"BMS RB"
 
+#define HW_NO_UART
+
 // Configuration overrides
 #define OVR_CONF_PARSER_C			"rb_confparser.c"
 #define OVR_CONF_PARSER_H			"rb_confparser.h"
