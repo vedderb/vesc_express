@@ -46,6 +46,10 @@ int64_t utils_ms_tot(void);
 #define MAX(a,b) (((a) < (b)) ? (b) : (a))
 #endif
 
+#ifndef NUMBER_OF
+#define NUMBER_OF(x) (sizeof(x) / sizeof((x)[0]))
+#endif
+
 // For double precision literals
 #define D(x) 				((double)x##L)
 

@@ -44,6 +44,7 @@
 #include "mempools.h"
 #include "lispif.h"
 #include "bms.h"
+#include "ble/custom_ble.h"
 
 #include <string.h>
 #include <sys/time.h>
@@ -121,7 +122,12 @@ void app_main(void) {
 	vTaskDelay(1);
 
 	if (backup.config.ble_mode != BLE_MODE_DISABLED) {
-		comm_ble_init();
+		if (SETTING_CUSTOM_BLE) {
+			custom_ble_init();
+		} else {
+			
+			comm_ble_init();
+		}
 	}
 
 	if (backup.config.wifi_mode != WIFI_MODE_DISABLED) {

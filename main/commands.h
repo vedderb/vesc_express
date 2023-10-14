@@ -37,4 +37,29 @@ void commands_plot_set_graph(int graph);
 void commands_send_plot_points(float x, float y);
 void commands_send_app_data(unsigned char *data, unsigned int len);
 
+// TODO: remove this
+// Rasmus debug stuff
+typedef void (*send_func_t)(unsigned char*,unsigned int);
+void commands_start_send_func_overwrite(
+    void (*new_send_func)(unsigned char *data, unsigned int len)
+);
+void commands_restore_send_func();
+send_func_t commands_get_send_func();
+void commands_store_send_func();
+
+// source: https://stackoverflow.com/a/5897216/15507414
+#define VA_ARGS(...) , ##__VA_ARGS__
+
+extern volatile send_func_t stored_send_func;
+#define stored_printf(fmt, ...)                                                \
+	{                                                                          \
+		if (stored_send_func) {                                                \
+			commands_start_send_func_overwrite(stored_send_func);              \
+			commands_printf(fmt VA_ARGS(__VA_ARGS__));                         \
+			commands_restore_send_func(stored_send_func);                      \
+		}                                                                      \
+	}
+
+void commands_print_thread();
+
 #endif /* MAIN_COMMANDS_H_ */

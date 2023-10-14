@@ -55,6 +55,9 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/math_extensions.c"
 "lispBM/src/extensions/string_extensions.c"
 
+"ble/custom_ble.c"
+"ble/lispif_ble_extensions.c"
+
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
 "display/disp_ili9341.c"

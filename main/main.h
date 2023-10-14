@@ -23,6 +23,9 @@
 #include "datatypes.h"
 #include "hw.h"
 
+// TODO: Move this to the config.
+#define SETTING_CUSTOM_BLE true
+
 #ifndef OVR_CONF_MAIN_CONFIG
 typedef struct {
 	int controller_id;

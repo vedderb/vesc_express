@@ -82,6 +82,38 @@ static esp_ota_handle_t update_handle = 0;
 static void(* volatile send_func)(unsigned char *data, unsigned int len) = 0;
 static void(* volatile send_func_can_fwd)(unsigned char *data, unsigned int len) = 0;
 
+// TODO: remove this
+// Debug stuff from Rasmus (2023-09-30)
+volatile send_func_t stored_send_func;
+static volatile send_func_t overwritten_send_func;
+static volatile send_func_t temp_send_func;
+
+void commands_start_send_func_overwrite(
+    void (*new_send_func)(unsigned char *data, unsigned int len)
+) {
+	temp_send_func = new_send_func;
+	overwritten_send_func = send_func;
+	send_func = new_send_func;
+}
+
+void commands_restore_send_func() {
+	if (send_func == temp_send_func) {
+		send_func = overwritten_send_func;
+	}
+}
+
+send_func_t commands_get_send_func() {
+	return send_func;
+};
+
+void commands_store_send_func() {
+	stored_send_func = send_func;
+}
+
+void commands_print_thread() {
+	stored_printf("thread: %s", pcTaskGetName(NULL));
+}
+
 // Private functions
 static bool rmtree(const char *path);
 
