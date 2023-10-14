@@ -1,5 +1,5 @@
 /*
-	Copyright 2023 Rasmus Söderhielm	rasmus.soderhielm@gmail.com
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 

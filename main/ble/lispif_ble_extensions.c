@@ -1,3 +1,22 @@
+/*
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
+
+	This file is part of the VESC firmware.
+
+	The VESC firmware is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	The VESC firmware is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+	*/
+
 #include "lispif_ble_extensions.h"
 
 #include <string.h>
@@ -554,9 +573,9 @@ static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 
 /**
  * signature: (ble-set-name name:byte-array)
- * 
+ *
  * Needs to be called before ble-init-app has been called.
-*/
+ */
 static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 || !lbm_is_array_r(args[0])) {
 		return ENC_SYM_TERROR;
@@ -640,7 +659,8 @@ static lbm_value ext_ble_attr_get_value(lbm_value *args, lbm_uint argn) {
 	uint16_t len;
 	const uint8_t *value;
 
-	custom_ble_result_t result = custom_ble_get_attr_value(handle, &len, &value);
+	custom_ble_result_t result =
+		custom_ble_get_attr_value(handle, &len, &value);
 	if (result != CUSTOM_BLE_OK) {
 		return ENC_SYM_EERROR;
 	}
@@ -667,20 +687,20 @@ static lbm_value ext_ble_attr_set_value(lbm_value *args, lbm_uint argn) {
 	if (argn != 2 && !lbm_is_number(args[0]) && !lbm_is_array_r(args[1])) {
 		return ENC_SYM_TERROR;
 	}
-	
+
 	uint16_t handle = (uint16_t)lbm_dec_as_u32(args[0]);
-	uint16_t len = (uint16_t)lbm_heap_array_get_size(args[1]);
-	uint8_t *value = lbm_heap_array_get_data(args[1]);
+	uint16_t len    = (uint16_t)lbm_heap_array_get_size(args[1]);
+	uint8_t *value  = lbm_heap_array_get_data(args[1]);
 	if (value == NULL) {
 		// Maybe return internal error here?
 		return ENC_SYM_EERROR;
 	}
-	
+
 	custom_ble_result_t result = custom_ble_set_attr_value(handle, len, value);
 	if (result != CUSTOM_BLE_OK) {
 		return ENC_SYM_EERROR;
 	}
-	
+
 	return ENC_SYM_TRUE;
 }
 
