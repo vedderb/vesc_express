@@ -270,7 +270,7 @@ static bool initialize_service_with_handles(
 	custom_services[service_index].service_handle = handles[0];
 	custom_services[service_index].initialized    = true;
 
-	size_t handle_index = 0;
+	size_t handle_index = 1;
 	for (size_t i = 0; i < custom_attr_len; i++) {
 		if (custom_attr[i].service_index == service_index) {
 			if (handle_index >= len) {
@@ -278,7 +278,7 @@ static bool initialize_service_with_handles(
 			}
 
 			custom_attr[i].initialized = true;
-			custom_attr[i].chr_handle  = handles[handle_index];
+			custom_attr[i].chr_handle  = handles[handle_index++];
 		}
 	}
 
@@ -505,6 +505,10 @@ custom_ble_result_t custom_ble_start() {
 	if (init_result != CUSTOM_BLE_OK) {
 		return CUSTOM_BLE_INIT_FAILED;
 	}
+	
+	if (has_started) {
+		return CUSTOM_BLE_ALREADY_STARTED;
+	}
 
 	esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 	esp_bt_controller_init(&bt_cfg);
@@ -526,6 +530,8 @@ custom_ble_result_t custom_ble_start() {
 	esp_ble_gap_register_callback(gap_event_handler);
 	esp_ble_gatts_app_register(0);
 
+	has_started = true;
+
 	return CUSTOM_BLE_OK;
 }
 
@@ -544,8 +550,6 @@ custom_ble_result_t custom_ble_set_name(const char *name) {
 	}
 
 	strcpy(device_name, name);
-
-	has_started = true;
 
 	return CUSTOM_BLE_OK;
 };
@@ -842,6 +846,68 @@ custom_ble_result_t custom_ble_set_attr_value(
 	}
 
 	return CUSTOM_BLE_OK;
+}
+
+uint16_t custom_ble_service_count() {
+	return custom_service_len;
+}
+
+uint16_t custom_ble_get_services(uint16_t capacity, uint16_t service_handles[capacity]) {
+	if (!has_started) {
+		return 0;
+	}
+	
+	uint16_t len = MIN(custom_service_len, capacity);
+	
+	for (uint16_t i = 0; i < len; i++) {
+		service_handles[i] = custom_services[i].service_handle;
+	}
+	
+	return len;
+}
+
+int16_t custom_ble_attr_count(uint16_t service_handle) {
+	if (!has_started) {
+		return -1;
+	}
+	
+	custom_ble_id_t index;
+	if (!get_service_index(service_handle, &index)) {
+		return -1;
+	}
+	
+	int16_t count = 0;
+	for (size_t i = 0; i < custom_attr_len; i++) {
+		if (custom_attr[i].service_index == index) {
+			count++;
+		}
+	}
+	
+	return count;
+}
+
+int16_t custom_ble_get_attrs(uint16_t service_handle, uint16_t capacity, uint16_t service_handles[capacity]) {
+	if (!has_started) {
+		return -1;
+	}
+	
+	custom_ble_id_t index;
+	if (!get_service_index(service_handle, &index)) {
+		return -1;
+	}
+	
+	uint16_t written_i = 0;
+	for (size_t i = 0; i < custom_attr_len; i++) {
+		if (custom_attr[i].service_index == index) {
+			if (written_i >= capacity) {
+				break;
+			}
+			
+			service_handles[written_i++] = custom_attr[i].chr_handle;
+		}
+	}
+	
+	return written_i;
 }
 
 void custom_ble_init() {

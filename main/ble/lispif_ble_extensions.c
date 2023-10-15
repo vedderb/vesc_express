@@ -550,22 +550,37 @@ error:
 	}
 }
 
+/**
+ * signature (ble-init-app) -> bool
+ *
+ * @return Returns true the first time it's called, and nil every time after
+ * that. If the internal init function fails, this function throws an
+ * eval_error.
+ */
 static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
 
 	custom_ble_result_t result = custom_ble_start();
-	if (result != CUSTOM_BLE_OK) {
-		return ENC_SYM_NIL;
-	} else {
-		return ENC_SYM_TRUE;
+	switch (result) {
+		case CUSTOM_BLE_OK: {
+			return ENC_SYM_TRUE;
+		}
+		case CUSTOM_BLE_ALREADY_STARTED: {
+			return ENC_SYM_NIL;
+		}
+		default: {
+			return ENC_SYM_EERROR;
+		}
 	}
 }
 
 /**
- * signature: (ble-set-name name:byte-array)
+ * signature: (ble-set-name name:byte-array) -> bool
  *
- * Needs to be called before ble-init-app has been called.
+ * @return True if ble-init-app hasn't been called before, false if it has, or
+ * eval_error if an error occurs, such as the name being longer than
+ * CUSTOM_BLE_MAX_NAME_LEN.
  */
 static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 || !lbm_is_array_r(args[0])) {
@@ -575,11 +590,17 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 	const char *str = (char *)lbm_heap_array_get_data(args[0]);
 
 	custom_ble_result_t result = custom_ble_set_name(str);
-	if (result != CUSTOM_BLE_OK) {
-		return ENC_SYM_EERROR;
+	switch (result) {
+		case CUSTOM_BLE_OK: {
+			return ENC_SYM_TRUE;
+		}
+		case CUSTOM_BLE_ALREADY_STARTED: {
+			return ENC_SYM_NIL;
+		}
+		default: {
+			return ENC_SYM_EERROR;
+		}
 	}
-
-	return ENC_SYM_TRUE;
 }
 
 /**
@@ -593,11 +614,11 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
  * 		('prop . prop-value)
  *      ('max-len . number)
  *      [('default-value . byte-array)]
- * 		('descr . (list ...(
+ * 		[('descr . (list ...(
  * 			('uuid . uuid)
  *          ('max-len . number)
  *          [('default-value . byte-array)]
- * 		)))
+ * 		)))]
  * 	))
  * where
  * 	uuid = byte-array of length 2, 4, or 16
@@ -619,7 +640,7 @@ static lbm_value ext_ble_add_service(lbm_value *args, lbm_uint argn) {
 }
 
 /**
- * signature: (ble-remove-service service-handle: number)
+ * signature: (ble-remove-service service-handle:number)
  */
 static lbm_value ext_ble_remove_service(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 && !lbm_is_number(args[0])) {
@@ -638,7 +659,7 @@ static lbm_value ext_ble_remove_service(lbm_value *args, lbm_uint argn) {
 }
 
 /**
- * signature: (ble-attr-get-value handle: number): byte-array
+ * signature: (ble-attr-get-value handle: number) -> byte-array
  */
 static lbm_value ext_ble_attr_get_value(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 && !lbm_is_number(args[0])) {
@@ -695,6 +716,71 @@ static lbm_value ext_ble_attr_set_value(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+/**
+ * signature: (ble-get-services) -> handles
+ * where
+ *   handles = list of numbers
+ *
+ * Gets all currently active service handles. They are returned in the order
+ * they were created, so that the last service is the one you're allowed to
+ * remove.
+ */
+static lbm_value ext_ble_get_services(lbm_value *args, lbm_uint argn) {
+	uint16_t count = custom_ble_service_count();
+
+	uint16_t handles[count];
+
+	custom_ble_get_services(count, handles);
+
+	// array_reverse(handles, handles, count, sizeof(uint16_t));
+
+	lbm_value list = ENC_SYM_NIL;
+	for (uint16_t i = 0; i < count; i++) {
+		list = lbm_cons(lbm_enc_u(handles[i]), list);
+		if (list == ENC_SYM_MERROR) {
+			return list;
+		}
+	}
+	return list;
+}
+
+/**
+ * signature: (ble-get-attrs service_handle:number) -> handles
+ * where
+ *   handles = list of numbers
+ *
+ * Gets all characteristic or descriptor handles that belong to the given
+ * service. An eval_error is thrown if the handle isn't valid.
+ */
+static lbm_value ext_ble_get_attrs(lbm_value *args, lbm_uint argn) {
+	if (argn != 1 && !lbm_is_number(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+
+	uint16_t service_handle = (uint16_t)lbm_dec_as_u32(args[0]);
+
+	int16_t count = custom_ble_attr_count(service_handle);
+	if (count < 0) {
+		return ENC_SYM_EERROR;
+	}
+
+	uint16_t handles[count];
+
+	if (custom_ble_get_attrs(service_handle, count, handles) < 0) {
+		// should never happen
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value list = ENC_SYM_NIL;
+	for (uint16_t i = 0; i < count; i++) {
+		list = lbm_cons(lbm_enc_u(handles[i]), list);
+		if (list == ENC_SYM_MERROR) {
+			return list;
+		}
+	}
+	return list;
+}
+
 void lispif_load_ble_extensions(void) {
 	register_symbols();
 
@@ -704,4 +790,6 @@ void lispif_load_ble_extensions(void) {
 	lbm_add_extension("ble-remove-service", ext_ble_remove_service);
 	lbm_add_extension("ble-attr-get-value", ext_ble_attr_get_value);
 	lbm_add_extension("ble-attr-set-value", ext_ble_attr_set_value);
+	lbm_add_extension("ble-get-services", ext_ble_get_services);
+	lbm_add_extension("ble-get-attrs", ext_ble_get_attrs);
 }
