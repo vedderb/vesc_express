@@ -1,5 +1,6 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder      benjamin@vedder.se
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -23,9 +24,6 @@
 #include "datatypes.h"
 #include "hw.h"
 
-// TODO: Move this to the config.
-#define SETTING_CUSTOM_BLE true
-
 #ifndef OVR_CONF_MAIN_CONFIG
 typedef struct {
 	int controller_id;
@@ -45,6 +43,8 @@ typedef struct {
 	BLE_MODE ble_mode;
 	char ble_name[9];
 	uint32_t ble_pin;
+	uint32_t ble_service_capacity;
+	uint32_t ble_chr_descr_capacity;
 } main_config_t;
 #endif
 

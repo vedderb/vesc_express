@@ -23,14 +23,7 @@
 #include "esp_bt_defs.h"
 #include "esp_gatt_defs.h"
 
-// TODO: Should be moved to vesc tool settings.
-#define CUSTOM_BLE_MAX_SERVICE_COUNT 3
-#define CUSTOM_BLE_MAX_CHR_COUNT     10
-#define CUSTOM_BLE_MAX_DESCR_COUNT   3
-#define CUSTOM_BLE_MAX_NAME_LEN      30
-
-#define CUSTOM_BLE_MAX_CHR_AND_DESCR_COUNT                                     \
-	(CUSTOM_BLE_MAX_CHR_COUNT + CUSTOM_BLE_MAX_DESCR_COUNT)
+#define CUSTOM_BLE_MAX_NAME_LEN 30
 
 typedef enum {
 	CUSTOM_BLE_OK                     = 0,
@@ -69,6 +62,7 @@ typedef struct {
 	esp_bt_uuid_t uuid;
 	esp_gatt_perm_t perm;
 
+	uint16_t value_max_len;
 	uint16_t value_len;
 	/**
 	 * The initial value. A copy of this value is created during
@@ -82,6 +76,7 @@ typedef struct {
 	esp_gatt_perm_t perm;
 	esp_gatt_char_prop_t property;
 
+	uint16_t value_max_len;
 	uint16_t value_len;
 	/**
 	 * The initial value. A copy of this value is created during

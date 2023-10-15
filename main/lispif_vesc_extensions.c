@@ -54,7 +54,7 @@
 #include "esp_sleep.h"
 #include "soc/rtc.h"
 #include "esp_bt.h"
-// #include "esp_bt_main.h"
+#include "esp_bt_main.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -2701,9 +2701,8 @@ static lbm_value ext_gnss_age(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	// TODO: disable nimble
-	// esp_bluedroid_disable();
-	// esp_bt_controller_disable();
+	esp_bluedroid_disable();
+	esp_bt_controller_disable();
 	esp_wifi_stop();
 
 	float sleep_time = lbm_dec_as_float(args[0]);
@@ -3005,7 +3004,7 @@ void lispif_load_vesc_extensions(void) {
 	lispif_load_disp_extensions();
 	
 	// BLE extensions
-	if (SETTING_CUSTOM_BLE) {
+	if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
 		lispif_load_ble_extensions();
 	}
 

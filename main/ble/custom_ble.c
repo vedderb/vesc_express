@@ -72,6 +72,8 @@ typedef struct {
 
 static bool has_started                = false;
 static custom_ble_result_t init_result = false;
+static uint16_t service_capacity;
+static uint16_t chr_descr_capacity;
 
 static char device_name[CUSTOM_BLE_MAX_NAME_LEN + 1];
 
@@ -84,11 +86,11 @@ static int waiting_add_service_index     = -1;
 static int waiting_remove_service_handle = -1;
 
 static uint16_t waiting_handle_indices_count = 0;
-static uint16_t waiting_handle_indices[CUSTOM_BLE_MAX_CHR_AND_DESCR_COUNT + 1];
+static uint16_t *waiting_handle_indices;
 
 static bool result_ready             = false;
 static uint16_t result_handles_count = 0;
-static uint16_t result_handles[CUSTOM_BLE_MAX_CHR_AND_DESCR_COUNT + 1];
+static uint16_t *result_handles;
 static esp_gatt_status_t result_status;
 
 static esp_gatt_if_t stored_gatts_if;
@@ -459,7 +461,7 @@ static void gatts_event_handler(
 			if (waiting_add_service_index != -1
 				&& param->add_attr_tab.svc_inst_id
 					== waiting_add_service_index) {
-				if (NUMBER_OF(result_handles) < waiting_handle_indices_count) {
+				if (chr_descr_capacity + 1 < waiting_handle_indices_count) {
 					stored_printf(
 						"number of requested handles are too great! "
 						"waiting_handle_indices_count: "
@@ -559,7 +561,11 @@ custom_ble_result_t custom_ble_add_service(
 	static const uint16_t character_declaration_uuid =
 		ESP_GATT_UUID_CHAR_DECLARE;
 
-	stored_printf("inside custom_ble_add_service, chr_count: %u", chr_count);
+	stored_printf(
+		"inside custom_ble_add_service, chr_count: %u, service_capacity: %u, "
+		"chr_descr_capacity: %u",
+		chr_count, service_capacity, chr_descr_capacity
+	);
 	if (init_result != CUSTOM_BLE_OK) {
 		return CUSTOM_BLE_INIT_FAILED;
 	}
@@ -568,7 +574,7 @@ custom_ble_result_t custom_ble_add_service(
 		return CUSTOM_BLE_NOT_STARTED;
 	}
 
-	if (custom_service_len + 1 >= CUSTOM_BLE_MAX_SERVICE_COUNT) {
+	if (custom_service_len + 1 > service_capacity) {
 		return CUSTOM_BLE_TOO_MANY_SERVICES;
 	}
 
@@ -577,8 +583,7 @@ custom_ble_result_t custom_ble_add_service(
 		chr_and_descr_count += chr[i].descr_count;
 	}
 
-	if (custom_attr_len + chr_and_descr_count
-		>= CUSTOM_BLE_MAX_CHR_AND_DESCR_COUNT) {
+	if (custom_attr_len + chr_and_descr_count > chr_descr_capacity) {
 		return CUSTOM_BLE_TOO_MANY_CHR_AND_DESCR;
 	}
 
@@ -829,17 +834,6 @@ custom_ble_result_t custom_ble_set_attr_value(
 ) {
 	esp_err_t result = esp_ble_gatts_set_attr_value(attr_handle, length, value);
 
-	// bool found_match = false;
-	// for (size_t i = 0; i < custom_attr_len; i++) {
-	// 	if (custom_attr[i].chr_handle == attr_handle) {
-	// 		found_match = true;
-	// 		break;
-	// 	}
-	// }
-	// if (found_match) {
-	// 	return CUSTOM_BLE_INVALID_HANDLE;
-	// }
-
 	if (result != ESP_OK) {
 		stored_printf(
 			"esp_ble_gatts_set_attr_value failed, result: %d", result
@@ -851,15 +845,29 @@ custom_ble_result_t custom_ble_set_attr_value(
 }
 
 void custom_ble_init() {
-	custom_services =
-		calloc(CUSTOM_BLE_MAX_SERVICE_COUNT, sizeof(service_instance_t));
+	// Make our own backup of the values that does not change.
+	service_capacity   = backup.config.ble_service_capacity;
+	chr_descr_capacity = backup.config.ble_chr_descr_capacity;
+
+	custom_services = calloc(service_capacity, sizeof(service_instance_t));
 	if (!custom_services) {
 		init_result = CUSTOM_BLE_ERROR;
 		return;
 	}
-	custom_attr =
-		calloc(CUSTOM_BLE_MAX_CHR_AND_DESCR_COUNT, sizeof(attr_instance_t));
+	custom_attr = calloc(chr_descr_capacity, sizeof(attr_instance_t));
 	if (!custom_attr) {
+		init_result = CUSTOM_BLE_ERROR;
+		return;
+	}
+
+	waiting_handle_indices = calloc(chr_descr_capacity + 1, sizeof(uint16_t));
+	if (!waiting_handle_indices) {
+		init_result = CUSTOM_BLE_ERROR;
+		return;
+	}
+
+	result_handles = calloc(chr_descr_capacity + 1, sizeof(uint16_t));
+	if (!waiting_handle_indices) {
 		init_result = CUSTOM_BLE_ERROR;
 		return;
 	}

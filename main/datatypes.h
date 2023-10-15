@@ -1,5 +1,6 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder      benjamin@vedder.se
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -82,7 +83,8 @@ typedef enum {
 typedef enum {
 	BLE_MODE_DISABLED = 0,
 	BLE_MODE_OPEN,
-	BLE_MODE_ENCRYPTED
+	BLE_MODE_ENCRYPTED,
+	BLE_MODE_SCRIPTING
 } BLE_MODE;
 
 typedef enum {

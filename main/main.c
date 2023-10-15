@@ -122,12 +122,18 @@ void app_main(void) {
 
 	vTaskDelay(1);
 
-	if (backup.config.ble_mode != BLE_MODE_DISABLED) {
-		if (SETTING_CUSTOM_BLE) {
-			custom_ble_init();
-		} else {
-			
+	switch (backup.config.ble_mode) {
+		case BLE_MODE_DISABLED: {
+			break;
+		}
+		case BLE_MODE_OPEN:
+		case BLE_MODE_ENCRYPTED: {
 			comm_ble_init();
+			break;
+		}
+		case BLE_MODE_SCRIPTING: {
+			custom_ble_init();
+			break;
 		}
 	}
 

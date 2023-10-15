@@ -32,10 +32,6 @@
 
 #include "commands.h"
 
-// TODO: Should be moved to a setting.
-#define CHR_VALUE_LEN         255
-#define CHR_VALUE_LEN_DEFAULT 255
-
 /**
  * Add symbol to the symbol table if it doesn't already exist.
  */
@@ -74,10 +70,11 @@ static void array_reverse(
 	}
 }
 
-static lbm_uint symbol_uuid      = 0;
-static lbm_uint symbol_prop      = 0;
-static lbm_uint symbol_value_len = 0;
-static lbm_uint symbol_descr     = 0;
+static lbm_uint symbol_uuid          = 0;
+static lbm_uint symbol_prop          = 0;
+static lbm_uint symbol_max_len       = 0;
+static lbm_uint symbol_default_value = 0;
+static lbm_uint symbol_descr         = 0;
 
 static lbm_uint symbol_prop_read     = 0;
 static lbm_uint symbol_prop_write    = 0;
@@ -90,7 +87,9 @@ static bool register_symbols(void) {
 
 	res = res && lbm_add_symbol_const_if_new("uuid", &symbol_uuid);
 	res = res && lbm_add_symbol_const_if_new("prop", &symbol_prop);
-	res = res && lbm_add_symbol_const_if_new("value-len", &symbol_value_len);
+	res = res && lbm_add_symbol_const_if_new("max-len", &symbol_max_len);
+	res = res
+		&& lbm_add_symbol_const_if_new("default-value", &symbol_default_value);
 	res = res && lbm_add_symbol_const_if_new("descr", &symbol_descr);
 
 	res = res && lbm_add_symbol_const_if_new("prop-read", &symbol_prop_read);
@@ -211,24 +210,30 @@ typedef struct {
 	uint8_t *value;
 } attr_instance_t;
 
-static uint16_t next_attr_index = 0;
-static attr_instance_t attrs[CUSTOM_BLE_MAX_CHR_AND_DESCR_COUNT];
+// Is passed to the ESP APIs when the user hasn't provided any byte array as a
+// default value. It's fine that it's shared, since the api just copies the
+// value either way.
+static uint8_t default_zero = 0;
 
 static parse_lbm_result_t parse_lbm_descr_def(
 	lbm_value descr_def, ble_desc_definition_t *dest, uint16_t *used_attr_index
 ) {
-	// This function shares a lot of code with parse_lbm_chr_def. Maybe they can
-	// be merged somehow?
+	(void)used_attr_index;
+	// This function shares a lot of code with parse_lbm_chr_def. Maybe they
+	// can be merged somehow?
 
 	if (!lbm_is_list(descr_def)) {
 		return PARSE_LBM_INVALID_TYPE;
 	}
 
-	bool has_uuid      = false;
-	bool has_value_len = false;
+	bool has_uuid          = false;
+	bool has_max_len       = false;
+	bool has_default_value = false;
 
 	esp_bt_uuid_t uuid;
+	uint16_t max_len;
 	uint16_t value_len;
+	uint8_t *default_value;
 
 	lbm_value next = descr_def;
 	while (lbm_is_cons(next)) {
@@ -246,46 +251,48 @@ static parse_lbm_result_t parse_lbm_descr_def(
 			if (!lbm_dec_uuid(value, &uuid)) {
 				return PARSE_LBM_INVALID_TYPE;
 			}
-		} else if (key == symbol_value_len) {
-			has_value_len = true;
+		} else if (key == symbol_max_len) {
+			has_max_len = true;
 
 			if (!lbm_is_number(value)) {
 				return PARSE_LBM_INVALID_TYPE;
 			}
 
-			value_len = lbm_dec_as_u32(value);
+			max_len = (uint16_t)lbm_dec_as_u32(value);
+			if (max_len == 0) {
+				return PARSE_LBM_INCORRECT_STRUCTURE;
+			}
+		} else if (key == symbol_default_value) {
+			has_default_value = true;
+
+			if (!lbm_is_array_r(value)) {
+				return PARSE_LBM_INVALID_TYPE;
+			}
+
+			value_len = lbm_heap_array_get_size(value);
 			if (value_len == 0) {
+				// This might not even be necessary?
 				// This is kindof a bad error to return here...
 				return PARSE_LBM_INCORRECT_STRUCTURE;
 			}
+
+			default_value = lbm_heap_array_get_data(value);
 		}
 	}
 
-	if (!has_uuid) {
+	if (!has_uuid || !has_max_len) {
 		return PARSE_LBM_INCORRECT_STRUCTURE;
 	}
-	if (!has_value_len) {
-		value_len = CHR_VALUE_LEN_DEFAULT;
+	if (!has_default_value) {
+		value_len     = 1;
+		default_value = &default_zero;
 	}
 
-	if (next_attr_index >= NUMBER_OF(attrs)) {
-		return PARSE_LBM_TOO_MANY_ATTRIBUTES;
-	}
-
-	uint8_t *desc_value = lbm_malloc_reserve(value_len);
-	if (desc_value == NULL) {
-		return PARSE_LBM_MEMORY_ERROR;
-	}
-	memset(desc_value, 0, value_len);
-
-	*used_attr_index             = next_attr_index;
-	attrs[next_attr_index].value = desc_value;
-	next_attr_index++;
-
-	dest->uuid      = uuid;
-	dest->perm      = ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE;
-	dest->value_len = value_len;
-	dest->value     = desc_value;
+	dest->uuid          = uuid;
+	dest->perm          = ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE;
+	dest->value_max_len = max_len;
+	dest->value_len     = value_len;
+	dest->value         = default_value;
 
 	return PARSE_LBM_OK;
 }
@@ -302,27 +309,30 @@ static parse_lbm_result_t parse_lbm_descr_def(
  * - PARSE_LBM_OK: The operation was successfull.
  * - PARSE_LBM_INCORRECT_STRUCTURE: chr_def had an invalid structure.
  * - PARSE_LBM_TOO_MANY_ATTRIBUTES: The total amount of created
- * characteristics or descriptors has exceeded
- * CUSTOM_BLE_MAX_CHR_AND_DESCR_COUNT (TODO: need to update this once I move
- * this to macro to a setting).
+ *   characteristics or descriptors has exceeded the configured amount.
  * - PARSE_LBM_MEMORY_ERROR: Allocating memory with malloc failed.
  */
 static parse_lbm_result_t parse_lbm_chr_def(
 	lbm_value chr_def, ble_chr_definition_t *dest,
 	index_span_t *used_attr_indices
 ) {
+	(void)used_attr_indices;
+
 	if (!lbm_is_list(chr_def)) {
 		return PARSE_LBM_INVALID_TYPE;
 	}
 
-	bool has_uuid      = false;
-	bool has_prop      = false;
-	bool has_value_len = false;
-	bool has_descr     = false;
+	bool has_uuid          = false;
+	bool has_prop          = false;
+	bool has_max_len       = false;
+	bool has_default_value = false;
+	bool has_descr         = false;
 
 	esp_bt_uuid_t uuid;
 	esp_gatt_char_prop_t prop = 0;
+	uint16_t max_len;
 	uint16_t value_len;
+	uint8_t *default_value;
 
 	lbm_value descr_raw = ENC_SYM_NIL; // to get the compiler to shut up
 
@@ -348,17 +358,32 @@ static parse_lbm_result_t parse_lbm_chr_def(
 			if (!lbm_dec_ble_prop_flags(value, &prop)) {
 				return PARSE_LBM_INVALID_TYPE;
 			}
-		} else if (key == symbol_value_len) {
-			has_value_len = true;
+		} else if (key == symbol_max_len) {
+			has_max_len = true;
 
 			if (!lbm_is_number(value)) {
 				return PARSE_LBM_INVALID_TYPE;
 			}
 
-			value_len = lbm_dec_as_u32(value);
-			if (value_len == 0) {
+			max_len = lbm_dec_as_u32(value);
+			if (max_len == 0) {
 				return PARSE_LBM_INCORRECT_STRUCTURE;
 			}
+		} else if (key == symbol_default_value) {
+			has_default_value = true;
+
+			if (!lbm_is_array_r(value)) {
+				return PARSE_LBM_INVALID_TYPE;
+			}
+
+			value_len = lbm_heap_array_get_size(value);
+			if (value_len == 0) {
+				// This might not even be necessary?
+				// This is kindof a bad error to return here...
+				return PARSE_LBM_INCORRECT_STRUCTURE;
+			}
+
+			default_value = lbm_heap_array_get_data(value);
 		} else if (key == symbol_descr) {
 			has_descr = true;
 
@@ -366,32 +391,18 @@ static parse_lbm_result_t parse_lbm_chr_def(
 		}
 	}
 
-	if (!has_uuid || !has_prop) {
+	if (!has_uuid || !has_prop || !has_max_len) {
 		return PARSE_LBM_INCORRECT_STRUCTURE;
 	}
-	if (!has_value_len) {
-		value_len = CHR_VALUE_LEN_DEFAULT;
+	if (!has_default_value) {
+		value_len     = 1;
+		default_value = &default_zero;
 	}
-
-	if (next_attr_index >= NUMBER_OF(attrs)) {
-		return PARSE_LBM_TOO_MANY_ATTRIBUTES;
-	}
-
-	used_attr_indices->start = next_attr_index;
-	used_attr_indices->end   = next_attr_index;
-
-	uint8_t *chr_value = lbm_malloc_reserve(value_len);
-	if (chr_value == NULL) {
-		return PARSE_LBM_MEMORY_ERROR;
-	}
-	memset(chr_value, 0, value_len);
-	attrs[next_attr_index].value = chr_value;
-	next_attr_index++;
 
 	uint16_t descr_count = 0;
 	if (has_descr) {
 		if (!lbm_is_list(descr_raw)) {
-			lbm_free(chr_value);
+			// lbm_free(chr_value);
 			return PARSE_LBM_INCORRECT_STRUCTURE;
 		}
 
@@ -401,8 +412,8 @@ static parse_lbm_result_t parse_lbm_chr_def(
 	ble_desc_definition_t *descriptors =
 		lbm_malloc_reserve(MAX(descr_count * sizeof(ble_desc_definition_t), 1));
 	if (descriptors == NULL) {
-		lbm_free(chr_value);
-		next_attr_index = used_attr_indices->start;
+		// lbm_free(chr_value);
+		// next_attr_index = used_attr_indices->start;
 		return PARSE_LBM_MEMORY_ERROR;
 	}
 
@@ -411,18 +422,12 @@ static parse_lbm_result_t parse_lbm_chr_def(
 
 		uint16_t i = 0;
 		while (lbm_is_cons(next) && i < descr_count) {
-			parse_lbm_result_t result = parse_lbm_descr_def(
-				lbm_car(next), &descriptors[i], &used_attr_indices->end
-			);
+			parse_lbm_result_t result =
+				parse_lbm_descr_def(lbm_car(next), &descriptors[i], NULL);
 			if (result != PARSE_LBM_OK) {
 				stored_printf("descr parse lbm error: %d", result);
 
-				for (size_t j = 0; j < i; j++) {
-					lbm_free(descriptors[j].value);
-				}
 				lbm_free(descriptors);
-				lbm_free(chr_value);
-				next_attr_index = used_attr_indices->start;
 				return result;
 			}
 
@@ -432,11 +437,12 @@ static parse_lbm_result_t parse_lbm_chr_def(
 	}
 
 	dest->uuid     = uuid;
-	dest->perm     = ESP_GATT_PERM_READ;
+	dest->perm     = ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE;
 	dest->property = prop;
 
-	dest->value_len = value_len;
-	dest->value     = chr_value;
+	dest->value_max_len = max_len;
+	dest->value_len     = value_len;
+	dest->value         = default_value;
 
 	dest->descr_count = descr_count;
 	dest->descriptors = descriptors;
@@ -444,17 +450,16 @@ static parse_lbm_result_t parse_lbm_chr_def(
 	return PARSE_LBM_OK;
 }
 
-static index_span_t prepared_handle_indices;
 static lbm_value prepared_handles_list;
 static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
 	prepared_handles_list = ENC_SYM_NIL;
 	for (int i = count - 1; i >= 0; i--) {
-		attrs[prepared_handle_indices.start + i].handle = handles[i];
-
 		prepared_handles_list =
 			lbm_cons(lbm_enc_u(handles[i]), prepared_handles_list);
 		if (prepared_handles_list == ENC_SYM_MERROR) {
 			// TODO: deregister service.
+			stored_printf("oh nose, memory error! BLE state is now invalid! :("
+			);
 			break;
 		}
 	}
@@ -473,7 +478,6 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 	lbm_uint chr_count = lbm_list_length(chr_def);
 	ble_chr_definition_t characteristics[chr_count];
 
-	index_span_t allocated_indices = {0};
 	parse_lbm_result_t res_error;
 
 	lbm_value next = chr_def;
@@ -499,18 +503,9 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 			goto error;
 		}
 
-		if (i == 0) {
-			allocated_indices.start = span.start;
-		};
-		allocated_indices.end = span.end;
-
 		next = lbm_cdr(next);
 	}
 
-	memcpy(
-		&prepared_handle_indices, &allocated_indices,
-		sizeof(prepared_handle_indices)
-	);
 	stored_printf(
 		"create custom ble service with %u characteristics", chr_count
 	);
@@ -537,10 +532,6 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 	return prepared_handles_list;
 
 error:
-	for (size_t i = allocated_indices.start; i < allocated_indices.end; i++) {
-		lbm_free(attrs[i].value);
-		next_attr_index = allocated_indices.start;
-	}
 
 	stored_printf("parse lbm error: %d", res_error);
 
@@ -600,18 +591,18 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
  * 	chrs = (list ...(
  * 		('uuid . uuid)
  * 		('prop . prop-value)
- * 		('value-len . len)
+ *      ('max-len . number)
+ *      [('default-value . byte-array)]
  * 		('descr . (list ...(
  * 			('uuid . uuid)
- * 			('value-len . len)
- *
+ *          ('max-len . number)
+ *          [('default-value . byte-array)]
  * 		)))
  * 	))
  * where
- * 	uuid = 8 bit byte array
+ * 	uuid = byte-array of length 2, 4, or 16
  * 	prop-value = ([prop-read] [prop-write] [prop-write-nr] [prop-indicate]
  * 		[prop-notify])
- * 	value-len = integer
  *
  */
 static lbm_value ext_ble_add_service(lbm_value *args, lbm_uint argn) {
