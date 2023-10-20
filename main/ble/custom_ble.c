@@ -61,6 +61,7 @@ typedef struct {
 	uint16_t chr_handle;
 	esp_bt_uuid_t uuid;
 	custom_ble_attr_type_t type;
+	esp_gatt_char_prop_t prop; // Only relevant for characteristics
 	bool initialized;
 } attr_instance_t;
 
@@ -84,6 +85,7 @@ static attr_instance_t *custom_attr        = NULL;
 
 static int waiting_add_service_index     = -1;
 static int waiting_remove_service_handle = -1;
+static int waiting_set_attr_handle       = -1;
 
 static uint16_t waiting_handle_indices_count = 0;
 static uint16_t *waiting_handle_indices;
@@ -94,7 +96,8 @@ static uint16_t *result_handles;
 static esp_gatt_status_t result_status;
 
 static esp_gatt_if_t stored_gatts_if;
-static bool is_connected        = false;
+static bool is_connected = false;
+static uint16_t conn_id;
 static uint16_t ble_current_mtu = 20;
 
 static uint8_t adv_config_done = 0;
@@ -252,6 +255,22 @@ static bool get_service_index(
 }
 
 /**
+ * Get a characteristic or descriptor's index by it's handle.
+ * 
+ * @param handle
+ * @return The found index into custom_attr, or -1 if the handle does not exist.
+*/
+static int16_t get_attr_index(uint16_t handle) {
+	for (size_t i = 0; i < custom_attr_len; i++) {
+		if (custom_attr[i].initialized
+			&& custom_attr[i].chr_handle == handle) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/**
  * @param handles A list of handles as found in custom_ble_add_service. The
  * service handle is first in the list, followed by all characteristic handles,
  * where each characteristic's descriptor handles immediately follows it's
@@ -378,7 +397,9 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_CONNECT_EVT: {
+			conn_id      = param->connect.conn_id;
 			is_connected = true;
+
 			LED_BLUE_ON();
 
 			esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL_P18);
@@ -495,6 +516,42 @@ static void gatts_event_handler(
 
 			break;
 		}
+		case ESP_GATTS_SET_ATTR_VAL_EVT: {
+			stored_printf(
+				"set attr val, status: %d, attr_handle: %u, service_handle: %u",
+				param->set_attr_val.status, param->set_attr_val.attr_handle,
+				param->set_attr_val.srvc_handle
+			);
+			
+			// // TODO: This is mega broken
+			// int16_t index = get_attr_index(param->set_attr_val.attr_handle);
+			// if (is_connected && index >= 0) {
+			// 	esp_gatt_char_prop_t prop = custom_attr[index].prop;
+			// 	bool needs_any = (bool)(prop & (ESP_GATT_CHAR_PROP_BIT_NOTIFY | ESP_GATT_CHAR_PROP_BIT_NOTIFY));
+				
+			// 	if (needs_any) {
+			// 		uint16_t length;
+			// 		const uint8_t *value;
+			// 		esp_gatt_status_t result = esp_ble_gatts_get_attr_value(param->set_attr_val.attr_handle, &length, &value);
+			// 		if (result == ESP_GATT_OK) {
+			// 			if (prop & ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
+			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id, param->set_attr_val.attr_handle, length, value, false);
+			// 			}
+			// 			if (prop & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
+			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id, param->set_attr_val.attr_handle, length, value, true);
+			// 			}
+			// 		}
+			// 	}
+			// }
+
+			if (param->set_attr_val.attr_handle == waiting_set_attr_handle) {
+				result_status           = param->set_attr_val.status;
+				waiting_set_attr_handle = -1;
+				result_ready            = true;
+			}
+
+			break;
+		}
 		default: {
 			break;
 		}
@@ -505,7 +562,7 @@ custom_ble_result_t custom_ble_start() {
 	if (init_result != CUSTOM_BLE_OK) {
 		return CUSTOM_BLE_INIT_FAILED;
 	}
-	
+
 	if (has_started) {
 		return CUSTOM_BLE_ALREADY_STARTED;
 	}
@@ -639,6 +696,7 @@ custom_ble_result_t custom_ble_add_service(
 			.service_index = service_index,
 			.initialized   = false,
 			.uuid          = chr[i].uuid,
+			.prop          = chr[i].property,
 			.type          = CUSTOM_BLE_TYPE_CHR,
 		};
 
@@ -667,7 +725,7 @@ custom_ble_result_t custom_ble_add_service(
 					.uuid_length = chr[i].uuid.len,
 					.uuid_p      = (uint8_t *)&chr[i].uuid.uuid,
 					.perm        = chr[i].perm,
-					.max_length  = chr[i].value_len,
+					.max_length  = chr[i].value_max_len,
 					.length      = chr[i].value_len,
 					.value       = chr[i].value,
 				},
@@ -690,7 +748,7 @@ custom_ble_result_t custom_ble_add_service(
 						.uuid_length = chr[i].descriptors[j].uuid.len,
 						.uuid_p = (uint8_t *)&chr[i].descriptors[j].uuid.uuid,
 						.perm   = chr[i].descriptors[j].perm,
-						.max_length = chr[i].descriptors[j].value_len,
+						.max_length = chr[i].descriptors[j].value_max_len,
 						.length     = chr[i].descriptors[j].value_len,
 						.value      = chr[i].descriptors[j].value,
 					},
@@ -816,6 +874,10 @@ custom_ble_result_t custom_ble_remove_service(uint16_t service_handle) {
 custom_ble_result_t custom_ble_get_attr_value(
 	uint16_t attr_handle, uint16_t *length, const uint8_t **value
 ) {
+	if (!has_started) {
+		return CUSTOM_BLE_NOT_STARTED;
+	}
+	
 	esp_gatt_status_t result =
 		esp_ble_gatts_get_attr_value(attr_handle, length, value);
 	if (result == ESP_GATT_INVALID_HANDLE) {
@@ -836,6 +898,14 @@ custom_ble_result_t custom_ble_get_attr_value(
 custom_ble_result_t custom_ble_set_attr_value(
 	uint16_t attr_handle, uint16_t length, const uint8_t value[length]
 ) {
+	if (!has_started) {
+		return CUSTOM_BLE_NOT_STARTED;
+	}
+	
+	stored_printf("writing value of length %u, to attr_handle %u", length, attr_handle);
+	
+	result_ready            = false;
+	waiting_set_attr_handle = attr_handle;
 	esp_err_t result = esp_ble_gatts_set_attr_value(attr_handle, length, value);
 
 	if (result != ESP_OK) {
@@ -845,6 +915,58 @@ custom_ble_result_t custom_ble_set_attr_value(
 		return CUSTOM_BLE_ESP_ERROR;
 	}
 
+	size_t tries = 0;
+	while (true) {
+		if (tries >= 100) {
+			return CUSTOM_BLE_TIMEOUT;
+		}
+		if (result_ready) {
+			break;
+		}
+
+		tries++;
+		vTaskDelay(10 / portTICK_PERIOD_MS);
+	}
+
+	if (result_status == ESP_GATT_INVALID_HANDLE) {
+		return CUSTOM_BLE_INVALID_HANDLE;
+	} else if (result_status != ESP_GATT_OK) {
+		stored_printf("set attr value failed, status: %d", result_status);
+		return CUSTOM_BLE_ESP_ERROR;
+	}
+	
+	int16_t index = get_attr_index(attr_handle);
+	if (is_connected && index != -1) {
+		esp_gatt_char_prop_t prop = custom_attr[index].prop;
+		
+		// create copy of value, because the ESP API is a bitch (it doesn't take
+		// it as const)
+		uint8_t value_copy[length];
+		memcpy(value_copy, value, length);
+		
+		if (prop & ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
+			stored_printf("sending notification");
+			
+			esp_err_t result = esp_ble_gatts_send_indicate(stored_gatts_if, conn_id, attr_handle, length, value_copy, true);
+			if (result != ESP_OK) {
+				stored_printf("notify failed, status: %d", result);
+				return CUSTOM_BLE_ESP_ERROR;
+			}			
+		}
+		if (prop & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
+			stored_printf("sending indication");
+			
+			esp_err_t result = esp_ble_gatts_send_indicate(stored_gatts_if, conn_id, attr_handle, length, value_copy, false);
+			if (result != ESP_OK) {
+				stored_printf("indicate failed, status: %d", result);
+				return CUSTOM_BLE_ESP_ERROR;
+			}			
+		}
+		// Let's ignore checking if we receive a proper event in the event
+		// handler.
+	}
+	
+
 	return CUSTOM_BLE_OK;
 }
 
@@ -852,17 +974,19 @@ uint16_t custom_ble_service_count() {
 	return custom_service_len;
 }
 
-uint16_t custom_ble_get_services(uint16_t capacity, uint16_t service_handles[capacity]) {
+uint16_t custom_ble_get_services(
+	uint16_t capacity, uint16_t service_handles[capacity]
+) {
 	if (!has_started) {
 		return 0;
 	}
-	
+
 	uint16_t len = MIN(custom_service_len, capacity);
-	
+
 	for (uint16_t i = 0; i < len; i++) {
 		service_handles[i] = custom_services[i].service_handle;
 	}
-	
+
 	return len;
 }
 
@@ -870,44 +994,51 @@ int16_t custom_ble_attr_count(uint16_t service_handle) {
 	if (!has_started) {
 		return -1;
 	}
-	
+
 	custom_ble_id_t index;
 	if (!get_service_index(service_handle, &index)) {
 		return -1;
 	}
-	
+
 	int16_t count = 0;
 	for (size_t i = 0; i < custom_attr_len; i++) {
 		if (custom_attr[i].service_index == index) {
 			count++;
 		}
 	}
-	
+
 	return count;
 }
 
-int16_t custom_ble_get_attrs(uint16_t service_handle, uint16_t capacity, uint16_t service_handles[capacity]) {
+int16_t custom_ble_get_attrs(
+	uint16_t service_handle, uint16_t capacity,
+	uint16_t service_handles[capacity]
+) {
 	if (!has_started) {
 		return -1;
 	}
-	
+
 	custom_ble_id_t index;
 	if (!get_service_index(service_handle, &index)) {
 		return -1;
 	}
-	
+
 	uint16_t written_i = 0;
 	for (size_t i = 0; i < custom_attr_len; i++) {
 		if (custom_attr[i].service_index == index) {
 			if (written_i >= capacity) {
 				break;
 			}
-			
+
 			service_handles[written_i++] = custom_attr[i].chr_handle;
 		}
 	}
-	
+
 	return written_i;
+}
+
+bool custom_ble_started() {
+	return has_started;
 }
 
 void custom_ble_init() {

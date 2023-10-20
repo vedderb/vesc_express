@@ -285,6 +285,9 @@ int16_t custom_ble_get_attrs(uint16_t service_handle, uint16_t capacity, uint16_
  *   typically due to memory allocation failing.
  */
 custom_ble_result_t custom_ble_start();
+
+bool custom_ble_started();
+
 void custom_ble_init();
 
 #endif /* MAIN_BLE_CUSTOM_BLE_H_ */

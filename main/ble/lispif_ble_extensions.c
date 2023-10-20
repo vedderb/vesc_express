@@ -210,9 +210,9 @@ typedef struct {
 	uint8_t *value;
 } attr_instance_t;
 
-// Is passed to the ESP APIs when the user hasn't provided any byte array as a
-// default value. It's fine that it's shared, since the api just copies the
-// value either way.
+// A reference of this is passed to the ESP APIs when the user hasn't provided
+// any byte array as a default value. It's fine that it's shared, since the api
+// just copies the value either way.
 static uint8_t default_zero = 0;
 
 static parse_lbm_result_t parse_lbm_descr_def(
@@ -299,7 +299,7 @@ static parse_lbm_result_t parse_lbm_descr_def(
 
 /**
  * Parse a lbm associative array into a characteristic definition. The structure
- * of the lbm value is checked.
+ * of said lbm value is checked.
  *
  * NOTE: Memory is alloced for dest->descriptors, that needs to be freed by the
  * caller using lbm_free.
@@ -466,6 +466,8 @@ static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
 }
 
 /**
+ * Parses chr_def into a compatible form and passes it on to custom_ble.c.
+ * 
  * @return A list of the registered service, characteristic, and descriptor
  * handles on success. Otherwise either an eval_error or type_error symbol is
  * returned.
@@ -486,7 +488,7 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 			for (size_t j = 0; j < i; j++) {
 				lbm_free(characteristics[j].descriptors);
 			}
-			stored_printf(":489");
+			stored_printf("encountered not cons value");
 			res_error = PARSE_LBM_INCORRECT_STRUCTURE;
 			goto error;
 		}
