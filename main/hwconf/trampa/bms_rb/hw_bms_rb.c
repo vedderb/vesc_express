@@ -685,6 +685,8 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 }
 
 static void load_extensions(void) {
+	memset(&syms_vesc, 0, sizeof(syms_vesc));
+
 	// Wake up and initialize hardware
 	lbm_add_extension("bms-init", ext_bms_init);
 

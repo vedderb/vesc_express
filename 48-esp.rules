@@ -1,0 +1,5 @@
+
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", \
+    MODE:="0666", \
+    SYMLINK+="esp32c3_%n"
+

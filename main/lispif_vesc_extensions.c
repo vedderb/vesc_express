@@ -56,6 +56,10 @@
 #include "esp_bt.h"
 #include "esp_bt_main.h"
 
+#include "esp_vfs_fat.h"
+#include "sdmmc_cmd.h"
+#include "esp_vfs.h"
+
 #include <math.h>
 #include <ctype.h>
 #include <stdarg.h>
@@ -1454,6 +1458,25 @@ static lbm_value ext_lbm_set_quota(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+lbm_value ext_lbm_set_gc_stack_size(lbm_value *args, lbm_uint argn) {
+	if (argn == 1) {
+		if (lbm_is_number(args[0])) {
+			uint32_t n = lbm_dec_as_u32(args[0]);
+			lbm_uint *new_stack = lbm_malloc(n * sizeof(lbm_uint));
+			if (new_stack) {
+				lbm_free(lbm_heap_state.gc_stack.data);
+				lbm_heap_state.gc_stack.data = new_stack;
+				lbm_heap_state.gc_stack.size = n;
+				lbm_heap_state.gc_stack.max_sp = 0;
+				lbm_heap_state.gc_stack.sp = 0;
+				return ENC_SYM_TRUE;
+			}
+			return ENC_SYM_MERROR;
+		}
+	}
+	return ENC_SYM_TERROR;
+}
+
 static lbm_value ext_plot_init(lbm_value *args, lbm_uint argn) {
 	if (argn != 2) {
 		return ENC_SYM_EERROR;
@@ -2833,6 +2856,395 @@ static lbm_value ext_canmsg_send(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// File System
+#define MAX_FILES 5
+static FILE *files_open[MAX_FILES + 1] = {0};
+static int file_now = 0;
+static const char* str_f_not_open = "File not open.";
+
+static char* dec_str_check(lbm_value val) {
+	char *res = 0;
+	if (lbm_is_array_r(val)) {
+		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(val);
+		if (array) {
+			res = (char *)array->data;
+
+			if (res[array->size - 1] != '\0') {
+				res = 0;
+			}
+		}
+	}
+	return res;
+}
+
+static FILE* file_from_arg(lbm_value arg) {
+	uint32_t fn = lbm_dec_as_u32(arg);
+	FILE *f = 0;
+	for (int i = 0;i < MAX_FILES;i++) {
+		if ((FILE*)fn == files_open[i]) {
+			f = files_open[i];
+			break;
+		}
+	}
+
+	return f;
+}
+
+// (f-open path mode) -> file
+static lbm_value ext_f_open(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	if (file_now >= MAX_FILES) {
+		lbm_set_error_reason("Too many files open.");
+		return ENC_SYM_EERROR;
+	}
+
+	char *path = dec_str_check(args[0]);
+	char *mode = dec_str_check(args[1]);
+
+	if (!path || !mode) {
+		return ENC_SYM_TERROR;
+	}
+
+	char path_full[strlen(path) + strlen("/sdcard/") + 1];
+	strcpy(path_full, "/sdcard/");
+	strcat(path_full, path);
+
+	FILE *f = fopen(path_full, mode);
+
+	if (f) {
+		files_open[file_now++] = f;
+		return lbm_enc_u32((uint32_t)f);
+	} else {
+		return ENC_SYM_NIL;
+	}
+}
+
+// (f-close file) -> t, nil
+static lbm_value ext_f_close(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint32_t fn = lbm_dec_as_u32(args[0]);
+	FILE *f = 0;
+	int f_ind = 0;
+	for (int i = 0;i < MAX_FILES;i++) {
+		if ((FILE*)fn == files_open[i]) {
+			f = files_open[i];
+			f_ind = i;
+			break;
+		}
+	}
+
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	for (int i = f_ind;i < file_now;i++) {
+		files_open[i] = files_open[i + 1];
+	}
+
+	file_now--;
+
+	fclose(f);
+
+	return ENC_SYM_TRUE;
+}
+
+// (f-read file size) -> array
+static lbm_value ext_f_read(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	int32_t sz = lbm_dec_as_i32(args[1]);
+
+	lbm_value res = ENC_SYM_MERROR;
+	if (lbm_create_array(&res, sz)) {
+		lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+		int rd = fread(arr->data, 1, sz, f);
+		if (rd == 0) {
+			lbm_free(arr->data);
+			arr->data = 0;
+			res = ENC_SYM_NIL;
+		} else if (rd < 0) {
+			lbm_free(arr->data);
+			arr->data = 0;
+			res = ENC_SYM_EERROR;
+		} else {
+			if (rd < sz) {
+				lbm_memory_shrink(arr->data, rd);
+				arr->size = rd;
+			}
+		}
+	}
+
+	return res;
+}
+
+// (f-readline file maxlen) -> array
+static lbm_value ext_f_readline(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	int32_t sz = lbm_dec_as_i32(args[1]);
+
+	lbm_value res = ENC_SYM_MERROR;
+	if (lbm_create_array(&res, sz)) {
+		lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+
+		char *rd = fgets((char*)arr->data, sz, f);
+		if (rd == 0) {
+			lbm_free(arr->data);
+			arr->data = 0;
+			res = ENC_SYM_NIL;
+		} else {
+			int len_rd = strnlen(rd, sz);
+			if ((len_rd + 1) < sz) {
+				lbm_memory_shrink(arr->data, len_rd + 1);
+				arr->size = len_rd + 1;
+			}
+		}
+	}
+
+	return res;
+}
+
+// (f-write file buf) -> t, nil
+static lbm_value ext_f_write(lbm_value *args, lbm_uint argn) {
+	if (!lbm_is_number(args[0]) || !lbm_is_array_r(args[1])) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
+	lbm_value res = ENC_SYM_EERROR;
+	if (array) {
+		int wr = fwrite(array->data, 1, array->size, f);
+		if (wr == array->size) {
+			res = ENC_SYM_TRUE;
+		} else {
+			lbm_set_error_reason("Could not write to file.");
+		}
+	}
+
+	return res;
+}
+
+// (f-tell file) -> position
+static lbm_value ext_f_tell(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_i32(ftell(f));
+}
+
+// (f-seek file pos) -> t, nil
+static lbm_value ext_f_seek(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	int32_t pos = lbm_dec_as_i32(args[1]);
+	int32_t pos_now = ftell(f);
+	if ((pos_now + pos) < 0) {
+		lbm_set_error_reason("Cannot seek past the beginning of file.");
+		return ENC_SYM_EERROR;
+	}
+
+	return fseek(f, pos, pos >= 0 ? SEEK_SET : SEEK_END) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+// (f-mkdir path) -> t, nil
+static lbm_value ext_f_mkdir(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	char *path = dec_str_check(args[0]);
+	if (!path) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	char path_full[strlen(path) + strlen("/sdcard/") + 1];
+	strcpy(path_full, "/sdcard/");
+	strcat(path_full, path);
+
+	return mkdir(path_full, 0775) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+// (f-rm path) -> t, nil
+static lbm_value ext_f_rm(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	char *path = dec_str_check(args[0]);
+	if (!path) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	char path_full[strlen(path) + strlen("/sdcard/") + 1];
+	strcpy(path_full, "/sdcard/");
+	strcat(path_full, path);
+
+	return utils_rmtree(path_full) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+// (f-ls path) -> ((path is-dir size) (path is-dir size) ...)
+static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	char *path = dec_str_check(args[0]);
+	if (!path) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	char path_full[strlen(path) + strlen("/sdcard/") + 1];
+	strcpy(path_full, "/sdcard/");
+	strcat(path_full, path);
+
+	lbm_value res = ENC_SYM_NIL;
+
+	bool merror = false;
+	struct dirent *dir;
+	DIR *d = opendir(path_full);
+	if (d) {
+		while ((dir = readdir(d)) != NULL) {
+			int len_f = strlen(dir->d_name);
+
+			char path_file[strlen(path_full) + strlen(dir->d_name) + 2];
+			strcpy(path_file, path_full);
+			strcat(path_file, "/");
+			strcat(path_file, dir->d_name);
+
+			size_t size = 0;
+			if (dir->d_type != DT_DIR) {
+				FILE *f = fopen(path_file, "r");
+				if (f) {
+					fseek(f, 0, SEEK_END);
+					size = ftell(f);
+					fclose(f);
+				}
+			} else {
+				DIR *d2 = opendir(path_file);
+				if (d2) {
+					struct dirent *dir2;
+					while ((dir2 = readdir(d2)) != NULL) {
+						size++;
+					}
+					closedir(d2);
+				}
+			}
+
+			lbm_value current = ENC_SYM_NIL;
+			current = lbm_cons(lbm_enc_i(size), current);
+			current = lbm_cons(dir->d_type == DT_DIR ? ENC_SYM_TRUE : ENC_SYM_NIL, current);
+
+			lbm_value name_buf = ENC_SYM_MERROR;
+			if (lbm_create_array(&name_buf, len_f + 1)) {
+				lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(name_buf);
+				strcpy((char*)arr->data, dir->d_name);
+				current = lbm_cons(name_buf, current);
+			} else {
+				merror = true;
+				break;
+			}
+
+			res = lbm_cons(current, res);
+		}
+
+		closedir(d);
+	}
+
+	if (merror) {
+		return ENC_SYM_MERROR;
+	} else {
+		return res;
+	}
+}
+
+// (f-size path/file) -> size
+static lbm_value ext_f_size(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	int32_t sz = -1;
+
+	if (lbm_is_number(args[0])) {
+		FILE *f = file_from_arg(args[0]);
+		if (!f) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+
+		uint32_t pos_old = ftell(f);
+		fseek(f, 0, SEEK_END);
+		sz = ftell(f);
+		fseek(f, pos_old, SEEK_SET);
+	} else {
+		char *path = dec_str_check(args[0]);
+		if (!path) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+
+		char path_full[strlen(path) + strlen("/sdcard/") + 1];
+		strcpy(path_full, "/sdcard/");
+		strcat(path_full, path);
+
+		FILE *f = fopen(path_full, "r");
+		if (f) {
+			fseek(f, 0, SEEK_END);
+			sz = ftell(f);
+			fclose(f);
+		}
+	}
+
+	return lbm_enc_i32(sz);
+}
+
+// (f-fatinfo) -> (MB-free MB-total)
+static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	uint64_t total = 0;
+	uint64_t free = 0;
+	esp_vfs_fat_info("/sdcard", &total, &free);
+	total /= 1024;
+	total /= 1024;
+	free /= 1024;
+	free /= 1024;
+
+	lbm_value res = ENC_SYM_NIL;
+	res = lbm_cons(lbm_enc_i(total), res);
+	res = lbm_cons(lbm_enc_i(free), res);
+
+	return res;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -2849,7 +3261,7 @@ void lispif_load_vesc_extensions(void) {
 		}
 		xSemaphoreGive(rmsg_mutex);
 
-		xTaskCreatePinnedToCore(event_task, "LBM Events", 512, NULL, 7, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(event_task, "LBM Events", 640, NULL, 7, NULL, tskNO_AFFINITY);
 		event_task_running = true;
 	}
 
@@ -2952,6 +3364,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// Lbm settings
 	lbm_add_extension("lbm-set-quota", ext_lbm_set_quota);
+	lbm_add_extension("lbm-set-gc-stack-size", ext_lbm_set_gc_stack_size);
 
 	// Plot
 	lbm_add_extension("plot-init", ext_plot_init);
@@ -3012,8 +3425,21 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("canmsg-recv", ext_canmsg_recv);
 	lbm_add_extension("canmsg-send", ext_canmsg_send);
 
+	// File System
+	lbm_add_extension("f-open", ext_f_open);
+	lbm_add_extension("f-close", ext_f_close);
+	lbm_add_extension("f-read", ext_f_read);
+	lbm_add_extension("f-readline", ext_f_readline);
+	lbm_add_extension("f-write", ext_f_write);
+	lbm_add_extension("f-tell", ext_f_tell);
+	lbm_add_extension("f-seek", ext_f_seek);
+	lbm_add_extension("f-mkdir", ext_f_mkdir);
+	lbm_add_extension("f-rm", ext_f_rm);
+	lbm_add_extension("f-ls", ext_f_ls);
+	lbm_add_extension("f-size", ext_f_size);
+	lbm_add_extension("f-fatinfo", ext_f_fatinfo);
+
 	// TODO:
-	// - file system
 	// - uart?
 
 	// Extension libraries
@@ -3056,6 +3482,13 @@ void lispif_disable_all_events(void) {
 	can_recv_sid_cid = -1;
 	can_recv_eid_cid = -1;
 	recv_data_cid = -1;
+
+	for (int i = 0;i < file_now;i++) {
+		fclose(files_open[i]);
+		files_open[i] = 0;
+	}
+
+	file_now = 0;
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {

@@ -612,7 +612,7 @@ void comm_can_init(void) {
 	twai_start();
 
 	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
-	xTaskCreatePinnedToCore(rx_task, "can_rx", 512, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(rx_task, "can_rx", 640, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(process_task, "can_proc", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 #endif
 }

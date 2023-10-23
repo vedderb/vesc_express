@@ -20,7 +20,7 @@
 
 // WiFi Mode
 #ifndef CONF_WIFI_MODE
-#define CONF_WIFI_MODE 2
+#define CONF_WIFI_MODE 0
 #endif
 
 // Station Mode SSID
@@ -80,7 +80,7 @@
 
 // Name
 #ifndef CONF_BLE_NAME
-#define CONF_BLE_NAME "ExpressT"
+#define CONF_BLE_NAME "VESC BMS"
 #endif
 
 // Bluetooth Pin Code
@@ -90,7 +90,7 @@
 
 // Max Balance Channels
 #ifndef CONF_MAX_BAL_CH
-#define CONF_MAX_BAL_CH 11
+#define CONF_MAX_BAL_CH 5
 #endif
 
 // Distributed Balancing
@@ -135,17 +135,17 @@
 
 // Balance Maximum Current
 #ifndef CONF_BALANCE_MAX_CURRENT
-#define CONF_BALANCE_MAX_CURRENT 3
+#define CONF_BALANCE_MAX_CURRENT 1
 #endif
 
 // Minimum Counter Current
 #ifndef CONF_MIN_CURRENT_AH_WH_CNT
-#define CONF_MIN_CURRENT_AH_WH_CNT 0.8
+#define CONF_MIN_CURRENT_AH_WH_CNT 0.3
 #endif
 
 // Minimum Sleep Current
 #ifndef CONF_MIN_CURRENT_SLEEP
-#define CONF_MIN_CURRENT_SLEEP 0.5
+#define CONF_MIN_CURRENT_SLEEP 0.3
 #endif
 
 // Charge Max Temp

@@ -416,7 +416,8 @@ lbm_value flatten_value( lbm_value v) {
     }
 
     if (flatten_value_internal(&fv, v) == FLATTEN_VALUE_OK) {
-      r = lbm_finish_flatten(&fv);
+      // it would be wasteful to run finish_flatten here.
+      r = true;
     }
 
     if (r)  {
@@ -483,6 +484,7 @@ static bool extract_dword(lbm_flat_value_t *v, uint64_t *r) {
 /* Recursive and potentially stack hungry for large flat values */
 static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
   if (v->buf_size == v->buf_pos) return UNFLATTEN_MALFORMED;
+
   uint8_t curr = v->buf[v->buf_pos++];
 
   switch(curr) {
@@ -686,6 +688,9 @@ bool lbm_unflatten_value(lbm_flat_value_t *v, lbm_value *res) {
   } else {
     b = true;
   }
-  lbm_free(v->buf);
+  // Do not free the flat value buffer here.
+  // there are 2 cases:
+  // 1: unflatten was called from lisp code -> GC removes the buffer.
+  // 2: unflatten called from event processing -> event processor frees buffer.
   return b;
 }

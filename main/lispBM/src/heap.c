@@ -29,6 +29,7 @@
 #include "stack.h"
 #include "lbm_channel.h"
 #include "platform_mutex.h"
+#include "eval_cps.h"
 #ifdef VISUALIZE_HEAP
 #include "heap_vis.h"
 #endif
@@ -79,7 +80,7 @@ lbm_value lbm_enc_u32(uint32_t x) {
 #endif
 }
 
-lbm_value lbm_enc_float(lbm_float x) {
+lbm_value lbm_enc_float(float x) {
 #ifndef LBM64
   lbm_uint t;
   memcpy(&t, &x, sizeof(lbm_float));
@@ -87,8 +88,8 @@ lbm_value lbm_enc_float(lbm_float x) {
   if (lbm_type_of(f) == LBM_TYPE_SYMBOL) return f;
   return lbm_set_ptr_type(f, LBM_TYPE_FLOAT);
 #else
-  uint32_t t;
-  memcpy(&t, &x, sizeof(float)); /*TODO: Assumes something about storage here ?*/
+  lbm_uint t = 0;
+  memcpy(&t, &x, sizeof(float));
   return (((lbm_uint)t) << LBM_VAL_SHIFT) | LBM_TYPE_FLOAT;
 #endif
 }
@@ -443,7 +444,7 @@ void lbm_nil_freelist(void) {
 }
 
 static void heap_init_state(lbm_cons_t *addr, lbm_uint num_cells,
-                            lbm_uint *gc_stack_storage, lbm_uint gc_stack_size) {
+                            lbm_uint* gc_stack_storage, lbm_uint gc_stack_size) {
   lbm_heap_state.heap         = addr;
   lbm_heap_state.heap_bytes   = (unsigned int)(num_cells * sizeof(lbm_cons_t));
   lbm_heap_state.heap_size    = num_cells;
@@ -468,12 +469,15 @@ void lbm_heap_new_freelist_length(void) {
 }
 
 int lbm_heap_init(lbm_cons_t *addr, lbm_uint num_cells,
-                  lbm_uint *gc_stack_storage, lbm_uint gc_stack_size) {
+                  lbm_uint gc_stack_size) {
 
   if (((uintptr_t)addr % 8) != 0) return 0;
 
   memset(addr,0, sizeof(lbm_cons_t) * num_cells);
 
+  lbm_uint *gc_stack_storage = (lbm_uint*)lbm_malloc(gc_stack_size * sizeof(lbm_uint));
+  if (gc_stack_storage == NULL) return 0;
+  
   heap_init_state(addr, num_cells,
                   gc_stack_storage, gc_stack_size);
 
@@ -586,6 +590,14 @@ void lbm_get_heap_state(lbm_heap_state_t *res) {
   *res = lbm_heap_state;
 }
 
+lbm_uint lbm_get_gc_stack_max(void) {
+  return lbm_heap_state.gc_stack.max_sp;
+}
+
+lbm_uint lbm_get_gc_stack_size(void) {
+  return lbm_heap_state.gc_stack.size;
+}
+
 int lbm_gc_mark_phase() {
 
   lbm_stack_t *s = &lbm_heap_state.gc_stack;
@@ -595,31 +607,38 @@ int lbm_gc_mark_phase() {
     lbm_value curr;
     lbm_pop(s, &curr);
 
+  mark_shortcut:
     if (!lbm_is_ptr(curr)) {
       continue;
     }
 
-    bool not_constant = (curr & LBM_PTR_TO_CONSTANT_BIT) == 0;
+    if (curr & LBM_PTR_TO_CONSTANT_BIT) {
+      // Go back and pop next root.
+      // Constant values can only refer to non-constants by name.
+      continue;
+    }
     lbm_cons_t *cell = lbm_ref_cell(curr);
 
-    if (not_constant) {
-      lbm_uint gc_mark = lbm_get_gc_mark(cell->cdr);
-      if (gc_mark) continue;
-      lbm_heap_state.gc_marked ++;
-      cell->cdr = lbm_set_gc_mark(cell->cdr);
-    }
+    lbm_uint gc_mark = lbm_get_gc_mark(cell->cdr);
+    if (gc_mark) continue;
+    lbm_heap_state.gc_marked ++;
+    cell->cdr = lbm_set_gc_mark(cell->cdr);
 
     lbm_value t_ptr = lbm_type_of(curr);
 
     if (t_ptr >= LBM_NON_CONS_POINTER_TYPE_FIRST &&
         t_ptr <= LBM_NON_CONS_POINTER_TYPE_LAST) continue;
 
-    res &= lbm_push(s, cell->cdr);
-    res &= lbm_push(s, cell->car);
-
-    if (!res) break;
+    if (lbm_is_ptr(cell->cdr)) {
+      res &= lbm_push(s, cell->cdr);
+    }
+    if (!res) {
+      lbm_critical_error();
+      break;
+    }
+    curr = cell->car;
+    goto mark_shortcut; // Skip a push/pop
   }
-
   return res;
 }
 
@@ -688,7 +707,6 @@ int lbm_gc_sweep_phase(void) {
         case SYM_IND_F_TYPE:
           lbm_memory_free((lbm_uint*)heap[i].car);
           break;
-        //case SYM_FLATVAL_TYPE:
         case SYM_ARRAY_TYPE:{
           lbm_array_header_t *arr = (lbm_array_header_t*)heap[i].car;
           if (lbm_memory_ptr_inside((lbm_uint*)arr->data)) {
