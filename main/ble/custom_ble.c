@@ -77,6 +77,7 @@ static uint16_t service_capacity;
 static uint16_t chr_descr_capacity;
 
 static char device_name[CUSTOM_BLE_MAX_NAME_LEN + 1];
+static attr_write_cb_t attr_write_cb = NULL;
 
 static size_t custom_service_len           = 0;
 static service_instance_t *custom_services = NULL;
@@ -362,6 +363,16 @@ static void gatts_event_handler(
 			} else {
 				stored_printf("I need to handle prepared writes...");
 			}
+			
+			if (attr_write_cb != NULL) {
+				// TODO: How do we handle long segmented values?
+				// When are they segmented?
+				if (param->write.offset != 0) {
+					stored_printf("I need to handle segmented values...");
+				} else {
+					attr_write_cb(param->write.handle, param->write.len, param->write.value);
+				}
+			}
 
 			break;
 		}
@@ -610,6 +621,10 @@ custom_ble_result_t custom_ble_set_name(const char *name) {
 
 	return CUSTOM_BLE_OK;
 };
+
+void custom_ble_set_attr_write_handler(attr_write_cb_t callback) {
+	attr_write_cb = callback;
+}
 
 custom_ble_result_t custom_ble_add_service(
 	esp_bt_uuid_t service_uuid, uint16_t chr_count,

@@ -97,6 +97,10 @@ typedef void (*service_handles_cb_t)(
 	uint16_t count, const uint16_t handles[count]
 );
 
+typedef void (*attr_write_cb_t)(
+	uint16_t attr_handle, uint16_t len, uint8_t value[len]
+);
+
 /**
  * Set the device name to use for the ble service.
  * Must be called before starting the ble service.
@@ -104,17 +108,25 @@ typedef void (*service_handles_cb_t)(
  * @param name The device name to use. May not be more than 30 characters long
  * (excluding the terminating null byte).
  * @return Returns CUSTOM_BLE_OK if successfull, otherwise
- *     - CUSTOM_BLE_ALREADY_STARTED: The ble service has already been started
- *     using custom_ble_start.
- *     - CUSTOM_BLE_NAME_TOO_LONG: The provided name was too long.
+ * - CUSTOM_BLE_ALREADY_STARTED: The ble service has already been started
+ *   using custom_ble_start.
+ * - CUSTOM_BLE_NAME_TOO_LONG: The provided name was too long.
  */
 custom_ble_result_t custom_ble_set_name(const char *name);
 
-// TODO: write docs
-// Must be called after starting ble service.
-// If this fails, you're kinda screwed, since the internal attribute count is
-// Still incremented, with no way to decrement it from the outside. Yeah... ._.
-// Blocks until handles_cb has been called with the resulting handles.
+/**
+ * Configure a function that will be called whenever the value of a
+ * characteristic or descriptor is written to by a client.
+ *
+ * @param callback The function that will be called once a client write event
+ * occurs. The attribute handle together with the new value is
+ * provided to the callback. Provide the value NULL will unset the callback.
+ */
+void custom_ble_set_attr_write_handler(attr_write_cb_t callback);
+
+// TODO: If this fails, you're kinda screwed, since the internal attribute count
+// is Still incremented, with no way to decrement it from the outside. Yeah...
+// ._. Blocks until handles_cb has been called with the resulting handles.
 /**
  * Add a service with the specified list of characteristics and descriptors.
  *
@@ -158,16 +170,16 @@ custom_ble_result_t custom_ble_add_service(
  * @return
  * - CUSTOM_BLE_OK:               The operation was successfull.
  * - CUSTOM_BLE_INVALID_HANDLE:   The given handle did not represent any
- *       existing service.
+ *   existing service.
  * - CUSTOM_BLE_SERVICE_NOT_LAST: The given service was not most recently added
- *       service in the list of currently active services.
+ *   service in the list of currently active services.
  * - CUSTOM_BLE_NOT_STARTED:      The ble service has not been started yet.
  * - CUSTOM_BLE_ESP_ERROR:        An error was generated when trying to remove
- *       the service using the ESP BLE APIs for an unknown reason. The server
- * might be left in an invalid state as a result of this.
+ *   the service using the ESP BLE APIs for an unknown reason. The server
+ *   might be left in an invalid state as a result of this.
  * - CUSTOM_BLE_INTERNAL_ERROR:   The internal list of attributes was out of
- *       order for an unknown reason. This shouldn't ever happen and the server
- *       is most likely in an invalid state.
+ *   order for an unknown reason. This shouldn't ever happen and the server
+ *   is most likely in an invalid state.
  */
 custom_ble_result_t custom_ble_remove_service(uint16_t service_handle);
 
@@ -213,7 +225,7 @@ custom_ble_result_t custom_ble_get_attr_value(
  * @return Sorry, this one won't tell you if the handle wasn't valid... ._.
  * - CUSTOM_BLE_OK:             The operation was successfull.
  * - CUSTOM_BLE_ESP_ERROR:      Some error was generated for an unknown reason
- *      by a call to the underlying ESP APIs.
+ *   by a call to the underlying ESP APIs.
  */
 custom_ble_result_t custom_ble_set_attr_value(
 	uint16_t attr_handle, uint16_t length, const uint8_t value[length]
@@ -221,47 +233,48 @@ custom_ble_result_t custom_ble_set_attr_value(
 
 /**
  * Get the amount of active services.
- * 
+ *
  * If an error occurs, 0 is returned.
  */
 uint16_t custom_ble_service_count();
 
 /**
  * Get a list of currently active services.
- * 
+ *
  * The handles are ordered in the order they were created in, starting with the
  * earliest added one. So the last element (granted that all handles fit in your
  * buffer) is the one which you're allowed to remove.
- * 
+ *
  * This will return an empty list when querying the service handles would be
  * invalid (such as before starting the BLE server).
- * 
+ *
  * @param capacity How many handles can fit in your buffer. At most this many
  * handles will be read. The current amount of handles can be queried with
  * custom_ble_service_count.
  * @param service_handles The list of handles.
  * @return The amount of handles written.
  */
-uint16_t custom_ble_get_services(uint16_t capacity, uint16_t service_handles[capacity]);
+uint16_t custom_ble_get_services(
+	uint16_t capacity, uint16_t service_handles[capacity]
+);
 
 /**
  * Get the amount of characteristic and descriptors for a given service.
- * 
+ *
  * @return The amount of characteristic and descriptors that belong to the given
  * service, or -1 if an error occurs.
  */
 int16_t custom_ble_attr_count(uint16_t service_handle);
 
-
 /**
  * Get a list of a service's characteristic and descriptor handles.
- * 
+ *
  * The handles are ordered in the order they were created, starting with the
  * earliest added one.
- * 
+ *
  * This will return an empty list when querying the service handles would be
  * invalid (such as before starting the BLE server).
- * 
+ *
  * @param service_handle The service whose handles to query.
  * @param capacity How many handles can fit in your buffer. At most this many
  * handles will be read. The actual amount of handles can be queried with
@@ -270,7 +283,10 @@ int16_t custom_ble_attr_count(uint16_t service_handle);
  * @return The amount of handles written, or -1 on error (such as an invalid
  * service handle).
  */
-int16_t custom_ble_get_attrs(uint16_t service_handle, uint16_t capacity, uint16_t service_handles[capacity]);
+int16_t custom_ble_get_attrs(
+	uint16_t service_handle, uint16_t capacity,
+	uint16_t service_handles[capacity]
+);
 
 /**
  * Start the BLE server.
@@ -280,9 +296,10 @@ int16_t custom_ble_get_attrs(uint16_t service_handle, uint16_t capacity, uint16_
  *
  * @return
  * - CUSTOM_BLE_OK:              on success
- * - CUSTOM_BLE_ALREADY_STARTED: The BLE server has already been started previously.
- * - CUSTOM_BLE_INIT_FAILED:     This is returned if custom_ble_init failed. This is
- *   typically due to memory allocation failing.
+ * - CUSTOM_BLE_ALREADY_STARTED: The BLE server has already been started
+ *   previously.
+ * - CUSTOM_BLE_INIT_FAILED:     This is returned if custom_ble_init failed.
+ *   This is typically due to memory allocation failing.
  */
 custom_ble_result_t custom_ble_start();
 

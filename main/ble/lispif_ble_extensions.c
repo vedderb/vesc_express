@@ -24,16 +24,20 @@
 #include "esp_bt_defs.h"
 
 #include "custom_ble.h"
+#include "lispif_events.h"
 #include "utils.h"
 #include "heap.h"
 #include "lbm_defines.h"
 #include "lbm_memory.h"
+#include "lbm_flat_value.h"
+#include "eval_cps.h"
 #include "extensions.h"
 
 #include "commands.h"
 
 /**
  * Add symbol to the symbol table if it doesn't already exist.
+ * TODO: This doesn't really belong here...
  */
 static bool lbm_add_symbol_const_if_new(char *name, lbm_uint *id) {
 	if (!lbm_get_symbol_by_name(name, id) && !lbm_add_symbol_const(name, id)) {
@@ -214,6 +218,36 @@ typedef struct {
 // any byte array as a default value. It's fine that it's shared, since the api
 // just copies the value either way.
 static uint8_t default_zero = 0;
+
+static void attr_write_handler(
+	uint16_t attr_handle, uint16_t len, uint8_t value[len]
+) {
+	// TODO: Add check if the event has been activated.
+	// This produces the lbm list ('event-ble-rx handle value).
+	
+	lbm_flat_value_t flat;
+	// The length should be 31 + len. 40 + len is used to be on the safe side.
+	if (!lbm_start_flatten(&flat, 40 + len)) {
+		return;
+	}
+	
+	f_cons(&flat); // +1
+	f_sym(&flat, sym_event_ble_rx); // +5/+9
+	
+	f_cons(&flat); // +1
+	f_u(&flat, attr_handle); // +5
+	
+	f_cons(&flat); // +1
+	f_lbm_array(&flat, len, value); // +(5 + len)
+	
+	f_sym(&flat, SYM_NIL); // +5/+9
+	
+	lbm_finish_flatten(&flat);
+	
+	if (!lbm_event(&flat)) {
+		lbm_free(flat.buf);
+	}
+}
 
 static parse_lbm_result_t parse_lbm_descr_def(
 	lbm_value descr_def, ble_desc_definition_t *dest, uint16_t *used_attr_index
@@ -467,7 +501,7 @@ static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
 
 /**
  * Parses chr_def into a compatible form and passes it on to custom_ble.c.
- * 
+ *
  * @return A list of the registered service, characteristic, and descriptor
  * handles on success. Otherwise either an eval_error or type_error symbol is
  * returned.
@@ -562,6 +596,8 @@ error:
 static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
+	
+	custom_ble_set_attr_write_handler(attr_write_handler);
 
 	custom_ble_result_t result = custom_ble_start();
 	switch (result) {
@@ -572,6 +608,7 @@ static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_NIL;
 		}
 		default: {
+			stored_printf("custom_ble_start failed, rc: %d", result);
 			return ENC_SYM_EERROR;
 		}
 	}
@@ -600,6 +637,7 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_NIL;
 		}
 		default: {
+			stored_printf("custom_ble_set_name failed, rc: %d", result);
 			return ENC_SYM_EERROR;
 		}
 	}

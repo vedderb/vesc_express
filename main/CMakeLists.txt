@@ -29,6 +29,7 @@ set(COMPONENT_SRCS
 "hwconf/hw.c"
 
 "lispif.c"
+"lispif_events.c"
 "lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
 "lispBM/src/env.c"

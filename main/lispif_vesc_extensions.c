@@ -22,6 +22,7 @@
 #include "main.h"
 #include "lispif.h"
 #include "lispbm.h"
+#include "lispif_events.h"
 #include "extensions/array_extensions.h"
 #include "extensions/string_extensions.h"
 #include "extensions/math_extensions.h"
@@ -1078,29 +1079,7 @@ static lbm_value ext_bits_dec_int(lbm_value *args, lbm_uint argn) {
 	}
 }
 
-// Events that will be sent to lisp if a handler is registered
-
-static volatile bool event_can_sid_en = false;
-static volatile bool event_can_eid_en = false;
-static volatile bool event_data_rx_en = false;
-static volatile bool event_esp_now_rx_en = false;
-
-static volatile bool event_bms_chg_allow_en = false;
-static volatile bool event_bms_bal_ovr_en = false;
-static volatile bool event_bms_reset_cnt_en = false;
-static volatile bool event_bms_force_bal_en = false;
-static volatile bool event_bms_zero_ofs_en = false;
-
-static lbm_uint sym_event_can_sid;
-static lbm_uint sym_event_can_eid;
-static lbm_uint sym_event_data_rx;
-static lbm_uint sym_event_esp_now_rx;
-
-static lbm_uint sym_bms_chg_allow;
-static lbm_uint sym_bms_bal_ovr;
-static lbm_uint sym_bms_reset_cnt;
-static lbm_uint sym_bms_force_bal;
-static lbm_uint sym_bms_zero_ofs;
+// // Events that will be sent to lisp if a handler is registered
 
 static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
 	switch (cmd) {
@@ -1218,6 +1197,8 @@ static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 		event_data_rx_en = en;
 	} else if (name == sym_event_esp_now_rx) {
 		event_esp_now_rx_en = en;
+	} else if (name == sym_event_ble_rx) {
+		event_ble_rx_en = en;
 	} else if (name == sym_bms_chg_allow) {
 		event_bms_chg_allow_en = en;
 	} else if (name == sym_bms_bal_ovr) {
@@ -3266,23 +3247,15 @@ void lispif_load_vesc_extensions(void) {
 	}
 
 	lbm_add_symbol_const("hw-express", &sym_hw_express);
-	lbm_add_symbol_const("event-can-sid", &sym_event_can_sid);
-	lbm_add_symbol_const("event-can-eid", &sym_event_can_eid);
-	lbm_add_symbol_const("event-data-rx", &sym_event_data_rx);
-	lbm_add_symbol_const("event-esp-now-rx", &sym_event_esp_now_rx);
-
-	lbm_add_symbol_const("event-bms-chg-allow", &sym_bms_chg_allow);
-	lbm_add_symbol_const("event-bms-bal-ovr", &sym_bms_bal_ovr);
-	lbm_add_symbol_const("event-bms-reset-cnt", &sym_bms_reset_cnt);
-	lbm_add_symbol_const("event-bms-force-bal", &sym_bms_force_bal);
-	lbm_add_symbol_const("event-bms-zero-ofs", &sym_bms_zero_ofs);
-
+	
 	lbm_add_symbol_const("a01", &sym_res);
 	lbm_add_symbol_const("a02", &sym_loop);
 	lbm_add_symbol_const("break", &sym_break);
 	lbm_add_symbol_const("a03", &sym_brk);
 	lbm_add_symbol_const("a04", &sym_rst);
 	lbm_add_symbol_const("return", &sym_return);
+	
+	lispif_events_load_symbols();
 
 	memset(&syms_vesc, 0, sizeof(syms_vesc));
 
