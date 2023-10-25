@@ -23,12 +23,16 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef void (*send_func_t)(unsigned char*, unsigned int);
+
 // Functions
 void commands_init(void);
 void commands_process_packet(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len));
 void commands_send_packet(unsigned char *data, unsigned int len);
 void commands_send_packet_can_last(unsigned char *data, unsigned int len);
+send_func_t commands_get_send_func(void);
+void commands_set_send_func(send_func_t func);
 int commands_printf(const char* format, ...);
 int commands_printf_lisp(const char* format, ...);
 void commands_init_plot(char *namex, char *namey);

@@ -79,8 +79,8 @@ static const esp_partition_t *update_partition = NULL;
 static esp_ota_handle_t update_handle = 0;
 
 // Function pointers
-static void(* volatile send_func)(unsigned char *data, unsigned int len) = 0;
-static void(* volatile send_func_can_fwd)(unsigned char *data, unsigned int len) = 0;
+static send_func_t send_func = 0;
+static send_func_t send_func_can_fwd = 0;
 
 static void send_func_dummy(unsigned char *data, unsigned int len) {
 	(void)data; (void)len;
@@ -805,12 +805,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	}
 }
 
-void commands_send_packet(unsigned char *data, unsigned int len) {
-	if (send_func) {
-		send_func(data, len);
-	}
-}
-
 /**
  * Send a packet using the last can fwd function.
  *
@@ -824,6 +818,20 @@ void commands_send_packet_can_last(unsigned char *data, unsigned int len) {
 	if (send_func_can_fwd) {
 		send_func_can_fwd(data, len);
 	}
+}
+
+void commands_send_packet(unsigned char *data, unsigned int len) {
+	if (send_func) {
+		send_func(data, len);
+	}
+}
+
+send_func_t commands_get_send_func(void) {
+	return send_func;
+}
+
+void commands_set_send_func(send_func_t func) {
+	send_func = func;
 }
 
 int commands_printf(const char* format, ...) {

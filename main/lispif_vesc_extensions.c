@@ -3243,6 +3243,165 @@ static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+static send_func_t fw_send_func_old;
+static volatile bool fw_reply_rx = false;
+static volatile bool fw_reply_ok = false;
+static volatile lbm_cid fw_rx_cid = -1;
+
+static void fw_reply_func(unsigned char *data, unsigned int len) {
+	if (len < 2) {
+		return;
+	}
+
+	fw_reply_rx = true;
+
+	COMM_PACKET_ID packet_id;
+
+	packet_id = data[0];
+	data++;
+	len--;
+
+	switch (packet_id) {
+	case COMM_ERASE_NEW_APP:
+	case COMM_WRITE_NEW_APP_DATA:
+		fw_reply_ok = data[0];
+		break;
+
+	default:
+		break;
+	}
+
+	if (fw_rx_cid >= 0) {
+		lbm_unblock_ctx_unboxed(fw_rx_cid, fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL);
+	}
+
+	commands_set_send_func(fw_send_func_old);
+}
+
+// (fw-erase size optCanId) -> t, nil
+static lbm_value ext_fw_erase(lbm_value *args, lbm_uint argn) {
+	if (argn > 2 || !lbm_is_number(args[0]) || (argn == 2 && !lbm_is_number(args[1]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 2) {
+		can_id = lbm_dec_as_i32(args[1]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_ERASE_NEW_APP;
+	buffer_append_uint32(buf, lbm_dec_as_i32(args[0]), &ind);
+	fw_reply_rx = false;
+	fw_reply_ok = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+	fw_rx_cid = lbm_get_current_cid();
+
+	if (fw_reply_rx) {
+		return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	} else {
+		lbm_block_ctx_from_extension_timeout(20.0);
+		return ENC_SYM_TRUE;
+	}
+}
+
+// (fw-write offset data optCanId) -> t, nil
+static lbm_value ext_fw_write(lbm_value *args, lbm_uint argn) {
+	if (argn > 3 || !lbm_is_number(args[0]) ||
+			!lbm_is_array_r(args[1]) || (argn == 3 && !lbm_is_number(args[2]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 3) {
+		can_id = lbm_dec_as_i32(args[2]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint32_t offset = lbm_dec_as_u32(args[0]);
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
+	lbm_value res = ENC_SYM_EERROR;
+	if (array) {
+		if (array->size > 500) {
+			return ENC_SYM_TERROR;
+		}
+
+		uint8_t *buf = mempools_get_packet_buffer();
+		int32_t ind = 0;
+
+		if (can_id >= 0) {
+			buf[ind++] = COMM_FORWARD_CAN;
+			buf[ind++] = can_id;
+		}
+
+		buf[ind++] = COMM_WRITE_NEW_APP_DATA;
+		buffer_append_uint32(buf, offset, &ind);
+		memcpy(buf + ind, array->data, array->size);
+		ind += array->size;
+
+		fw_reply_rx = false;
+		fw_reply_ok = false;
+		fw_rx_cid = -1;
+		fw_send_func_old = commands_get_send_func();
+		commands_process_packet(buf, ind, fw_reply_func);
+		fw_rx_cid = lbm_get_current_cid();
+		mempools_free_packet_buffer(buf);
+
+		if (fw_reply_rx) {
+			res = fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+		} else {
+			lbm_block_ctx_from_extension_timeout(10.0);
+			res = ENC_SYM_TRUE;
+		}
+	}
+
+	return res;
+}
+
+// (fw-reboot optCanId) -> t, nil
+static lbm_value ext_fw_reboot(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 1) {
+		can_id = lbm_dec_as_i32(args[0]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[4];
+	unsigned int ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_JUMP_TO_BOOTLOADER;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, 0);
+	commands_set_send_func(fw_send_func_old);
+	return ENC_SYM_TRUE;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -3431,6 +3590,11 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("f-ls", ext_f_ls);
 	lbm_add_extension("f-size", ext_f_size);
 	lbm_add_extension("f-fatinfo", ext_f_fatinfo);
+
+	// Firmware update
+	lbm_add_extension("fw-erase", ext_fw_erase);
+	lbm_add_extension("fw-write", ext_fw_write);
+	lbm_add_extension("fw-reboot", ext_fw_reboot);
 
 	// TODO:
 	// - uart?
