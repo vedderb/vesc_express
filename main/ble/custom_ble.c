@@ -446,6 +446,8 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_CREAT_ATTR_TAB_EVT: {
+			// TODO: This will probably illegally dereference custom_services if
+			// we didn't set waiting_add_service_index previously.
 			stored_printf(
 				"created attribute table; status: %u, svc_inst_id: %u, "
 				"num_handle: %u, waiting_add_service_index: %d, uuid equal: %s",
@@ -1061,15 +1063,27 @@ void custom_ble_init() {
 	service_capacity   = backup.config.ble_service_capacity;
 	chr_descr_capacity = backup.config.ble_chr_descr_capacity;
 
-	custom_services = calloc(service_capacity, sizeof(service_instance_t));
-	if (!custom_services) {
-		init_result = CUSTOM_BLE_ERROR;
-		return;
+	
+	if (service_capacity == 0) {
+		// Safe because custom_services will never be dereferenced if the
+		// capacity is zero.
+		custom_services = NULL;
+	} else {
+		custom_services = calloc(service_capacity, sizeof(service_instance_t));
+		if (!custom_services) {
+			init_result = CUSTOM_BLE_ERROR;
+			return;
+		}
 	}
-	custom_attr = calloc(chr_descr_capacity, sizeof(attr_instance_t));
-	if (!custom_attr) {
-		init_result = CUSTOM_BLE_ERROR;
-		return;
+	if (chr_descr_capacity == 0) {
+		// Safe for the same reason as above.
+		custom_attr = NULL;
+	} else {		
+		custom_attr = calloc(chr_descr_capacity, sizeof(attr_instance_t));
+		if (!custom_attr) {
+			init_result = CUSTOM_BLE_ERROR;
+			return;
+		}
 	}
 
 	waiting_handle_indices = calloc(chr_descr_capacity + 1, sizeof(uint16_t));
