@@ -36,10 +36,10 @@ by selecting **Terminal** > **Reboot**.
 
 ## The Library
 
-### `ble-init-app`
+### `ble-start-app`
 
 ```clj
-(ble-init-app)
+(ble-start-app)
 ```
 
 This starts the BLE server with the configured name, allowing other devices to
@@ -68,7 +68,7 @@ limit of 31 bytes in total. (TODO: The precise mechanics of this need to be figu
 out.)
 
 This should be called *before* the BLE server has started (so before
-[`ble-init-app`](#ble-set-name) is called). Then `true` is returned. Calling it afterwards has no effect
+[`ble-start-app`](#ble-start-app) is called). Then `true` is returned. Calling it afterwards has no effect
 and returns `nil`.
 
 ### `ble-add-service`
@@ -79,7 +79,7 @@ and returns `nil`.
 
 Add a service with the given list of characteristics.
 
-This function needs to be called after [`ble-init-app`](#ble-set-name) has been
+This function needs to be called after [`ble-start-app`](#ble-start-app) has been
 called. Calling it before will throw an `eval_error`.
 
 The service-uuid is given as a byte array representing either a 16-, 32-, or
@@ -262,3 +262,34 @@ Example where the attribute handles of the service 40 are queried:
 In this case, the service was defined with a single characteristic with a
 descriptor that had the handles 42 and 43 respectively.
 
+## Events
+Too know when a client has written to a characteristic or descriptor, an LBM
+event is fired. The semantics work the same as with
+[normal events](https://github.com/vedderb/bldc/blob/master/lispBM/README.md#events).
+The event message consists of a list of the form
+`('event-ble-rx handle data)`, where the `handle` is the handle number of the
+attribute's that was written to, and the `data` is the byte-array that was
+written by the client.
+
+Here is an example of a setup that catches and logs these events, printing the
+values as strings:
+```clj
+(defun proc-ble-data (handle data) {
+    (print (str-merge
+        "Value "
+        (to-str data)
+        " written to attribute handle "
+        (str-from-n handle)
+    ))
+})
+
+(defun event-handler ()
+    (loopwhile t
+        (recv
+            ((event-ble-rx (? handle) (? data)) (proc-ble-data handle data))
+            (_ nil) ; Ignore other events
+)))
+
+(event-register-handler (spawn event-handler))
+(event-enable 'event-ble-rx)
+```

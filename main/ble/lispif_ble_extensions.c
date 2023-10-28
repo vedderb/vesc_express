@@ -42,7 +42,7 @@ static char *error_too_many_services = "Too many services.";
 static char *error_too_many_attrs = "Too many characteristics or descriptors.";
 static char *error_invalid_chr_list_structure =
 	"Invalid characteristic list structure.";
-static char *error_too_many_services_attrs =
+static char *error_internal_allocation_failed =
 	"Internal allocation failed, your service/chr capacity setting might be "
 	"too high.";
 static char *error_name_too_long       = "Name too long, max: 30 characters.";
@@ -626,13 +626,13 @@ error:
 }
 
 /**
- * signature (ble-init-app) -> bool
+ * signature (ble-start-app) -> bool
  *
  * @return Returns true the first time it's called, and nil every time after
  * that. If the internal init function fails, this function throws an
  * eval_error.
  */
-static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_ble_start_app(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
 
@@ -647,7 +647,7 @@ static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_NIL;
 		}
 		case CUSTOM_BLE_INIT_FAILED: {
-			lbm_set_error_reason(error_too_many_services_attrs);
+			lbm_set_error_reason(error_internal_allocation_failed);
 			return ENC_SYM_EERROR;
 		}
 		default: {
@@ -660,7 +660,7 @@ static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 /**
  * signature: (ble-set-name name:byte-array) -> bool
  *
- * @return True if ble-init-app hasn't been called before, false if it has, or
+ * @return True if ble-start-app hasn't been called before, false if it has, or
  * eval_error if an error occurs, such as the name being longer than
  * CUSTOM_BLE_MAX_NAME_LEN.
  */
@@ -693,7 +693,7 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 /**
  * signature: (ble-add-service service-uuid chrs)
  *
- * needs to be called after ble-init-app
+ * needs to be called after ble-start-app
  *
  * characteristic list example:
  * 	chrs = (list ...(
@@ -918,7 +918,7 @@ static lbm_value ext_ble_get_attrs(lbm_value *args, lbm_uint argn) {
 void lispif_load_ble_extensions(void) {
 	register_symbols();
 
-	lbm_add_extension("ble-init-app", ext_ble_init_app);
+	lbm_add_extension("ble-start-app", ext_ble_start_app);
 	lbm_add_extension("ble-set-name", ext_ble_set_name);
 	lbm_add_extension("ble-add-service", ext_ble_add_service);
 	lbm_add_extension("ble-remove-service", ext_ble_remove_service);
