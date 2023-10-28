@@ -32,8 +32,22 @@
 #include "lbm_flat_value.h"
 #include "eval_cps.h"
 #include "extensions.h"
-
 #include "commands.h"
+
+/**
+ * Error reasons
+ */
+// These can't be const because the lbm api doesn't take constant strings >:(.
+static char *error_too_many_services = "Too many services.";
+static char *error_too_many_attrs = "Too many characteristics or descriptors.";
+static char *error_invalid_chr_list_structure =
+	"Invalid characteristic list structure.";
+static char *error_too_many_services_attrs =
+	"Internal allocation failed, your service/chr capacity setting might be "
+	"too high.";
+static char *error_name_too_long       = "Name too long, max: 30 characters.";
+static char *error_invalid_handle      = "Handle did not exist.";
+static char *error_service_wrong_order = "Service not last.";
 
 /**
  * Add symbol to the symbol table if it doesn't already exist.
@@ -202,6 +216,7 @@ typedef enum {
 	PARSE_LBM_INVALID_TYPE        = 2,
 	PARSE_LBM_TOO_MANY_ATTRIBUTES = 3,
 	PARSE_LBM_MEMORY_ERROR        = 4,
+	PARSE_LBM_INTERNAL_ERROR      = 5,
 } parse_lbm_result_t;
 
 typedef struct {
@@ -224,26 +239,26 @@ static void attr_write_handler(
 ) {
 	// TODO: Add check if the event has been activated.
 	// This produces the lbm list ('event-ble-rx handle value).
-	
+
 	lbm_flat_value_t flat;
 	// The length should be 31 + len. 40 + len is used to be on the safe side.
 	if (!lbm_start_flatten(&flat, 40 + len)) {
 		return;
 	}
-	
-	f_cons(&flat); // +1
+
+	f_cons(&flat);                  // +1
 	f_sym(&flat, sym_event_ble_rx); // +5/+9
-	
-	f_cons(&flat); // +1
+
+	f_cons(&flat);           // +1
 	f_u(&flat, attr_handle); // +5
-	
-	f_cons(&flat); // +1
+
+	f_cons(&flat);                  // +1
 	f_lbm_array(&flat, len, value); // +(5 + len)
-	
+
 	f_sym(&flat, SYM_NIL); // +5/+9
-	
+
 	lbm_finish_flatten(&flat);
-	
+
 	if (!lbm_event(&flat)) {
 		lbm_free(flat.buf);
 	}
@@ -552,12 +567,32 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 		lbm_free(characteristics[i].descriptors);
 	}
 
-	if (result != CUSTOM_BLE_OK) {
-		stored_printf("custom_ble_add_service error: %d", result);
-		// this is very ugly semantics-wise...
-		res_error = PARSE_LBM_INCORRECT_STRUCTURE;
-
-		goto error;
+	switch (result) {
+		case CUSTOM_BLE_OK: {
+			break;
+		}
+		case CUSTOM_BLE_TOO_MANY_SERVICES: {
+			lbm_set_error_reason(error_too_many_services);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_TOO_MANY_CHR_AND_DESCR: {
+			lbm_set_error_reason(error_too_many_attrs);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_INTERNAL_ERROR: {
+			res_error = PARSE_LBM_INTERNAL_ERROR;
+			return ENC_SYM_FATAL_ERROR;
+		}
+		case CUSTOM_BLE_NOT_STARTED: {
+			// Should I put an error reason here?
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_INIT_FAILED:
+		case CUSTOM_BLE_ESP_ERROR:
+		case CUSTOM_BLE_TIMEOUT:
+		default: {
+			return ENC_SYM_EERROR;
+		}
 	}
 
 	if (prepared_handles_list == ENC_SYM_MERROR) {
@@ -578,8 +613,12 @@ error:
 		case PARSE_LBM_MEMORY_ERROR: {
 			return ENC_SYM_MERROR;
 		}
-		case PARSE_LBM_INCORRECT_STRUCTURE:
+		case PARSE_LBM_INCORRECT_STRUCTURE: {
+			lbm_set_error_reason(error_invalid_chr_list_structure);
+			return ENC_SYM_EERROR;
+		}
 		case PARSE_LBM_TOO_MANY_ATTRIBUTES:
+		case PARSE_LBM_INTERNAL_ERROR:
 		default: {
 			return ENC_SYM_EERROR;
 		}
@@ -596,7 +635,7 @@ error:
 static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
-	
+
 	custom_ble_set_attr_write_handler(attr_write_handler);
 
 	custom_ble_result_t result = custom_ble_start();
@@ -606,6 +645,10 @@ static lbm_value ext_ble_init_app(lbm_value *args, lbm_uint argn) {
 		}
 		case CUSTOM_BLE_ALREADY_STARTED: {
 			return ENC_SYM_NIL;
+		}
+		case CUSTOM_BLE_INIT_FAILED: {
+			lbm_set_error_reason(error_too_many_services_attrs);
+			return ENC_SYM_EERROR;
 		}
 		default: {
 			stored_printf("custom_ble_start failed, rc: %d", result);
@@ -635,6 +678,10 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 		}
 		case CUSTOM_BLE_ALREADY_STARTED: {
 			return ENC_SYM_NIL;
+		}
+		case CUSTOM_BLE_NAME_TOO_LONG: {
+			lbm_set_error_reason(error_name_too_long);
+			return ENC_SYM_EERROR;
 		}
 		default: {
 			stored_printf("custom_ble_set_name failed, rc: %d", result);
@@ -690,12 +737,27 @@ static lbm_value ext_ble_remove_service(lbm_value *args, lbm_uint argn) {
 	uint16_t handle = (uint16_t)lbm_dec_as_u32(args[0]);
 
 	custom_ble_result_t result = custom_ble_remove_service(handle);
-	if (result != CUSTOM_BLE_OK) {
-		stored_printf("custom_ble_remove_service failed, result: %d", result);
-		return ENC_SYM_EERROR;
+	switch (result) {
+		case CUSTOM_BLE_OK: {
+			return ENC_SYM_TRUE;
+		}
+		case CUSTOM_BLE_INVALID_HANDLE: {
+			lbm_set_error_reason(error_invalid_handle);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_SERVICE_NOT_LAST: {
+			lbm_set_error_reason(error_service_wrong_order);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_INTERNAL_ERROR: {
+			return ENC_SYM_FATAL_ERROR;
+		}
+		case CUSTOM_BLE_NOT_STARTED:
+		case CUSTOM_BLE_ESP_ERROR:
+		default: {
+			return ENC_SYM_EERROR;
+		}
 	}
-
-	return ENC_SYM_TRUE;
 }
 
 /**
@@ -713,8 +775,18 @@ static lbm_value ext_ble_attr_get_value(lbm_value *args, lbm_uint argn) {
 
 	custom_ble_result_t result =
 		custom_ble_get_attr_value(handle, &len, &value);
-	if (result != CUSTOM_BLE_OK) {
-		return ENC_SYM_EERROR;
+	switch (result) {
+		case CUSTOM_BLE_OK: {
+			break;
+		}
+		case CUSTOM_BLE_INVALID_HANDLE: {
+			lbm_set_error_reason(error_invalid_handle);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_ESP_ERROR:
+		default: {
+			return ENC_SYM_EERROR;
+		}
 	}
 
 	uint8_t *result_data = lbm_malloc_reserve(len);
@@ -749,8 +821,18 @@ static lbm_value ext_ble_attr_set_value(lbm_value *args, lbm_uint argn) {
 	}
 
 	custom_ble_result_t result = custom_ble_set_attr_value(handle, len, value);
-	if (result != CUSTOM_BLE_OK) {
-		return ENC_SYM_EERROR;
+	switch (result) {
+		case CUSTOM_BLE_OK: {
+			return ENC_SYM_TRUE;
+		}
+		case CUSTOM_BLE_INVALID_HANDLE: {
+			lbm_set_error_reason(error_invalid_handle);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_ESP_ERROR:
+		default: {
+			return ENC_SYM_EERROR;
+		}
 	}
 
 	return ENC_SYM_TRUE;
@@ -806,9 +888,21 @@ static lbm_value ext_ble_get_attrs(lbm_value *args, lbm_uint argn) {
 
 	uint16_t handles[count];
 
-	if (custom_ble_get_attrs(service_handle, count, handles) < 0) {
-		// should never happen
-		return ENC_SYM_EERROR;
+	uint16_t written_count;
+
+	switch (custom_ble_get_attrs(service_handle, count, handles, &written_count)
+	) {
+		case CUSTOM_BLE_OK: {
+			break;
+		}
+		case CUSTOM_BLE_INVALID_HANDLE: {
+			lbm_set_error_reason(error_invalid_handle);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_NOT_STARTED:
+		default: {
+			return ENC_SYM_EERROR;
+		}
 	}
 
 	lbm_value list = ENC_SYM_NIL;

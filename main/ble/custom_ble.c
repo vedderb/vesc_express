@@ -257,14 +257,13 @@ static bool get_service_index(
 
 /**
  * Get a characteristic or descriptor's index by it's handle.
- * 
+ *
  * @param handle
  * @return The found index into custom_attr, or -1 if the handle does not exist.
-*/
+ */
 static int16_t get_attr_index(uint16_t handle) {
 	for (size_t i = 0; i < custom_attr_len; i++) {
-		if (custom_attr[i].initialized
-			&& custom_attr[i].chr_handle == handle) {
+		if (custom_attr[i].initialized && custom_attr[i].chr_handle == handle) {
 			return i;
 		}
 	}
@@ -363,14 +362,17 @@ static void gatts_event_handler(
 			} else {
 				stored_printf("I need to handle prepared writes...");
 			}
-			
+
 			if (attr_write_cb != NULL) {
 				// TODO: How do we handle long segmented values?
-				// When are they segmented?
+				// When are they even segmented?
 				if (param->write.offset != 0) {
 					stored_printf("I need to handle segmented values...");
 				} else {
-					attr_write_cb(param->write.handle, param->write.len, param->write.value);
+					attr_write_cb(
+						param->write.handle, param->write.len,
+						param->write.value
+					);
 				}
 			}
 
@@ -535,23 +537,27 @@ static void gatts_event_handler(
 				param->set_attr_val.status, param->set_attr_val.attr_handle,
 				param->set_attr_val.srvc_handle
 			);
-			
+
 			// // TODO: This is mega broken
 			// int16_t index = get_attr_index(param->set_attr_val.attr_handle);
 			// if (is_connected && index >= 0) {
 			// 	esp_gatt_char_prop_t prop = custom_attr[index].prop;
-			// 	bool needs_any = (bool)(prop & (ESP_GATT_CHAR_PROP_BIT_NOTIFY | ESP_GATT_CHAR_PROP_BIT_NOTIFY));
-				
+			// 	bool needs_any = (bool)(prop & (ESP_GATT_CHAR_PROP_BIT_NOTIFY |
+			// ESP_GATT_CHAR_PROP_BIT_NOTIFY));
+
 			// 	if (needs_any) {
 			// 		uint16_t length;
 			// 		const uint8_t *value;
-			// 		esp_gatt_status_t result = esp_ble_gatts_get_attr_value(param->set_attr_val.attr_handle, &length, &value);
-			// 		if (result == ESP_GATT_OK) {
-			// 			if (prop & ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
-			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id, param->set_attr_val.attr_handle, length, value, false);
+			// 		esp_gatt_status_t result =
+			// esp_ble_gatts_get_attr_value(param->set_attr_val.attr_handle,
+			// &length, &value); 		if (result == ESP_GATT_OK) { 			if (prop &
+			// ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
+			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id,
+			// param->set_attr_val.attr_handle, length, value, false);
 			// 			}
 			// 			if (prop & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
-			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id, param->set_attr_val.attr_handle, length, value, true);
+			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id,
+			// param->set_attr_val.attr_handle, length, value, true);
 			// 			}
 			// 		}
 			// 	}
@@ -775,7 +781,8 @@ custom_ble_result_t custom_ble_add_service(
 
 	stored_printf("table_index: %u, attr_count: %u", table_index, attr_count);
 	if (table_index != attr_count) {
-		return CUSTOM_BLE_ERROR;
+		// shouldn't happen
+		return CUSTOM_BLE_INTERNAL_ERROR;
 	}
 
 	waiting_add_service_index = service_index;
@@ -894,19 +901,26 @@ custom_ble_result_t custom_ble_get_attr_value(
 	if (!has_started) {
 		return CUSTOM_BLE_NOT_STARTED;
 	}
-	
+
 	esp_gatt_status_t result =
 		esp_ble_gatts_get_attr_value(attr_handle, length, value);
-	if (result == ESP_GATT_INVALID_HANDLE) {
-		// TODO: not sure if ESP_GATT_INVALID_HANDLE is the correct error to
-		// check for here.
-		return CUSTOM_BLE_INVALID_HANDLE;
-	}
-	if (result != ESP_GATT_OK) {
-		stored_printf(
-			"esp_ble_gatts_get_attr_value failed, result: %d", result
-		);
-		return CUSTOM_BLE_ESP_ERROR;
+	switch (result) {
+		case ESP_GATT_OK: {
+			return CUSTOM_BLE_OK;
+		}
+		case ESP_GATT_INVALID_HANDLE:
+		// So apparently this is also sometimes returned when an invalid handle
+		// is given. Is this documented anywhere? No, of course not. (:
+		case ESP_GATT_NOT_FOUND: {
+			// There might be other statuses to check for...
+			return CUSTOM_BLE_INVALID_HANDLE;
+		}
+		default: {
+			stored_printf(
+				"esp_ble_gatts_get_attr_value failed, result: %d", result
+			);
+			return CUSTOM_BLE_ESP_ERROR;
+		}
 	}
 
 	return CUSTOM_BLE_OK;
@@ -918,9 +932,11 @@ custom_ble_result_t custom_ble_set_attr_value(
 	if (!has_started) {
 		return CUSTOM_BLE_NOT_STARTED;
 	}
-	
-	stored_printf("writing value of length %u, to attr_handle %u", length, attr_handle);
-	
+
+	stored_printf(
+		"writing value of length %u, to attr_handle %u", length, attr_handle
+	);
+
 	result_ready            = false;
 	waiting_set_attr_handle = attr_handle;
 	esp_err_t result = esp_ble_gatts_set_attr_value(attr_handle, length, value);
@@ -951,38 +967,41 @@ custom_ble_result_t custom_ble_set_attr_value(
 		stored_printf("set attr value failed, status: %d", result_status);
 		return CUSTOM_BLE_ESP_ERROR;
 	}
-	
+
 	int16_t index = get_attr_index(attr_handle);
 	if (is_connected && index != -1) {
 		esp_gatt_char_prop_t prop = custom_attr[index].prop;
-		
+
 		// create copy of value, because the ESP API is a bitch (it doesn't take
 		// it as const)
 		uint8_t value_copy[length];
 		memcpy(value_copy, value, length);
-		
+
 		if (prop & ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
 			stored_printf("sending notification");
-			
-			esp_err_t result = esp_ble_gatts_send_indicate(stored_gatts_if, conn_id, attr_handle, length, value_copy, true);
+
+			esp_err_t result = esp_ble_gatts_send_indicate(
+				stored_gatts_if, conn_id, attr_handle, length, value_copy, true
+			);
 			if (result != ESP_OK) {
 				stored_printf("notify failed, status: %d", result);
 				return CUSTOM_BLE_ESP_ERROR;
-			}			
+			}
 		}
 		if (prop & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
 			stored_printf("sending indication");
-			
-			esp_err_t result = esp_ble_gatts_send_indicate(stored_gatts_if, conn_id, attr_handle, length, value_copy, false);
+
+			esp_err_t result = esp_ble_gatts_send_indicate(
+				stored_gatts_if, conn_id, attr_handle, length, value_copy, false
+			);
 			if (result != ESP_OK) {
 				stored_printf("indicate failed, status: %d", result);
 				return CUSTOM_BLE_ESP_ERROR;
-			}			
+			}
 		}
 		// Let's ignore checking if we receive a proper event in the event
 		// handler.
 	}
-	
 
 	return CUSTOM_BLE_OK;
 }
@@ -1027,17 +1046,17 @@ int16_t custom_ble_attr_count(uint16_t service_handle) {
 	return count;
 }
 
-int16_t custom_ble_get_attrs(
+custom_ble_result_t custom_ble_get_attrs(
 	uint16_t service_handle, uint16_t capacity,
-	uint16_t service_handles[capacity]
+	uint16_t service_handles[capacity], uint16_t *written_count
 ) {
 	if (!has_started) {
-		return -1;
+		return CUSTOM_BLE_NOT_STARTED;
 	}
 
 	custom_ble_id_t index;
 	if (!get_service_index(service_handle, &index)) {
-		return -1;
+		return CUSTOM_BLE_INVALID_HANDLE;
 	}
 
 	uint16_t written_i = 0;
@@ -1051,7 +1070,9 @@ int16_t custom_ble_get_attrs(
 		}
 	}
 
-	return written_i;
+	*written_count = written_i;
+
+	return CUSTOM_BLE_OK;
 }
 
 bool custom_ble_started() {
@@ -1063,7 +1084,6 @@ void custom_ble_init() {
 	service_capacity   = backup.config.ble_service_capacity;
 	chr_descr_capacity = backup.config.ble_chr_descr_capacity;
 
-	
 	if (service_capacity == 0) {
 		// Safe because custom_services will never be dereferenced if the
 		// capacity is zero.
@@ -1078,7 +1098,7 @@ void custom_ble_init() {
 	if (chr_descr_capacity == 0) {
 		// Safe for the same reason as above.
 		custom_attr = NULL;
-	} else {		
+	} else {
 		custom_attr = calloc(chr_descr_capacity, sizeof(attr_instance_t));
 		if (!custom_attr) {
 			init_result = CUSTOM_BLE_ERROR;

@@ -148,7 +148,17 @@ void custom_ble_set_attr_write_handler(attr_write_cb_t callback);
  * handles. These appear in the order that they were given in the characteristic
  * list, with each characteristic handle appearing before the handles of its
  * descriptors.
- * @return TODO
+ * @return
+ * - CUSTOM_BLE_OK
+ * - CUSTOM_BLE_INIT_FAILED
+ * - CUSTOM_BLE_NOT_STARTED
+ * - CUSTOM_BLE_TOO_MANY_SERVICES:      The number of allocated services went
+ *   above the configured capacity.
+ * - CUSTOM_BLE_TOO_MANY_CHR_AND_DESCR: The number of allocated characteristics
+ *   or descriptors went above the configured capacity.
+ * - CUSTOM_BLE_ESP_ERROR
+ * - CUSTOM_BLE_TIMEOUT
+ * - CUSTOM_BLE_INTERNAL_ERROR:         Something wen't wrong internally
  */
 custom_ble_result_t custom_ble_add_service(
 	esp_bt_uuid_t service_uuid, uint16_t chr_count,
@@ -224,8 +234,9 @@ custom_ble_result_t custom_ble_get_attr_value(
  * to live longer than this function call (I think).
  * @return Sorry, this one won't tell you if the handle wasn't valid... ._.
  * - CUSTOM_BLE_OK:             The operation was successfull.
+ * - CUSTOM_BLE_INVALID_HANDLE: The provided handle didn't exist.
  * - CUSTOM_BLE_ESP_ERROR:      Some error was generated for an unknown reason
- *   by a call to the underlying ESP APIs.
+ *   sohent by a call to the underlying ESP APIs.
  */
 custom_ble_result_t custom_ble_set_attr_value(
 	uint16_t attr_handle, uint16_t length, const uint8_t value[length]
@@ -280,12 +291,16 @@ int16_t custom_ble_attr_count(uint16_t service_handle);
  * handles will be read. The actual amount of handles can be queried with
  * custom_ble_attr_count.
  * @param service_handles The list of handles.
- * @return The amount of handles written, or -1 on error (such as an invalid
- * service handle).
+ * @param written_count Will be set to the amount of handles written on success.
+ * @return
+ * - CUSTOM_BLE_OK: The handles were successfully written to service_handles.
+ * - CUSTOM_BLE_NOT_STARTED
+ * - CUSTOM_BLE_INVALID_HANDLE: The specified service did not exist.
+ *
  */
-int16_t custom_ble_get_attrs(
+custom_ble_result_t custom_ble_get_attrs(
 	uint16_t service_handle, uint16_t capacity,
-	uint16_t service_handles[capacity]
+	uint16_t service_handles[capacity], uint16_t *written_count
 );
 
 /**
