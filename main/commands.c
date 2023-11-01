@@ -690,14 +690,17 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_QMLUI_ERASE:
 	case COMM_LISP_ERASE_CODE: {
-		if (packet_id == COMM_LISP_ERASE_CODE) {
-			lispif_restart(false, false);
-		}
-
 		int32_t ind = 0;
 		int erase_size = -1;
 		if (len >= 4) {
 			erase_size = buffer_get_int32(data, &ind);
+		}
+
+		if (packet_id == COMM_LISP_ERASE_CODE) {
+			// Only restart if erase size is not -2. This is a hack to maintain backwards compatibility.
+			if (erase_size != -2) {
+				lispif_restart(false, false);
+			}
 		}
 
 		bool flash_res = flash_helper_erase_code(packet_id == COMM_QMLUI_ERASE ? CODE_IND_QML : CODE_IND_LISP, erase_size);

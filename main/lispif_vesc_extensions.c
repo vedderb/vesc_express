@@ -3264,11 +3264,16 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 	switch (packet_id) {
 	case COMM_ERASE_NEW_APP:
 	case COMM_WRITE_NEW_APP_DATA:
+	case COMM_LISP_ERASE_CODE:
+	case COMM_QMLUI_ERASE:
+	case COMM_LISP_WRITE_CODE:
+	case COMM_QMLUI_WRITE:
+	case COMM_LISP_SET_RUNNING:
 		fw_reply_ok = data[0];
 		break;
 
 	default:
-		break;
+		return;
 	}
 
 	if (fw_rx_cid >= 0) {
@@ -3317,8 +3322,7 @@ static lbm_value ext_fw_erase(lbm_value *args, lbm_uint argn) {
 	}
 }
 
-// (fw-write offset data optCanId) -> t, nil
-static lbm_value ext_fw_write(lbm_value *args, lbm_uint argn) {
+static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cmd) {
 	if (argn > 3 || !lbm_is_number(args[0]) ||
 			!lbm_is_array_r(args[1]) || (argn == 3 && !lbm_is_number(args[2]))) {
 		return ENC_SYM_TERROR;
@@ -3349,7 +3353,7 @@ static lbm_value ext_fw_write(lbm_value *args, lbm_uint argn) {
 			buf[ind++] = can_id;
 		}
 
-		buf[ind++] = COMM_WRITE_NEW_APP_DATA;
+		buf[ind++] = cmd;
 		buffer_append_uint32(buf, offset, &ind);
 		memcpy(buf + ind, array->data, array->size);
 		ind += array->size;
@@ -3400,6 +3404,130 @@ static lbm_value ext_fw_reboot(lbm_value *args, lbm_uint argn) {
 	commands_process_packet(buf, ind, 0);
 	commands_set_send_func(fw_send_func_old);
 	return ENC_SYM_TRUE;
+}
+
+// LBM and QML erase, upload, run
+
+static lbm_value lbm_qml_erase(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cmd) {
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 1) {
+		can_id = lbm_dec_as_i32(args[0]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = cmd;
+	if (can_id < 0 && cmd == COMM_LISP_ERASE_CODE) {
+		buffer_append_int32(buf, -2, &ind);
+	}
+
+	fw_reply_rx = false;
+	fw_reply_ok = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+	fw_rx_cid = lbm_get_current_cid();
+
+	if (fw_reply_rx) {
+		return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	} else {
+		lbm_block_ctx_from_extension_timeout(20.0);
+		return ENC_SYM_TRUE;
+	}
+}
+
+// (lbm-erase optCanId) -> t, nil
+static lbm_value ext_lbm_erase(lbm_value *args, lbm_uint argn) {
+	return lbm_qml_erase(args, argn, COMM_LISP_ERASE_CODE);
+}
+
+// (qml-erase optCanId) -> t, nil
+static lbm_value ext_qml_erase(lbm_value *args, lbm_uint argn) {
+	return lbm_qml_erase(args, argn, COMM_QMLUI_ERASE);
+}
+
+// (fw-write offset data optCanId) -> t, nil
+static lbm_value ext_fw_write(lbm_value *args, lbm_uint argn) {
+	return fw_lbm_qml_write(args, argn, COMM_WRITE_NEW_APP_DATA);
+}
+
+// (lbm-write offset data optCanId) -> t, nil
+static lbm_value ext_lbm_write(lbm_value *args, lbm_uint argn) {
+	return fw_lbm_qml_write(args, argn, COMM_LISP_WRITE_CODE);
+}
+
+// (qml-write offset data optCanId) -> t, nil
+static lbm_value ext_qml_write(lbm_value *args, lbm_uint argn) {
+	return fw_lbm_qml_write(args, argn, COMM_QMLUI_WRITE);
+}
+
+static void lbm_run_task(void *arg) {
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	buf[ind++] = COMM_LISP_SET_RUNNING;
+	buf[ind++] = (int32_t)arg;
+	fw_reply_rx = false;
+	fw_reply_ok = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+
+	vTaskDelete(NULL);
+}
+
+// (lbm-run running optCanId) -> t, nil
+static lbm_value ext_lbm_run(lbm_value *args, lbm_uint argn) {
+	if (argn > 2 || !lbm_is_number(args[0]) || (argn == 2 && !lbm_is_number(args[1]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 2) {
+		can_id = lbm_dec_as_i32(args[1]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+		buf[ind++] = COMM_LISP_SET_RUNNING;
+		buf[ind++] = lbm_dec_as_i32(args[0]);
+		fw_reply_rx = false;
+		fw_reply_ok = false;
+		fw_rx_cid = -1;
+		fw_send_func_old = commands_get_send_func();
+		commands_process_packet(buf, ind, fw_reply_func);
+		fw_rx_cid = lbm_get_current_cid();
+
+		if (fw_reply_rx) {
+			return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+		} else {
+			lbm_block_ctx_from_extension_timeout(20.0);
+			return ENC_SYM_TRUE;
+		}
+	} else {
+		xTaskCreatePinnedToCore(lbm_run_task, "LBM Restart", 2048, (void*)lbm_dec_as_i32(args[0]), 7, NULL, tskNO_AFFINITY);
+		return ENC_SYM_TRUE;
+	}
 }
 
 void lispif_load_vesc_extensions(void) {
@@ -3595,6 +3723,13 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("fw-erase", ext_fw_erase);
 	lbm_add_extension("fw-write", ext_fw_write);
 	lbm_add_extension("fw-reboot", ext_fw_reboot);
+
+	// Lbm and script update
+	lbm_add_extension("lbm-erase", ext_lbm_erase);
+	lbm_add_extension("lbm-write", ext_lbm_write);
+	lbm_add_extension("lbm-run", ext_lbm_run);
+	lbm_add_extension("qml-erase", ext_qml_erase);
+	lbm_add_extension("qml-write", ext_qml_write);
 
 	// TODO:
 	// - uart?
