@@ -2418,6 +2418,27 @@ static lbm_value ext_crc16(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(crc16((uint8_t*)array->data, len));
 }
 
+static lbm_value ext_crc32(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0]) || !lbm_is_number(args[1])) {
+		return ENC_SYM_TERROR;
+	}
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+	unsigned int len = array->size;
+	if (argn == 3) {
+		if (!lbm_is_number(args[2])) {
+			return ENC_SYM_TERROR;
+		}
+
+		len = lbm_dec_as_u32(args[2]);
+		if (len > array->size) {
+			len = array->size;
+		}
+	}
+
+	return lbm_enc_u32(crc32((uint8_t*)array->data, len, lbm_dec_as_u32(args[1])));
+}
+
 static lbm_value ext_buf_find(lbm_value *args, lbm_uint argn) {
 	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0]) || !lbm_is_array_r(args[1])) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
@@ -3776,6 +3797,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("import", ext_empty);
 	lbm_add_extension("main-init-done", ext_main_init_done);
 	lbm_add_extension("crc16", ext_crc16);
+	lbm_add_extension("crc32", ext_crc32);
 	lbm_add_extension("buf-find", ext_buf_find);
 
 	// Configuration
