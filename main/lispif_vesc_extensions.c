@@ -2436,7 +2436,7 @@ static lbm_value ext_crc32(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
-	return lbm_enc_u32(crc32((uint8_t*)array->data, len, lbm_dec_as_u32(args[1])));
+	return lbm_enc_u32(crc32_with_init((uint8_t*)array->data, len, lbm_dec_as_u32(args[1])));
 }
 
 static lbm_value ext_buf_find(lbm_value *args, lbm_uint argn) {

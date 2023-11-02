@@ -27,6 +27,6 @@
  */
 unsigned short crc16(unsigned char *buf, unsigned int len);
 unsigned short crc16_with_init(unsigned char *buf, unsigned int len, unsigned short cksum);
-uint32_t crc32(uint8_t *buf, uint32_t len, uint32_t cksum);
+uint32_t crc32_with_init(uint8_t *buf, uint32_t len, uint32_t cksum);
 
 #endif /* CRC_H_ */
