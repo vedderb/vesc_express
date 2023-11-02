@@ -39,6 +39,7 @@
 #include "bms.h"
 #include "nmea.h"
 #include "log_comm.h"
+#include "comm_wifi.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -111,6 +112,25 @@ typedef struct {
 	lbm_uint rate_200k;
 	lbm_uint rate_400k;
 	lbm_uint rate_700k;
+
+	// Settings
+	lbm_uint controller_id;
+	lbm_uint can_baud_rate;
+	lbm_uint can_status_rate_hz;
+	lbm_uint wifi_mode;
+	lbm_uint wifi_sta_ssid;
+	lbm_uint wifi_sta_key;
+	lbm_uint wifi_ap_ssid;
+	lbm_uint wifi_ap_key;
+	lbm_uint use_tcp_local;
+	lbm_uint use_tcp_hub;
+	lbm_uint tcp_hub_url;
+	lbm_uint tcp_hub_port;
+	lbm_uint tcp_hub_id;
+	lbm_uint tcp_hub_pass;
+	lbm_uint ble_mode;
+	lbm_uint ble_name;
+	lbm_uint ble_pin;
 
 	// Other
 	lbm_uint half_duplex;
@@ -216,6 +236,42 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			get_add_symbol("rate-700k", comp);
 		}
 
+		else if (comp == &syms_vesc.controller_id) {
+			get_add_symbol("controller-id", comp);
+		} else if (comp == &syms_vesc.can_baud_rate) {
+			get_add_symbol("can-baud-rate", comp);
+		} else if (comp == &syms_vesc.can_status_rate_hz) {
+			get_add_symbol("can-status-rate-hz", comp);
+		} else if (comp == &syms_vesc.wifi_mode) {
+			get_add_symbol("wifi-mode", comp);
+		} else if (comp == &syms_vesc.wifi_sta_ssid) {
+			get_add_symbol("wifi-sta-ssid", comp);
+		} else if (comp == &syms_vesc.wifi_sta_key) {
+			get_add_symbol("wifi-sta-key", comp);
+		} else if (comp == &syms_vesc.wifi_ap_ssid) {
+			get_add_symbol("wifi-ap-ssid", comp);
+		} else if (comp == &syms_vesc.wifi_ap_key) {
+			get_add_symbol("wifi-ap-key", comp);
+		} else if (comp == &syms_vesc.use_tcp_local) {
+			get_add_symbol("use-tcp-local", comp);
+		} else if (comp == &syms_vesc.use_tcp_hub) {
+			get_add_symbol("use-tcp-hub", comp);
+		} else if (comp == &syms_vesc.tcp_hub_url) {
+			get_add_symbol("tcp-hub-url", comp);
+		} else if (comp == &syms_vesc.tcp_hub_port) {
+			get_add_symbol("tcp-hub-port", comp);
+		} else if (comp == &syms_vesc.tcp_hub_id) {
+			get_add_symbol("tcp-hub-id", comp);
+		} else if (comp == &syms_vesc.tcp_hub_pass) {
+			get_add_symbol("tcp-hub-pass", comp);
+		} else if (comp == &syms_vesc.ble_mode) {
+			get_add_symbol("ble-mode", comp);
+		} else if (comp == &syms_vesc.ble_name) {
+			get_add_symbol("ble-name", comp);
+		} else if (comp == &syms_vesc.ble_pin) {
+			get_add_symbol("ble-pin", comp);
+		}
+
 		else if (comp == &syms_vesc.half_duplex) {
 			get_add_symbol("half-duplex", comp);
 		}
@@ -267,12 +323,54 @@ static lbm_value get_or_set_i(bool set, int *val, lbm_value *lbm_val) {
 	}
 }
 
+static lbm_value get_or_set_u16(bool set, uint16_t *val, lbm_value *lbm_val) {
+	if (set) {
+		*val = lbm_dec_as_i32(*lbm_val);
+		return ENC_SYM_TRUE;
+	} else {
+		return lbm_enc_i(*val);
+	}
+}
+
+static lbm_value get_or_set_u32(bool set, uint32_t *val, lbm_value *lbm_val) {
+	if (set) {
+		*val = lbm_dec_as_u32(*lbm_val);
+		return ENC_SYM_TRUE;
+	} else {
+		return lbm_enc_u32(*val);
+	}
+}
+
 static lbm_value get_or_set_bool(bool set, bool *val, lbm_value *lbm_val) {
 	if (set) {
 		*val = lbm_dec_as_i32(*lbm_val);
 		return ENC_SYM_TRUE;
 	} else {
 		return lbm_enc_i(*val);
+	}
+}
+
+static lbm_value get_or_set_string(bool set, char *val, lbm_value *lbm_val, int max_len) {
+	if (set) {
+		char *str = lbm_dec_str(*lbm_val);
+		if (str) {
+			strncpy(val, str, max_len - 1);
+			val[max_len - 1] = '\0';
+			return ENC_SYM_TRUE;
+		} else {
+			return ENC_SYM_TERROR;
+		}
+	} else {
+		lbm_value res;
+		lbm_uint len = strnlen(val, max_len);
+		if (lbm_create_array(&res, len + 1)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+			memcpy(arr->data, val, len);
+			((char*)(arr->data))[len] = '\0';
+			return res;
+		} else {
+			return ENC_SYM_MERROR;
+		}
 	}
 }
 
@@ -394,6 +492,98 @@ static lbm_value ext_set_bms_val(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_send_bms_can(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	bms_send_status_can();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_TERROR;
+
+	lbm_value set_arg = 0;
+	if (set && argn >= 1) {
+		set_arg = args[argn - 1];
+		argn--;
+
+		if (!lbm_is_number(set_arg) && !lbm_is_array_r(set_arg)) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	if (argn != 1 && argn != 2) {
+		return res;
+	}
+
+	if (lbm_type_of(args[0]) != LBM_TYPE_SYMBOL) {
+		return res;
+	}
+
+	main_config_t *conf = (main_config_t*)&backup.config;
+	lbm_uint name = lbm_dec_sym(args[0]);
+
+	if (compare_symbol(name, &syms_vesc.controller_id)) {
+		res = get_or_set_i(set, &conf->controller_id, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.can_baud_rate)) {
+		int v = conf->can_baud_rate;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->can_baud_rate = v;
+	} else if (compare_symbol(name, &syms_vesc.can_status_rate_hz)) {
+		res = get_or_set_i(set, &conf->can_status_rate_hz, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.wifi_mode)) {
+		int v = conf->wifi_mode;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->wifi_mode = v;
+	} else if (compare_symbol(name, &syms_vesc.wifi_sta_ssid)) {
+		res = get_or_set_string(set, conf->wifi_sta_ssid, &set_arg, sizeof(conf->wifi_sta_ssid));
+	} else if (compare_symbol(name, &syms_vesc.wifi_sta_key)) {
+		res = get_or_set_string(set, conf->wifi_sta_key, &set_arg, sizeof(conf->wifi_sta_key));
+	} else if (compare_symbol(name, &syms_vesc.wifi_ap_ssid)) {
+		res = get_or_set_string(set, conf->wifi_ap_ssid, &set_arg, sizeof(conf->wifi_ap_ssid));
+	} else if (compare_symbol(name, &syms_vesc.wifi_ap_key)) {
+		res = get_or_set_string(set, conf->wifi_ap_key, &set_arg, sizeof(conf->wifi_ap_key));
+	} else if (compare_symbol(name, &syms_vesc.use_tcp_local)) {
+		res = get_or_set_bool(set, &conf->use_tcp_local, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.use_tcp_hub)) {
+		res = get_or_set_bool(set, &conf->use_tcp_hub, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_url)) {
+		res = get_or_set_string(set, conf->tcp_hub_url, &set_arg, sizeof(conf->tcp_hub_url));
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_port)) {
+		res = get_or_set_u16(set, &conf->tcp_hub_port, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_id)) {
+		res = get_or_set_string(set, conf->tcp_hub_id, &set_arg, sizeof(conf->tcp_hub_id));
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_pass)) {
+		res = get_or_set_string(set, conf->tcp_hub_pass, &set_arg, sizeof(conf->tcp_hub_pass));
+	} else if (compare_symbol(name, &syms_vesc.ble_mode)) {
+		int v = conf->ble_mode;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->ble_mode = v;
+	} else if (compare_symbol(name, &syms_vesc.ble_name)) {
+		res = get_or_set_string(set, conf->ble_name, &set_arg, sizeof(conf->ble_name));
+	} else if (compare_symbol(name, &syms_vesc.ble_pin)) {
+		res = get_or_set_u32(set, &conf->ble_pin, &set_arg);
+	}
+
+	return res;
+}
+
+static lbm_value ext_conf_get(lbm_value *args, lbm_uint argn) {
+	return ext_conf_setget(false, args, argn);
+}
+
+static lbm_value ext_conf_set(lbm_value *args, lbm_uint argn) {
+	return ext_conf_setget(true, args, argn);
+}
+
+static lbm_value ext_conf_store(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	main_store_backup_data();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_reboot(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	comm_wifi_disconnect();
+	vTaskDelay(50 / portTICK_PERIOD_MS);
+	esp_restart();
 	return ENC_SYM_TRUE;
 }
 
@@ -3587,6 +3777,12 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("main-init-done", ext_main_init_done);
 	lbm_add_extension("crc16", ext_crc16);
 	lbm_add_extension("buf-find", ext_buf_find);
+
+	// Configuration
+	lbm_add_extension("conf-get", ext_conf_get);
+	lbm_add_extension("conf-set", ext_conf_set);
+	lbm_add_extension("conf-store", ext_conf_store);
+	lbm_add_extension("reboot", ext_reboot);
 
 	// EEPROM
 	lbm_add_extension("eeprom-store-f", ext_eeprom_store_f);
