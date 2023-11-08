@@ -525,7 +525,10 @@ static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
 	} else if (compare_symbol(name, &syms_vesc.can_baud_rate)) {
 		int v = conf->can_baud_rate;
 		res = get_or_set_i(set, &v, &set_arg);
-		conf->can_baud_rate = v;
+		if (v != conf->can_baud_rate) {
+			conf->can_baud_rate = v;
+			comm_can_update_baudrate();
+		}
 	} else if (compare_symbol(name, &syms_vesc.can_status_rate_hz)) {
 		res = get_or_set_i(set, &conf->can_status_rate_hz, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.wifi_mode)) {

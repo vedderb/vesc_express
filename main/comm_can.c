@@ -617,6 +617,18 @@ void comm_can_init(void) {
 #endif
 }
 
+void comm_can_update_baudrate(void) {
+#ifndef CAN_TX_GPIO_NUM
+	return;
+#else
+	twai_stop();
+	twai_driver_uninstall();
+	update_baud(backup.config.can_baud_rate);
+	twai_driver_install(&g_config, &t_config, &f_config);
+	twai_start();
+#endif
+}
+
 void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 #ifndef CAN_TX_GPIO_NUM
 	return;

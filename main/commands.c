@@ -293,7 +293,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 #else
 		if (conf_ind == 0 && confparser_deserialize_main_config_t(data + 1, conf)) {
 #endif
+			bool baud_changed = backup.config.can_baud_rate != conf->can_baud_rate;
 			backup.config = *conf;
+
+			if (baud_changed) {
+				comm_can_update_baudrate();
+			}
 
 			main_store_backup_data();
 
