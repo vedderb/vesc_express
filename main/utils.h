@@ -43,6 +43,10 @@ bool utils_rmtree(const char *path);
 // For double precision literals
 #define D(x) 				((double)x##L)
 
+#ifndef __NOP
+#define __NOP()					__asm__ __volatile__ ("nop")
+#endif
+
 /**
  * A simple low pass filter.
  *

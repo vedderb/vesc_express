@@ -40,6 +40,7 @@
 #include "nmea.h"
 #include "log_comm.h"
 #include "comm_wifi.h"
+#include "enc_as504x.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -3744,6 +3745,68 @@ static lbm_value ext_lbm_run(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+// AS504x encoder
+
+static AS504x_config_t as504x = {0};
+static bool as504x_init_done = false;
+static char *str_as504x_not_init_msg = "AS504x not initialized.";
+
+static lbm_value ext_as504x_init(lbm_value *args, lbm_uint argn) {
+	if (argn != 3 && argn != 4) {
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	int miso = lbm_dec_as_i32(args[0]);
+	int sck = lbm_dec_as_i32(args[1]);
+	int nss = lbm_dec_as_i32(args[2]);
+
+	if (!gpio_is_valid(miso) || !gpio_is_valid(sck) || !gpio_is_valid(nss)) {
+		lbm_set_error_reason(pin_invalid_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	int mosi = -1;
+	if (argn == 4) {
+		mosi = lbm_dec_as_i32(args[3]);
+		if (!gpio_is_valid(mosi)) {
+			lbm_set_error_reason(pin_invalid_msg);
+			return ENC_SYM_EERROR;
+		}
+	}
+
+	as504x.sw_spi.miso_pin = miso;
+	as504x.sw_spi.mosi_pin = mosi;
+	as504x.sw_spi.sck_pin = sck;
+	as504x.sw_spi.nss_pin = nss;
+
+	as504x_init_done = true;
+
+	return enc_as504x_init(&as504x) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_as504x_deinit(lbm_value *args, lbm_uint argn) {
+	if (!as504x_init_done) {
+		lbm_set_error_reason(str_as504x_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	enc_as504x_deinit(&as504x);
+	as504x_init_done = false;
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_as504x_angle(lbm_value *args, lbm_uint argn) {
+	if (!as504x_init_done) {
+		lbm_set_error_reason(str_as504x_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_float(enc_as504x_read_angle(&as504x));
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -3952,6 +4015,11 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("qml-erase", ext_qml_erase);
 	lbm_add_extension("qml-write", ext_qml_write);
 
+	// AS504x
+	lbm_add_extension("as504x-init", ext_as504x_init);
+	lbm_add_extension("as504x-deinit", ext_as504x_deinit);
+	lbm_add_extension("as504x-angle", ext_as504x_angle);
+
 	// TODO:
 	// - uart?
 
@@ -4002,6 +4070,11 @@ void lispif_disable_all_events(void) {
 	}
 
 	file_now = 0;
+
+	if (as504x_init_done) {
+		enc_as504x_deinit(&as504x);
+		as504x_init_done = false;
+	}
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
