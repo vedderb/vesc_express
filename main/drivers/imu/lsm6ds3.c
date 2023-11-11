@@ -211,8 +211,24 @@ void lsm6ds3_init(void) {
 void lsm6ds3_stop(void) {
 	should_terminate = true;
 
+	bool thd_was_running = thd_running;
+
 	while (thd_running) {
 		vTaskDelay(1);
+	}
+
+	// Put IMU in sleep mode
+	if (thd_was_running) {
+		uint8_t txb[2];
+		uint8_t rxb[2];
+
+		txb[0] = LSM6DS3_ACC_GYRO_CTRL1_XL;
+		txb[1] = 0;
+		imu_i2c_tx_rx(lsm6ds3_addr, txb, 2, rxb, 1);
+
+		txb[0] = LSM6DS3_ACC_GYRO_CTRL2_G;
+		txb[1] = 0;
+		imu_i2c_tx_rx(lsm6ds3_addr, txb, 2, rxb, 1);
 	}
 
 	terminal_unregister_callback(terminal_read_reg);
@@ -288,8 +304,7 @@ static void lsm_task(void *arg) {
 		vTaskDelay(portTICK_PERIOD_MS / rate_hz);
 	}
 
-	vTaskDelete(NULL);
-
 	thd_running = false;
+	vTaskDelete(NULL);
 }
 

@@ -47,10 +47,6 @@ static void (*m_read_callback)(float *acc, float *gyro, float *mag, float dt) = 
 
 void imu_init(imu_config *set, SemaphoreHandle_t i2c_mutex) {
 	m_i2c_mutex = i2c_mutex;
-
-	bool imu_changed = set->sample_rate_hz != m_settings.sample_rate_hz ||
-			set->type != m_settings.type;
-
 	m_settings = *set;
 
 	// Biquad filters
@@ -79,10 +75,6 @@ void imu_init(imu_config *set, SemaphoreHandle_t i2c_mutex) {
 
 	init_time = xTaskGetTickCount();
 	imu_ready = false;
-
-	if (!imu_changed) {
-		return;
-	}
 
 	imu_stop();
 	imu_reset_orientation();

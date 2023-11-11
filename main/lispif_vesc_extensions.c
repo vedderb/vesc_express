@@ -3834,6 +3834,12 @@ static lbm_value ext_imu_start_lsm6(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_imu_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	imu_stop();
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_get_imu_rpy(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
@@ -4148,6 +4154,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// IMU
 	lbm_add_extension("imu-start-lsm6", ext_imu_start_lsm6);
+	lbm_add_extension("imu-stop", ext_imu_stop);
 	lbm_add_extension("get-imu-rpy", ext_get_imu_rpy);
 	lbm_add_extension("get-imu-quat", ext_get_imu_quat);
 	lbm_add_extension("get-imu-acc", ext_get_imu_acc);
