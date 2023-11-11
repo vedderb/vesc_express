@@ -23,7 +23,7 @@ set(COMPONENT_SRCS
 "rb.c"
 "bms.c"
 "log_comm.c"
-"hwspi.c"
+"digital_filter.c"
 
 "config/confsrc.c"
 "hwconf/hw.c"
@@ -68,8 +68,12 @@ set(COMPONENT_SRCS
 
 "drivers/bme280/bme280.c"
 "drivers/bme280/bme280_if.c"
+"drivers/hwspi.c"
 "drivers/spi_bb.c"
 "drivers/enc_as504x.c"
+"drivers/imu/imu.c"
+"drivers/imu/lsm6ds3.c"
+"drivers/imu/ahrs.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS
@@ -85,6 +89,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "display"
 "drivers"
 "drivers/bme280"
+"drivers/imu"
 )
 
 register_component()

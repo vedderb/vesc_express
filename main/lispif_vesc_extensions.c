@@ -41,6 +41,7 @@
 #include "log_comm.h"
 #include "comm_wifi.h"
 #include "enc_as504x.h"
+#include "imu.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -3807,6 +3808,131 @@ static lbm_value ext_as504x_angle(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float(enc_as504x_read_angle(&as504x));
 }
 
+// IMU
+
+static imu_config imu_cfg;
+
+static lbm_value ext_imu_start_lsm6(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ext_i2c_start(args, argn);
+
+	if (res != ENC_SYM_TRUE) {
+		return res;
+	}
+
+	memset(&imu_cfg, 0, sizeof(imu_cfg));
+	imu_cfg.type = IMU_TYPE_EXTERNAL_LSM6DS3;
+	imu_cfg.sample_rate_hz = 1000;
+	imu_cfg.use_magnetometer = true;
+	imu_cfg.filter = IMU_FILTER_MEDIUM;
+	imu_cfg.accel_confidence_decay = 1.0;
+	imu_cfg.mahony_kp = 0.3;
+	imu_cfg.mahony_ki = 0.0;
+	imu_cfg.madgwick_beta = 0.1;
+
+	imu_init(&imu_cfg, i2c_mutex);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_get_imu_rpy(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float rpy[3];
+	imu_get_rpy(rpy);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(rpy[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(rpy[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(rpy[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_quat(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float q[4];
+	imu_get_quaternions(q);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(q[3]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(q[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(q[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(q[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_acc(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float acc[3];
+	imu_get_accel(acc);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(acc[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_gyro(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float gyro[3];
+	imu_get_gyro(gyro);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(gyro[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_mag(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float mag[3];
+	imu_get_mag(mag);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(mag[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(mag[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(mag[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_acc_derot(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float acc[3];
+	imu_get_accel_derotated(acc);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(acc[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_gyro_derot(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float gyro[3];
+	imu_get_gyro_derotated(gyro);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(gyro[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[0]), imu_data);
+
+	return imu_data;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -4019,6 +4145,16 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("as504x-init", ext_as504x_init);
 	lbm_add_extension("as504x-deinit", ext_as504x_deinit);
 	lbm_add_extension("as504x-angle", ext_as504x_angle);
+
+	// IMU
+	lbm_add_extension("imu-start-lsm6", ext_imu_start_lsm6);
+	lbm_add_extension("get-imu-rpy", ext_get_imu_rpy);
+	lbm_add_extension("get-imu-quat", ext_get_imu_quat);
+	lbm_add_extension("get-imu-acc", ext_get_imu_acc);
+	lbm_add_extension("get-imu-gyro", ext_get_imu_gyro);
+	lbm_add_extension("get-imu-mag", ext_get_imu_mag);
+	lbm_add_extension("get-imu-acc-derot", ext_get_imu_acc_derot);
+	lbm_add_extension("get-imu-gyro-derot", ext_get_imu_gyro_derot);
 
 	// TODO:
 	// - uart?
