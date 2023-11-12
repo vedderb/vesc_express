@@ -696,6 +696,7 @@ bool comm_wifi_disconnect_network() {
 	}
 
 	wifi_disabled = true;
+	is_connecting = false;
 
 	comm_wifi_disconnect();
 	esp_wifi_disconnect();

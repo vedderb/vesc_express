@@ -586,7 +586,8 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 
 	return ssid_list;
 }
-
+// TODO: Fix 'wrong-password being reported sometimes when reconnecting to the
+// same network with correct credentials.
 /**
  * signature: (wifi-connect ssid:string password:string|nil) -> bool
  *
@@ -953,7 +954,7 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 
 /**
  * signature: (tcp-recv socket:number max-len:number
- * [timeout:number|nil] [as_str:bool]) -> byte-array|nil
+ * [timeout:number|nil] [as-str:bool]) -> byte-array|nil
  *
  * @param socket The socket to receive data over. Should have been
  * created using tcp-connect.

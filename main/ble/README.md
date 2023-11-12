@@ -1,11 +1,11 @@
-# Documentation for the BLE interface for LispBM
+# Documentation of the BLE interface for LispBM
 
 ## Introduction
 
 The BLE interface provides a set of function allowing you to control control the
-devices BLE behavior from LispBM scripts, allowing it to act as a BLE server. The library is quite limited at the
-moment (it does not support encryption at all at the moment for instance). It
-only supports the following actions:
+devices BLE behavior from LispBM scripts, allowing it to act as a BLE server.
+The library is quite limited at the moment (it does not support encryption at
+all at the moment for instance). It only supports the following actions:
 
 1. Defining services with UUIDs and a list of characteristics with their own UUIDs.
 2. Defining the access permissions of said charactersistics, including read, write,
