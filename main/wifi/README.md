@@ -1,4 +1,4 @@
-# Documentation of the WiFi and TCP interface for LispBM
+# Documentation of the WiFi and TCP interfaces for LispBM
 
 ## Introduction
 
