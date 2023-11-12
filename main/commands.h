@@ -5,18 +5,18 @@
 	This file is part of the VESC firmware.
 
 	The VESC firmware is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
 
-    The VESC firmware is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+	The VESC firmware is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+	*/
 
 #ifndef MAIN_COMMANDS_H_
 #define MAIN_COMMANDS_H_
@@ -26,12 +26,14 @@
 
 // Functions
 void commands_init(void);
-void commands_process_packet(unsigned char *data, unsigned int len,
-		void(*reply_func)(unsigned char *data, unsigned int len));
+void commands_process_packet(
+	unsigned char *data, unsigned int len,
+	void (*reply_func)(unsigned char *data, unsigned int len)
+);
 void commands_send_packet(unsigned char *data, unsigned int len);
 void commands_send_packet_can_last(unsigned char *data, unsigned int len);
-int commands_printf(const char* format, ...);
-int commands_printf_lisp(const char* format, ...);
+int commands_printf(const char *format, ...);
+int commands_printf_lisp(const char *format, ...);
 void commands_init_plot(char *namex, char *namey);
 void commands_plot_add_graph(char *name);
 void commands_plot_set_graph(int graph);
@@ -40,9 +42,9 @@ void commands_send_app_data(unsigned char *data, unsigned int len);
 
 // TODO: remove this
 // Rasmus debug stuff
-typedef void (*send_func_t)(unsigned char*,unsigned int);
+typedef void (*send_func_t)(unsigned char *, unsigned int);
 void commands_start_send_func_overwrite(
-    void (*new_send_func)(unsigned char *data, unsigned int len)
+	void (*new_send_func)(unsigned char *data, unsigned int len)
 );
 void commands_restore_send_func();
 send_func_t commands_get_send_func();

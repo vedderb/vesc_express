@@ -27,7 +27,8 @@
 #include "extensions/string_extensions.h"
 #include "extensions/math_extensions.h"
 #include "lispif_disp_extensions.h"
-#include "ble/lispif_ble_extensions.h"
+#include "lispif_wifi_extensions.h"
+#include "lispif_ble_extensions.h"
 #include "lbm_constants.h"
 
 #include "commands.h"
@@ -3388,6 +3389,9 @@ void lispif_load_vesc_extensions(void) {
 
 	// Disp extensions
 	lispif_load_disp_extensions();
+	
+	// WIFI extensions
+	lispif_load_wifi_extensions();
 	
 	// BLE extensions
 	if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {

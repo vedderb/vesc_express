@@ -1,5 +1,7 @@
 /*
-	Copyright 2022 - 2023 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 - 2023 Benjamin Vedder    benjamin@vedder.se
+	Copyright 2023 Rasmus Söderhielm         rasmus.soderhielm@gmail.com
+	
 
 	This file is part of the VESC firmware.
 
@@ -19,9 +21,11 @@
 
 #include "comm_wifi.h"
 #include "conf_general.h"
+#include "utils.h"
 #include "main.h"
 #include "packet.h"
 #include "commands.h"
+#include "datatypes.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -36,6 +40,7 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
+#include "lwip/api.h"
 #include "lwip/netdb.h"
 
 #define WIFI_CONNECTED_BIT		BIT0
@@ -45,6 +50,17 @@ static EventGroupHandle_t s_wifi_event_group;
 static esp_ip4_addr_t ip = {0};
 static bool is_connecting = false;
 static bool is_connected = false;
+static bool wifi_disabled = false;
+static WIFI_MODE wifi_mode;
+static volatile bool wifi_config_changed = false;
+static wifi_config_t wifi_config = {0};
+
+static comm_wifi_event_cb_t event_listener = NULL;
+/**
+ * List of every custom socket registered with comm_wifi_open_socket.
+ * Negative entries signify open spots.
+*/
+static int custom_sockets[CUSTOM_SOCKET_COUNT];
 
 typedef struct {
 	PACKET_STATE_t *packet;
@@ -54,6 +70,164 @@ typedef struct {
 
 static comm_state comm_local = {.socket = -1, .ip_client = {0}};
 static comm_state comm_hub = {.socket = -1, .ip_client = {0}};
+
+// static const char *wifi_reason_to_str(wifi_err_reason_t reason) {
+// 	switch (reason) {
+// 		case WIFI_REASON_UNSPECIFIED:
+// 			return "UNSPECIFIED";
+// 		case WIFI_REASON_AUTH_EXPIRE:
+// 			return "AUTH_EXPIRE";
+// 		case WIFI_REASON_AUTH_LEAVE:
+// 			return "AUTH_LEAVE";
+// 		case WIFI_REASON_ASSOC_EXPIRE:
+// 			return "ASSOC_EXPIRE";
+// 		case WIFI_REASON_ASSOC_TOOMANY:
+// 			return "ASSOC_TOOMANY";
+// 		case WIFI_REASON_NOT_AUTHED:
+// 			return "NOT_AUTHED";
+// 		case WIFI_REASON_NOT_ASSOCED:
+// 			return "NOT_ASSOCED";
+// 		case WIFI_REASON_ASSOC_LEAVE:
+// 			return "ASSOC_LEAVE";
+// 		case WIFI_REASON_ASSOC_NOT_AUTHED:
+// 			return "ASSOC_NOT_AUTHED";
+// 		case WIFI_REASON_DISASSOC_PWRCAP_BAD:
+// 			return "DISASSOC_PWRCAP_BAD";
+// 		case WIFI_REASON_DISASSOC_SUPCHAN_BAD:
+// 			return "DISASSOC_SUPCHAN_BAD";
+// 		case WIFI_REASON_BSS_TRANSITION_DISASSOC:
+// 			return "BSS_TRANSITION_DISASSOC";
+// 		case WIFI_REASON_IE_INVALID:
+// 			return "IE_INVALID";
+// 		case WIFI_REASON_MIC_FAILURE:
+// 			return "MIC_FAILURE";
+// 		case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+// 			return "4WAY_HANDSHAKE_TIMEOUT";
+// 		case WIFI_REASON_GROUP_KEY_UPDATE_TIMEOUT:
+// 			return "GROUP_KEY_UPDATE_TIMEOUT";
+// 		case WIFI_REASON_IE_IN_4WAY_DIFFERS:
+// 			return "IE_IN_4WAY_DIFFERS";
+// 		case WIFI_REASON_GROUP_CIPHER_INVALID:
+// 			return "GROUP_CIPHER_INVALID";
+// 		case WIFI_REASON_PAIRWISE_CIPHER_INVALID:
+// 			return "PAIRWISE_CIPHER_INVALID";
+// 		case WIFI_REASON_AKMP_INVALID:
+// 			return "AKMP_INVALID";
+// 		case WIFI_REASON_UNSUPP_RSN_IE_VERSION:
+// 			return "UNSUPP_RSN_IE_VERSION";
+// 		case WIFI_REASON_INVALID_RSN_IE_CAP:
+// 			return "INVALID_RSN_IE_CAP";
+// 		case WIFI_REASON_802_1X_AUTH_FAILED:
+// 			return "802_1X_AUTH_FAILED";
+// 		case WIFI_REASON_CIPHER_SUITE_REJECTED:
+// 			return "CIPHER_SUITE_REJECTED";
+// 		case WIFI_REASON_TDLS_PEER_UNREACHABLE:
+// 			return "TDLS_PEER_UNREACHABLE";
+// 		case WIFI_REASON_TDLS_UNSPECIFIED:
+// 			return "TDLS_UNSPECIFIED";
+// 		case WIFI_REASON_SSP_REQUESTED_DISASSOC:
+// 			return "SSP_REQUESTED_DISASSOC";
+// 		case WIFI_REASON_NO_SSP_ROAMING_AGREEMENT:
+// 			return "NO_SSP_ROAMING_AGREEMENT";
+// 		case WIFI_REASON_BAD_CIPHER_OR_AKM:
+// 			return "BAD_CIPHER_OR_AKM";
+// 		case WIFI_REASON_NOT_AUTHORIZED_THIS_LOCATION:
+// 			return "NOT_AUTHORIZED_THIS_LOCATION";
+// 		case WIFI_REASON_SERVICE_CHANGE_PERCLUDES_TS:
+// 			return "SERVICE_CHANGE_PERCLUDES_TS";
+// 		case WIFI_REASON_UNSPECIFIED_QOS:
+// 			return "UNSPECIFIED_QOS";
+// 		case WIFI_REASON_NOT_ENOUGH_BANDWIDTH:
+// 			return "NOT_ENOUGH_BANDWIDTH";
+// 		case WIFI_REASON_MISSING_ACKS:
+// 			return "MISSING_ACKS";
+// 		case WIFI_REASON_EXCEEDED_TXOP:
+// 			return "EXCEEDED_TXOP";
+// 		case WIFI_REASON_STA_LEAVING:
+// 			return "STA_LEAVING";
+// 		case WIFI_REASON_END_BA:
+// 			return "END_BA";
+// 		case WIFI_REASON_UNKNOWN_BA:
+// 			return "UNKNOWN_BA";
+// 		case WIFI_REASON_TIMEOUT:
+// 			return "TIMEOUT";
+// 		case WIFI_REASON_PEER_INITIATED:
+// 			return "PEER_INITIATED";
+// 		case WIFI_REASON_AP_INITIATED:
+// 			return "AP_INITIATED";
+// 		case WIFI_REASON_INVALID_FT_ACTION_FRAME_COUNT:
+// 			return "INVALID_FT_ACTION_FRAME_COUNT";
+// 		case WIFI_REASON_INVALID_PMKID:
+// 			return "INVALID_PMKID";
+// 		case WIFI_REASON_INVALID_MDE:
+// 			return "INVALID_MDE";
+// 		case WIFI_REASON_INVALID_FTE:
+// 			return "INVALID_FTE";
+// 		case WIFI_REASON_TRANSMISSION_LINK_ESTABLISH_FAILED:
+// 			return "TRANSMISSION_LINK_ESTABLISH_FAILED";
+// 		case WIFI_REASON_ALTERATIVE_CHANNEL_OCCUPIED:
+// 			return "ALTERATIVE_CHANNEL_OCCUPIED";
+
+// 		case WIFI_REASON_BEACON_TIMEOUT:
+// 			return "BEACON_TIMEOUT";
+// 		case WIFI_REASON_NO_AP_FOUND:
+// 			return "NO_AP_FOUND";
+// 		case WIFI_REASON_AUTH_FAIL:
+// 			return "AUTH_FAIL";
+// 		case WIFI_REASON_ASSOC_FAIL:
+// 			return "ASSOC_FAIL";
+// 		case WIFI_REASON_HANDSHAKE_TIMEOUT:
+// 			return "HANDSHAKE_TIMEOUT";
+// 		case WIFI_REASON_CONNECTION_FAIL:
+// 			return "CONNECTION_FAIL";
+// 		case WIFI_REASON_AP_TSF_RESET:
+// 			return "AP_TSF_RESET";
+// 		case WIFI_REASON_ROAMING:
+// 			return "ROAMING";
+// 		case WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG:
+// 			return "ASSOC_COMEBACK_TIME_TOO_LONG";
+// 		case WIFI_REASON_SA_QUERY_TIMEOUT:
+// 			return "SA_QUERY_TIMEOUT";
+// 	}
+	
+// 	return "unknown";
+// }
+
+/**
+ * Find the next index in custom_sockets that's free.
+ * 
+ * @return The found index, or -1 if every spot was taken.
+*/
+static ssize_t next_free_custom_socket() {
+	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
+		if (custom_sockets[i] < 0) {
+			return i;
+		}
+	}
+	
+	return -1;
+}
+
+/**
+ * Find the index in custom_sockets of the given custom socket.
+ * 
+ * @param sock The socket to search for.
+ * @return The found index of socket, or -1 if it didn't exist.
+*/
+static ssize_t find_custom_socket(int sock) {
+	if (sock < 0) {
+		// Just to be sure.
+		return -1;
+	}
+	
+	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
+		if (custom_sockets[i] == sock) {
+			return i;
+		}
+	}
+	
+	return -1;
+}
 
 static void do_comm(const int sock, comm_state *comm) {
 	int len;
@@ -125,19 +299,21 @@ static void tcp_task_local(void *arg) {
 
 static void tcp_task_hub(void *arg) {
 	for (;;) {
-		struct hostent *host = gethostbyname((char*)backup.config.tcp_hub_url);
+		ip_addr_t addr;
+		{
+			err_t result =
+				netconn_gethostbyname((char *)backup.config.tcp_hub_url, &addr);
 
-		if (!host) {
-			vTaskDelay(1000 / portTICK_PERIOD_MS);
-			continue;
+			if (result != ERR_OK) {
+				vTaskDelay(1000 / portTICK_PERIOD_MS);
+				continue;
+			}
 		}
 
-		struct sockaddr_in dest_addr;
-		memcpy(&dest_addr.sin_addr, host->h_addr_list[0], host->h_length);
-		dest_addr.sin_family = AF_INET;
-		dest_addr.sin_port = htons(backup.config.tcp_hub_port);
+		struct sockaddr_in dest_addr =
+			create_sockaddr_in(addr, backup.config.tcp_hub_port);
 
-		int sock =  socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+		int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
 		int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 		if (err == 0) {
 			memcpy(&comm_hub.ip_client, &dest_addr.sin_addr.s_addr, 4);
@@ -150,7 +326,7 @@ static void tcp_task_hub(void *arg) {
 			}
 			do_comm(sock, &comm_hub);
 		}
-
+		
 		shutdown(sock, 0);
 		close(sock);
 		vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -161,12 +337,41 @@ static void tcp_task_hub(void *arg) {
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
 	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-		esp_wifi_connect();
-	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-		is_connected = false;
-		LED_RED_OFF();
 		is_connecting = true;
 		esp_wifi_connect();
+	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+		wifi_event_sta_disconnected_t *data =
+			(wifi_event_sta_disconnected_t *)event_data;
+
+		stored_printf(
+			"disconnected, ssid_len: %u, ssid: '%s', reason: '%s' (%u), rssi: "
+			"%d",
+			data->ssid_len, data->ssid,
+			"", /*wifi_reason_to_str(data->reason),*/
+			data->reason, data->rssi
+		);
+
+		// TODO: Should cleanup custom sockets.
+		is_connected = false;
+		LED_RED_OFF();
+
+		bool wrong_password = data->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
+			|| data->reason == WIFI_REASON_NO_AP_FOUND
+			|| data->reason == WIFI_REASON_HANDSHAKE_TIMEOUT
+			|| data->reason == WIFI_REASON_AUTH_EXPIRE;
+
+		stored_printf("wrong_password: %s", wrong_password ? "true" : "false");
+
+		if (!wrong_password && !wifi_disabled) {
+			is_connecting    = true;
+			esp_err_t result = esp_wifi_connect();
+			if (result != ESP_OK) {
+				stored_printf("esp_wifi_connect failed, result: %d", result);
+			}
+		}
+	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_STOP) {
+		// Cleanup custom sockets.
+		comm_wifi_disconnect();
 	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
 		ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
 		ip = event->ip_info.ip;
@@ -174,6 +379,10 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 		is_connected = true;
 		LED_RED_ON();
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+	}
+
+	if (event_listener != NULL) {
+		event_listener(event_base, event_id, event_data);
 	}
 }
 
@@ -196,7 +405,7 @@ static void broadcast_task(void *arg) {
 	for (;;) {
 		char sendbuf[50];
 		size_t ind = 0;
-		if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {
+		if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
 			ind += sprintf(sendbuf, "%s::192.168.4.1::65102", backup.config.ble_name) + 1;
 		} else {
 			ind += sprintf(sendbuf, "%s::" IPSTR "::65102", backup.config.ble_name, IP2STR(&ip)) + 1;
@@ -262,11 +471,17 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len) {
 }
 
 void comm_wifi_init(void) {
+	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
+		custom_sockets[i] = -1;
+	}
+	
 	s_wifi_event_group = xEventGroupCreate();
 	esp_netif_init();
 	esp_event_loop_create_default();
+	
+	wifi_mode = backup.config.wifi_mode;
 
-	if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {
+	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
 		esp_netif_create_default_wifi_ap();
 	} else {
 		esp_netif_create_default_wifi_sta();
@@ -299,38 +514,38 @@ void comm_wifi_init(void) {
 			NULL,
 			&instance_got_ip);
 
-	if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {
+	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
 		esp_wifi_set_mode(WIFI_MODE_AP);
 	} else {
 		esp_wifi_set_mode(WIFI_MODE_APSTA);
 	}
 
-	if (backup.config.wifi_mode == WIFI_MODE_ACCESS_POINT) {
-		wifi_config_t wifi_config_ap = {
-				.ap = {
-						.ssid = "",
-						.ssid_len = strlen((char*)backup.config.wifi_ap_ssid),
-						.channel = 1,
-						.password = "",
-						.max_connection = 4,
-						.authmode = WIFI_AUTH_WPA_WPA2_PSK,
-						.pmf_cfg = {
-								.required = false,
-						},
+	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
+		wifi_config = (wifi_config_t){
+			.ap = {
+				.ssid = "",
+				.ssid_len = strlen((char*)backup.config.wifi_ap_ssid),
+				.channel = 1,
+				.password = "",
+				.max_connection = 4,
+				.authmode = WIFI_AUTH_WPA_WPA2_PSK,
+				.pmf_cfg = {
+					.required = false,
 				},
+			},
 		};
 
-		strcpy((char*)wifi_config_ap.ap.ssid, (char*)backup.config.wifi_ap_ssid);
-		strcpy((char*)wifi_config_ap.ap.password, (char*)backup.config.wifi_ap_key);
+		strcpy((char*)wifi_config.ap.ssid, (char*)backup.config.wifi_ap_ssid);
+		strcpy((char*)wifi_config.ap.password, (char*)backup.config.wifi_ap_key);
 
-		esp_wifi_set_config(WIFI_IF_AP, &wifi_config_ap);
+		esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
 	} else {
-		wifi_config_t wifi_config = {
-				.sta = {
-						.ssid = "",
-						.password = "",
-						.threshold.authmode = WIFI_AUTH_WEP,
-				},
+		wifi_config = (wifi_config_t){
+			.sta = {
+				.ssid = "",
+				.password = "",
+				.threshold.authmode = WIFI_AUTH_WEP,
+			},
 		};
 
 		strcpy((char*)wifi_config.sta.ssid, (char*)backup.config.wifi_sta_ssid);
@@ -355,6 +570,10 @@ void comm_wifi_init(void) {
 	}
 
 	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 1024, NULL, 8, NULL, tskNO_AFFINITY);
+}
+
+WIFI_MODE comm_wifi_get_mode(void) {
+	return wifi_mode;
 }
 
 esp_ip4_addr_t comm_wifi_get_ip(void) {
@@ -393,4 +612,147 @@ void comm_wifi_disconnect(void) {
 		close(comm_hub.socket);
 		comm_hub.socket = -1;
 	}
+	
+	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
+		if (custom_sockets[i] >= 0) {
+			shutdown(custom_sockets[i], 0);
+			close(custom_sockets[i]);
+			custom_sockets[i] = -1;
+		}
+	}
+}
+
+bool comm_wifi_change_network(const char *ssid, const char *password) {
+	if (wifi_mode != WIFI_MODE_STATION) {
+		return false;
+	}
+
+	if (password == NULL) {
+		password = "";
+	}
+
+	size_t ssid_len = MIN(strlen(ssid), sizeof(wifi_config.sta.ssid) - 1);
+	size_t password_len =
+		MIN(strlen(password), sizeof(wifi_config.sta.password) - 1);
+
+	memcpy(wifi_config.sta.ssid, ssid, ssid_len);
+	wifi_config.sta.ssid[ssid_len] = '\0';
+
+	memcpy(wifi_config.sta.password, password, password_len);
+	wifi_config.sta.password[password_len] = '\0';
+
+	wifi_config_changed = true;
+	wifi_disabled       = false;
+
+	{
+		esp_err_t result = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+		if (result == ESP_ERR_WIFI_PASSWORD) {
+			stored_printf(
+				"incorrect wifi password, ssid: %p, password: %p", ssid,
+				password
+			);
+			stored_printf("ssid: '%s', password: '%s'", ssid, password);
+			// TODO: Report incorrect password correctly. (Is incorrect password
+			// even ever reported here?)
+			return false;
+		} else if (result != ESP_OK) {
+			stored_printf("esp_wifi_set_config failed, result: %d", result);
+
+			return false;
+		}
+	}
+
+	// I have no ****** idea if it would be ok to pass NULL here. I don't care
+	// about the result, and only want to know if we're currently connected or
+	// not. I'll just pass a temporary variable to be sure...
+	wifi_ap_record_t temp;
+	esp_err_t result = esp_wifi_sta_get_ap_info(&temp);
+	bool connected   = result == ESP_OK;
+	stored_printf(
+		"esp_wifi_sta_get_ap_info result: %d, is connected: %s", result,
+		connected ? "true" : "false"
+	);
+	if (connected) {
+		esp_err_t result = esp_wifi_disconnect();
+		if (result != ESP_OK) {
+			stored_printf("esp_wifi_disconnect failed, result: %d", result);
+			return false;
+		}
+	} else {
+		esp_err_t result = esp_wifi_connect();
+		if (result != ESP_OK) {
+			stored_printf("esp_wifi_connect failed, result: %d", result);
+			return false;
+		}
+		is_connecting = true;
+	}
+
+	return true;
+}
+
+bool comm_wifi_disconnect_network() {
+	if (wifi_mode != WIFI_MODE_STATION) {
+		return false;
+	}
+
+	wifi_disabled = true;
+
+	comm_wifi_disconnect();
+	esp_wifi_disconnect();
+
+	return true;
+}
+
+int comm_wifi_open_socket() {
+	ssize_t index = next_free_custom_socket();
+	if (index == -1) {
+		return -1;
+	}
+
+	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+
+	if (sock == -1) {
+		stored_printf("creating custom socket failed, errno: %d", errno);
+		return -1;
+	}
+	
+	custom_sockets[index] = sock;
+
+	return sock;
+}
+
+// TODO: Investigate why this always fails.
+bool comm_wifi_close_socket(int sock) {
+	ssize_t index = find_custom_socket(sock);
+	if (index == -1) {
+		return false;
+	}
+
+	shutdown(sock, 0);
+	close(sock);
+
+	custom_sockets[index] = -1;
+
+	return true;
+}
+
+bool comm_wifi_socket_is_valid(int sock) {
+	ssize_t index = find_custom_socket(sock);
+	return index != -1;
+}
+
+void comm_wifi_set_event_listener(comm_wifi_event_cb_t handler) {
+	event_listener = handler;
+}
+
+struct sockaddr_in create_sockaddr_in(ip_addr_t addr, uint16_t port) {
+	struct sockaddr_in result = {0};
+	// *Pretty* sure this works
+	memcpy(&result.sin_addr, &addr, sizeof(ip_addr_t));
+	result.sin_family = AF_INET;
+	result.sin_port   = htons(port);
+	// TODO: Is this necessary and correct if so?
+	result.sin_len    = 4;
+
+	return result;
 }

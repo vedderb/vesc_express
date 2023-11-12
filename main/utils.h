@@ -51,6 +51,11 @@ bool utils_rmtree(const char *path);
 #define NUMBER_OF(x) (sizeof(x) / sizeof((x)[0]))
 #endif
 
+#ifndef SIZEOF_MEMBER
+// source: https://stackoverflow.com/a/3553321/15507414
+#define SIZEOF_MEMBER(type, member) sizeof(((type *)0)->member)
+#endif
+
 // For double precision literals
 #define D(x) 				((double)x##L)
 

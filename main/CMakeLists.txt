@@ -30,6 +30,7 @@ set(COMPONENT_SRCS
 
 "lispif.c"
 "lispif_events.c"
+"lbm_vesc_utils.c"
 "lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
 "lispBM/src/env.c"
@@ -55,6 +56,8 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/array_extensions.c"
 "lispBM/src/extensions/math_extensions.c"
 "lispBM/src/extensions/string_extensions.c"
+
+"wifi/lispif_wifi_extensions.c"
 
 "ble/custom_ble.c"
 "ble/lispif_ble_extensions.c"
@@ -85,6 +88,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "lispBM/include"
 "lispBM/platform/freertos/include"
 "display"
+"wifi"
+"ble"
 "drivers"
 "drivers/bme280"
 )

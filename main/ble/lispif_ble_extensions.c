@@ -25,6 +25,7 @@
 
 #include "custom_ble.h"
 #include "lispif_events.h"
+#include "lbm_vesc_utils.h"
 #include "utils.h"
 #include "heap.h"
 #include "lbm_defines.h"
@@ -48,18 +49,6 @@ static char *error_internal_allocation_failed =
 static char *error_name_too_long       = "Name too long, max: 30 characters.";
 static char *error_invalid_handle      = "Handle did not exist.";
 static char *error_service_wrong_order = "Service not last.";
-
-/**
- * Add symbol to the symbol table if it doesn't already exist.
- * TODO: This doesn't really belong here...
- */
-static bool lbm_add_symbol_const_if_new(char *name, lbm_uint *id) {
-	if (!lbm_get_symbol_by_name(name, id) && !lbm_add_symbol_const(name, id)) {
-		return false;
-	}
-
-	return true;
-}
 
 /**
  * Reverse the elements of an array.
