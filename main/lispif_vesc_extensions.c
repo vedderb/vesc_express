@@ -43,6 +43,9 @@
 #include "bms.h"
 #include "nmea.h"
 #include "log_comm.h"
+#include "comm_wifi.h"
+#include "enc_as504x.h"
+#include "imu.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -115,6 +118,25 @@ typedef struct {
 	lbm_uint rate_200k;
 	lbm_uint rate_400k;
 	lbm_uint rate_700k;
+
+	// Settings
+	lbm_uint controller_id;
+	lbm_uint can_baud_rate;
+	lbm_uint can_status_rate_hz;
+	lbm_uint wifi_mode;
+	lbm_uint wifi_sta_ssid;
+	lbm_uint wifi_sta_key;
+	lbm_uint wifi_ap_ssid;
+	lbm_uint wifi_ap_key;
+	lbm_uint use_tcp_local;
+	lbm_uint use_tcp_hub;
+	lbm_uint tcp_hub_url;
+	lbm_uint tcp_hub_port;
+	lbm_uint tcp_hub_id;
+	lbm_uint tcp_hub_pass;
+	lbm_uint ble_mode;
+	lbm_uint ble_name;
+	lbm_uint ble_pin;
 
 	// Other
 	lbm_uint half_duplex;
@@ -220,6 +242,42 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			get_add_symbol("rate-700k", comp);
 		}
 
+		else if (comp == &syms_vesc.controller_id) {
+			get_add_symbol("controller-id", comp);
+		} else if (comp == &syms_vesc.can_baud_rate) {
+			get_add_symbol("can-baud-rate", comp);
+		} else if (comp == &syms_vesc.can_status_rate_hz) {
+			get_add_symbol("can-status-rate-hz", comp);
+		} else if (comp == &syms_vesc.wifi_mode) {
+			get_add_symbol("wifi-mode", comp);
+		} else if (comp == &syms_vesc.wifi_sta_ssid) {
+			get_add_symbol("wifi-sta-ssid", comp);
+		} else if (comp == &syms_vesc.wifi_sta_key) {
+			get_add_symbol("wifi-sta-key", comp);
+		} else if (comp == &syms_vesc.wifi_ap_ssid) {
+			get_add_symbol("wifi-ap-ssid", comp);
+		} else if (comp == &syms_vesc.wifi_ap_key) {
+			get_add_symbol("wifi-ap-key", comp);
+		} else if (comp == &syms_vesc.use_tcp_local) {
+			get_add_symbol("use-tcp-local", comp);
+		} else if (comp == &syms_vesc.use_tcp_hub) {
+			get_add_symbol("use-tcp-hub", comp);
+		} else if (comp == &syms_vesc.tcp_hub_url) {
+			get_add_symbol("tcp-hub-url", comp);
+		} else if (comp == &syms_vesc.tcp_hub_port) {
+			get_add_symbol("tcp-hub-port", comp);
+		} else if (comp == &syms_vesc.tcp_hub_id) {
+			get_add_symbol("tcp-hub-id", comp);
+		} else if (comp == &syms_vesc.tcp_hub_pass) {
+			get_add_symbol("tcp-hub-pass", comp);
+		} else if (comp == &syms_vesc.ble_mode) {
+			get_add_symbol("ble-mode", comp);
+		} else if (comp == &syms_vesc.ble_name) {
+			get_add_symbol("ble-name", comp);
+		} else if (comp == &syms_vesc.ble_pin) {
+			get_add_symbol("ble-pin", comp);
+		}
+
 		else if (comp == &syms_vesc.half_duplex) {
 			get_add_symbol("half-duplex", comp);
 		}
@@ -271,12 +329,54 @@ static lbm_value get_or_set_i(bool set, int *val, lbm_value *lbm_val) {
 	}
 }
 
+static lbm_value get_or_set_u16(bool set, uint16_t *val, lbm_value *lbm_val) {
+	if (set) {
+		*val = lbm_dec_as_i32(*lbm_val);
+		return ENC_SYM_TRUE;
+	} else {
+		return lbm_enc_i(*val);
+	}
+}
+
+static lbm_value get_or_set_u32(bool set, uint32_t *val, lbm_value *lbm_val) {
+	if (set) {
+		*val = lbm_dec_as_u32(*lbm_val);
+		return ENC_SYM_TRUE;
+	} else {
+		return lbm_enc_u32(*val);
+	}
+}
+
 static lbm_value get_or_set_bool(bool set, bool *val, lbm_value *lbm_val) {
 	if (set) {
 		*val = lbm_dec_as_i32(*lbm_val);
 		return ENC_SYM_TRUE;
 	} else {
 		return lbm_enc_i(*val);
+	}
+}
+
+static lbm_value get_or_set_string(bool set, char *val, lbm_value *lbm_val, int max_len) {
+	if (set) {
+		char *str = lbm_dec_str(*lbm_val);
+		if (str) {
+			strncpy(val, str, max_len - 1);
+			val[max_len - 1] = '\0';
+			return ENC_SYM_TRUE;
+		} else {
+			return ENC_SYM_TERROR;
+		}
+	} else {
+		lbm_value res;
+		lbm_uint len = strnlen(val, max_len);
+		if (lbm_create_array(&res, len + 1)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+			memcpy(arr->data, val, len);
+			((char*)(arr->data))[len] = '\0';
+			return res;
+		} else {
+			return ENC_SYM_MERROR;
+		}
 	}
 }
 
@@ -398,6 +498,101 @@ static lbm_value ext_set_bms_val(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_send_bms_can(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	bms_send_status_can();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
+	lbm_value res = ENC_SYM_TERROR;
+
+	lbm_value set_arg = 0;
+	if (set && argn >= 1) {
+		set_arg = args[argn - 1];
+		argn--;
+
+		if (!lbm_is_number(set_arg) && !lbm_is_array_r(set_arg)) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	if (argn != 1 && argn != 2) {
+		return res;
+	}
+
+	if (lbm_type_of(args[0]) != LBM_TYPE_SYMBOL) {
+		return res;
+	}
+
+	main_config_t *conf = (main_config_t*)&backup.config;
+	lbm_uint name = lbm_dec_sym(args[0]);
+
+	if (compare_symbol(name, &syms_vesc.controller_id)) {
+		res = get_or_set_i(set, &conf->controller_id, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.can_baud_rate)) {
+		int v = conf->can_baud_rate;
+		res = get_or_set_i(set, &v, &set_arg);
+		if (v != conf->can_baud_rate) {
+			conf->can_baud_rate = v;
+			comm_can_update_baudrate();
+		}
+	} else if (compare_symbol(name, &syms_vesc.can_status_rate_hz)) {
+		res = get_or_set_i(set, &conf->can_status_rate_hz, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.wifi_mode)) {
+		int v = conf->wifi_mode;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->wifi_mode = v;
+	} else if (compare_symbol(name, &syms_vesc.wifi_sta_ssid)) {
+		res = get_or_set_string(set, conf->wifi_sta_ssid, &set_arg, sizeof(conf->wifi_sta_ssid));
+	} else if (compare_symbol(name, &syms_vesc.wifi_sta_key)) {
+		res = get_or_set_string(set, conf->wifi_sta_key, &set_arg, sizeof(conf->wifi_sta_key));
+	} else if (compare_symbol(name, &syms_vesc.wifi_ap_ssid)) {
+		res = get_or_set_string(set, conf->wifi_ap_ssid, &set_arg, sizeof(conf->wifi_ap_ssid));
+	} else if (compare_symbol(name, &syms_vesc.wifi_ap_key)) {
+		res = get_or_set_string(set, conf->wifi_ap_key, &set_arg, sizeof(conf->wifi_ap_key));
+	} else if (compare_symbol(name, &syms_vesc.use_tcp_local)) {
+		res = get_or_set_bool(set, &conf->use_tcp_local, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.use_tcp_hub)) {
+		res = get_or_set_bool(set, &conf->use_tcp_hub, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_url)) {
+		res = get_or_set_string(set, conf->tcp_hub_url, &set_arg, sizeof(conf->tcp_hub_url));
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_port)) {
+		res = get_or_set_u16(set, &conf->tcp_hub_port, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_id)) {
+		res = get_or_set_string(set, conf->tcp_hub_id, &set_arg, sizeof(conf->tcp_hub_id));
+	} else if (compare_symbol(name, &syms_vesc.tcp_hub_pass)) {
+		res = get_or_set_string(set, conf->tcp_hub_pass, &set_arg, sizeof(conf->tcp_hub_pass));
+	} else if (compare_symbol(name, &syms_vesc.ble_mode)) {
+		int v = conf->ble_mode;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->ble_mode = v;
+	} else if (compare_symbol(name, &syms_vesc.ble_name)) {
+		res = get_or_set_string(set, conf->ble_name, &set_arg, sizeof(conf->ble_name));
+	} else if (compare_symbol(name, &syms_vesc.ble_pin)) {
+		res = get_or_set_u32(set, &conf->ble_pin, &set_arg);
+	}
+
+	return res;
+}
+
+static lbm_value ext_conf_get(lbm_value *args, lbm_uint argn) {
+	return ext_conf_setget(false, args, argn);
+}
+
+static lbm_value ext_conf_set(lbm_value *args, lbm_uint argn) {
+	return ext_conf_setget(true, args, argn);
+}
+
+static lbm_value ext_conf_store(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	main_store_backup_data();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_reboot(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	comm_wifi_disconnect();
+	vTaskDelay(50 / portTICK_PERIOD_MS);
+	esp_restart();
 	return ENC_SYM_TRUE;
 }
 
@@ -2212,6 +2407,27 @@ static lbm_value ext_crc16(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(crc16((uint8_t*)array->data, len));
 }
 
+static lbm_value ext_crc32(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0]) || !lbm_is_number(args[1])) {
+		return ENC_SYM_TERROR;
+	}
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+	unsigned int len = array->size;
+	if (argn == 3) {
+		if (!lbm_is_number(args[2])) {
+			return ENC_SYM_TERROR;
+		}
+
+		len = lbm_dec_as_u32(args[2]);
+		if (len > array->size) {
+			len = array->size;
+		}
+	}
+
+	return lbm_enc_u32(crc32_with_init((uint8_t*)array->data, len, lbm_dec_as_u32(args[1])));
+}
+
 static lbm_value ext_buf_find(lbm_value *args, lbm_uint argn) {
 	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0]) || !lbm_is_array_r(args[1])) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
@@ -3227,6 +3443,486 @@ static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+static send_func_t fw_send_func_old;
+static volatile bool fw_reply_rx = false;
+static volatile bool fw_reply_ok = false;
+static volatile lbm_cid fw_rx_cid = -1;
+
+static void fw_reply_func(unsigned char *data, unsigned int len) {
+	if (len < 2) {
+		return;
+	}
+
+	fw_reply_rx = true;
+
+	COMM_PACKET_ID packet_id;
+
+	packet_id = data[0];
+	data++;
+	len--;
+
+	switch (packet_id) {
+	case COMM_ERASE_NEW_APP:
+	case COMM_WRITE_NEW_APP_DATA:
+	case COMM_LISP_ERASE_CODE:
+	case COMM_QMLUI_ERASE:
+	case COMM_LISP_WRITE_CODE:
+	case COMM_QMLUI_WRITE:
+	case COMM_LISP_SET_RUNNING:
+		fw_reply_ok = data[0];
+		break;
+
+	default:
+		return;
+	}
+
+	if (fw_rx_cid >= 0) {
+		lbm_unblock_ctx_unboxed(fw_rx_cid, fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL);
+	}
+
+	commands_set_send_func(fw_send_func_old);
+}
+
+// (fw-erase size optCanId) -> t, nil
+static lbm_value ext_fw_erase(lbm_value *args, lbm_uint argn) {
+	if (argn > 2 || !lbm_is_number(args[0]) || (argn == 2 && !lbm_is_number(args[1]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 2) {
+		can_id = lbm_dec_as_i32(args[1]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_ERASE_NEW_APP;
+	buffer_append_uint32(buf, lbm_dec_as_i32(args[0]), &ind);
+	fw_reply_rx = false;
+	fw_reply_ok = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+	fw_rx_cid = lbm_get_current_cid();
+
+	if (fw_reply_rx) {
+		return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	} else {
+		lbm_block_ctx_from_extension_timeout(20.0);
+		return ENC_SYM_TRUE;
+	}
+}
+
+static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cmd) {
+	if (argn > 3 || !lbm_is_number(args[0]) ||
+			!lbm_is_array_r(args[1]) || (argn == 3 && !lbm_is_number(args[2]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 3) {
+		can_id = lbm_dec_as_i32(args[2]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint32_t offset = lbm_dec_as_u32(args[0]);
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
+	lbm_value res = ENC_SYM_EERROR;
+	if (array) {
+		if (array->size > 500) {
+			return ENC_SYM_TERROR;
+		}
+
+		uint8_t *buf = mempools_get_packet_buffer();
+		int32_t ind = 0;
+
+		if (can_id >= 0) {
+			buf[ind++] = COMM_FORWARD_CAN;
+			buf[ind++] = can_id;
+		}
+
+		buf[ind++] = cmd;
+		buffer_append_uint32(buf, offset, &ind);
+		memcpy(buf + ind, array->data, array->size);
+		ind += array->size;
+
+		fw_reply_rx = false;
+		fw_reply_ok = false;
+		fw_rx_cid = -1;
+		fw_send_func_old = commands_get_send_func();
+		commands_process_packet(buf, ind, fw_reply_func);
+		fw_rx_cid = lbm_get_current_cid();
+		mempools_free_packet_buffer(buf);
+
+		if (fw_reply_rx) {
+			res = fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+		} else {
+			lbm_block_ctx_from_extension_timeout(10.0);
+			res = ENC_SYM_TRUE;
+		}
+	}
+
+	return res;
+}
+
+// (fw-reboot optCanId) -> t, nil
+static lbm_value ext_fw_reboot(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 1) {
+		can_id = lbm_dec_as_i32(args[0]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[4];
+	unsigned int ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_JUMP_TO_BOOTLOADER;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, 0);
+	commands_set_send_func(fw_send_func_old);
+	return ENC_SYM_TRUE;
+}
+
+// LBM and QML erase, upload, run
+
+static lbm_value lbm_qml_erase(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cmd) {
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 1) {
+		can_id = lbm_dec_as_i32(args[0]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = cmd;
+	if (can_id < 0 && cmd == COMM_LISP_ERASE_CODE) {
+		buffer_append_int32(buf, -2, &ind);
+	}
+
+	fw_reply_rx = false;
+	fw_reply_ok = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+	fw_rx_cid = lbm_get_current_cid();
+
+	if (fw_reply_rx) {
+		return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	} else {
+		lbm_block_ctx_from_extension_timeout(20.0);
+		return ENC_SYM_TRUE;
+	}
+}
+
+// (lbm-erase optCanId) -> t, nil
+static lbm_value ext_lbm_erase(lbm_value *args, lbm_uint argn) {
+	return lbm_qml_erase(args, argn, COMM_LISP_ERASE_CODE);
+}
+
+// (qml-erase optCanId) -> t, nil
+static lbm_value ext_qml_erase(lbm_value *args, lbm_uint argn) {
+	return lbm_qml_erase(args, argn, COMM_QMLUI_ERASE);
+}
+
+// (fw-write offset data optCanId) -> t, nil
+static lbm_value ext_fw_write(lbm_value *args, lbm_uint argn) {
+	return fw_lbm_qml_write(args, argn, COMM_WRITE_NEW_APP_DATA);
+}
+
+// (lbm-write offset data optCanId) -> t, nil
+static lbm_value ext_lbm_write(lbm_value *args, lbm_uint argn) {
+	return fw_lbm_qml_write(args, argn, COMM_LISP_WRITE_CODE);
+}
+
+// (qml-write offset data optCanId) -> t, nil
+static lbm_value ext_qml_write(lbm_value *args, lbm_uint argn) {
+	return fw_lbm_qml_write(args, argn, COMM_QMLUI_WRITE);
+}
+
+static void lbm_run_task(void *arg) {
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	buf[ind++] = COMM_LISP_SET_RUNNING;
+	buf[ind++] = (int32_t)arg;
+	fw_reply_rx = false;
+	fw_reply_ok = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+
+	vTaskDelete(NULL);
+}
+
+// (lbm-run running optCanId) -> t, nil
+static lbm_value ext_lbm_run(lbm_value *args, lbm_uint argn) {
+	if (argn > 2 || !lbm_is_number(args[0]) || (argn == 2 && !lbm_is_number(args[1]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 2) {
+		can_id = lbm_dec_as_i32(args[1]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+		buf[ind++] = COMM_LISP_SET_RUNNING;
+		buf[ind++] = lbm_dec_as_i32(args[0]);
+		fw_reply_rx = false;
+		fw_reply_ok = false;
+		fw_rx_cid = -1;
+		fw_send_func_old = commands_get_send_func();
+		commands_process_packet(buf, ind, fw_reply_func);
+		fw_rx_cid = lbm_get_current_cid();
+
+		if (fw_reply_rx) {
+			return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+		} else {
+			lbm_block_ctx_from_extension_timeout(20.0);
+			return ENC_SYM_TRUE;
+		}
+	} else {
+		xTaskCreatePinnedToCore(lbm_run_task, "LBM Restart", 2048, (void*)lbm_dec_as_i32(args[0]), 7, NULL, tskNO_AFFINITY);
+		return ENC_SYM_TRUE;
+	}
+}
+
+// AS504x encoder
+
+static AS504x_config_t as504x = {0};
+static bool as504x_init_done = false;
+static char *str_as504x_not_init_msg = "AS504x not initialized.";
+
+static lbm_value ext_as504x_init(lbm_value *args, lbm_uint argn) {
+	if (argn != 3 && argn != 4) {
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	int miso = lbm_dec_as_i32(args[0]);
+	int sck = lbm_dec_as_i32(args[1]);
+	int nss = lbm_dec_as_i32(args[2]);
+
+	if (!gpio_is_valid(miso) || !gpio_is_valid(sck) || !gpio_is_valid(nss)) {
+		lbm_set_error_reason(pin_invalid_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	int mosi = -1;
+	if (argn == 4) {
+		mosi = lbm_dec_as_i32(args[3]);
+		if (!gpio_is_valid(mosi)) {
+			lbm_set_error_reason(pin_invalid_msg);
+			return ENC_SYM_EERROR;
+		}
+	}
+
+	as504x.sw_spi.miso_pin = miso;
+	as504x.sw_spi.mosi_pin = mosi;
+	as504x.sw_spi.sck_pin = sck;
+	as504x.sw_spi.nss_pin = nss;
+
+	as504x_init_done = true;
+
+	return enc_as504x_init(&as504x) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_as504x_deinit(lbm_value *args, lbm_uint argn) {
+	if (!as504x_init_done) {
+		lbm_set_error_reason(str_as504x_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	enc_as504x_deinit(&as504x);
+	as504x_init_done = false;
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_as504x_angle(lbm_value *args, lbm_uint argn) {
+	if (!as504x_init_done) {
+		lbm_set_error_reason(str_as504x_not_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_float(enc_as504x_read_angle(&as504x));
+}
+
+// IMU
+
+static imu_config imu_cfg;
+
+static lbm_value ext_imu_start_lsm6(lbm_value *args, lbm_uint argn) {
+	lbm_value res = ext_i2c_start(args, argn);
+
+	if (res != ENC_SYM_TRUE) {
+		return res;
+	}
+
+	memset(&imu_cfg, 0, sizeof(imu_cfg));
+	imu_cfg.type = IMU_TYPE_EXTERNAL_LSM6DS3;
+	imu_cfg.sample_rate_hz = 1000;
+	imu_cfg.use_magnetometer = true;
+	imu_cfg.filter = IMU_FILTER_MEDIUM;
+	imu_cfg.accel_confidence_decay = 1.0;
+	imu_cfg.mahony_kp = 0.3;
+	imu_cfg.mahony_ki = 0.0;
+	imu_cfg.madgwick_beta = 0.1;
+
+	imu_init(&imu_cfg, i2c_mutex);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_imu_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	imu_stop();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_get_imu_rpy(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float rpy[3];
+	imu_get_rpy(rpy);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(rpy[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(rpy[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(rpy[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_quat(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float q[4];
+	imu_get_quaternions(q);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(q[3]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(q[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(q[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(q[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_acc(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float acc[3];
+	imu_get_accel(acc);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(acc[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_gyro(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float gyro[3];
+	imu_get_gyro(gyro);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(gyro[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_mag(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float mag[3];
+	imu_get_mag(mag);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(mag[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(mag[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(mag[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_acc_derot(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float acc[3];
+	imu_get_accel_derotated(acc);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(acc[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(acc[0]), imu_data);
+
+	return imu_data;
+}
+
+static lbm_value ext_get_imu_gyro_derot(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	float gyro[3];
+	imu_get_gyro_derotated(gyro);
+
+	lbm_value imu_data = ENC_SYM_NIL;
+	imu_data = lbm_cons(lbm_enc_float(gyro[2]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[1]), imu_data);
+	imu_data = lbm_cons(lbm_enc_float(gyro[0]), imu_data);
+
+	return imu_data;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -3275,7 +3971,14 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("import", ext_empty);
 	lbm_add_extension("main-init-done", ext_main_init_done);
 	lbm_add_extension("crc16", ext_crc16);
+	lbm_add_extension("crc32", ext_crc32);
 	lbm_add_extension("buf-find", ext_buf_find);
+
+	// Configuration
+	lbm_add_extension("conf-get", ext_conf_get);
+	lbm_add_extension("conf-set", ext_conf_set);
+	lbm_add_extension("conf-store", ext_conf_store);
+	lbm_add_extension("reboot", ext_reboot);
 
 	// EEPROM
 	lbm_add_extension("eeprom-store-f", ext_eeprom_store_f);
@@ -3416,6 +4119,34 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("f-size", ext_f_size);
 	lbm_add_extension("f-fatinfo", ext_f_fatinfo);
 
+	// Firmware update
+	lbm_add_extension("fw-erase", ext_fw_erase);
+	lbm_add_extension("fw-write", ext_fw_write);
+	lbm_add_extension("fw-reboot", ext_fw_reboot);
+
+	// Lbm and script update
+	lbm_add_extension("lbm-erase", ext_lbm_erase);
+	lbm_add_extension("lbm-write", ext_lbm_write);
+	lbm_add_extension("lbm-run", ext_lbm_run);
+	lbm_add_extension("qml-erase", ext_qml_erase);
+	lbm_add_extension("qml-write", ext_qml_write);
+
+	// AS504x
+	lbm_add_extension("as504x-init", ext_as504x_init);
+	lbm_add_extension("as504x-deinit", ext_as504x_deinit);
+	lbm_add_extension("as504x-angle", ext_as504x_angle);
+
+	// IMU
+	lbm_add_extension("imu-start-lsm6", ext_imu_start_lsm6);
+	lbm_add_extension("imu-stop", ext_imu_stop);
+	lbm_add_extension("get-imu-rpy", ext_get_imu_rpy);
+	lbm_add_extension("get-imu-quat", ext_get_imu_quat);
+	lbm_add_extension("get-imu-acc", ext_get_imu_acc);
+	lbm_add_extension("get-imu-gyro", ext_get_imu_gyro);
+	lbm_add_extension("get-imu-mag", ext_get_imu_mag);
+	lbm_add_extension("get-imu-acc-derot", ext_get_imu_acc_derot);
+	lbm_add_extension("get-imu-gyro-derot", ext_get_imu_gyro_derot);
+
 	// TODO:
 	// - uart?
 
@@ -3466,6 +4197,11 @@ void lispif_disable_all_events(void) {
 	}
 
 	file_now = 0;
+
+	if (as504x_init_done) {
+		enc_as504x_deinit(&as504x);
+		as504x_init_done = false;
+	}
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {

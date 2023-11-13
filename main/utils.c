@@ -38,6 +38,57 @@ int64_t utils_ms_tot(void) {
 	return ((int64_t)tv.tv_sec * (int64_t)1000000 + (int64_t)tv.tv_usec) / (int64_t)1000.0;
 }
 
+void utils_byte_to_binary(int x, char *b) {
+	b[0] = '\0';
+
+	int z;
+	for (z = 128; z > 0; z >>= 1) {
+		strcat(b, ((x & z) == z) ? "1" : "0");
+	}
+}
+
+void utils_rotate_vector3(float *input, float *rotation, float *output, bool reverse) {
+	float s1, c1, s2, c2, s3, c3;
+
+	if (rotation[2] != 0.0) {
+		s1 = sinf(rotation[2]);
+		c1 = cosf(rotation[2]);
+	} else {
+		s1 = 0.0;
+		c1 = 1.0;
+	}
+
+	if (rotation[1] != 0.0) {
+		s2 = sinf(rotation[1]);
+		c2 = cosf(rotation[1]);
+	} else {
+		s2 = 0.0;
+		c2 = 1.0;
+	}
+
+	if (rotation[0] != 0.0) {
+		s3 = sinf(rotation[0]);
+		c3 = cosf(rotation[0]);
+	} else {
+		s3 = 0.0;
+		c3 = 1.0;
+	}
+
+	float m11 = c1 * c2;	float m12 = c1 * s2 * s3 - c3 * s1;	float m13 = s1 * s3 + c1 * c3 * s2;
+	float m21 = c2 * s1;	float m22 = c1 * c3 + s1 * s2 * s3;	float m23 = c3 * s1 * s2 - c1 * s3;
+	float m31 = -s2; 		float m32 = c2 * s3;				float m33 = c2 * c3;
+
+	if (reverse) {
+		output[0] = input[0] * m11 + input[1] * m21 + input[2] * m31;
+		output[1] = input[0] * m12 + input[1] * m22 + input[2] * m32;
+		output[2] = input[0] * m13 + input[1] * m23 + input[2] * m33;
+	} else {
+		output[0] = input[0] * m11 + input[1] * m12 + input[2] * m13;
+		output[1] = input[0] * m21 + input[1] * m22 + input[2] * m23;
+		output[2] = input[0] * m31 + input[1] * m32 + input[2] * m33;
+	}
+}
+
 bool utils_rmtree(const char *path) {
 	struct stat stat_path;
 	DIR *dir;

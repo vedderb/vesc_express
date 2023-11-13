@@ -33,6 +33,8 @@ void commands_process_packet(
 );
 void commands_send_packet(unsigned char *data, unsigned int len);
 void commands_send_packet_can_last(unsigned char *data, unsigned int len);
+send_func_t commands_get_send_func(void);
+void commands_set_send_func(send_func_t func);
 int commands_printf(const char *format, ...);
 int commands_printf_lisp(const char *format, ...);
 void commands_init_plot(char *namex, char *namey);
@@ -47,7 +49,6 @@ void commands_start_send_func_overwrite(
 	void (*new_send_func)(unsigned char *data, unsigned int len)
 );
 void commands_restore_send_func();
-send_func_t commands_get_send_func();
 void commands_store_send_func();
 
 // source: https://stackoverflow.com/a/5897216/15507414

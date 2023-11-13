@@ -29,6 +29,9 @@ static float m_last_temp = 0.0;
 static float m_last_hum = 0.0;
 static float m_last_pres = 0.0;
 
+static volatile bool mutex_init = false;
+static SemaphoreHandle_t i2c_mutex;
+
 // Private functions
 static void bme_task(void *arg);
 
@@ -45,6 +48,12 @@ void bme280_if_init(int pin_sda, int pin_scl) {
 	i2c_param_config(0, &conf);
 	i2c_driver_install(0, conf.mode, 0, 0, 0);
 
+	xTaskCreatePinnedToCore(bme_task, "BME280", 1024, NULL, 6, NULL, tskNO_AFFINITY);
+}
+
+void bme280_if_init_with_mutex(SemaphoreHandle_t mutex) {
+	mutex_init = true;
+	i2c_mutex = mutex;
 	xTaskCreatePinnedToCore(bme_task, "BME280", 1024, NULL, 6, NULL, tskNO_AFFINITY);
 }
 
@@ -70,7 +79,16 @@ static int8_t user_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, v
 
 	uint8_t txbuf[1];
 	txbuf[0] = reg_addr;
+
+	if (mutex_init) {
+		xSemaphoreTake(i2c_mutex, portMAX_DELAY);
+	}
+
 	esp_err_t res = i2c_master_write_read_device(0, BME280_I2C_ADDR_PRIM, txbuf, 1, reg_data, len, 1000 / portTICK_PERIOD_MS);
+
+	if (mutex_init) {
+		xSemaphoreGive(i2c_mutex);
+	}
 
 	return res == ESP_OK ? 0 : -1; // Return 0 for Success, non-zero for failure
 }
@@ -81,7 +99,16 @@ static int8_t user_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t
 	uint8_t txbuf[len + 1];
 	txbuf[0] = reg_addr;
 	memcpy(txbuf + 1, reg_data, len);
+
+	if (mutex_init) {
+		xSemaphoreTake(i2c_mutex, portMAX_DELAY);
+	}
+
 	esp_err_t res = i2c_master_write_to_device(0, BME280_I2C_ADDR_PRIM, txbuf, len + 1, 1000 / portTICK_PERIOD_MS);
+
+	if (mutex_init) {
+		xSemaphoreGive(i2c_mutex);
+	}
 
 	return res == ESP_OK ? 0 : -1; // Return 0 for Success, non-zero for failure
 }

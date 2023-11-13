@@ -80,8 +80,8 @@ static const esp_partition_t *update_partition = NULL;
 static esp_ota_handle_t update_handle = 0;
 
 // Function pointers
-static void(* volatile send_func)(unsigned char *data, unsigned int len) = 0;
-static void(* volatile send_func_can_fwd)(unsigned char *data, unsigned int len) = 0;
+static send_func_t send_func = 0;
+static send_func_t send_func_can_fwd = 0;
 
 #if LOGS_ENABLED
 volatile send_func_t stored_send_func;
@@ -101,10 +101,6 @@ void commands_restore_send_func() {
 		send_func = overwritten_send_func;
 	}
 }
-
-send_func_t commands_get_send_func() {
-	return send_func;
-};
 
 void commands_store_send_func() {
 	stored_send_func = send_func;
@@ -324,7 +320,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 #else
 		if (conf_ind == 0 && confparser_deserialize_main_config_t(data + 1, conf)) {
 #endif
+			bool baud_changed = backup.config.can_baud_rate != conf->can_baud_rate;
 			backup.config = *conf;
+
+			if (baud_changed) {
+				comm_can_update_baudrate();
+			}
 
 			main_store_backup_data();
 
@@ -721,14 +722,17 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_QMLUI_ERASE:
 	case COMM_LISP_ERASE_CODE: {
-		if (packet_id == COMM_LISP_ERASE_CODE) {
-			lispif_restart(false, false);
-		}
-
 		int32_t ind = 0;
 		int erase_size = -1;
 		if (len >= 4) {
 			erase_size = buffer_get_int32(data, &ind);
+		}
+
+		if (packet_id == COMM_LISP_ERASE_CODE) {
+			// Only restart if erase size is not -2. This is a hack to maintain backwards compatibility.
+			if (erase_size != -2) {
+				lispif_restart(false, false);
+			}
 		}
 
 		bool flash_res = flash_helper_erase_code(packet_id == COMM_QMLUI_ERASE ? CODE_IND_QML : CODE_IND_LISP, erase_size);
@@ -836,12 +840,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	}
 }
 
-void commands_send_packet(unsigned char *data, unsigned int len) {
-	if (send_func) {
-		send_func(data, len);
-	}
-}
-
 /**
  * Send a packet using the last can fwd function.
  *
@@ -855,6 +853,20 @@ void commands_send_packet_can_last(unsigned char *data, unsigned int len) {
 	if (send_func_can_fwd) {
 		send_func_can_fwd(data, len);
 	}
+}
+
+void commands_send_packet(unsigned char *data, unsigned int len) {
+	if (send_func) {
+		send_func(data, len);
+	}
+}
+
+send_func_t commands_get_send_func(void) {
+	return send_func;
+}
+
+void commands_set_send_func(send_func_t func) {
+	send_func = func;
 }
 
 int commands_printf(const char* format, ...) {

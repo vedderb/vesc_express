@@ -50,8 +50,11 @@
 //#define HW_HEADER					"hw_lb_ant.h"
 //#define HW_SOURCE					"hw_lb_ant.c"
 
-// #define HW_HEADER					"hw_lb_hc.h"
-// #define HW_SOURCE					"hw_lb_hc.c"
+//#define HW_HEADER					"hw_lb_hc_v2.h"
+//#define HW_SOURCE					"hw_lb_hc_v2.c"
+
+//#define HW_HEADER					"hw_lb_hc_v3.h"
+//#define HW_SOURCE					"hw_lb_hc_v3.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)

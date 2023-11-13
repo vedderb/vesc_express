@@ -206,7 +206,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				commands_process_packet(data8 + ind, len - ind, send_packet_wrapper);
 				break;
 			case 1:
-				commands_send_packet(data8 + ind, len - ind);
+				commands_send_packet_can_last(data8 + ind, len - ind);
 				break;
 			case 2:
 				commands_process_packet(data8 + ind, len - ind, 0);
@@ -614,6 +614,18 @@ void comm_can_init(void) {
 	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(rx_task, "can_rx", 640, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
 	xTaskCreatePinnedToCore(process_task, "can_proc", 3072, NULL, 8, NULL, tskNO_AFFINITY);
+#endif
+}
+
+void comm_can_update_baudrate(void) {
+#ifndef CAN_TX_GPIO_NUM
+	return;
+#else
+	twai_stop();
+	twai_driver_uninstall();
+	update_baud(backup.config.can_baud_rate);
+	twai_driver_install(&g_config, &t_config, &f_config);
+	twai_start();
 #endif
 }
 
