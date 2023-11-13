@@ -244,12 +244,9 @@ static void event_listener(
 					bool is_expected_disconnect = data->reason
 						== WIFI_REASON_ASSOC_LEAVE;
 
-					// TODO: Urgh, this is mega-unreliable. I think I'll just
-					// have to change the signature to just return nil when
-					// either connecting failed or credentials were incorrect,
-					// as the ESP APIs doesn't seem to expose the information
-					// necessary to differentiate them in a good way.
-					// Source:
+					// is_wrong_password is kind of unreliable as the ESP APIs
+					// doesn't seem to expose good APIs to detect it in a good
+					// way. Source:
 					// https://www.reddit.com/r/esp32/comments/vsp9a9/identify_wifi_wrong_password/
 					if (is_wrong_password) {
 						is_waiting = false;
@@ -276,8 +273,6 @@ static void event_listener(
 		}
 	}
 }
-
-// TODO: Create type generic return macro.
 
 static void socket_op_return_unboxed(lbm_cid return_cid, lbm_value value) {
 	STORED_LOGF("returning value to cid: %d", return_cid);

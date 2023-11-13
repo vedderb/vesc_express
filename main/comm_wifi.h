@@ -159,27 +159,6 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len);
 
 // Utility functions
 
-// /**
-//  * Wrapper around the thread safe lwip_gethostbyname_r function with a sane API.
-//  * 
-//  * The original API requires that you provide a pre-allocated buffer of
-//  * specific (undocumented) length, along with a lot of redundant extra
-//  * arguments (as far as I can tell).
-//  * These arguments are instead handled automatically by this wrapper.
-//  * 
-//  * @note The buffer is allocated on the stack, and will roughly require 46 +
-//  * name length bytes.
-//  * 
-//  * @param name The hostname to resolve. Can also be a literal IPv4 address in
-//  * the normal dot notation (@todo: check that this is true) (might even support IPv6, but most likely not).
-//  * @param buffer A pre-allocated buffer to use when creating the fields for ret.
-//  * Pass null to instead allocate 
-//  * @param ret Result will be written to this pointer on success.
-//  * @return 0 on success or the errno on failure.
-//  * 
-// */
-// int gethostbyname_sane(const char *name, void *buffer, size_t buffer_len, struct hostent *ret);
-
 /**
  * Small convenience function to create a sockaddr_in struct from a ip_addr_t
  * and port. That specific address type is the same type as returned by

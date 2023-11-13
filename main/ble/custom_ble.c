@@ -534,31 +534,6 @@ static void gatts_event_handler(
 				param->set_attr_val.srvc_handle
 			);
 
-			// // TODO: This is mega broken
-			// int16_t index = get_attr_index(param->set_attr_val.attr_handle);
-			// if (is_connected && index >= 0) {
-			// 	esp_gatt_char_prop_t prop = custom_attr[index].prop;
-			// 	bool needs_any = (bool)(prop & (ESP_GATT_CHAR_PROP_BIT_NOTIFY |
-			// ESP_GATT_CHAR_PROP_BIT_NOTIFY));
-
-			// 	if (needs_any) {
-			// 		uint16_t length;
-			// 		const uint8_t *value;
-			// 		esp_gatt_status_t result =
-			// esp_ble_gatts_get_attr_value(param->set_attr_val.attr_handle,
-			// &length, &value); 		if (result == ESP_GATT_OK) { 			if (prop &
-			// ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
-			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id,
-			// param->set_attr_val.attr_handle, length, value, false);
-			// 			}
-			// 			if (prop & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
-			// 				esp_ble_gatts_send_indicate(gatts_if, conn_id,
-			// param->set_attr_val.attr_handle, length, value, true);
-			// 			}
-			// 		}
-			// 	}
-			// }
-
 			if (param->set_attr_val.attr_handle == waiting_set_attr_handle) {
 				result_status           = param->set_attr_val.status;
 				waiting_set_attr_handle = -1;
