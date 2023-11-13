@@ -24,11 +24,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef void (*send_func_t)(unsigned char *, unsigned int);
+
 // Functions
 void commands_init(void);
 void commands_process_packet(
-	unsigned char *data, unsigned int len,
-	void (*reply_func)(unsigned char *data, unsigned int len)
+	unsigned char *data, unsigned int len, send_func_t reply_func
 );
 void commands_send_packet(unsigned char *data, unsigned int len);
 void commands_send_packet_can_last(unsigned char *data, unsigned int len);
@@ -40,9 +41,8 @@ void commands_plot_set_graph(int graph);
 void commands_send_plot_points(float x, float y);
 void commands_send_app_data(unsigned char *data, unsigned int len);
 
-// TODO: remove this
-// Rasmus debug stuff
-typedef void (*send_func_t)(unsigned char *, unsigned int);
+#if LOGS_ENABLED
+
 void commands_start_send_func_overwrite(
 	void (*new_send_func)(unsigned char *data, unsigned int len)
 );
@@ -54,7 +54,7 @@ void commands_store_send_func();
 #define VA_ARGS(...) , ##__VA_ARGS__
 
 extern volatile send_func_t stored_send_func;
-#define stored_printf(fmt, ...)                                                \
+#define STORED_LOGF(fmt, ...)                                                  \
 	{                                                                          \
 		if (stored_send_func) {                                                \
 			commands_start_send_func_overwrite(stored_send_func);              \
@@ -62,7 +62,11 @@ extern volatile send_func_t stored_send_func;
 			commands_restore_send_func(stored_send_func);                      \
 		}                                                                      \
 	}
+	
+#else
 
-void commands_print_thread();
+#define STORED_LOGF(fmt, ...)
+
+#endif /* LOGS_ENABLED */
 
 #endif /* MAIN_COMMANDS_H_ */

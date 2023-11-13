@@ -178,27 +178,20 @@ bool load_lbm_list_with_ap_records(
 	lbm_value current = list;
 	for (uint16_t i = 0; i < count; i++) {
 		if (!lbm_is_cons(current)) {
-			stored_printf("ran out of cons cells in outer list");
+			STORED_LOGF("ran out of cons cells in outer list");
 			return false;
 		}
 
 		lbm_value ssid_str = ssid_buffers[i];
 		uint8_t *data      = lbm_heap_array_get_data(ssid_str);
 		if (data == NULL) {
-			stored_printf(
+			STORED_LOGF(
 				"invalid ssid_buffers[%u] data pointer %p, "
 				"lbm_is_array_r(ssid_str): %u, lbm_is_array_rw(ssid_str): %u, "
 				"type_of: 0x%x",
 				i, data, lbm_is_array_r(ssid_str), lbm_is_array_rw(ssid_str),
 				lbm_type_of(ssid_str)
 			);
-			if (lbm_is_symbol(ssid_str)) {
-				lbm_uint sym = lbm_dec_sym(ssid_str);
-				stored_printf(
-					"ssid_str is symbol %u: '%s'", sym,
-					lbm_get_name_by_symbol(sym)
-				);
-			}
 			return false;
 		}
 		memcpy(data, records[i].ssid, SSID_SIZE);
@@ -222,11 +215,11 @@ static void event_listener(
 	esp_event_base_t event_base, int32_t event_id, void *event_data
 ) {
 	if (event_base == WIFI_EVENT) {
-		stored_printf("WIFI event: %d", event_id);
+		STORED_LOGF("WIFI event: %d", event_id);
 	} else if (event_base == IP_EVENT) {
-		stored_printf("IP event: %d", event_id);
+		STORED_LOGF("IP event: %d", event_id);
 	} else {
-		stored_printf("Unknown event base %p, id: %d", event_base, event_id);
+		STORED_LOGF("Unknown event base %p, id: %d", event_base, event_id);
 	}
 
 	if (event_base == WIFI_EVENT) {
@@ -287,24 +280,24 @@ static void event_listener(
 // TODO: Create type generic return macro.
 
 static void socket_op_return_unboxed(lbm_cid return_cid, lbm_value value) {
-	stored_printf("returning value to cid: %d", return_cid);
+	STORED_LOGF("returning value to cid: %d", return_cid);
 
 	if (!lbm_unblock_ctx_unboxed(return_cid, value)) {
-		stored_printf("lbm_unblock_ctx_unboxed failed");
+		STORED_LOGF("lbm_unblock_ctx_unboxed failed");
 	} else {
-		stored_printf("socket_op_return succeeded");
+		STORED_LOGF("socket_op_return succeeded");
 	}
 
 	socket_is_waiting = false;
 	free_socket_task();
 }
 static void socket_op_return_flat(lbm_cid return_cid, lbm_flat_value_t *value) {
-	stored_printf("returning flat value to cid: %d", return_cid);
+	STORED_LOGF("returning flat value to cid: %d", return_cid);
 
 	if (!lbm_unblock_ctx(return_cid, value)) {
-		stored_printf("lbm_unblock_ctx failed, value: %p", value);
+		STORED_LOGF("lbm_unblock_ctx failed, value: %p", value);
 	} else {
-		stored_printf("socket_op_return_flat succeeded");
+		STORED_LOGF("socket_op_return_flat succeeded");
 	}
 
 	socket_is_waiting = false;
@@ -333,7 +326,7 @@ static void socket_op_recv(
 		ssize_t len = recv(sock, buffer, max_len, MSG_DONTWAIT);
 
 		if (len < 0) {
-			stored_printf("errno: %d", errno);
+			STORED_LOGF("errno: %d", errno);
 
 			switch (errno) {
 				case EWOULDBLOCK: {
@@ -348,14 +341,14 @@ static void socket_op_recv(
 				}
 				default: {
 					// an error has occurred
-					stored_printf(
+					STORED_LOGF(
 						"recv in socket_task failed, errno: %d", errno
 					);
 					socket_op_return(ENC_SYM_NIL);
 				}
 			}
 		} else {
-			stored_printf("received %d bytes in socket_task", len);
+			STORED_LOGF("received %d bytes in socket_task", len);
 
 			if (len == 0) {
 				socket_op_return(ENC_SYM(symbol_disconnected));
@@ -366,12 +359,12 @@ static void socket_op_recv(
 					buffer[len] = '\0';
 				}
 
-				stored_printf(
+				STORED_LOGF(
 					"packing flat value for array size: %u", result_size
 				);
 				lbm_flat_value_t value;
 				if (!f_pack_array(&value, buffer, result_size)) {
-					stored_printf("lbm_start_flatten failed");
+					STORED_LOGF("lbm_start_flatten failed");
 					socket_op_return(ENC_SYM_EERROR);
 				}
 
@@ -380,7 +373,7 @@ static void socket_op_recv(
 		}
 	} while (UTILS_AGE_S(start) < timeout_secs);
 
-	stored_printf("timed out after %d seconds", (double)UTILS_AGE_S(start));
+	STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
 
 	socket_op_return(ENC_SYM(symbol_no_data));
 }
@@ -492,7 +485,7 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 				break;
 			}
 			case ESP_ERR_INVALID_ARG: {
-				stored_printf("esp_wifi_scan_get_ap_num returned "
+				STORED_LOGF("esp_wifi_scan_get_ap_num returned "
 							  "ESP_ERR_INVALID_ARG! :O");
 				esp_wifi_clear_ap_list();
 				return ENC_SYM_EERROR;
@@ -537,7 +530,7 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 		lbm_value ssid_str = ssid_buffers[i];
 		uint8_t *data      = lbm_heap_array_get_data(ssid_str);
 		if (data == NULL) {
-			stored_printf(
+			STORED_LOGF(
 				"pre check invalid ssid_buffers[%u] data pointer "
 				"%p, "
 				"lbm_is_array_r(ssid_str): %u, "
@@ -546,16 +539,8 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 				i, data, lbm_is_array_r(ssid_str), lbm_is_array_rw(ssid_str),
 				lbm_type_of(ssid_str)
 			);
-			if (lbm_is_symbol(ssid_str)) {
-				lbm_uint sym = lbm_dec_sym(ssid_str);
-				stored_printf(
-					"ssid_str is symbol %u: '%s'", sym,
-					lbm_get_name_by_symbol(sym)
-				);
-			}
 			return false;
 		}
-		// stored_printf("index %u passed the test", i);
 	}
 
 	{
@@ -730,7 +715,7 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 	{
 		err_t result = netconn_gethostbyname(host, &ip_addr);
 		if (result != ERR_OK) {
-			stored_printf("netconn_gethostbyname failed, result: %d", result);
+			STORED_LOGF("netconn_gethostbyname failed, result: %d", result);
 			free_socket_task();
 			return ENC_SYM(symbol_unknown_host);
 		}
@@ -740,7 +725,7 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 
 	int sock = comm_wifi_open_socket();
 	if (sock < 0) {
-		stored_printf("comm_wifi_open_socket failed, result: %d", sock);
+		STORED_LOGF("comm_wifi_open_socket failed, result: %d", sock);
 		free_socket_task();
 		return ENC_SYM_NIL;
 	}
@@ -748,7 +733,7 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 	{
 		int result = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
 		if (result != 0) {
-			stored_printf(
+			STORED_LOGF(
 				"connect failed, result: %d, errno: %d", result, errno
 			);
 
@@ -850,7 +835,7 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
 	int sock = lbm_dec_as_i32(args[0]);
 
 	if (!comm_wifi_socket_is_valid(sock)) {
-		stored_printf("socket %d did not exist in registry", sock);
+		STORED_LOGF("socket %d did not exist in registry", sock);
 		free_socket_task();
 		return ENC_SYM_NIL;
 	}
@@ -863,7 +848,7 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
 	if (len != -1) {
 		connected = len != 0;
 	} else {
-		stored_printf("recv for getting status failed, errno: %d", errno);
+		STORED_LOGF("recv for getting status failed, errno: %d", errno);
 		switch (errno) {
 			case EWOULDBLOCK: {
 				connected = true;
@@ -926,7 +911,7 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 
 	ssize_t len = send(sock, data, size, 0);
 	if (len == -1) {
-		stored_printf("send failed, errno: %d", errno);
+		STORED_LOGF("send failed, errno: %d", errno);
 		free_socket_task();
 		switch (errno) {
 			// Trying to send remote has disconnected seems to
@@ -946,7 +931,7 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
-	stored_printf("sent %d bytes", len);
+	STORED_LOGF("sent %d bytes", len);
 
 	free_socket_task();
 	return ENC_SYM_TRUE;
@@ -1028,7 +1013,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 		socket_param_sock         = sock;
 		socket_param_as_str       = as_str;
 		socket_is_waiting         = true;
-		stored_printf("socket_waiting_cid: %d", socket_waiting_cid);
+		STORED_LOGF("socket_waiting_cid: %d", socket_waiting_cid);
 
 		return ENC_SYM_NIL;
 	} else {
@@ -1051,7 +1036,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 
 		ssize_t len = recv(sock, buffer, max_len, MSG_DONTWAIT);
 		if (len == -1) {
-			stored_printf("recv failed, errno: %d", errno);
+			STORED_LOGF("recv failed, errno: %d", errno);
 			free_socket_task();
 			switch (errno) {
 				case EWOULDBLOCK: {
@@ -1068,7 +1053,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			}
 		}
 
-		stored_printf("got data of len %d", len);
+		STORED_LOGF("got data of len %d", len);
 
 		if (len == 0) {
 			// Receiving 0 bytes seems to happen right before

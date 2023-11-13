@@ -172,9 +172,9 @@ static const char *get_temp_uuid_str(esp_bt_uuid_t uuid) {
 static void print_attr_db(
 	uint16_t len, const esp_gatts_attr_db_t attr_db[len]
 ) {
-	stored_printf("%u entries:", len);
+	STORED_LOGF("%u entries:", len);
 	for (uint16_t i = 0; i < len; i++) {
-		stored_printf(
+		STORED_LOGF(
 			"{\n"
 			"  attr_control = {%u}\n"
 			"  att_desc = {",
@@ -192,7 +192,7 @@ static void print_attr_db(
 			memcpy(&uuid.uuid, attr_db[i].att_desc.uuid_p, uuid_len);
 			uuid_str = get_temp_uuid_str(uuid);
 		}
-		stored_printf(
+		STORED_LOGF(
 			"    uuid_length = %u\n"
 			"    uuid_p = %s\n"
 			"    perm = %u\n"
@@ -205,9 +205,12 @@ static void print_attr_db(
 			attr_db[i].att_desc.max_length, attr_db[i].att_desc.length,
 			attr_db[i].att_desc.value
 		);
+		(void)uuid_str;
 	}
 }
 
+// not used anywhere currently, but I can't bring myself to removing it...
+__attribute__((unused))
 static bool uuid_eq(esp_bt_uuid_t a, esp_bt_uuid_t b) {
 	if (a.len != b.len) {
 		return false;
@@ -307,7 +310,7 @@ static bool initialize_service_with_handles(
 static void gap_event_handler(
 	esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param
 ) {
-	stored_printf("gap event %d", event);
+	STORED_LOGF("gap event %d", event);
 
 	switch (event) {
 		case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
@@ -333,7 +336,7 @@ static void gatts_event_handler(
 	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
 	esp_ble_gatts_cb_param_t *param
 ) {
-	stored_printf("gatts event %d", event);
+	STORED_LOGF("gatts event %d", event);
 	switch (event) {
 		case ESP_GATTS_REG_EVT: {
 			// There should only ever be one gatt interface.
@@ -360,14 +363,14 @@ static void gatts_event_handler(
 					);
 				}
 			} else {
-				stored_printf("I need to handle prepared writes...");
+				STORED_LOGF("I need to handle prepared writes...");
 			}
 
 			if (attr_write_cb != NULL) {
 				// TODO: How do we handle long segmented values?
 				// When are they even segmented?
 				if (param->write.offset != 0) {
-					stored_printf("I need to handle segmented values...");
+					STORED_LOGF("I need to handle segmented values...");
 				} else {
 					attr_write_cb(
 						param->write.handle, param->write.len,
@@ -379,7 +382,7 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_EXEC_WRITE_EVT: {
-			stored_printf("I need to handle execute writes...");
+			STORED_LOGF("I need to handle execute writes...");
 
 			break;
 		}
@@ -389,7 +392,7 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_DELETE_EVT: {
-			stored_printf(
+			STORED_LOGF(
 				"remove service, status: %d, service_handle: %u",
 				param->del.status, param->del.service_handle
 			);
@@ -403,7 +406,7 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_START_EVT: {
-			stored_printf(
+			STORED_LOGF(
 				"service start, status: %d, service_handle: %u",
 				param->start.status, param->start.service_handle
 			);
@@ -450,24 +453,17 @@ static void gatts_event_handler(
 		case ESP_GATTS_CREAT_ATTR_TAB_EVT: {
 			// TODO: This will probably illegally dereference custom_services if
 			// we didn't set waiting_add_service_index previously.
-			stored_printf(
+			STORED_LOGF(
 				"created attribute table; status: %u, svc_inst_id: %u, "
-				"num_handle: %u, waiting_add_service_index: %d, uuid equal: %s",
+				"num_handle: %u, waiting_add_service_index: %d",
 				param->add_attr_tab.status, param->add_attr_tab.svc_inst_id,
 				param->add_attr_tab.num_handle, waiting_add_service_index,
-				waiting_add_service_index != -1
-						&& uuid_eq(
-							param->add_attr_tab.svc_uuid,
-							custom_services[waiting_add_service_index].uuid
-						)
-					? "true"
-					: "false"
 			);
-			stored_printf(
+			STORED_LOGF(
 				"svc_uuid (%u): %s", param->add_attr_tab.svc_uuid.len,
 				get_temp_uuid_str(param->add_attr_tab.svc_uuid)
 			);
-			stored_printf(
+			STORED_LOGF(
 				"custom_services[].uuid (%u): %s",
 				custom_services[waiting_add_service_index].uuid.len,
 				get_temp_uuid_str(
@@ -483,7 +479,7 @@ static void gatts_event_handler(
 			if (param->add_attr_tab.num_handle >= 1) {
 				esp_err_t result =
 					esp_ble_gatts_start_service(param->add_attr_tab.handles[0]);
-				stored_printf(
+				STORED_LOGF(
 					"esp_ble_gatts_start_service(%u), result: %d",
 					param->add_attr_tab.handles[0], result
 				);
@@ -498,7 +494,7 @@ static void gatts_event_handler(
 				&& param->add_attr_tab.svc_inst_id
 					== waiting_add_service_index) {
 				if (chr_descr_capacity + 1 < waiting_handle_indices_count) {
-					stored_printf(
+					STORED_LOGF(
 						"number of requested handles are too great! "
 						"waiting_handle_indices_count: "
 						"%u",
@@ -511,7 +507,7 @@ static void gatts_event_handler(
 				for (uint16_t i = 0; i < waiting_handle_indices_count; i++) {
 					uint16_t index = waiting_handle_indices[i];
 					if (index >= param->add_attr_tab.num_handle) {
-						stored_printf(
+						STORED_LOGF(
 							"requested handle index %u is invalid! "
 							"must be less than num_handle: %u"
 							"%u",
@@ -532,7 +528,7 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_SET_ATTR_VAL_EVT: {
-			stored_printf(
+			STORED_LOGF(
 				"set attr val, status: %d, attr_handle: %u, service_handle: %u",
 				param->set_attr_val.status, param->set_attr_val.attr_handle,
 				param->set_attr_val.srvc_handle
@@ -645,7 +641,7 @@ custom_ble_result_t custom_ble_add_service(
 	static const uint16_t character_declaration_uuid =
 		ESP_GATT_UUID_CHAR_DECLARE;
 
-	stored_printf(
+	STORED_LOGF(
 		"inside custom_ble_add_service, chr_count: %u, service_capacity: %u, "
 		"chr_descr_capacity: %u",
 		chr_count, service_capacity, chr_descr_capacity
@@ -675,7 +671,7 @@ custom_ble_result_t custom_ble_add_service(
 
 	uint16_t attr_count = 1 + chr_and_descr_count + chr_count;
 
-	stored_printf(
+	STORED_LOGF(
 		"attr_count: %u, chr_and_descr_count: %u", attr_count,
 		chr_and_descr_count
 	);
@@ -779,7 +775,7 @@ custom_ble_result_t custom_ble_add_service(
 		}
 	}
 
-	stored_printf("table_index: %u, attr_count: %u", table_index, attr_count);
+	STORED_LOGF("table_index: %u, attr_count: %u", table_index, attr_count);
 	if (table_index != attr_count) {
 		// shouldn't happen
 		return CUSTOM_BLE_INTERNAL_ERROR;
@@ -788,7 +784,7 @@ custom_ble_result_t custom_ble_add_service(
 	waiting_add_service_index = service_index;
 	result_ready              = false;
 
-	stored_printf(
+	STORED_LOGF(
 		"esp_ble_gatts_create_attr_tab, gatts_if: %u, attr_count: %u, "
 		"service_index: %u",
 		stored_gatts_if, attr_count, service_index
@@ -798,7 +794,7 @@ custom_ble_result_t custom_ble_add_service(
 		table, stored_gatts_if, attr_count, service_index
 	);
 	if (result != ESP_OK) {
-		stored_printf("esp_ble_gatts_create_attr_tab error: %d", result);
+		STORED_LOGF("esp_ble_gatts_create_attr_tab error: %d", result);
 
 		return CUSTOM_BLE_ESP_ERROR;
 	}
@@ -819,7 +815,7 @@ custom_ble_result_t custom_ble_add_service(
 	if (!initialize_service_with_handles(
 			service_index, result_handles_count, result_handles
 		)) {
-		stored_printf("initialize_service_with_handles failed");
+		STORED_LOGF("initialize_service_with_handles failed");
 		return CUSTOM_BLE_INTERNAL_ERROR;
 	}
 
@@ -865,7 +861,7 @@ custom_ble_result_t custom_ble_remove_service(uint16_t service_handle) {
 	}
 
 	if (result_status != ESP_GATT_OK) {
-		stored_printf("delete service failed, status: %d", result_status);
+		STORED_LOGF("delete service failed, status: %d", result_status);
 
 		return CUSTOM_BLE_ESP_ERROR;
 	}
@@ -880,7 +876,7 @@ custom_ble_result_t custom_ble_remove_service(uint16_t service_handle) {
 		} else {
 			if (i > least_attr_index) {
 				// This shouldn't ever happen...
-				stored_printf(
+				STORED_LOGF(
 					"found attr index %u that shouldn't be removed above the "
 					"attrs to remove, least_attr_index: %u",
 					i, least_attr_index
@@ -916,7 +912,7 @@ custom_ble_result_t custom_ble_get_attr_value(
 			return CUSTOM_BLE_INVALID_HANDLE;
 		}
 		default: {
-			stored_printf(
+			STORED_LOGF(
 				"esp_ble_gatts_get_attr_value failed, result: %d", result
 			);
 			return CUSTOM_BLE_ESP_ERROR;
@@ -933,7 +929,7 @@ custom_ble_result_t custom_ble_set_attr_value(
 		return CUSTOM_BLE_NOT_STARTED;
 	}
 
-	stored_printf(
+	STORED_LOGF(
 		"writing value of length %u, to attr_handle %u", length, attr_handle
 	);
 
@@ -942,7 +938,7 @@ custom_ble_result_t custom_ble_set_attr_value(
 	esp_err_t result = esp_ble_gatts_set_attr_value(attr_handle, length, value);
 
 	if (result != ESP_OK) {
-		stored_printf(
+		STORED_LOGF(
 			"esp_ble_gatts_set_attr_value failed, result: %d", result
 		);
 		return CUSTOM_BLE_ESP_ERROR;
@@ -964,7 +960,7 @@ custom_ble_result_t custom_ble_set_attr_value(
 	if (result_status == ESP_GATT_INVALID_HANDLE) {
 		return CUSTOM_BLE_INVALID_HANDLE;
 	} else if (result_status != ESP_GATT_OK) {
-		stored_printf("set attr value failed, status: %d", result_status);
+		STORED_LOGF("set attr value failed, status: %d", result_status);
 		return CUSTOM_BLE_ESP_ERROR;
 	}
 
@@ -978,24 +974,24 @@ custom_ble_result_t custom_ble_set_attr_value(
 		memcpy(value_copy, value, length);
 
 		if (prop & ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
-			stored_printf("sending notification");
+			STORED_LOGF("sending notification");
 
 			esp_err_t result = esp_ble_gatts_send_indicate(
 				stored_gatts_if, conn_id, attr_handle, length, value_copy, true
 			);
 			if (result != ESP_OK) {
-				stored_printf("notify failed, status: %d", result);
+				STORED_LOGF("notify failed, status: %d", result);
 				return CUSTOM_BLE_ESP_ERROR;
 			}
 		}
 		if (prop & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
-			stored_printf("sending indication");
+			STORED_LOGF("sending indication");
 
 			esp_err_t result = esp_ble_gatts_send_indicate(
 				stored_gatts_if, conn_id, attr_handle, length, value_copy, false
 			);
 			if (result != ESP_OK) {
-				stored_printf("indicate failed, status: %d", result);
+				STORED_LOGF("indicate failed, status: %d", result);
 				return CUSTOM_BLE_ESP_ERROR;
 			}
 		}

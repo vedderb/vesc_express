@@ -463,7 +463,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 			parse_lbm_result_t result =
 				parse_lbm_descr_def(lbm_car(next), &descriptors[i], NULL);
 			if (result != PARSE_LBM_OK) {
-				stored_printf("descr parse lbm error: %d", result);
+				STORED_LOGF("descr parse lbm error: %d", result);
 
 				lbm_free(descriptors);
 				return result;
@@ -496,7 +496,7 @@ static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
 			lbm_cons(lbm_enc_u(handles[i]), prepared_handles_list);
 		if (prepared_handles_list == ENC_SYM_MERROR) {
 			// TODO: deregister service.
-			stored_printf("oh nose, memory error! BLE state is now invalid! :("
+			STORED_LOGF("oh nose, memory error! BLE state is now invalid! :("
 			);
 			break;
 		}
@@ -526,7 +526,7 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 			for (size_t j = 0; j < i; j++) {
 				lbm_free(characteristics[j].descriptors);
 			}
-			stored_printf("encountered not cons value");
+			STORED_LOGF("encountered not cons value");
 			res_error = PARSE_LBM_INCORRECT_STRUCTURE;
 			goto error;
 		}
@@ -538,7 +538,7 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 			for (size_t j = 0; j < i; j++) {
 				lbm_free(characteristics[j].descriptors);
 			}
-			stored_printf("chr parse lbm error: %d", result);
+			STORED_LOGF("chr parse lbm error: %d", result);
 			res_error = result;
 			goto error;
 		}
@@ -546,7 +546,7 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 		next = lbm_cdr(next);
 	}
 
-	stored_printf(
+	STORED_LOGF(
 		"create custom ble service with %u characteristics", chr_count
 	);
 	custom_ble_result_t result = custom_ble_add_service(
@@ -593,7 +593,7 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 
 error:
 
-	stored_printf("parse lbm error: %d", res_error);
+	STORED_LOGF("parse lbm error: %d", res_error);
 
 	switch (res_error) {
 		case PARSE_LBM_INVALID_TYPE: {
@@ -640,7 +640,7 @@ static lbm_value ext_ble_start_app(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 		default: {
-			stored_printf("custom_ble_start failed, rc: %d", result);
+			STORED_LOGF("custom_ble_start failed, rc: %d", result);
 			return ENC_SYM_EERROR;
 		}
 	}
@@ -673,7 +673,7 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 		default: {
-			stored_printf("custom_ble_set_name failed, rc: %d", result);
+			STORED_LOGF("custom_ble_set_name failed, rc: %d", result);
 			return ENC_SYM_EERROR;
 		}
 	}

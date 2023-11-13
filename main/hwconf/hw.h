@@ -42,6 +42,11 @@
 #define HW_INIT_HOOK()
 #endif
 
+#ifndef LOGS_ENABLED
+// Should contain 0 or 1
+#define LOGS_ENABLED 0
+#endif
+
 #ifndef UART_NUM
 #define HW_NO_UART
 #define UART_NUM					0

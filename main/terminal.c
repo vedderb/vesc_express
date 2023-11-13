@@ -17,12 +17,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#include "conf_general.h"
 #include "terminal.h"
 #include "commands.h"
 #include "comm_can.h"
 #include "comm_ble.h"
 #include "ble/custom_ble.h"
-#include "conf_general.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -207,8 +207,12 @@ void terminal_process_string(char *str) {
 	} else if (strcmp(argv[0], "uptime") == 0) {
 		commands_printf("Uptime: %.2f s", (double)(utils_ms_tot() / 1000.0));
 	} else if (strcmp(argv[0], "store_send_func") == 0) {
+#if LOGS_ENABLED
 		commands_store_send_func();
 		commands_printf("stored send_func: %p", commands_get_send_func());
+#else
+		commands_printf("Debug logging is disabled for this firmware!");
+#endif
 	}
 
 	// The help command

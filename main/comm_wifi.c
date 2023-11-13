@@ -71,127 +71,129 @@ typedef struct {
 static comm_state comm_local = {.socket = -1, .ip_client = {0}};
 static comm_state comm_hub = {.socket = -1, .ip_client = {0}};
 
-// static const char *wifi_reason_to_str(wifi_err_reason_t reason) {
-// 	switch (reason) {
-// 		case WIFI_REASON_UNSPECIFIED:
-// 			return "UNSPECIFIED";
-// 		case WIFI_REASON_AUTH_EXPIRE:
-// 			return "AUTH_EXPIRE";
-// 		case WIFI_REASON_AUTH_LEAVE:
-// 			return "AUTH_LEAVE";
-// 		case WIFI_REASON_ASSOC_EXPIRE:
-// 			return "ASSOC_EXPIRE";
-// 		case WIFI_REASON_ASSOC_TOOMANY:
-// 			return "ASSOC_TOOMANY";
-// 		case WIFI_REASON_NOT_AUTHED:
-// 			return "NOT_AUTHED";
-// 		case WIFI_REASON_NOT_ASSOCED:
-// 			return "NOT_ASSOCED";
-// 		case WIFI_REASON_ASSOC_LEAVE:
-// 			return "ASSOC_LEAVE";
-// 		case WIFI_REASON_ASSOC_NOT_AUTHED:
-// 			return "ASSOC_NOT_AUTHED";
-// 		case WIFI_REASON_DISASSOC_PWRCAP_BAD:
-// 			return "DISASSOC_PWRCAP_BAD";
-// 		case WIFI_REASON_DISASSOC_SUPCHAN_BAD:
-// 			return "DISASSOC_SUPCHAN_BAD";
-// 		case WIFI_REASON_BSS_TRANSITION_DISASSOC:
-// 			return "BSS_TRANSITION_DISASSOC";
-// 		case WIFI_REASON_IE_INVALID:
-// 			return "IE_INVALID";
-// 		case WIFI_REASON_MIC_FAILURE:
-// 			return "MIC_FAILURE";
-// 		case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-// 			return "4WAY_HANDSHAKE_TIMEOUT";
-// 		case WIFI_REASON_GROUP_KEY_UPDATE_TIMEOUT:
-// 			return "GROUP_KEY_UPDATE_TIMEOUT";
-// 		case WIFI_REASON_IE_IN_4WAY_DIFFERS:
-// 			return "IE_IN_4WAY_DIFFERS";
-// 		case WIFI_REASON_GROUP_CIPHER_INVALID:
-// 			return "GROUP_CIPHER_INVALID";
-// 		case WIFI_REASON_PAIRWISE_CIPHER_INVALID:
-// 			return "PAIRWISE_CIPHER_INVALID";
-// 		case WIFI_REASON_AKMP_INVALID:
-// 			return "AKMP_INVALID";
-// 		case WIFI_REASON_UNSUPP_RSN_IE_VERSION:
-// 			return "UNSUPP_RSN_IE_VERSION";
-// 		case WIFI_REASON_INVALID_RSN_IE_CAP:
-// 			return "INVALID_RSN_IE_CAP";
-// 		case WIFI_REASON_802_1X_AUTH_FAILED:
-// 			return "802_1X_AUTH_FAILED";
-// 		case WIFI_REASON_CIPHER_SUITE_REJECTED:
-// 			return "CIPHER_SUITE_REJECTED";
-// 		case WIFI_REASON_TDLS_PEER_UNREACHABLE:
-// 			return "TDLS_PEER_UNREACHABLE";
-// 		case WIFI_REASON_TDLS_UNSPECIFIED:
-// 			return "TDLS_UNSPECIFIED";
-// 		case WIFI_REASON_SSP_REQUESTED_DISASSOC:
-// 			return "SSP_REQUESTED_DISASSOC";
-// 		case WIFI_REASON_NO_SSP_ROAMING_AGREEMENT:
-// 			return "NO_SSP_ROAMING_AGREEMENT";
-// 		case WIFI_REASON_BAD_CIPHER_OR_AKM:
-// 			return "BAD_CIPHER_OR_AKM";
-// 		case WIFI_REASON_NOT_AUTHORIZED_THIS_LOCATION:
-// 			return "NOT_AUTHORIZED_THIS_LOCATION";
-// 		case WIFI_REASON_SERVICE_CHANGE_PERCLUDES_TS:
-// 			return "SERVICE_CHANGE_PERCLUDES_TS";
-// 		case WIFI_REASON_UNSPECIFIED_QOS:
-// 			return "UNSPECIFIED_QOS";
-// 		case WIFI_REASON_NOT_ENOUGH_BANDWIDTH:
-// 			return "NOT_ENOUGH_BANDWIDTH";
-// 		case WIFI_REASON_MISSING_ACKS:
-// 			return "MISSING_ACKS";
-// 		case WIFI_REASON_EXCEEDED_TXOP:
-// 			return "EXCEEDED_TXOP";
-// 		case WIFI_REASON_STA_LEAVING:
-// 			return "STA_LEAVING";
-// 		case WIFI_REASON_END_BA:
-// 			return "END_BA";
-// 		case WIFI_REASON_UNKNOWN_BA:
-// 			return "UNKNOWN_BA";
-// 		case WIFI_REASON_TIMEOUT:
-// 			return "TIMEOUT";
-// 		case WIFI_REASON_PEER_INITIATED:
-// 			return "PEER_INITIATED";
-// 		case WIFI_REASON_AP_INITIATED:
-// 			return "AP_INITIATED";
-// 		case WIFI_REASON_INVALID_FT_ACTION_FRAME_COUNT:
-// 			return "INVALID_FT_ACTION_FRAME_COUNT";
-// 		case WIFI_REASON_INVALID_PMKID:
-// 			return "INVALID_PMKID";
-// 		case WIFI_REASON_INVALID_MDE:
-// 			return "INVALID_MDE";
-// 		case WIFI_REASON_INVALID_FTE:
-// 			return "INVALID_FTE";
-// 		case WIFI_REASON_TRANSMISSION_LINK_ESTABLISH_FAILED:
-// 			return "TRANSMISSION_LINK_ESTABLISH_FAILED";
-// 		case WIFI_REASON_ALTERATIVE_CHANNEL_OCCUPIED:
-// 			return "ALTERATIVE_CHANNEL_OCCUPIED";
+// Used for logging
+__attribute__((unused))
+static const char *wifi_reason_to_str(wifi_err_reason_t reason) {
+	switch (reason) {
+		case WIFI_REASON_UNSPECIFIED:
+			return "UNSPECIFIED";
+		case WIFI_REASON_AUTH_EXPIRE:
+			return "AUTH_EXPIRE";
+		case WIFI_REASON_AUTH_LEAVE:
+			return "AUTH_LEAVE";
+		case WIFI_REASON_ASSOC_EXPIRE:
+			return "ASSOC_EXPIRE";
+		case WIFI_REASON_ASSOC_TOOMANY:
+			return "ASSOC_TOOMANY";
+		case WIFI_REASON_NOT_AUTHED:
+			return "NOT_AUTHED";
+		case WIFI_REASON_NOT_ASSOCED:
+			return "NOT_ASSOCED";
+		case WIFI_REASON_ASSOC_LEAVE:
+			return "ASSOC_LEAVE";
+		case WIFI_REASON_ASSOC_NOT_AUTHED:
+			return "ASSOC_NOT_AUTHED";
+		case WIFI_REASON_DISASSOC_PWRCAP_BAD:
+			return "DISASSOC_PWRCAP_BAD";
+		case WIFI_REASON_DISASSOC_SUPCHAN_BAD:
+			return "DISASSOC_SUPCHAN_BAD";
+		case WIFI_REASON_BSS_TRANSITION_DISASSOC:
+			return "BSS_TRANSITION_DISASSOC";
+		case WIFI_REASON_IE_INVALID:
+			return "IE_INVALID";
+		case WIFI_REASON_MIC_FAILURE:
+			return "MIC_FAILURE";
+		case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+			return "4WAY_HANDSHAKE_TIMEOUT";
+		case WIFI_REASON_GROUP_KEY_UPDATE_TIMEOUT:
+			return "GROUP_KEY_UPDATE_TIMEOUT";
+		case WIFI_REASON_IE_IN_4WAY_DIFFERS:
+			return "IE_IN_4WAY_DIFFERS";
+		case WIFI_REASON_GROUP_CIPHER_INVALID:
+			return "GROUP_CIPHER_INVALID";
+		case WIFI_REASON_PAIRWISE_CIPHER_INVALID:
+			return "PAIRWISE_CIPHER_INVALID";
+		case WIFI_REASON_AKMP_INVALID:
+			return "AKMP_INVALID";
+		case WIFI_REASON_UNSUPP_RSN_IE_VERSION:
+			return "UNSUPP_RSN_IE_VERSION";
+		case WIFI_REASON_INVALID_RSN_IE_CAP:
+			return "INVALID_RSN_IE_CAP";
+		case WIFI_REASON_802_1X_AUTH_FAILED:
+			return "802_1X_AUTH_FAILED";
+		case WIFI_REASON_CIPHER_SUITE_REJECTED:
+			return "CIPHER_SUITE_REJECTED";
+		case WIFI_REASON_TDLS_PEER_UNREACHABLE:
+			return "TDLS_PEER_UNREACHABLE";
+		case WIFI_REASON_TDLS_UNSPECIFIED:
+			return "TDLS_UNSPECIFIED";
+		case WIFI_REASON_SSP_REQUESTED_DISASSOC:
+			return "SSP_REQUESTED_DISASSOC";
+		case WIFI_REASON_NO_SSP_ROAMING_AGREEMENT:
+			return "NO_SSP_ROAMING_AGREEMENT";
+		case WIFI_REASON_BAD_CIPHER_OR_AKM:
+			return "BAD_CIPHER_OR_AKM";
+		case WIFI_REASON_NOT_AUTHORIZED_THIS_LOCATION:
+			return "NOT_AUTHORIZED_THIS_LOCATION";
+		case WIFI_REASON_SERVICE_CHANGE_PERCLUDES_TS:
+			return "SERVICE_CHANGE_PERCLUDES_TS";
+		case WIFI_REASON_UNSPECIFIED_QOS:
+			return "UNSPECIFIED_QOS";
+		case WIFI_REASON_NOT_ENOUGH_BANDWIDTH:
+			return "NOT_ENOUGH_BANDWIDTH";
+		case WIFI_REASON_MISSING_ACKS:
+			return "MISSING_ACKS";
+		case WIFI_REASON_EXCEEDED_TXOP:
+			return "EXCEEDED_TXOP";
+		case WIFI_REASON_STA_LEAVING:
+			return "STA_LEAVING";
+		case WIFI_REASON_END_BA:
+			return "END_BA";
+		case WIFI_REASON_UNKNOWN_BA:
+			return "UNKNOWN_BA";
+		case WIFI_REASON_TIMEOUT:
+			return "TIMEOUT";
+		case WIFI_REASON_PEER_INITIATED:
+			return "PEER_INITIATED";
+		case WIFI_REASON_AP_INITIATED:
+			return "AP_INITIATED";
+		case WIFI_REASON_INVALID_FT_ACTION_FRAME_COUNT:
+			return "INVALID_FT_ACTION_FRAME_COUNT";
+		case WIFI_REASON_INVALID_PMKID:
+			return "INVALID_PMKID";
+		case WIFI_REASON_INVALID_MDE:
+			return "INVALID_MDE";
+		case WIFI_REASON_INVALID_FTE:
+			return "INVALID_FTE";
+		case WIFI_REASON_TRANSMISSION_LINK_ESTABLISH_FAILED:
+			return "TRANSMISSION_LINK_ESTABLISH_FAILED";
+		case WIFI_REASON_ALTERATIVE_CHANNEL_OCCUPIED:
+			return "ALTERATIVE_CHANNEL_OCCUPIED";
 
-// 		case WIFI_REASON_BEACON_TIMEOUT:
-// 			return "BEACON_TIMEOUT";
-// 		case WIFI_REASON_NO_AP_FOUND:
-// 			return "NO_AP_FOUND";
-// 		case WIFI_REASON_AUTH_FAIL:
-// 			return "AUTH_FAIL";
-// 		case WIFI_REASON_ASSOC_FAIL:
-// 			return "ASSOC_FAIL";
-// 		case WIFI_REASON_HANDSHAKE_TIMEOUT:
-// 			return "HANDSHAKE_TIMEOUT";
-// 		case WIFI_REASON_CONNECTION_FAIL:
-// 			return "CONNECTION_FAIL";
-// 		case WIFI_REASON_AP_TSF_RESET:
-// 			return "AP_TSF_RESET";
-// 		case WIFI_REASON_ROAMING:
-// 			return "ROAMING";
-// 		case WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG:
-// 			return "ASSOC_COMEBACK_TIME_TOO_LONG";
-// 		case WIFI_REASON_SA_QUERY_TIMEOUT:
-// 			return "SA_QUERY_TIMEOUT";
-// 	}
+		case WIFI_REASON_BEACON_TIMEOUT:
+			return "BEACON_TIMEOUT";
+		case WIFI_REASON_NO_AP_FOUND:
+			return "NO_AP_FOUND";
+		case WIFI_REASON_AUTH_FAIL:
+			return "AUTH_FAIL";
+		case WIFI_REASON_ASSOC_FAIL:
+			return "ASSOC_FAIL";
+		case WIFI_REASON_HANDSHAKE_TIMEOUT:
+			return "HANDSHAKE_TIMEOUT";
+		case WIFI_REASON_CONNECTION_FAIL:
+			return "CONNECTION_FAIL";
+		case WIFI_REASON_AP_TSF_RESET:
+			return "AP_TSF_RESET";
+		case WIFI_REASON_ROAMING:
+			return "ROAMING";
+		case WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG:
+			return "ASSOC_COMEBACK_TIME_TOO_LONG";
+		case WIFI_REASON_SA_QUERY_TIMEOUT:
+			return "SA_QUERY_TIMEOUT";
+	}
 	
-// 	return "unknown";
-// }
+	return "unknown";
+}
 
 /**
  * Find the next index in custom_sockets that's free.
@@ -343,11 +345,11 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 		wifi_event_sta_disconnected_t *data =
 			(wifi_event_sta_disconnected_t *)event_data;
 
-		stored_printf(
+		STORED_LOGF(
 			"disconnected, ssid_len: %u, ssid: '%s', reason: '%s' (%u), rssi: "
 			"%d",
 			data->ssid_len, data->ssid,
-			"", /*wifi_reason_to_str(data->reason),*/
+			wifi_reason_to_str(data->reason),
 			data->reason, data->rssi
 		);
 
@@ -360,13 +362,13 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 			|| data->reason == WIFI_REASON_HANDSHAKE_TIMEOUT
 			|| data->reason == WIFI_REASON_AUTH_EXPIRE;
 
-		stored_printf("wrong_password: %s", wrong_password ? "true" : "false");
+		STORED_LOGF("wrong_password: %s", wrong_password ? "true" : "false");
 
 		if (!wrong_password && !wifi_disabled) {
 			is_connecting    = true;
 			esp_err_t result = esp_wifi_connect();
 			if (result != ESP_OK) {
-				stored_printf("esp_wifi_connect failed, result: %d", result);
+				STORED_LOGF("esp_wifi_connect failed, result: %d", result);
 			}
 		}
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_STOP) {
@@ -647,16 +649,16 @@ bool comm_wifi_change_network(const char *ssid, const char *password) {
 	{
 		esp_err_t result = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 		if (result == ESP_ERR_WIFI_PASSWORD) {
-			stored_printf(
+			STORED_LOGF(
 				"incorrect wifi password, ssid: %p, password: %p", ssid,
 				password
 			);
-			stored_printf("ssid: '%s', password: '%s'", ssid, password);
+			STORED_LOGF("ssid: '%s', password: '%s'", ssid, password);
 			// TODO: Report incorrect password correctly. (Is incorrect password
 			// even ever reported here?)
 			return false;
 		} else if (result != ESP_OK) {
-			stored_printf("esp_wifi_set_config failed, result: %d", result);
+			STORED_LOGF("esp_wifi_set_config failed, result: %d", result);
 
 			return false;
 		}
@@ -668,20 +670,20 @@ bool comm_wifi_change_network(const char *ssid, const char *password) {
 	wifi_ap_record_t temp;
 	esp_err_t result = esp_wifi_sta_get_ap_info(&temp);
 	bool connected   = result == ESP_OK;
-	stored_printf(
+	STORED_LOGF(
 		"esp_wifi_sta_get_ap_info result: %d, is connected: %s", result,
 		connected ? "true" : "false"
 	);
 	if (connected) {
 		esp_err_t result = esp_wifi_disconnect();
 		if (result != ESP_OK) {
-			stored_printf("esp_wifi_disconnect failed, result: %d", result);
+			STORED_LOGF("esp_wifi_disconnect failed, result: %d", result);
 			return false;
 		}
 	} else {
 		esp_err_t result = esp_wifi_connect();
 		if (result != ESP_OK) {
-			stored_printf("esp_wifi_connect failed, result: %d", result);
+			STORED_LOGF("esp_wifi_connect failed, result: %d", result);
 			return false;
 		}
 		is_connecting = true;
@@ -713,7 +715,7 @@ int comm_wifi_open_socket() {
 	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
 
 	if (sock == -1) {
-		stored_printf("creating custom socket failed, errno: %d", errno);
+		STORED_LOGF("creating custom socket failed, errno: %d", errno);
 		return -1;
 	}
 	
