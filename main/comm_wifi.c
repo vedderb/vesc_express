@@ -51,6 +51,7 @@ static esp_ip4_addr_t ip = {0};
 static bool is_connecting = false;
 static bool is_connected = false;
 static bool wifi_disabled = false;
+static bool wifi_auto_reconnect = true;
 static WIFI_MODE wifi_mode;
 static volatile bool wifi_config_changed = false;
 static wifi_config_t wifi_config = {0};
@@ -344,37 +345,47 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 		wifi_event_sta_disconnected_t *data =
 			(wifi_event_sta_disconnected_t *)event_data;
+			
+		bool wrong_password = data->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
+			|| data->reason == WIFI_REASON_NO_AP_FOUND
+			|| data->reason == WIFI_REASON_HANDSHAKE_TIMEOUT;
+
+		bool is_expected_reason = data->reason == WIFI_REASON_ASSOC_LEAVE
+			|| data->reason == WIFI_REASON_AUTH_EXPIRE;
+			
+		bool will_reconnect = !wrong_password && !wifi_disabled
+			&& (wifi_auto_reconnect || is_expected_reason);
 
 		STORED_LOGF(
 			"disconnected, ssid_len: %u, ssid: '%s', reason: '%s' (%u), rssi: "
-			"%d",
+			"%d, will_reconnect: %s",
 			data->ssid_len, data->ssid,
 			wifi_reason_to_str(data->reason),
-			data->reason, data->rssi
+			data->reason, data->rssi, bool_to_str(will_reconnect)
 		);
 
-		// TODO: Should cleanup custom sockets.
+		// We don't cleanup custom sockets here (which are all most likely
+		// invalid at this point). Maybe that should change?
 		is_connected = false;
 		LED_RED_OFF();
 
-		bool wrong_password = data->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
-			|| data->reason == WIFI_REASON_NO_AP_FOUND
-			|| data->reason == WIFI_REASON_HANDSHAKE_TIMEOUT
-			|| data->reason == WIFI_REASON_AUTH_EXPIRE;
-
-		STORED_LOGF("wrong_password: %s", wrong_password ? "true" : "false");
-
-		if (!wrong_password && !wifi_disabled) {
+		if (will_reconnect) {
+			STORED_LOGF("reconnecting to network...");
 			is_connecting    = true;
 			esp_err_t result = esp_wifi_connect();
 			if (result != ESP_OK) {
 				STORED_LOGF("esp_wifi_connect failed, result: %d", result);
+				is_connecting = false;
 			}
+		} else {
+			is_connecting = false;
 		}
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_STOP) {
 		// Cleanup custom sockets.
 		comm_wifi_disconnect();
 	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+		STORED_LOGF("connected to network! (IP_EVENT_STA_GOT_IP)");
+		
 		ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
 		ip = event->ip_info.ip;
 		is_connecting = false;
@@ -706,6 +717,24 @@ bool comm_wifi_disconnect_network() {
 	return true;
 }
 
+bool comm_wifi_set_auto_reconnect(bool should_reconnect) {
+	if (wifi_mode != WIFI_MODE_STATION) {
+		return false;
+	}
+	
+	wifi_auto_reconnect = should_reconnect;
+	
+	return true;
+}
+
+bool comm_wifi_get_auto_reconnect() {
+	if (wifi_mode != WIFI_MODE_STATION) {
+		return false;
+	}
+	
+	return wifi_auto_reconnect;
+}
+
 int comm_wifi_open_socket() {
 	ssize_t index = next_free_custom_socket();
 	if (index == -1) {
@@ -724,7 +753,6 @@ int comm_wifi_open_socket() {
 	return sock;
 }
 
-// TODO: Investigate why this always fails.
 bool comm_wifi_close_socket(int sock) {
 	ssize_t index = find_custom_socket(sock);
 	if (index == -1) {

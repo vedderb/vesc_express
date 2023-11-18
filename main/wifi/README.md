@@ -20,7 +20,7 @@ All of these extensions throw an `eval_error` if the VESC is not configured to b
 **Note** that the VESC can only be connected to a single WiFi network at a time, so
 **if you're using WiFi connectivity to connect to VESC tool, your connection will
 be broken if a script changes or disconnects from the current network** using
-[`wifi-connect`](#wifi_connect) or [`wifi-disconnect`](#wifi-disconnect). This
+[`wifi-connect`](#wifi-connect) or [`wifi-disconnect`](#wifi-disconnect). This
 also means that the `wifi-connect` extension has the same behavior as
 configuring the **Station Mode SSID** and **Station Mode Key** settings.
 
@@ -83,7 +83,7 @@ Example that scans the available network on all WiFi channels:
 ```
 (The SSIDs are of course fictional)
 
-### `wifi_connect`
+### `wifi-connect`
 
 ```clj
 (wifi-connect ssid password)
@@ -98,8 +98,8 @@ and you're able to immediately open TCP connections using
 [`tcp-connect`](#tcp-connect). The symbol `'wrong-password` is returned if the
 password was incorrect or the SSID didn't exist. Other errors result in `nil`
 being returned. The mechanism for detecting authentication failures
-unfortunately isn't that reliable, so you may want to try a second time when
-receiving `nil` to be sure.
+unfortunately isn't that reliable, so you may want to retry when receiving `nil`
+to be sure.
 
 Example where we connect to the network 'Example 1':
 ```clj
@@ -152,6 +152,52 @@ Example where the VESC is currently connected to a network:
 ```clj
 (wifi-status)
 > connected
+```
+
+### `wifi-auto-reconnect`
+
+```clj
+(wifi-auto-reconnect [should-reconnect])
+```
+
+Configure if the internal WiFi event listener should automatically attempt to
+reconnect to the currently configured WiFi network on disconnects.
+`should-reconnect` is optional and should be a boolean value (containing `nil`
+or `true`). If it isn't passed, this extension just reports the current value
+without modifying it. The previous value is returned in either case. This
+setting is configured to be `true` on startup.
+
+Automatically reconnecting is normally the behavior that you'd want if using
+WiFi to connect with VESC Tool without using any of these APIs, since you'd then
+want it to try to reconnect at all costs. But if you're connecting to WiFi
+networks with LBM scripts, this can produce strange behavior. Consider the case
+where connecting to a network using [`wifi-connect`](#wifi-connect), and it
+failed for some unknown reason. The `wifi-connect` extension would then return
+`nil`, while the internal event loop attempts to reconnect. If it then succeeds
+on the second try, you've got an inconsistency between the result reported by
+`wifi-connect` and the actual connection status. **In conclusion**: if you
+disable automatic reconnections, it is guaranteed that when `wifi-connect`
+returns `nil` or `wrong-password` the VESC isn't connected to a WiFi network,
+and never will be unless the lbm code takes action.
+
+If you disable automatic reconnecting it *is crucial* that you have set up an
+event listener that listens for [disconnect events](#events) and takes the
+necessary actions (such as manually reconnecting). Note that you should still
+have one set up with automatic connections enabled, since there are still
+scenarios where the internal wifi module might not reconnect, such as when it
+thinks that wrong credentials were passed. This event *should* only happen when
+caused by a call to `wifi-connect`, which would have notified the lbm code
+either way, *but* you should still be aware of this as happening randomly as a
+remote possibility to ensure a robust application.
+
+TL;DR: it is recommended that you set this to false, and that you setup an event
+listener to handle random disconnects.
+
+Example where we disable automatic reconnections at startup (note the return
+value).
+```clj
+(wifi-should-reconnect nil)
+> t
 ```
 
 ## The TCP Library
@@ -297,3 +343,60 @@ try it yourself! :)
 > "HTTP/1.1 200 OK\r\nAge: 197780\r\nCache-Control: max-age=604800\r\nContent-Type: text/html; charset=UTF-8\r\nDate: Sun, 12 Nov 2023 16:40:09 GMT\r\nEtag: \"3147526947+ident\"\r\nExpires: Sun, 19 Nov 2023 16:40:09 GMT\r\nLast-Modified: Thu, 17 Oct 2019 07..." ; the string has been shortened
 ```
 
+## Events
+This module defines the event `event-wifi-disconnect`, which is fired whenever
+the VESC has disconnected from the WiFi network **and the internal WiFi module
+has decided to not automatically attempt to reconnect**. This means that this
+event will fire more often whenever automatic reconnection has been disabled
+using [`wifi-auto-reconnect`](#wifi-auto-reconnect). If this event is received,
+it's guaranteed (i hope...) that the VESC is not connected and will never
+reconnect unless the lbm code takes action, *regardless* of the current setting
+of `wifi-auto-reconnect`.
+
+The semantics of this work the same as with
+[normal events](https://github.com/vedderb/bldc/blob/master/lispBM/README.md#events).
+The event message is of the form
+`('event-wifi-disconnect reason from-extension)`, where `from-extension` is a
+boolean value set to `true` if this disconnect event occurred during a call to
+[`wifi-connect`](#wifi-connect), in which case the thread that called
+`wifi-connect` has already been notified of the failure to connect. So if
+`false` is passed this disconnect event occurred out of the blue, like if the
+connected WiFi network suddenly went offline. `reason` is an integer directly
+corresponding to one of the internal WiFi reason codes, as documented in [this
+table in the ESP documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/wifi.html#wi-fi-reason-code).
+The exact semantics of when these occur is not clear, so you can just ignore
+this value unless you know what you're doing.
+
+Here is an example of a setup that catches this event and automatically
+reconnects:
+
+```clj
+(def wifi-ssid "Example network")
+(def wifi-password "wordpass")
+
+(defun proc-wifi-disconnect (reason from-extension) {
+    (print (str-merge
+        "wifi disconnected, reason: "
+        (str-from-n reason)
+        ", from-extension: "
+        (to-str from-extension)
+    ))
+    
+    (wifi-connect wifi-ssid wifi-password)
+})
+
+(defun event-handler ()
+    (loopwhile t
+        (recv
+            ((event-wifi-disconnect (? reason) (? from-extension))
+                (proc-wifi-disconnect reason from-extension)
+            )
+            (_ nil) ; Ignore other events
+        )
+    )
+)
+
+(wifi-should-reconnect nil)
+(event-register-handler (spawn event-handler))
+(event-enable 'event-wifi-disconnect)
+```

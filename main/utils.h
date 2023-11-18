@@ -31,6 +31,8 @@ void utils_byte_to_binary(int x, char *b);
 void utils_rotate_vector3(float *input, float *rotation, float *output, bool reverse);
 bool utils_rmtree(const char *path);
 
+const char *bool_to_str(bool value);
+
 #define UTILS_AGE_S(x)		((float)(xTaskGetTickCount() - x) / ((float)portTICK_PERIOD_MS * 1000.0))
 
 // Handy conversions for radians/degrees and RPM/radians-per-second

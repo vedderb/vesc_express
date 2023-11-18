@@ -1,5 +1,6 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder      benjamin@vedder.se
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -122,4 +123,8 @@ bool utils_rmtree(const char *path) {
 	closedir(dir);
 
 	return res == 0;
+}
+
+const char *bool_to_str(bool value) {
+	return value ? "true" : "false";
 }

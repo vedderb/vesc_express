@@ -56,6 +56,16 @@ static inline bool lbm_dec_bool(lbm_value value) {
 }
 
 /**
+ * Convert boolean value to an lbm value.
+ * 
+ * @param value The c boolean to convert to an lbm value.
+ * @return The created lbm value: either of the symbol nil or t.
+*/
+static inline lbm_value lbm_enc_bool(bool value) {
+	return value ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+/**
  * Extract the array header struct from a lbm value array.
  * 
  * The type of the value is checked to be at least be a readable array (doesn't

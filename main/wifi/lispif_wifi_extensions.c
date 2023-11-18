@@ -36,6 +36,7 @@
 #include "extensions.h"
 
 #include "utils.h"
+#include "lispif_events.h"
 #include "lbm_vesc_utils.h"
 #include "datatypes.h"
 #include "commands.h"
@@ -211,6 +212,47 @@ bool load_lbm_list_with_ap_records(
 	return true;
 }
 
+/**
+ * Send lbm wifi disconnect event if it's enabled and wifi is in the correct
+ * mode.
+ *
+ * Does not check if this specific disconnect reason is a type that should be
+ * reported!
+ *
+ * @param reason The disconnect wifi reason code, as found in the
+ * wifi_event_sta_disconnected_t struct.
+ */
+static void handle_wifi_disconnect_event(uint8_t reason, bool from_extension) {
+	if (!event_wifi_disconnect_en
+		|| comm_wifi_get_mode() != WIFI_MODE_STATION) {
+		return;
+	}
+
+	// produces ('event_wifi_disconnect reason-code from-extension)
+	lbm_flat_value_t flat;
+	if (!lbm_start_flatten(&flat, 40)) {
+		return;
+	}
+
+	f_cons(&flat);                           // +1
+	f_sym(&flat, sym_event_wifi_disconnect); // +5/+9
+
+	f_cons(&flat);      // +1
+	f_u(&flat, reason); // +5
+
+	f_cons(&flat);                                     // +1
+	f_sym(&flat, from_extension ? SYM_TRUE : SYM_NIL); // +5/+9
+
+	f_sym(&flat, SYM_NIL); // +5/+9
+
+	if (!lbm_event(&flat)) {
+		STORED_LOGF(
+			"failed to send lbm wifi-disconnect event, reason: %u", reason
+		);
+		lbm_free(flat.buf);
+	}
+}
+
 static void event_listener(
 	esp_event_base_t event_base, int32_t event_id, void *event_data
 ) {
@@ -227,33 +269,54 @@ static void event_listener(
 			case WIFI_EVENT_STA_DISCONNECTED: {
 				wifi_event_sta_disconnected_t *data =
 					(wifi_event_sta_disconnected_t *)event_data;
-				if (is_waiting && waiting_op == WAITING_OP_CHANGE_NETWORK) {
+
+				bool extension_waiting = is_waiting
+					&& waiting_op == WAITING_OP_CHANGE_NETWORK;
+
+				bool wifi_is_reconnecting = comm_wifi_is_connecting()
+					|| comm_wifi_is_connected();
+
+				if (!wifi_is_reconnecting) {
+					handle_wifi_disconnect_event(
+						data->reason, extension_waiting
+					);
+				}
+
+				if (extension_waiting) {
 					// From ESP WIFI docs:
 					// https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/wifi.html#wi-fi-reason-code-related-to-wrong-password
 					bool is_wrong_password = data->reason
 							== WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
 						|| data->reason == WIFI_REASON_NO_AP_FOUND
-						|| data->reason == WIFI_REASON_HANDSHAKE_TIMEOUT
-						// These were discovered through testing.
-						// TODO: Very unsure if these are necessary, or if more
-						// are.
+						|| data->reason == WIFI_REASON_HANDSHAKE_TIMEOUT;
+
+					// These were just kind of found through testing,
+					// and I'm not entirely sure when or why they happen
+					// (except for the first one). These mean that we're
+					// not sure why the connection failed, and that we
+					// should wait for the next reconnect attempt and
+					// hope for a different outcome.
+					bool is_expected_disconnect =
+						// This indicates the event was caused by the
+						// network change and is normal.
+						data->reason == WIFI_REASON_ASSOC_LEAVE
+						// AUTH_EXPIRE can unfortunately occur both when
+						// connecting to a network for the first time in a while
+						// (like maybe a few hours?) with wrong *or* correct
+						// credentials, so we need to try to connect a second
+						// time to get a usefull answer.
 						|| data->reason == WIFI_REASON_AUTH_EXPIRE;
 
-					// This indicates the event was caused by the network
-					// change and is normal.
-					bool is_expected_disconnect = data->reason
-						== WIFI_REASON_ASSOC_LEAVE;
-
-					// is_wrong_password is kind of unreliable as the ESP APIs
-					// doesn't seem to expose good APIs to detect it in a good
-					// way. Source:
-					// https://www.reddit.com/r/esp32/comments/vsp9a9/identify_wifi_wrong_password/
 					if (is_wrong_password) {
+						STORED_LOGF("returned ENC_SYM(symbol_wrong_password) "
+									"to the blocked thread");
 						is_waiting = false;
 						lbm_unblock_ctx_unboxed(
 							waiting_cid, ENC_SYM(symbol_wrong_password)
 						);
 					} else if (!is_expected_disconnect) {
+						STORED_LOGF("returned ENC_SYM_NIL to the blocked thread"
+						);
 						is_waiting = false;
 						lbm_unblock_ctx_unboxed(waiting_cid, ENC_SYM_NIL);
 					}
@@ -265,6 +328,7 @@ static void event_listener(
 		switch (event_id) {
 			case IP_EVENT_STA_GOT_IP: {
 				if (is_waiting && waiting_op == WAITING_OP_CHANGE_NETWORK) {
+					STORED_LOGF("returned ENC_SYM_TRUE to the blocked thread");
 					is_waiting = false;
 					lbm_unblock_ctx_unboxed(waiting_cid, ENC_SYM_TRUE);
 				}
@@ -336,9 +400,7 @@ static void socket_op_recv(
 				}
 				default: {
 					// an error has occurred
-					STORED_LOGF(
-						"recv in socket_task failed, errno: %d", errno
-					);
+					STORED_LOGF("recv in socket_task failed, errno: %d", errno);
 					socket_op_return(ENC_SYM_NIL);
 				}
 			}
@@ -444,8 +506,6 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 			.bssid       = NULL,
 			.ssid        = NULL,
 			.channel     = channel,
-			// TODO: Unsure if you wan't active or passive scanning.
-			// Pretty sure you want passive.
 			.scan_type   = WIFI_SCAN_TYPE_PASSIVE,
 			.show_hidden = show_hidden,
 			.scan_time =
@@ -481,13 +541,16 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 			}
 			case ESP_ERR_INVALID_ARG: {
 				STORED_LOGF("esp_wifi_scan_get_ap_num returned "
-							  "ESP_ERR_INVALID_ARG! :O");
+							"ESP_ERR_INVALID_ARG! :O");
 				esp_wifi_clear_ap_list();
 				return ENC_SYM_EERROR;
 			}
 			case ESP_ERR_WIFI_NOT_INIT:
 			case ESP_ERR_WIFI_NOT_STARTED:
 			default: {
+				STORED_LOGF(
+					"esp_wifi_scan_get_ap_num failed, result: %d", result
+				);
 				esp_wifi_clear_ap_list();
 				return ENC_SYM_EERROR;
 			}
@@ -566,8 +629,7 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 
 	return ssid_list;
 }
-// TODO: Fix 'wrong-password being reported sometimes when reconnecting to the
-// same network with correct credentials.
+
 /**
  * signature: (wifi-connect ssid:string password:string|nil) -> bool
  *
@@ -637,7 +699,7 @@ static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
  *
  * Disconnect from any currently connected WIFI networks.
  */
-static lbm_value ext_wifi_disconnect() {
+static lbm_value ext_wifi_disconnect(lbm_value *args, lbm_uint argn) {
 	if (!check_mode()) {
 		return ENC_SYM_EERROR;
 	}
@@ -665,6 +727,48 @@ static lbm_value ext_wifi_status(lbm_value *args, lbm_uint argn) {
 	} else {
 		return ENC_SYM(symbol_disconnected);
 	}
+}
+
+/**
+ * signature: (wifi-auto-reconnect [should-reconnect:bool]) -> bool
+ *
+ * Set if the internal event handler should automatically attempt to reconnect
+ * to the current wifi network on disconnects.
+ *
+ * The wifi module already doesn't reconnect if it's known that the disconnect
+ * was due to incorrect credentials.
+ *
+ * A lbm event is always sent whenever the wifi disconnects and the wifi module
+ * doesn't try to reconnect. It is then the LBM codes responsibility to take
+ * action and reconnect.
+ *
+ * @param should_reconnect [optional] If the wifi module should attempt to
+ * reconnect on unknown disconnects. Leave out to instead query the current
+ * value, without modifying it.
+ * @return The previous setting, or the current if should-reconnect wasn't
+ * passed.
+ */
+static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
+	if (!check_mode()) {
+		return ENC_SYM_EERROR;
+	}
+
+	bool current_value = comm_wifi_get_auto_reconnect();
+
+	if (argn == 0) {
+		return lbm_enc_bool(current_value);
+	}
+
+	if (!lbm_is_bool(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+
+	bool should_reconnect = lbm_dec_bool(args[0]);
+
+	// we can ignore the return value since we already checked the mode.
+	comm_wifi_set_auto_reconnect(should_reconnect);
+
+	return lbm_enc_bool(current_value);
 }
 
 /**
@@ -728,9 +832,7 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 	{
 		int result = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
 		if (result != 0) {
-			STORED_LOGF(
-				"connect failed, result: %d, errno: %d", result, errno
-			);
+			STORED_LOGF("connect failed, result: %d, errno: %d", result, errno);
 
 			shutdown(sock, 0);
 			close(sock);
@@ -1091,6 +1193,7 @@ void lispif_load_wifi_extensions(void) {
 	lbm_add_extension("wifi-connect", ext_wifi_connect);
 	lbm_add_extension("wifi-disconnect", ext_wifi_disconnect);
 	lbm_add_extension("wifi-status", ext_wifi_status);
+	lbm_add_extension("wifi-auto-reconnect", ext_wifi_auto_reconnect);
 	lbm_add_extension("tcp-connect", ext_tcp_connect);
 	lbm_add_extension("tcp-close", ext_tcp_close);
 	lbm_add_extension("tcp-status", ext_tcp_status);

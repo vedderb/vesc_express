@@ -226,7 +226,9 @@ static uint8_t default_zero = 0;
 static void attr_write_handler(
 	uint16_t attr_handle, uint16_t len, uint8_t value[len]
 ) {
-	// TODO: Add check if the event has been activated.
+	if (!event_ble_rx_en) {
+		return;
+	}
 	// This produces the lbm list ('event-ble-rx handle value).
 
 	lbm_flat_value_t flat;

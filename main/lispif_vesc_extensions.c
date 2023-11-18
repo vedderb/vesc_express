@@ -1395,6 +1395,8 @@ static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 		event_esp_now_rx_en = en;
 	} else if (name == sym_event_ble_rx) {
 		event_ble_rx_en = en;
+	} else if (name == sym_event_wifi_disconnect) {
+		event_wifi_disconnect_en = en;
 	} else if (name == sym_bms_chg_allow) {
 		event_bms_chg_allow_en = en;
 	} else if (name == sym_bms_bal_ovr) {

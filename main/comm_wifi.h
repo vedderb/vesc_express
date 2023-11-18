@@ -99,6 +99,27 @@ bool comm_wifi_change_network(const char *ssid, const char *password);
 */
 bool comm_wifi_disconnect_network();
 
+// TODO: It kind of sucks that the wifi-connect
+// LBM extension can return nil, while comm_wifi automatically retries in the
+// background and successfully reconnects without notifying the user. But maybe
+// that isn't that bad?
+/**
+ * Configure whether the comm_wifi module should automatically try to
+ * reconnect wifi on disconnects.
+ * 
+ * @return False if wifi was not in station mode, or true otherwise.
+*/
+bool comm_wifi_set_auto_reconnect(bool should_reconnect);
+
+/**
+ * Get whetere the comm_wifi module will automatically try to reconnect wifi on
+ * disconnects. Essentially just gets the value set by
+ * comm_wifi_set_auto_reconnect.
+ * 
+ * @return The current setting, or false if wifi is not in station mode.
+*/
+bool comm_wifi_get_auto_reconnect();
+
 /**
  * Create a new TCP socket managed by comm_wifi.
  * The returned socket is completely uninitialized as returned by the `socket()`
