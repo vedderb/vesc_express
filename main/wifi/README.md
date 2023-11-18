@@ -101,6 +101,9 @@ being returned. The mechanism for detecting authentication failures
 unfortunately isn't that reliable, so you may want to retry when receiving `nil`
 to be sure.
 
+Note that a negative returned result doesn't always mean that the VESC isn't
+connected. See [`wifi-auto-reconnect`](#wifi-auto-reconnect).
+
 Example where we connect to the network 'Example 1':
 ```clj
 (wifi-connect "Example 1" "wordpass")
@@ -175,10 +178,10 @@ where connecting to a network using [`wifi-connect`](#wifi-connect), and it
 failed for some unknown reason. The `wifi-connect` extension would then return
 `nil`, while the internal event loop attempts to reconnect. If it then succeeds
 on the second try, you've got an inconsistency between the result reported by
-`wifi-connect` and the actual connection status. **In conclusion**: if you
-disable automatic reconnections, it is guaranteed that when `wifi-connect`
-returns `nil` or `wrong-password` the VESC isn't connected to a WiFi network,
-and never will be unless the lbm code takes action.
+`wifi-connect` and the actual connection status. **In conclusion: when you
+disable automatic reconnections it is guaranteed that if `wifi-connect` returns
+`nil` or `wrong-password`, then the VESC isn't connected to a WiFi network, and
+never will be unless the lbm code takes action.**
 
 If you disable automatic reconnecting it *is crucial* that you have set up an
 event listener that listens for [disconnect events](#events) and takes the
