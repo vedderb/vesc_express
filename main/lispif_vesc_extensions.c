@@ -31,6 +31,7 @@
 #include "lispif_ble_extensions.h"
 #include "lbm_constants.h"
 
+#include "lbm_vesc_utils.h"
 #include "commands.h"
 #include "comm_can.h"
 #include "conf_general.h"
@@ -308,6 +309,32 @@ static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
 
 	lbm_free(print_val_buffer);
 
+	return ENC_SYM_TRUE;
+}
+
+/**
+ * signature: (puts string)
+ * 
+ * Print string without surrounding it with "quotes" first.
+ * 
+ * @param string The string to print. Strings longer than 400 characters will be
+ * trimmed.
+*/
+static lbm_value ext_puts(lbm_value *args, lbm_uint argn) {
+	if (argn > 1) {
+		lbm_set_error_reason("puts can only take a single string to print at a time");
+		return ENC_SYM_EERROR;
+	}
+	
+	LBM_CHECK_ARGN(1);
+	
+	if (!lbm_is_array_r(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+	
+	const char *string = lbm_dec_str(args[0]);
+	commands_printf_lisp("%s", string);
+	
 	return ENC_SYM_TRUE;
 }
 
@@ -3960,6 +3987,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// Various commands
 	lbm_add_extension("print", ext_print);
+	lbm_add_extension("puts", ext_puts);
 	lbm_add_extension("get-bms-val", ext_get_bms_val);
 	lbm_add_extension("set-bms-val", ext_set_bms_val);
 	lbm_add_extension("send-bms-can", ext_send_bms_can);
