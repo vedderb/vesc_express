@@ -32,6 +32,7 @@
 #include "lbm_defines.h"
 #include "lbm_types.h"
 #include "lbm_memory.h"
+#include "lbm_flat_value.h"
 #include "lbm_c_interop.h"
 #include "extensions.h"
 
@@ -87,7 +88,8 @@ static bool register_symbols(void) {
 
 // For the even listener callback.
 typedef enum {
-	WAITING_OP_CHANGE_NETWORK = 0,
+	WAITING_OP_SCAN_AP = 0,
+	WAITING_OP_CHANGE_NETWORK,
 } waiting_op_t;
 
 static volatile _Atomic(bool) is_waiting;
@@ -204,6 +206,29 @@ static void handle_wifi_disconnect_event(uint8_t reason, bool from_extension) {
 static void event_listener(
 	esp_event_base_t event_base, int32_t event_id, void *event_data
 ) {
+	void return_unboxed(lbm_value value) {
+		STORED_LOGF("returning value to cid: %d", return_cid);
+
+		if (!lbm_unblock_ctx_unboxed(waiting_cid, value)) {
+			STORED_LOGF("lbm_unblock_ctx_unboxed failed");
+		} else {
+			STORED_LOGF("event_listener return_unboxed succeeded");
+		}
+
+		is_waiting = false;
+	}
+	void return_flat(lbm_flat_value_t * value) {
+		STORED_LOGF("returning flat value to cid: %d", return_cid);
+
+		if (!lbm_unblock_ctx(waiting_cid, value)) {
+			STORED_LOGF("lbm_unblock_ctx failed, value: %p", value);
+		} else {
+			STORED_LOGF("event_listener return_flat succeeded");
+		}
+
+		is_waiting = false;
+	}
+
 	if (event_base == WIFI_EVENT) {
 		STORED_LOGF("WIFI event: %d", event_id);
 	} else if (event_base == IP_EVENT) {
@@ -214,6 +239,105 @@ static void event_listener(
 
 	if (event_base == WIFI_EVENT) {
 		switch (event_id) {
+			case WIFI_EVENT_SCAN_DONE: {
+				if (is_waiting && waiting_op == WAITING_OP_SCAN_AP) {
+					uint16_t len;
+					{
+						esp_err_t result = esp_wifi_scan_get_ap_num(&len);
+						switch (result) {
+							case ESP_OK: {
+								break;
+							}
+							case ESP_ERR_INVALID_ARG: {
+								STORED_LOGF("esp_wifi_scan_get_ap_num returned "
+											"ESP_ERR_INVALID_ARG! :O");
+								esp_wifi_clear_ap_list();
+								return_unboxed(ENC_SYM_EERROR);
+								return;
+							}
+							case ESP_ERR_WIFI_NOT_INIT:
+							case ESP_ERR_WIFI_NOT_STARTED:
+							default: {
+								STORED_LOGF(
+									"esp_wifi_scan_get_ap_num failed, result: "
+									"%d",
+									result
+								);
+								esp_wifi_clear_ap_list();
+								return_unboxed(ENC_SYM_EERROR);
+								return;
+							}
+						}
+					}
+
+					wifi_ap_record_t records[len];
+					{
+						esp_err_t result =
+							esp_wifi_scan_get_ap_records(&len, records);
+						switch (result) {
+							case ESP_OK: {
+								break;
+							}
+							case ESP_ERR_NO_MEM: {
+								lbm_set_error_reason(error_esp_no_memory);
+								// TODO: Is this necessary?
+								esp_wifi_clear_ap_list();
+								return_unboxed(ENC_SYM_FATAL_ERROR);
+								return;
+							}
+							default: {
+								// TODO: Is this necessary?
+								esp_wifi_clear_ap_list();
+								return_unboxed(ENC_SYM_EERROR);
+								return;
+							}
+						}
+					}
+
+					lbm_flat_value_t value;
+					{
+						// +10: to be safe
+						size_t size = 9 + 10 + 28 * len;
+						for (size_t i = 0; i < len; i++) {
+							size += strlen((char *)records[i].ssid);
+						}
+
+						if (!lbm_start_flatten(&value, size)) {
+							STORED_LOGF(
+								"Failed lbm_start_flatten of size: %u", size
+							);
+							return_unboxed(ENC_SYM_EERROR);
+							return;
+						}
+					}
+					/* produces:
+					(
+						..(ssid rssi channel)
+					) */
+					for (size_t i = 0; i < len; i++) {
+						// 28
+						// this one belongs to the outer SYM_NIL.
+						f_cons(&value); // +1
+
+						f_cons(&value); // +1
+						size_t ssid_len = strlen((char *)records[i].ssid);
+						// +5 + ssid_len
+						f_lbm_array(&value, ssid_len + 1, records[i].ssid);
+
+						f_cons(&value);               // +1
+						f_i(&value, records[i].rssi); // +5
+
+						f_cons(&value);                  // +1
+						f_i(&value, records[i].primary); // +5
+
+						f_sym(&value, SYM_NIL); // +9
+					}
+					f_sym(&value, SYM_NIL); // +9
+
+					return_flat(&value);
+				}
+				break;
+			}
 			case WIFI_EVENT_STA_DISCONNECTED: {
 				wifi_event_sta_disconnected_t *data =
 					(wifi_event_sta_disconnected_t *)event_data;
@@ -244,7 +368,7 @@ static void event_listener(
 					// not sure why the connection failed, and that we
 					// should wait for the next reconnect attempt and
 					// hope for a different outcome.
-					bool is_expected_disconnect =
+					bool is_undetermined_disconnect =
 						// This indicates the event was caused by the
 						// network change and is normal.
 						data->reason == WIFI_REASON_ASSOC_LEAVE
@@ -258,15 +382,11 @@ static void event_listener(
 					if (is_wrong_password) {
 						STORED_LOGF("returned ENC_SYM(symbol_wrong_password) "
 									"to the blocked thread");
-						is_waiting = false;
-						lbm_unblock_ctx_unboxed(
-							waiting_cid, ENC_SYM(symbol_wrong_password)
-						);
-					} else if (!is_expected_disconnect) {
+						return_unboxed(ENC_SYM(symbol_wrong_password));
+					} else if (!is_undetermined_disconnect) {
 						STORED_LOGF("returned ENC_SYM_NIL to the blocked thread"
 						);
-						is_waiting = false;
-						lbm_unblock_ctx_unboxed(waiting_cid, ENC_SYM_NIL);
+						return_unboxed(ENC_SYM_NIL);
 					}
 				}
 				break;
@@ -277,8 +397,7 @@ static void event_listener(
 			case IP_EVENT_STA_GOT_IP: {
 				if (is_waiting && waiting_op == WAITING_OP_CHANGE_NETWORK) {
 					STORED_LOGF("returned ENC_SYM_TRUE to the blocked thread");
-					is_waiting = false;
-					lbm_unblock_ctx_unboxed(waiting_cid, ENC_SYM_TRUE);
+					return_unboxed(ENC_SYM_TRUE);
 				}
 				break;
 			}
@@ -337,27 +456,33 @@ static void socket_task(void *arg) {
 
 				int start = xTaskGetTickCount();
 				do {
-					ssize_t len = recv(socket_param_sock, buffer, socket_param_max_len, MSG_DONTWAIT);
+					ssize_t len = recv(
+						socket_param_sock, buffer, socket_param_max_len,
+						MSG_DONTWAIT
+					);
 
 					if (len < 0) {
 						STORED_LOGF("errno: %d", errno);
 
 						switch (errno) {
-						case EWOULDBLOCK: {
-							// TODO: Is this a good sleep interval?
-							vTaskDelay(10 / portTICK_PERIOD_MS);
-							continue;
-						}
-						case ECONNRESET:
-						case ECONNABORTED:
-						case ENOTCONN: {
-							socket_op_return(ENC_SYM(symbol_disconnected));
-						}
-						default: {
-							// an error has occurred
-							STORED_LOGF("recv in socket_task failed, errno: %d", errno);
-							socket_op_return(ENC_SYM_NIL);
-						}
+							case EWOULDBLOCK: {
+								// TODO: Is this a good sleep interval?
+								vTaskDelay(10 / portTICK_PERIOD_MS);
+								continue;
+							}
+							case ECONNRESET:
+							case ECONNABORTED:
+							case ENOTCONN: {
+								socket_op_return(ENC_SYM(symbol_disconnected));
+							}
+							default: {
+								// an error has occurred
+								STORED_LOGF(
+									"recv in socket_task failed, errno: %d",
+									errno
+								);
+								socket_op_return(ENC_SYM_NIL);
+							}
 						}
 					} else {
 						STORED_LOGF("received %d bytes in socket_task", len);
@@ -372,7 +497,8 @@ static void socket_task(void *arg) {
 							}
 
 							STORED_LOGF(
-									"packing flat value for array size: %u", result_size
+								"packing flat value for array size: %u",
+								result_size
 							);
 							lbm_flat_value_t value;
 							if (!f_pack_array(&value, buffer, result_size)) {
@@ -385,7 +511,9 @@ static void socket_task(void *arg) {
 					}
 				} while (UTILS_AGE_S(start) < socket_param_timeout_secs);
 
-				STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
+				STORED_LOGF(
+					"timed out after %d seconds", (double)UTILS_AGE_S(start)
+				);
 
 				socket_op_return(ENC_SYM(symbol_no_data));
 			}
@@ -393,7 +521,6 @@ static void socket_task(void *arg) {
 	}
 }
 
-static bool scan_results_ready = false;
 /**
  * signature: (wifi-scan-networks [scan-time:number]
  * [channel:number] [show-hidden:bool]) -> ssids where ssids = list
@@ -436,164 +563,42 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 		show_hidden = lbm_dec_bool(args[2]);
 	}
 
-	if (!scan_results_ready) {
-		// See documentation for config parameters:
-		// https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/wifi.html#scan-configuration
-		wifi_scan_config_t config = {
-			.bssid       = NULL,
-			.ssid        = NULL,
-			.channel     = channel,
-			.scan_type   = WIFI_SCAN_TYPE_PASSIVE,
-			.show_hidden = show_hidden,
-			.scan_time =
-				{.active = {scan_time, scan_time}, .passive = scan_time},
-		};
+	// See documentation for config parameters:
+	// https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/wifi.html#scan-configuration
+	wifi_scan_config_t config = {
+		.bssid       = NULL,
+		.ssid        = NULL,
+		.channel     = channel,
+		.scan_type   = WIFI_SCAN_TYPE_PASSIVE,
+		.show_hidden = show_hidden,
+		.scan_time   = {.active = {scan_time, scan_time}, .passive = scan_time},
+	};
 
-		esp_err_t result = esp_wifi_scan_start(&config, true);
-		switch (result) {
-			case ESP_OK: {
-				break;
-			}
-			case ESP_ERR_WIFI_NOT_STARTED: {
-				// Should not be possible.
-				return ENC_SYM_FATAL_ERROR;
-			}
-			case ESP_ERR_WIFI_STATE: {
-				lbm_set_error_reason(error_wifi_connecting);
-				return ENC_SYM_EERROR;
-			}
-			case ESP_ERR_WIFI_TIMEOUT:
-			default: {
-				return ENC_SYM_EERROR;
-			}
+	esp_err_t result = esp_wifi_scan_start(&config, false);
+	switch (result) {
+		case ESP_OK: {
+			break;
+		}
+		case ESP_ERR_WIFI_NOT_STARTED: {
+			// Should not be possible.
+			return ENC_SYM_FATAL_ERROR;
+		}
+		case ESP_ERR_WIFI_STATE: {
+			lbm_set_error_reason(error_wifi_connecting);
+			return ENC_SYM_EERROR;
+		}
+		case ESP_ERR_WIFI_TIMEOUT:
+		default: {
+			return ENC_SYM_EERROR;
 		}
 	}
 
-	uint16_t len;
-	{
-		esp_err_t result = esp_wifi_scan_get_ap_num(&len);
-		switch (result) {
-			case ESP_OK: {
-				break;
-			}
-			case ESP_ERR_INVALID_ARG: {
-				STORED_LOGF("esp_wifi_scan_get_ap_num returned "
-							"ESP_ERR_INVALID_ARG! :O");
-				esp_wifi_clear_ap_list();
-				return ENC_SYM_EERROR;
-			}
-			case ESP_ERR_WIFI_NOT_INIT:
-			case ESP_ERR_WIFI_NOT_STARTED:
-			default: {
-				STORED_LOGF(
-					"esp_wifi_scan_get_ap_num failed, result: %d", result
-				);
-				esp_wifi_clear_ap_list();
-				return ENC_SYM_EERROR;
-			}
-		}
-	}
+	waiting_cid = lbm_get_current_cid();
+	lbm_block_ctx_from_extension();
+	waiting_op = WAITING_OP_SCAN_AP;
+	is_waiting = true;
 
-	bool allocate_success = true;
-	lbm_value ssid_list   = lbm_allocate_empty_list_grid(len, 3);
-	allocate_success      = ssid_list != ENC_SYM_MERROR;
-
-	lbm_value ssid_buffers[len];
-	if (allocate_success) {
-		for (uint16_t i = 0; i < len; i++) {
-			if (!lbm_heap_allocate_array(&ssid_buffers[i], SSID_SIZE)) {
-				allocate_success = false;
-				break;
-			}
-		}
-	}
-
-	if (!allocate_success) {
-		if (scan_results_ready == false) {
-			// We can only retry once.
-			scan_results_ready = true;
-		} else {
-			// Cleanup since we failed twice.
-			scan_results_ready = false;
-			esp_wifi_clear_ap_list();
-		}
-
-		return ENC_SYM_MERROR;
-	}
-
-	for (uint16_t i = 0; i < len; i++) {
-		lbm_value ssid_str = ssid_buffers[i];
-		uint8_t *data      = lbm_heap_array_get_data(ssid_str);
-		if (data == NULL) {
-			STORED_LOGF(
-				"pre check invalid ssid_buffers[%u] data pointer "
-				"%p, "
-				"lbm_is_array_r(ssid_str): %u, "
-				"lbm_is_array_rw(ssid_str): %u, "
-				"type_of: 0x%x",
-				i, data, lbm_is_array_r(ssid_str), lbm_is_array_rw(ssid_str),
-				lbm_type_of(ssid_str)
-			);
-			return false;
-		}
-	}
-
-	{
-		wifi_ap_record_t records[len];
-		uint16_t written_len = len;
-		esp_err_t result = esp_wifi_scan_get_ap_records(&written_len, records);
-		switch (result) {
-			case ESP_OK: {
-				break;
-			}
-			case ESP_ERR_NO_MEM: {
-				lbm_set_error_reason(error_esp_no_memory);
-				// TODO: Is this necessary?
-				esp_wifi_clear_ap_list();
-				return ENC_SYM_FATAL_ERROR;
-			}
-			default: {
-				// TODO: Is this necessary?
-				esp_wifi_clear_ap_list();
-				return ENC_SYM_EERROR;
-			}
-		}
-
-		lbm_value current = ssid_list;
-		for (uint16_t i = 0; i < written_len; i++) {
-			if (!lbm_is_cons(current)) {
-				STORED_LOGF("ran out of cons cells in outer list");
-				return false;
-			}
-
-			lbm_value ssid_str = ssid_buffers[i];
-			uint8_t *data      = lbm_heap_array_get_data(ssid_str);
-			if (data == NULL) {
-				STORED_LOGF(
-						"invalid ssid_buffers[%u] data pointer %p, "
-						"lbm_is_array_r(ssid_str): %u, lbm_is_array_rw(ssid_str): %u, "
-						"type_of: 0x%x",
-						i, data, lbm_is_array_r(ssid_str), lbm_is_array_rw(ssid_str),
-						lbm_type_of(ssid_str)
-				);
-				return false;
-			}
-			memcpy(data, records[i].ssid, SSID_SIZE);
-			lbm_value signal_strength = lbm_enc_i(records[i].rssi);
-			lbm_value primary_channel = lbm_enc_u(records[i].primary);
-
-			lbm_value entry = lbm_car(current);
-			lbm_set_car(entry, ssid_str);
-			entry = lbm_cdr(entry);
-			lbm_set_car(entry, signal_strength);
-			entry = lbm_cdr(entry);
-			lbm_set_car(entry, primary_channel);
-
-			current = lbm_cdr(current);
-		}
-	}
-
-	return ssid_list;
+	return ENC_SYM_NIL;
 }
 
 /**
@@ -1147,7 +1152,7 @@ void lispif_load_wifi_extensions(void) {
 
 		xSemaphoreGive(socket_mutex);
 		xTaskCreatePinnedToCore(
-				socket_task, "lbm_sockets", 2048, NULL, 3, NULL, tskNO_AFFINITY
+			socket_task, "lbm_sockets", 2048, NULL, 3, NULL, tskNO_AFFINITY
 		);
 		comm_wifi_set_event_listener(event_listener);
 
