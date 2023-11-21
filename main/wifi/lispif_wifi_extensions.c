@@ -1,5 +1,6 @@
 /*
 	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
+	Copyright 2023 Benjamin Vedder      benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -54,8 +55,6 @@
 static char *error_mode_invalid = "WIFI not in Station mode.";
 static char *error_thread_waiting =
 	"Another thread is currently executing WIFI commands.";
-static char *error_socket_waiting =
-	"Another thread is currently using the TCP API.";
 static char *error_wifi_connecting       = "Currently connecting to network.";
 static char *error_esp_no_memory         = "ESP ran out of memory Internally.";
 static char *error_esp_too_long_ssid     = "Too long ssid, max: 31 chars.";
@@ -67,6 +66,8 @@ static lbm_uint symbol_no_data        = 0;
 static lbm_uint symbol_connected      = 0;
 static lbm_uint symbol_connecting     = 0;
 static lbm_uint symbol_disconnected   = 0;
+
+static volatile bool init_done = false;
 
 static bool register_symbols(void) {
 	bool res = true;
@@ -92,27 +93,9 @@ typedef enum {
 	WAITING_OP_CHANGE_NETWORK,
 } waiting_op_t;
 
-static volatile _Atomic(bool) is_waiting;
-static volatile _Atomic(waiting_op_t) waiting_op;
-static volatile _Atomic(lbm_cid) waiting_cid;
-
-// For the socket operations thread. These are set to indicate that an
-// extensions wants to the thread to perform some operation.
-typedef enum {
-	SOCKET_OP_RECV = 0,
-	// TASK_OP_SEND,
-} socket_op_t;
-
-static volatile bool socket_created = false;
-static SemaphoreHandle_t socket_mutex;
-static volatile _Atomic(bool) socket_is_waiting = false;
-static volatile _Atomic(socket_op_t) socket_op;
-static volatile _Atomic(lbm_cid) socket_waiting_cid;
-// operation parameters
-static volatile _Atomic(size_t) socket_param_max_len;
-static volatile _Atomic(float) socket_param_timeout_secs;
-static volatile _Atomic(int) socket_param_sock;
-static volatile _Atomic(bool) socket_param_as_str;
+static volatile bool is_waiting;
+static volatile waiting_op_t waiting_op;
+static volatile lbm_cid waiting_cid;
 
 /**
  * Checks that the correct WIFI was configured in the custom config, and sets
@@ -131,35 +114,6 @@ static bool check_mode() {
 		return false;
 	}
 	return true;
-}
-
-/**
- * Obtains the socket task lock, preventing other threads from performing socket
- * operations until this one is completed. (And consequently, preventing this
- * thread from continuing if another operation is being executed in the separate
- * socket task thread.)
- *
- * This should be called at the start of any extension that does any operations
- * on sockets.
- *
- * Make sure that free_socket_task is called once this operation is done, (which
- * might be from another thread)!
- */
-static bool lock_socket_task() {
-	if (!xSemaphoreTake(
-			socket_mutex, MUTEX_LOCK_TIMEOUT_MS / portTICK_PERIOD_MS
-		)) {
-		lbm_set_error_reason(error_socket_waiting);
-		return false;
-	}
-
-	return true;
-}
-
-static void free_socket_task() {
-	// TODO: Can we ignore the return value?
-	int result = xSemaphoreGive(socket_mutex);
-	(void)result;
 }
 
 /**
@@ -742,6 +696,24 @@ static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_bool(current_value);
 }
 
+#define CUSTOM_SOCKET_COUNT 10
+static int custom_sockets[CUSTOM_SOCKET_COUNT];
+static int custom_socket_now = 0;
+
+static bool custom_socket_valid(int socket) {
+	if (socket < 0) {
+		return false;
+	}
+
+	for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
+		if (custom_sockets[i] == socket) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /**
  * signature: (tcp-connect dest:str port:number) -> number|nil|error
  * where
@@ -758,24 +730,21 @@ static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
  * @return todo
  */
 static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode() || !lock_socket_task()) {
+	if (!check_mode()) {
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_check_argn(argn, 2)) {
-		free_socket_task();
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_is_array_r(args[0]) || !lbm_is_number(args[1])) {
-		free_socket_task();
 		return ENC_SYM_TERROR;
 	}
 
 	const char *host = lbm_dec_str(args[0]);
 	if (!host) {
 		// should be impossible
-		free_socket_task();
 		return ENC_SYM_FATAL_ERROR;
 	}
 
@@ -786,17 +755,21 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 		err_t result = netconn_gethostbyname(host, &ip_addr);
 		if (result != ERR_OK) {
 			STORED_LOGF("netconn_gethostbyname failed, result: %d", result);
-			free_socket_task();
 			return ENC_SYM(symbol_unknown_host);
 		}
 	}
 
 	struct sockaddr_in addr = create_sockaddr_in(ip_addr, port);
 
-	int sock = comm_wifi_open_socket();
+	if (custom_socket_now >= CUSTOM_SOCKET_COUNT) {
+		lbm_set_error_reason("Too many sockets open.");
+		return ENC_SYM_EERROR;
+	}
+
+	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+
 	if (sock < 0) {
 		STORED_LOGF("comm_wifi_open_socket failed, result: %d", sock);
-		free_socket_task();
 		return ENC_SYM_NIL;
 	}
 
@@ -807,10 +780,12 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 
 			shutdown(sock, 0);
 			close(sock);
-			free_socket_task();
 			return ENC_SYM_NIL;
 		}
 	}
+
+
+	custom_sockets[custom_socket_now++] = sock;
 
 	// TODO: Add keep alive configuration options.
 	int keep_alive    = true;
@@ -825,7 +800,6 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 	setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keep_count, sizeof(int));
 	setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(int));
 
-	free_socket_task();
 	return lbm_enc_i(sock);
 }
 
@@ -843,28 +817,43 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
  * (@todo: be more precise).
  */
 static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
-	if (!check_mode() || !lock_socket_task()) {
+	if (!check_mode()) {
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_check_argn(argn, 1)) {
-		free_socket_task();
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_is_number(args[0])) {
-		free_socket_task();
 		return ENC_SYM_TERROR;
 	}
 
 	int sock = lbm_dec_as_i32(args[0]);
 
-	if (!comm_wifi_close_socket(sock)) {
-		free_socket_task();
+	bool socket_found = false;
+	int socket_ind = 0;
+	for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
+		if (sock == custom_sockets[i]) {
+			socket_found = true;
+			socket_ind = i;
+			break;
+		}
+	}
+
+	if (!socket_found) {
 		return ENC_SYM_NIL;
 	}
 
-	free_socket_task();
+	for (int i = socket_ind;i < custom_socket_now;i++) {
+		custom_sockets[i] = custom_sockets[i + 1];
+	}
+
+	custom_socket_now--;
+
+	shutdown(sock, 0);
+	close(sock);
+
 	return ENC_SYM_TRUE;
 }
 
@@ -886,25 +875,22 @@ static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
  * internal process, that shouldn't happen).
  */
 static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
-	if (!check_mode() || !lock_socket_task()) {
+	if (!check_mode()) {
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_check_argn(argn, 1)) {
-		free_socket_task();
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_is_number(args[0])) {
-		free_socket_task();
 		return ENC_SYM_TERROR;
 	}
 
 	int sock = lbm_dec_as_i32(args[0]);
 
-	if (!comm_wifi_socket_is_valid(sock)) {
+	if (!custom_socket_valid(sock)) {
 		STORED_LOGF("socket %d did not exist in registry", sock);
-		free_socket_task();
 		return ENC_SYM_NIL;
 	}
 
@@ -932,13 +918,11 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
 			}
 			case ENOTSOCK:
 			default: {
-				free_socket_task();
 				return ENC_SYM_NIL;
 			}
 		}
 	}
 
-	free_socket_task();
 	if (connected) {
 		return ENC_SYM(symbol_connected);
 	} else {
@@ -952,17 +936,15 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
  * @todo: Document this
  */
 static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
-	if (!check_mode() || !lock_socket_task()) {
+	if (!check_mode()) {
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_check_argn(argn, 2)) {
-		free_socket_task();
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_is_number(args[0]) || !lbm_is_array_r(args[1])) {
-		free_socket_task();
 		return ENC_SYM_TERROR;
 	}
 
@@ -973,14 +955,12 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 	const char *data                = (char *)array->data;
 	if (!array || !array->data) {
 		// Should be impossible.
-		free_socket_task();
 		return ENC_SYM_FATAL_ERROR;
 	}
 
 	ssize_t len = send(sock, data, size, 0);
 	if (len == -1) {
 		STORED_LOGF("send failed, errno: %d", errno);
-		free_socket_task();
 		switch (errno) {
 			// Trying to send remote has disconnected seems to
 			// generate a ECONNABORTED the first time, then ENOTCONN
@@ -1001,8 +981,95 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 
 	STORED_LOGF("sent %d bytes", len);
 
-	free_socket_task();
 	return ENC_SYM_TRUE;
+}
+
+typedef struct {
+	lbm_cid return_cid;
+	int socket;
+	int max_len;
+	bool as_str;
+	float timeout;
+} recv_task_state;
+
+static void recv_task(void *arg) {
+	recv_task_state *s = (recv_task_state*)arg;
+
+	uint8_t *buffer = malloc(s->max_len + 1);
+
+	if (!buffer) {
+		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
+		lbm_set_error_reason(error_esp_no_memory);
+		goto recv_cleanup;
+	}
+
+	int start = xTaskGetTickCount();
+
+	for (;;) {
+		ssize_t len = recv(s->socket, buffer, s->max_len, MSG_DONTWAIT);
+
+		if (len < 0) {
+			switch (errno) {
+			case EWOULDBLOCK: {
+				vTaskDelay(1);
+				continue;
+			}
+			case ECONNRESET:
+			case ECONNABORTED:
+			case ENOTCONN: {
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
+				goto recv_cleanup;
+			}
+			default: {
+				// an error has occurred
+				STORED_LOGF("recv in socket_task failed, errno: %d", errno);
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_NIL);
+				goto recv_cleanup;
+			}
+			}
+		} else {
+			if (len == 0) {
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
+				goto recv_cleanup;
+			} else {
+				size_t result_size = len;
+				if (s->as_str) {
+					result_size++;
+					buffer[len] = '\0';
+				}
+
+				STORED_LOGF(
+						"packing flat value for array size: %u", result_size
+				);
+				lbm_flat_value_t value;
+				if (!f_pack_array(&value, buffer, result_size)) {
+					STORED_LOGF("lbm_start_flatten failed");
+					lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
+				}
+
+				if (!lbm_unblock_ctx(s->return_cid, &value)) {
+					lbm_free(value.buf);
+				}
+
+				goto recv_cleanup;
+			}
+		}
+
+		if (UTILS_AGE_S(start) > s->timeout) {
+			STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
+			lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_no_data));
+			break;
+		}
+	}
+
+	recv_cleanup:
+
+	if (buffer) {
+		free(buffer);
+	}
+
+	free(s);
+	vTaskDelete(NULL);
 }
 
 /**
@@ -1031,17 +1098,15 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
  * writing this) network error occurred.
  */
 static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
-	if (!check_mode() || !lock_socket_task()) {
+	if (!check_mode()) {
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_check_argn_range(argn, 2, 4)) {
-		free_socket_task();
 		return ENC_SYM_EERROR;
 	}
 
 	if (!lbm_is_number(args[0]) || !lbm_is_number(args[1])) {
-		free_socket_task();
 		return ENC_SYM_TERROR;
 	}
 
@@ -1052,7 +1117,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 	float timeout_secs = 1.0; // assign to get compiler to shut up
 	if (argn >= 3) {
 		if (!lbm_is_number(args[2]) && !lbm_is_symbol_nil(args[2])) {
-			free_socket_task();
 			return ENC_SYM_TERROR;
 		}
 		should_wait = !lbm_is_symbol_nil(args[2]);
@@ -1064,7 +1128,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 	bool as_str = true;
 	if (argn >= 4) {
 		if (!lbm_is_bool(args[3])) {
-			free_socket_task();
 			return ENC_SYM_TERROR;
 		}
 
@@ -1072,18 +1135,27 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (should_wait) {
-		lbm_block_ctx_from_extension();
+		recv_task_state *s = malloc(sizeof(recv_task_state));
 
-		socket_waiting_cid        = lbm_get_current_cid();
-		socket_op                 = SOCKET_OP_RECV;
-		socket_param_max_len      = max_len;
-		socket_param_timeout_secs = timeout_secs;
-		socket_param_sock         = sock;
-		socket_param_as_str       = as_str;
-		socket_is_waiting         = true;
-		STORED_LOGF("socket_waiting_cid: %d", socket_waiting_cid);
+		if (s) {
+			lbm_block_ctx_from_extension();
+			STORED_LOGF("socket_waiting_cid: %d", socket_waiting_cid);
 
-		return ENC_SYM_NIL;
+			s->return_cid = lbm_get_current_cid();
+			s->max_len = max_len;
+			s->timeout = timeout_secs;
+			s->socket = sock;
+			s->as_str = as_str;
+
+			xTaskCreatePinnedToCore(
+					recv_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
+			);
+
+			return ENC_SYM_NIL;
+		} else {
+			lbm_set_error_reason(error_esp_no_memory);
+			return ENC_SYM_FATAL_ERROR;
+		}
 	} else {
 		lbm_value result;
 		size_t size = max_len;
@@ -1091,21 +1163,18 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			size++;
 		}
 		if (!lbm_create_array(&result, size)) {
-			free_socket_task();
 			return ENC_SYM_MERROR;
 		}
 
 		char *buffer = lbm_dec_array_data(result);
 		if (!buffer) {
 			// impossible
-			free_socket_task();
 			return ENC_SYM_FATAL_ERROR;
 		}
 
 		ssize_t len = recv(sock, buffer, max_len, MSG_DONTWAIT);
 		if (len == -1) {
 			STORED_LOGF("recv failed, errno: %d", errno);
-			free_socket_task();
 			switch (errno) {
 				case EWOULDBLOCK: {
 					return ENC_SYM(symbol_no_data);
@@ -1130,7 +1199,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			// bytes if the local code has called shutdown somewhere
 			// I think, but since these lbm APIs don't do that, we
 			// can ignore that case.)
-			free_socket_task();
 			return ENC_SYM(symbol_disconnected);
 		} else {
 			size_t size = len;
@@ -1141,7 +1209,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			lbm_array_shrink(result, size);
 		}
 
-		free_socket_task();
 		return result;
 	}
 }
@@ -1154,9 +1221,23 @@ void lispif_load_wifi_extensions(void) {
 		xTaskCreatePinnedToCore(
 			socket_task, "lbm_sockets", 2048, NULL, 3, NULL, tskNO_AFFINITY
 		);
+	if (!init_done) {
 		comm_wifi_set_event_listener(event_listener);
 
-		socket_created = true;
+		for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
+			custom_sockets[i] = -1;
+		}
+
+		init_done = true;
+	} else {
+		for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
+			if (custom_sockets[i] >= 0) {
+				shutdown(custom_sockets[i], 0);
+				close(custom_sockets[i]);
+			}
+
+			custom_sockets[i] = -1;
+		}
 	}
 
 	register_symbols();

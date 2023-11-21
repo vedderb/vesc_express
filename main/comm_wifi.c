@@ -57,11 +57,6 @@ static volatile bool wifi_config_changed = false;
 static wifi_config_t wifi_config = {0};
 
 static comm_wifi_event_cb_t event_listener = NULL;
-/**
- * List of every custom socket registered with comm_wifi_open_socket.
- * Negative entries signify open spots.
-*/
-static int custom_sockets[CUSTOM_SOCKET_COUNT];
 
 typedef struct {
 	PACKET_STATE_t *packet;
@@ -192,42 +187,6 @@ static const char *wifi_reason_to_str(wifi_err_reason_t reason) {
 		default:
 			return "unknown";
 	}
-}
-
-/**
- * Find the next index in custom_sockets that's free.
- * 
- * @return The found index, or -1 if every spot was taken.
-*/
-static ssize_t next_free_custom_socket() {
-	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
-		if (custom_sockets[i] < 0) {
-			return i;
-		}
-	}
-	
-	return -1;
-}
-
-/**
- * Find the index in custom_sockets of the given custom socket.
- * 
- * @param sock The socket to search for.
- * @return The found index of socket, or -1 if it didn't exist.
-*/
-static ssize_t find_custom_socket(int sock) {
-	if (sock < 0) {
-		// Just to be sure.
-		return -1;
-	}
-	
-	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
-		if (custom_sockets[i] == sock) {
-			return i;
-		}
-	}
-	
-	return -1;
 }
 
 static void do_comm(const int sock, comm_state *comm) {
@@ -482,10 +441,6 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len) {
 }
 
 void comm_wifi_init(void) {
-	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
-		custom_sockets[i] = -1;
-	}
-	
 	s_wifi_event_group = xEventGroupCreate();
 	esp_netif_init();
 	esp_event_loop_create_default();
@@ -623,14 +578,6 @@ void comm_wifi_disconnect(void) {
 		close(comm_hub.socket);
 		comm_hub.socket = -1;
 	}
-	
-	for (size_t i = 0; i < CUSTOM_SOCKET_COUNT; i++) {
-		if (custom_sockets[i] >= 0) {
-			shutdown(custom_sockets[i], 0);
-			close(custom_sockets[i]);
-			custom_sockets[i] = -1;
-		}
-	}
 }
 
 bool comm_wifi_change_network(const char *ssid, const char *password) {
@@ -731,43 +678,6 @@ bool comm_wifi_get_auto_reconnect() {
 	}
 	
 	return wifi_auto_reconnect;
-}
-
-int comm_wifi_open_socket() {
-	ssize_t index = next_free_custom_socket();
-	if (index == -1) {
-		return -1;
-	}
-
-	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-
-	if (sock == -1) {
-		STORED_LOGF("creating custom socket failed, errno: %d", errno);
-		return -1;
-	}
-	
-	custom_sockets[index] = sock;
-
-	return sock;
-}
-
-bool comm_wifi_close_socket(int sock) {
-	ssize_t index = find_custom_socket(sock);
-	if (index == -1) {
-		return false;
-	}
-
-	shutdown(sock, 0);
-	close(sock);
-
-	custom_sockets[index] = -1;
-
-	return true;
-}
-
-bool comm_wifi_socket_is_valid(int sock) {
-	ssize_t index = find_custom_socket(sock);
-	return index != -1;
 }
 
 void comm_wifi_set_event_listener(comm_wifi_event_cb_t handler) {
