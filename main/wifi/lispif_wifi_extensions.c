@@ -89,9 +89,9 @@ typedef enum {
 	WAITING_OP_CHANGE_NETWORK = 0,
 } waiting_op_t;
 
-static volatile _Atomic(bool) is_waiting;
-static volatile _Atomic(waiting_op_t) waiting_op;
-static volatile _Atomic(lbm_cid) waiting_cid;
+static volatile bool is_waiting;
+static volatile waiting_op_t waiting_op;
+static volatile lbm_cid waiting_cid;
 
 // For the socket operations thread. These are set to indicate that an
 // extensions wants to the thread to perform some operation.
@@ -101,14 +101,14 @@ typedef enum {
 } socket_op_t;
 
 static volatile bool socket_created = false;
-static volatile _Atomic(bool) socket_is_waiting = false;
-static volatile _Atomic(socket_op_t) socket_op;
-static volatile _Atomic(lbm_cid) socket_waiting_cid;
+static volatile bool socket_is_waiting = false;
+static volatile socket_op_t socket_op;
+static volatile lbm_cid socket_waiting_cid;
 // operation parameters
-static volatile _Atomic(size_t) socket_param_max_len;
-static volatile _Atomic(float) socket_param_timeout_secs;
-static volatile _Atomic(int) socket_param_sock;
-static volatile _Atomic(bool) socket_param_as_str;
+static volatile size_t socket_param_max_len;
+static volatile float socket_param_timeout_secs;
+static volatile int socket_param_sock;
+static volatile bool socket_param_as_str;
 
 /**
  * Checks that the correct WIFI was configured in the custom config, and sets
@@ -255,38 +255,6 @@ static void event_listener(
 	}
 }
 
-static void socket_op_return_unboxed(lbm_cid return_cid, lbm_value value) {
-	STORED_LOGF("returning value to cid: %d", return_cid);
-
-	if (!lbm_unblock_ctx_unboxed(return_cid, value)) {
-		STORED_LOGF("lbm_unblock_ctx_unboxed failed");
-	} else {
-		STORED_LOGF("socket_op_return succeeded");
-	}
-
-	socket_is_waiting = false;
-}
-static void socket_op_return_flat(lbm_cid return_cid, lbm_flat_value_t *value) {
-	STORED_LOGF("returning flat value to cid: %d", return_cid);
-
-	if (!lbm_unblock_ctx(return_cid, value)) {
-		STORED_LOGF("lbm_unblock_ctx failed, value: %p", value);
-	} else {
-		STORED_LOGF("socket_op_return_flat succeeded");
-	}
-
-	socket_is_waiting = false;
-}
-
-// clang-format doesn't seem to understand _Generic expressions...
-#define socket_op_return(value)                                                                                                                    \
-	{                                                                                                                                              \
-		_Generic((value), lbm_value: socket_op_return_unboxed, unsigned int: socket_op_return_unboxed, lbm_flat_value_t *: socket_op_return_flat)( \
-			return_cid, value                                                                                                                      \
-		);                                                                                                                                         \
-		return;                                                                                                                                    \
-	}
-
 static void socket_task(void *arg) {
 	(void)arg;
 
@@ -318,19 +286,20 @@ static void socket_task(void *arg) {
 						case ECONNRESET:
 						case ECONNABORTED:
 						case ENOTCONN: {
-							socket_op_return(ENC_SYM(symbol_disconnected));
+							lbm_unblock_ctx_unboxed(return_cid, ENC_SYM(symbol_disconnected));
+							break;
 						}
 						default: {
 							// an error has occurred
 							STORED_LOGF("recv in socket_task failed, errno: %d", errno);
-							socket_op_return(ENC_SYM_NIL);
+							lbm_unblock_ctx_unboxed(return_cid, ENC_SYM_NIL);
 						}
 						}
 					} else {
 						STORED_LOGF("received %d bytes in socket_task", len);
 
 						if (len == 0) {
-							socket_op_return(ENC_SYM(symbol_disconnected));
+							lbm_unblock_ctx_unboxed(return_cid, ENC_SYM(symbol_disconnected));
 						} else {
 							size_t result_size = len;
 							if (socket_param_as_str) {
@@ -344,17 +313,19 @@ static void socket_task(void *arg) {
 							lbm_flat_value_t value;
 							if (!f_pack_array(&value, buffer, result_size)) {
 								STORED_LOGF("lbm_start_flatten failed");
-								socket_op_return(ENC_SYM_EERROR);
+								lbm_unblock_ctx_unboxed(return_cid, ENC_SYM_EERROR);
 							}
 
-							socket_op_return(&value);
+							if (!lbm_unblock_ctx(return_cid, &value)) {
+								lbm_free(value.buf);
+							}
 						}
 					}
 				} while (UTILS_AGE_S(start) < socket_param_timeout_secs);
 
 				STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
 
-				socket_op_return(ENC_SYM(symbol_no_data));
+				lbm_unblock_ctx_unboxed(return_cid, ENC_SYM(symbol_no_data));
 			}
 		}
 	}
