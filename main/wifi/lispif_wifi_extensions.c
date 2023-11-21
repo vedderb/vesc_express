@@ -1117,6 +1117,8 @@ void lispif_load_wifi_extensions(void) {
 		}
 	}
 
+	custom_socket_now = 0;
+
 	register_symbols();
 
 	lbm_add_extension("wifi-scan-networks", ext_wifi_scan_networks);
