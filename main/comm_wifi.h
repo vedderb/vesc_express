@@ -31,8 +31,6 @@
 
 #include "datatypes.h"
 
-#define CUSTOM_SOCKET_COUNT 10
-
 /**
  * A event listener callback function used in the comm_wifi module.
  * event_base has many different possible values, signifying which "module" the
@@ -119,41 +117,6 @@ bool comm_wifi_set_auto_reconnect(bool should_reconnect);
  * @return The current setting, or false if wifi is not in station mode.
 */
 bool comm_wifi_get_auto_reconnect();
-
-/**
- * Create a new TCP socket managed by comm_wifi.
- * The returned socket is completely uninitialized as returned by the `socket()`
- * function, ready to be connected to a host with `connect()` for instance.
- * 
- * Be sure to close the created function using comm_wifi_close_socket!
- * If comm_wifi_socket_is_valid ever returns false for the created socket, it
- * has already been closed due to some internal process, and you don't need to
- * call comm_wifi_close_socket.
- * 
- * @return The successfully created socket, and -1 if there is already CUSTOM_SOCKET_COUNT created
- * sockets or the lwip function failed in creating a new socket. (I'm not sure
- * how the internal lwip_socket function works, so it might return negative
- * values other than -1 as well.)
-*/
-int comm_wifi_open_socket();
-/**
- * Close a socket created by comm_wifi_open_socket.
- *
- * @param sock The socket to close, which was created using
- * `comm_wifi_open_socket`. It is not possible to close sockets created by other
- * meathods with this function.
- * @return True is returned if the socket existed, or false if it didn't exist
- * or was already closed.
-*/
-bool comm_wifi_close_socket(int sock);
-/**
- * Check if a socket created by comm_wifi_open_socket is still valid.
- * 
- * @param sock The socket to check. May be negative.
- * @return If the socket was valid. False is returned if the socket has been
- * closed down or if socket was negative.
-*/
-bool comm_wifi_socket_is_valid(int sock);
 
 
 /**
