@@ -81,6 +81,8 @@ typedef struct {
 	BLE_MODE ble_mode;
 	char ble_name[9];
 	uint32_t ble_pin;
+	uint32_t ble_service_capacity;
+	uint32_t ble_chr_descr_capacity;
 
 	// Cell balancing mode
 	BMS_BALANCE_MODE balance_mode;

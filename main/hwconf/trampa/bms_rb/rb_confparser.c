@@ -35,6 +35,8 @@ int32_t rb_confparser_serialize_main_config_t(uint8_t *buffer, const main_config
 	strcpy((char*)buffer + ind, conf->ble_name);
 	ind += strlen(conf->ble_name) + 1;
 	buffer_append_uint32(buffer, conf->ble_pin, &ind);
+	buffer_append_uint32(buffer, conf->ble_service_capacity, &ind);
+	buffer_append_uint32(buffer, conf->ble_chr_descr_capacity, &ind);
 	buffer_append_int16(buffer, conf->max_bal_ch, &ind);
 	buffer[ind++] = conf->dist_bal;
 	buffer[ind++] = conf->balance_mode;
@@ -94,6 +96,8 @@ bool rb_confparser_deserialize_main_config_t(const uint8_t *buffer, main_config_
 	strcpy(conf->ble_name, (char*)buffer + ind);
 	ind += strlen(conf->ble_name) + 1;
 	conf->ble_pin = buffer_get_uint32(buffer, &ind);
+	conf->ble_service_capacity = buffer_get_uint32(buffer, &ind);
+	conf->ble_chr_descr_capacity = buffer_get_uint32(buffer, &ind);
 	conf->max_bal_ch = buffer_get_int16(buffer, &ind);
 	conf->dist_bal = buffer[ind++];
 	conf->balance_mode = buffer[ind++];
@@ -138,6 +142,8 @@ void rb_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->ble_mode = CONF_BLE_MODE;
 	strcpy(conf->ble_name, CONF_BLE_NAME);
 	conf->ble_pin = CONF_BLE_PIN;
+	conf->ble_service_capacity = CONF_BLE_SERVICE_CAPACITY;
+	conf->ble_chr_descr_capacity = CONF_BLE_CHR_DESCR_CAPACITY;
 	conf->max_bal_ch = CONF_MAX_BAL_CH;
 	conf->dist_bal = CONF_DIST_BAL;
 	conf->balance_mode = CONF_BALANCE_MODE;

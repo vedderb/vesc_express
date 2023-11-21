@@ -189,8 +189,6 @@ static const char *wifi_reason_to_str(wifi_err_reason_t reason) {
 			return "ROAMING";
 		case WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG:
 			return "ASSOC_COMEBACK_TIME_TOO_LONG";
-		case WIFI_REASON_SA_QUERY_TIMEOUT:
-			return "SA_QUERY_TIMEOUT";
 	}
 	
 	return "unknown";
