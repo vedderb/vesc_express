@@ -1,5 +1,5 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -17,42 +17,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_HWCONF_HW_H_
-#define MAIN_HWCONF_HW_H_
+#ifndef LISPIF_BLE_EXTENSIONS_H_
+#define LISPIF_BLE_EXTENSIONS_H_
 
-#include "conf_general.h"
+// Load extensions
+void lispif_load_ble_extensions(void);
 
-#include HW_HEADER
-
-#ifndef HW_DEFAULT_ID
-#define HW_DEFAULT_ID				2
-#endif
-
-#ifndef LED_RED_ON
-#define LED_RED_ON()
-#define LED_RED_OFF()
-#endif
-
-#ifndef LED_BLUE_ON
-#define LED_BLUE_ON()
-#define LED_BLUE_OFF()
-#endif
-
-#ifndef HW_INIT_HOOK
-#define HW_INIT_HOOK()
-#endif
-
-#ifndef LOGS_ENABLED
-// Should contain 0 or 1
-#define LOGS_ENABLED 0
-#endif
-
-#ifndef UART_NUM
-#define HW_NO_UART
-#define UART_NUM					0
-#define UART_BAUDRATE				115200
-#define UART_TX						21
-#define UART_RX						20
-#endif
-
-#endif /* MAIN_HWCONF_HW_H_ */
+#endif /* LISPIF_BLE_EXTENSIONS_H_ */

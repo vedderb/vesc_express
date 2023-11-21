@@ -1,0 +1,26 @@
+# BasedOnStyle: Google
+IndentWidth: 4
+AlignAfterOpenBracket: BlockIndent
+AlwaysBreakAfterReturnType: None
+AllowAllArgumentsOnNextLine : true
+PenaltyReturnTypeOnItsOwnLine: 1000
+SortIncludes: false
+BreakBeforeBinaryOperators: NonAssignment
+# BreakBeforeBinaryOperators: None
+# BreakBeforeBinaryOperators: All
+IndentCaseLabels: true
+UseTab: ForContinuationAndIndentation
+TabWidth: 4
+AllowShortFunctionsOnASingleLine: false
+AlignOperands: DontAlign
+PenaltyBreakAssignment: 20
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+  AlignCompound: true
+  PadOperators: false
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true

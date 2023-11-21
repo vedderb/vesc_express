@@ -1,5 +1,6 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder      benjamin@vedder.se
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -82,6 +83,32 @@ static esp_ota_handle_t update_handle = 0;
 static send_func_t send_func = 0;
 static send_func_t send_func_can_fwd = 0;
 
+#if LOGS_ENABLED
+volatile send_func_t stored_send_func;
+static volatile send_func_t overwritten_send_func;
+static volatile send_func_t temp_send_func;
+
+void commands_start_send_func_overwrite(
+    void (*new_send_func)(unsigned char *data, unsigned int len)
+) {
+	temp_send_func = new_send_func;
+	overwritten_send_func = send_func;
+	send_func = new_send_func;
+}
+
+void commands_restore_send_func() {
+	if (send_func == temp_send_func) {
+		send_func = overwritten_send_func;
+	}
+}
+
+void commands_store_send_func() {
+	stored_send_func = send_func;
+}
+
+#endif /* LOGS_ENABLED */
+
+// Private functions
 static void send_func_dummy(unsigned char *data, unsigned int len) {
 	(void)data; (void)len;
 }
@@ -92,7 +119,7 @@ void commands_init(void) {
 }
 
 void commands_process_packet(unsigned char *data, unsigned int len,
-		void(*reply_func)(unsigned char *data, unsigned int len)) {
+		send_func_t reply_func) {
 	if (!len) {
 		return;
 	}

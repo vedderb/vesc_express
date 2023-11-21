@@ -1,5 +1,6 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder      benjamin@vedder.se
+	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -44,6 +45,7 @@
 #include "mempools.h"
 #include "lispif.h"
 #include "bms.h"
+#include "ble/custom_ble.h"
 
 #include <string.h>
 #include <sys/time.h>
@@ -120,8 +122,19 @@ void app_main(void) {
 
 	vTaskDelay(1);
 
-	if (backup.config.ble_mode != BLE_MODE_DISABLED) {
-		comm_ble_init();
+	switch (backup.config.ble_mode) {
+		case BLE_MODE_DISABLED: {
+			break;
+		}
+		case BLE_MODE_OPEN:
+		case BLE_MODE_ENCRYPTED: {
+			comm_ble_init();
+			break;
+		}
+		case BLE_MODE_SCRIPTING: {
+			custom_ble_init();
+			break;
+		}
 	}
 
 	if (backup.config.wifi_mode != WIFI_MODE_DISABLED) {

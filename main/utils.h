@@ -31,6 +31,8 @@ void utils_byte_to_binary(int x, char *b);
 void utils_rotate_vector3(float *input, float *rotation, float *output, bool reverse);
 bool utils_rmtree(const char *path);
 
+const char *bool_to_str(bool value);
+
 #define UTILS_AGE_S(x)		((float)(xTaskGetTickCount() - x) / ((float)portTICK_PERIOD_MS * 1000.0))
 
 // Handy conversions for radians/degrees and RPM/radians-per-second
@@ -48,6 +50,22 @@ bool utils_rmtree(const char *path);
 
 // Squared
 #define SQ(x)				((x) * (x))
+
+#ifndef MIN
+#define MIN(a,b) (((a) > (b)) ? (b) : (a))
+#endif
+#ifndef MAX
+#define MAX(a,b) (((a) < (b)) ? (b) : (a))
+#endif
+
+#ifndef NUMBER_OF
+#define NUMBER_OF(x) (sizeof(x) / sizeof((x)[0]))
+#endif
+
+#ifndef SIZEOF_MEMBER
+// source: https://stackoverflow.com/a/3553321/15507414
+#define SIZEOF_MEMBER(type, member) sizeof(((type *)0)->member)
+#endif
 
 // For double precision literals
 #define D(x) 				((double)x##L)

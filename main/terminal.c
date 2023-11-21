@@ -17,10 +17,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#include "conf_general.h"
 #include "terminal.h"
 #include "commands.h"
 #include "comm_can.h"
-#include "conf_general.h"
+#include "comm_ble.h"
+#include "ble/custom_ble.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -82,6 +84,8 @@ void terminal_process_string(char *str) {
 	for(int i = 0; argv[0][i] != '\0'; i++){
 		argv[0][i] = tolower(argv[0][i]);
 	}
+	
+	commands_printf("> %s", argv[0]);
 
 	for (int i = 0;i < callback_write;i++) {
 		if (callbacks[i].cbf != 0 && strcmp(argv[0], callbacks[i].command) == 0) {
@@ -114,16 +118,16 @@ void terminal_process_string(char *str) {
 		nvs_stats_t s;
 		nvs_get_stats(NULL, &s);
 
-		commands_printf("NVS free        : %d", s.free_entries);
-		commands_printf("NVS ns cnt      : %d", s.namespace_count);
-		commands_printf("NVS tot         : %d", s.total_entries);
-		commands_printf("NVS used        : %d", s.used_entries);
+		commands_printf("NVS free          : %d", s.free_entries);
+		commands_printf("NVS ns cnt        : %d", s.namespace_count);
+		commands_printf("NVS tot           : %d", s.total_entries);
+		commands_printf("NVS used          : %d", s.used_entries);
 
-		commands_printf("Heap free       : %d", esp_get_free_heap_size());
-		commands_printf("Heap free int.  : %d", esp_get_free_internal_heap_size());
-		commands_printf("Heap min        : %d", esp_get_minimum_free_heap_size());
-		commands_printf("mmap data free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_DATA));
-		commands_printf("mmap inst free  : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_INST));
+		commands_printf("Heap free         : %d", esp_get_free_heap_size());
+		commands_printf("Heap free int.    : %d", esp_get_free_internal_heap_size());
+		commands_printf("Heap min          : %d", esp_get_minimum_free_heap_size());
+		commands_printf("mmap data free    : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_DATA));
+		commands_printf("mmap inst free    : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_INST));
 
 		commands_printf(" ");
 	} else if (strcmp(argv[0], "can_devs") == 0) {
@@ -132,56 +136,57 @@ void terminal_process_string(char *str) {
 			can_status_msg *msg = comm_can_get_status_msg_index(i);
 
 			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < 1.0) {
-				commands_printf("ID                 : %i", msg->id);
-				commands_printf("RX Time            : %i", msg->rx_time);
-				commands_printf("Age (milliseconds) : %.2f", (double)(UTILS_AGE_S(msg->rx_time) * 1000.0));
-				commands_printf("RPM                : %.2f", (double)msg->rpm);
-				commands_printf("Current            : %.2f", (double)msg->current);
-				commands_printf("Duty               : %.2f\n", (double)msg->duty);
+				commands_printf("ID                   : %i", msg->id);
+				commands_printf("RX Time              : %i", msg->rx_time);
+				commands_printf("Age (milliseconds)   : %.2f", (double)(UTILS_AGE_S(msg->rx_time) * 1000.0));
+				commands_printf("RPM                  : %.2f", (double)msg->rpm);
+				commands_printf("Current              : %.2f", (double)msg->current);
+				commands_printf("Duty                 : %.2f\n", (double)msg->duty);
 			}
 		}
 	} else if (strcmp(argv[0], "hw_status") == 0) {
-		commands_printf("Firmware        : %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
-		commands_printf("Hardware        : %s", HW_NAME);
+		commands_printf("Firmware          : %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
+		commands_printf("Hardware          : %s", HW_NAME);
 
-		commands_printf("IDF Version     : %s", IDF_VER);
+		commands_printf("IDF Version       : %s", IDF_VER);
 
-		commands_printf("BLE MTU         : %d", comm_ble_mtu_now());
-		commands_printf("BLE Connected   : %d", comm_ble_is_connected());
+		commands_printf("BLE MTU           : %d", comm_ble_mtu_now());
+		commands_printf("BLE Connected     : %d", comm_ble_is_connected());
+		commands_printf("Custom BLE Started: %d", custom_ble_started());
 
 		esp_ip4_addr_t ip = comm_wifi_get_ip();
 		esp_ip4_addr_t ip_client = comm_wifi_get_ip_client();
 
-		commands_printf("WIFI IP         : " IPSTR, IP2STR(&ip));
-		commands_printf("WIFI Connected  : %d", comm_wifi_is_connected());
-		commands_printf("WIFI Connecting : %d", comm_wifi_is_connecting());
-		commands_printf("WIFI Client IP  : " IPSTR, IP2STR(&ip_client));
-		commands_printf("WIFI Client Con : %d", comm_wifi_is_client_connected());
+		commands_printf("WIFI IP           : " IPSTR, IP2STR(&ip));
+		commands_printf("WIFI Connected    : %d", comm_wifi_is_connected());
+		commands_printf("WIFI Connecting   : %d", comm_wifi_is_connecting());
+		commands_printf("WIFI Client IP    : " IPSTR, IP2STR(&ip_client));
+		commands_printf("WIFI Client Con   : %d", comm_wifi_is_client_connected());
 
 		uint8_t ch_primary;
 		wifi_second_chan_t ch_second;
 		esp_err_t ch_res = esp_wifi_get_channel(&ch_primary, &ch_second);
 
 		if (ch_res == ESP_OK) {
-			commands_printf("WIFI Channel    : %d", ch_primary);
+			commands_printf("WIFI Channel      : %d", ch_primary);
 		} else if (ch_res == ESP_ERR_WIFI_NOT_INIT) {
-			commands_printf("WIFI Channel    : ESP_ERR_WIFI_NOT_INIT");
+			commands_printf("WIFI Channel      : ESP_ERR_WIFI_NOT_INIT");
 		} else {
-			commands_printf("WIFI Channel    : error %d", ch_res);
+			commands_printf("WIFI Channel      : error %d", ch_res);
 		}
 
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		if (running != NULL) {
 			esp_app_desc_t running_app_info;
 			if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
-				commands_printf("App running ver : %s", running_app_info.version);
-				commands_printf("App running proj: %s", running_app_info.project_name);
+				commands_printf("App running ver   : %s", running_app_info.version);
+				commands_printf("App running proj  : %s", running_app_info.project_name);
 			}
 		} else {
 			commands_printf("Could not get running partition.");
 		}
 
-		commands_printf("Reset Reason    : %d", esp_reset_reason());
+		commands_printf("Reset Reason      : %d", esp_reset_reason());
 
 		commands_printf(" ");
 	} else if (strcmp(argv[0], "can_scan") == 0) {
@@ -201,22 +206,29 @@ void terminal_process_string(char *str) {
 		}
 	} else if (strcmp(argv[0], "uptime") == 0) {
 		commands_printf("Uptime: %.2f s", (double)(utils_ms_tot() / 1000.0));
+	} else if (strcmp(argv[0], "store_log_context") == 0) {
+#if LOGS_ENABLED
+		commands_store_send_func();
+		commands_printf("stored send_func: %p", commands_get_send_func());
+#else
+		commands_printf("Debug logging is disabled for this firmware!");
+#endif
 	}
 
 	// The help command
 	else if (strcmp(argv[0], "help") == 0) {
 		commands_printf("Valid commands are:");
 		commands_printf("help");
-		commands_printf("  Show this help");
+		commands_printf("  Show this help.");
 
 		commands_printf("threads");
-		commands_printf("  List all threads");
+		commands_printf("  List all threads.");
 
 		commands_printf("mem");
-		commands_printf("  Print memory usage");
+		commands_printf("  Print memory usage.");
 
 		commands_printf("can_devs");
-		commands_printf("  Print all CAN devices seen on the bus the past second");
+		commands_printf("  Print all CAN devices seen on the bus the past second.");
 
 		commands_printf("hw_status");
 		commands_printf("  Print some hardware status information.");
@@ -226,6 +238,14 @@ void terminal_process_string(char *str) {
 
 		commands_printf("uptime");
 		commands_printf("  Prints how many seconds have passed since boot.");
+		
+		commands_printf("store_log_context");
+		commands_printf("  Remember the current device and connection method (i.e. BLE, WiFi, USB, etc),\n"
+		                "  and send future debug logs to it. Only usefull while developing the firmware."
+#if !LOGS_ENABLED
+                        "\n  (Disabled for this firmware)"
+#endif	
+		);
 
 		for (int i = 0;i < callback_write;i++) {
 			if (callbacks[i].cbf == 0) {
