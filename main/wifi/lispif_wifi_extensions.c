@@ -101,6 +101,7 @@ typedef enum {
 	// TASK_OP_SEND,
 } socket_op_t;
 
+static volatile bool socket_created = false;
 static SemaphoreHandle_t socket_mutex;
 static volatile _Atomic(bool) socket_is_waiting = false;
 static volatile _Atomic(socket_op_t) socket_op;
@@ -439,7 +440,7 @@ static void socket_task(void *arg) {
 	(void)arg;
 
 	while (true) {
-		vTaskDelay(10 / portTICK_PERIOD_MS);
+		vTaskDelay(1);
 
 		if (!socket_is_waiting) {
 			continue;
@@ -1176,16 +1177,17 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 }
 
 void lispif_load_wifi_extensions(void) {
-	socket_mutex = xSemaphoreCreateBinary();
-	if (socket_mutex == NULL) {
-		// oh nose...
-	}
+	if (!socket_created) {
+		socket_mutex = xSemaphoreCreateBinary();
 
-	xSemaphoreGive(socket_mutex);
-	xTaskCreatePinnedToCore(
-		socket_task, "lbm_sockets", 2048, NULL, 3, NULL, tskNO_AFFINITY
-	);
-	comm_wifi_set_event_listener(event_listener);
+		xSemaphoreGive(socket_mutex);
+		xTaskCreatePinnedToCore(
+				socket_task, "lbm_sockets", 2048, NULL, 3, NULL, tskNO_AFFINITY
+		);
+		comm_wifi_set_event_listener(event_listener);
+
+		socket_created = true;
+	}
 
 	register_symbols();
 
