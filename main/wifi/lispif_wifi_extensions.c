@@ -161,59 +161,6 @@ static void free_socket_task() {
 }
 
 /**
- * Helper function for ext_wifi_scan_networks.
- *
- * @param count The length of the records array.
- * @param list A ready 2-dimensional lbm list created by
- * `lbm_allocate_empty_list_grid`, with a width of 3 and a height that fits
- * `count` entries. **The validity of list is not checked!** (TODO: or is it?)
- * @param ssid_buffers An array of pre-allocated lbm byte buffers at least
- * SSID_SIZE bytes in size, which will be used when created lbm strings for the
- * SSID entries. **The validity of this these array values is not checked!**
- * @param records An array of network records, whose values will be written
- * to the given lbm list.
- */
-bool load_lbm_list_with_ap_records(
-	uint16_t count, lbm_value list, lbm_value ssid_buffers[count],
-	const wifi_ap_record_t records[count]
-) {
-	lbm_value current = list;
-	for (uint16_t i = 0; i < count; i++) {
-		if (!lbm_is_cons(current)) {
-			STORED_LOGF("ran out of cons cells in outer list");
-			return false;
-		}
-
-		lbm_value ssid_str = ssid_buffers[i];
-		uint8_t *data      = lbm_heap_array_get_data(ssid_str);
-		if (data == NULL) {
-			STORED_LOGF(
-				"invalid ssid_buffers[%u] data pointer %p, "
-				"lbm_is_array_r(ssid_str): %u, lbm_is_array_rw(ssid_str): %u, "
-				"type_of: 0x%x",
-				i, data, lbm_is_array_r(ssid_str), lbm_is_array_rw(ssid_str),
-				lbm_type_of(ssid_str)
-			);
-			return false;
-		}
-		memcpy(data, records[i].ssid, SSID_SIZE);
-		lbm_value signal_strength = lbm_enc_i(records[i].rssi);
-		lbm_value primary_channel = lbm_enc_u(records[i].primary);
-
-		lbm_value entry = lbm_car(current);
-		lbm_set_car(entry, ssid_str);
-		entry = lbm_cdr(entry);
-		lbm_set_car(entry, signal_strength);
-		entry = lbm_cdr(entry);
-		lbm_set_car(entry, primary_channel);
-
-		current = lbm_cdr(current);
-	}
-
-	return true;
-}
-
-/**
  * Send lbm wifi disconnect event if it's enabled and wifi is in the correct
  * mode.
  *
@@ -373,69 +320,6 @@ static void socket_op_return_flat(lbm_cid return_cid, lbm_flat_value_t *value) {
 		return;                                                                                                                                    \
 	}
 
-static void socket_op_recv(
-	lbm_cid return_cid, int sock, size_t max_len, float timeout_secs,
-	bool as_str
-) {
-	// Damn this code sure ain't pretty...
-
-	uint8_t buffer[max_len + 1];
-
-	int start = xTaskGetTickCount();
-	do {
-		ssize_t len = recv(sock, buffer, max_len, MSG_DONTWAIT);
-
-		if (len < 0) {
-			STORED_LOGF("errno: %d", errno);
-
-			switch (errno) {
-				case EWOULDBLOCK: {
-					// TODO: Is this a good sleep interval?
-					vTaskDelay(10 / portTICK_PERIOD_MS);
-					continue;
-				}
-				case ECONNRESET:
-				case ECONNABORTED:
-				case ENOTCONN: {
-					socket_op_return(ENC_SYM(symbol_disconnected));
-				}
-				default: {
-					// an error has occurred
-					STORED_LOGF("recv in socket_task failed, errno: %d", errno);
-					socket_op_return(ENC_SYM_NIL);
-				}
-			}
-		} else {
-			STORED_LOGF("received %d bytes in socket_task", len);
-
-			if (len == 0) {
-				socket_op_return(ENC_SYM(symbol_disconnected));
-			} else {
-				size_t result_size = len;
-				if (as_str) {
-					result_size++;
-					buffer[len] = '\0';
-				}
-
-				STORED_LOGF(
-					"packing flat value for array size: %u", result_size
-				);
-				lbm_flat_value_t value;
-				if (!f_pack_array(&value, buffer, result_size)) {
-					STORED_LOGF("lbm_start_flatten failed");
-					socket_op_return(ENC_SYM_EERROR);
-				}
-
-				socket_op_return(&value);
-			}
-		}
-	} while (UTILS_AGE_S(start) < timeout_secs);
-
-	STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
-
-	socket_op_return(ENC_SYM(symbol_no_data));
-}
-
 static void socket_task(void *arg) {
 	(void)arg;
 
@@ -448,10 +332,62 @@ static void socket_task(void *arg) {
 
 		switch (socket_op) {
 			case SOCKET_OP_RECV: {
-				socket_op_recv(
-					socket_waiting_cid, socket_param_sock, socket_param_max_len,
-					socket_param_timeout_secs, socket_param_as_str
-				);
+				lbm_cid return_cid = socket_waiting_cid;
+				uint8_t buffer[socket_param_max_len + 1];
+
+				int start = xTaskGetTickCount();
+				do {
+					ssize_t len = recv(socket_param_sock, buffer, socket_param_max_len, MSG_DONTWAIT);
+
+					if (len < 0) {
+						STORED_LOGF("errno: %d", errno);
+
+						switch (errno) {
+						case EWOULDBLOCK: {
+							// TODO: Is this a good sleep interval?
+							vTaskDelay(10 / portTICK_PERIOD_MS);
+							continue;
+						}
+						case ECONNRESET:
+						case ECONNABORTED:
+						case ENOTCONN: {
+							socket_op_return(ENC_SYM(symbol_disconnected));
+						}
+						default: {
+							// an error has occurred
+							STORED_LOGF("recv in socket_task failed, errno: %d", errno);
+							socket_op_return(ENC_SYM_NIL);
+						}
+						}
+					} else {
+						STORED_LOGF("received %d bytes in socket_task", len);
+
+						if (len == 0) {
+							socket_op_return(ENC_SYM(symbol_disconnected));
+						} else {
+							size_t result_size = len;
+							if (socket_param_as_str) {
+								result_size++;
+								buffer[len] = '\0';
+							}
+
+							STORED_LOGF(
+									"packing flat value for array size: %u", result_size
+							);
+							lbm_flat_value_t value;
+							if (!f_pack_array(&value, buffer, result_size)) {
+								STORED_LOGF("lbm_start_flatten failed");
+								socket_op_return(ENC_SYM_EERROR);
+							}
+
+							socket_op_return(&value);
+						}
+					}
+				} while (UTILS_AGE_S(start) < socket_param_timeout_secs);
+
+				STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
+
+				socket_op_return(ENC_SYM(symbol_no_data));
 			}
 		}
 	}
@@ -623,9 +559,38 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 			}
 		}
 
-		load_lbm_list_with_ap_records(
-			written_len, ssid_list, ssid_buffers, records
-		);
+		lbm_value current = ssid_list;
+		for (uint16_t i = 0; i < written_len; i++) {
+			if (!lbm_is_cons(current)) {
+				STORED_LOGF("ran out of cons cells in outer list");
+				return false;
+			}
+
+			lbm_value ssid_str = ssid_buffers[i];
+			uint8_t *data      = lbm_heap_array_get_data(ssid_str);
+			if (data == NULL) {
+				STORED_LOGF(
+						"invalid ssid_buffers[%u] data pointer %p, "
+						"lbm_is_array_r(ssid_str): %u, lbm_is_array_rw(ssid_str): %u, "
+						"type_of: 0x%x",
+						i, data, lbm_is_array_r(ssid_str), lbm_is_array_rw(ssid_str),
+						lbm_type_of(ssid_str)
+				);
+				return false;
+			}
+			memcpy(data, records[i].ssid, SSID_SIZE);
+			lbm_value signal_strength = lbm_enc_i(records[i].rssi);
+			lbm_value primary_channel = lbm_enc_u(records[i].primary);
+
+			lbm_value entry = lbm_car(current);
+			lbm_set_car(entry, ssid_str);
+			entry = lbm_cdr(entry);
+			lbm_set_car(entry, signal_strength);
+			entry = lbm_cdr(entry);
+			lbm_set_car(entry, primary_channel);
+
+			current = lbm_cdr(current);
+		}
 	}
 
 	return ssid_list;
