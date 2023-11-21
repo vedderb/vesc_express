@@ -66,6 +66,8 @@ static lbm_uint symbol_connected      = 0;
 static lbm_uint symbol_connecting     = 0;
 static lbm_uint symbol_disconnected   = 0;
 
+static volatile bool init_done = false;
+
 static bool register_symbols(void) {
 	bool res = true;
 
@@ -92,23 +94,6 @@ typedef enum {
 static volatile bool is_waiting;
 static volatile waiting_op_t waiting_op;
 static volatile lbm_cid waiting_cid;
-
-// For the socket operations thread. These are set to indicate that an
-// extensions wants to the thread to perform some operation.
-typedef enum {
-	SOCKET_OP_RECV = 0,
-	// TASK_OP_SEND,
-} socket_op_t;
-
-static volatile bool socket_created = false;
-static volatile bool socket_is_waiting = false;
-static volatile socket_op_t socket_op;
-static volatile lbm_cid socket_waiting_cid;
-// operation parameters
-static volatile size_t socket_param_max_len;
-static volatile float socket_param_timeout_secs;
-static volatile int socket_param_sock;
-static volatile bool socket_param_as_str;
 
 /**
  * Checks that the correct WIFI was configured in the custom config, and sets
@@ -250,82 +235,6 @@ static void event_listener(
 					lbm_unblock_ctx_unboxed(waiting_cid, ENC_SYM_TRUE);
 				}
 				break;
-			}
-		}
-	}
-}
-
-static void socket_task(void *arg) {
-	(void)arg;
-
-	while (true) {
-		vTaskDelay(1);
-
-		if (!socket_is_waiting) {
-			continue;
-		}
-
-		switch (socket_op) {
-			case SOCKET_OP_RECV: {
-				lbm_cid return_cid = socket_waiting_cid;
-				uint8_t buffer[socket_param_max_len + 1];
-
-				int start = xTaskGetTickCount();
-				do {
-					ssize_t len = recv(socket_param_sock, buffer, socket_param_max_len, MSG_DONTWAIT);
-
-					if (len < 0) {
-						STORED_LOGF("errno: %d", errno);
-
-						switch (errno) {
-						case EWOULDBLOCK: {
-							// TODO: Is this a good sleep interval?
-							vTaskDelay(10 / portTICK_PERIOD_MS);
-							continue;
-						}
-						case ECONNRESET:
-						case ECONNABORTED:
-						case ENOTCONN: {
-							lbm_unblock_ctx_unboxed(return_cid, ENC_SYM(symbol_disconnected));
-							break;
-						}
-						default: {
-							// an error has occurred
-							STORED_LOGF("recv in socket_task failed, errno: %d", errno);
-							lbm_unblock_ctx_unboxed(return_cid, ENC_SYM_NIL);
-						}
-						}
-					} else {
-						STORED_LOGF("received %d bytes in socket_task", len);
-
-						if (len == 0) {
-							lbm_unblock_ctx_unboxed(return_cid, ENC_SYM(symbol_disconnected));
-						} else {
-							size_t result_size = len;
-							if (socket_param_as_str) {
-								result_size++;
-								buffer[len] = '\0';
-							}
-
-							STORED_LOGF(
-									"packing flat value for array size: %u", result_size
-							);
-							lbm_flat_value_t value;
-							if (!f_pack_array(&value, buffer, result_size)) {
-								STORED_LOGF("lbm_start_flatten failed");
-								lbm_unblock_ctx_unboxed(return_cid, ENC_SYM_EERROR);
-							}
-
-							if (!lbm_unblock_ctx(return_cid, &value)) {
-								lbm_free(value.buf);
-							}
-						}
-					}
-				} while (UTILS_AGE_S(start) < socket_param_timeout_secs);
-
-				STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
-
-				lbm_unblock_ctx_unboxed(return_cid, ENC_SYM(symbol_no_data));
 			}
 		}
 	}
@@ -963,6 +872,94 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+typedef struct {
+	lbm_cid return_cid;
+	int socket;
+	int max_len;
+	bool as_str;
+	float timeout;
+} recv_task_state;
+
+static void recv_task(void *arg) {
+	recv_task_state *s = (recv_task_state*)arg;
+
+	uint8_t *buffer = malloc(s->max_len + 1);
+
+	if (!buffer) {
+		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
+		lbm_set_error_reason(error_esp_no_memory);
+		goto recv_cleanup;
+	}
+
+	int start = xTaskGetTickCount();
+
+	for (;;) {
+		ssize_t len = recv(s->socket, buffer, s->max_len, MSG_DONTWAIT);
+
+		if (len < 0) {
+			switch (errno) {
+			case EWOULDBLOCK: {
+				vTaskDelay(1);
+				continue;
+			}
+			case ECONNRESET:
+			case ECONNABORTED:
+			case ENOTCONN: {
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
+				goto recv_cleanup;
+			}
+			default: {
+				// an error has occurred
+				STORED_LOGF("recv in socket_task failed, errno: %d", errno);
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_NIL);
+				goto recv_cleanup;
+			}
+			}
+		} else {
+			if (len == 0) {
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
+				goto recv_cleanup;
+			} else {
+				size_t result_size = len;
+				if (s->as_str) {
+					result_size++;
+					buffer[len] = '\0';
+				}
+
+				STORED_LOGF(
+						"packing flat value for array size: %u", result_size
+				);
+				lbm_flat_value_t value;
+				if (!f_pack_array(&value, buffer, result_size)) {
+					STORED_LOGF("lbm_start_flatten failed");
+					lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
+				}
+
+				if (!lbm_unblock_ctx(s->return_cid, &value)) {
+					lbm_free(value.buf);
+				}
+
+				goto recv_cleanup;
+			}
+		}
+
+		if (UTILS_AGE_S(start) > s->timeout) {
+			STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
+			lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_no_data));
+			break;
+		}
+	}
+
+	recv_cleanup:
+
+	if (buffer) {
+		free(buffer);
+	}
+
+	free(s);
+	vTaskDelete(NULL);
+}
+
 /**
  * signature: (tcp-recv socket:number max-len:number
  * [timeout:number|nil] [as-str:bool]) -> byte-array|nil
@@ -1026,18 +1023,27 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (should_wait) {
-		lbm_block_ctx_from_extension();
+		recv_task_state *s = malloc(sizeof(recv_task_state));
 
-		socket_waiting_cid        = lbm_get_current_cid();
-		socket_op                 = SOCKET_OP_RECV;
-		socket_param_max_len      = max_len;
-		socket_param_timeout_secs = timeout_secs;
-		socket_param_sock         = sock;
-		socket_param_as_str       = as_str;
-		socket_is_waiting         = true;
-		STORED_LOGF("socket_waiting_cid: %d", socket_waiting_cid);
+		if (s) {
+			lbm_block_ctx_from_extension();
+			STORED_LOGF("socket_waiting_cid: %d", socket_waiting_cid);
 
-		return ENC_SYM_NIL;
+			s->return_cid = lbm_get_current_cid();
+			s->max_len = max_len;
+			s->timeout = timeout_secs;
+			s->socket = sock;
+			s->as_str = as_str;
+
+			xTaskCreatePinnedToCore(
+					recv_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
+			);
+
+			return ENC_SYM_NIL;
+		} else {
+			lbm_set_error_reason(error_esp_no_memory);
+			return ENC_SYM_FATAL_ERROR;
+		}
 	} else {
 		lbm_value result;
 		size_t size = max_len;
@@ -1096,17 +1102,14 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 }
 
 void lispif_load_wifi_extensions(void) {
-	if (!socket_created) {
-		xTaskCreatePinnedToCore(
-				socket_task, "lbm_sockets", 2048, NULL, 3, NULL, tskNO_AFFINITY
-		);
+	if (!init_done) {
 		comm_wifi_set_event_listener(event_listener);
-
-		socket_created = true;
 
 		for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
 			custom_sockets[i] = -1;
 		}
+
+		init_done = true;
 	} else {
 		for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
 			if (custom_sockets[i] >= 0) {
