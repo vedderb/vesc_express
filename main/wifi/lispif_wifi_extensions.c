@@ -1098,13 +1098,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 }
 
 void lispif_load_wifi_extensions(void) {
-	if (!socket_created) {
-		socket_mutex = xSemaphoreCreateBinary();
-
-		xSemaphoreGive(socket_mutex);
-		xTaskCreatePinnedToCore(
-			socket_task, "lbm_sockets", 2048, NULL, 3, NULL, tskNO_AFFINITY
-		);
 	if (!init_done) {
 		comm_wifi_set_event_listener(event_listener);
 
