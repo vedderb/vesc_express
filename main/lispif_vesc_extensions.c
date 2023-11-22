@@ -4202,6 +4202,9 @@ void lispif_disable_all_events(void) {
 	event_can_sid_en = false;
 	event_can_eid_en = false;
 	event_data_rx_en = false;
+	event_esp_now_rx_en = false;
+	event_ble_rx_en = false;
+	event_wifi_disconnect_en = false;
 
 	event_bms_chg_allow_en = false;
 	event_bms_bal_ovr_en = false;
