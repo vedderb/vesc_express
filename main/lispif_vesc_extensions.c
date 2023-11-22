@@ -321,11 +321,6 @@ static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
  * trimmed.
 */
 static lbm_value ext_puts(lbm_value *args, lbm_uint argn) {
-	if (argn > 1) {
-		lbm_set_error_reason("puts can only take a single string to print at a time");
-		return ENC_SYM_EERROR;
-	}
-	
 	LBM_CHECK_ARGN(1);
 	
 	if (!lbm_is_array_r(args[0])) {
