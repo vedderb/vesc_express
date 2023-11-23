@@ -209,13 +209,32 @@ byte-array `"hello"`, and then queried:
 
 Set the value of the attribute to the provided value. `attr-handle` should be a
 number that was returned by [`ble-add-service`](#ble-add-service) and `value` a byte
-array.
+array. **Note** that the raw byte without modification will be stored, and since strings are null
+terminated in LBM, setting the value to a string literal will include the
+terminating null byte. You will have to create a copy of the byte array without
+the final byte to avoid this behaviour. Here is an example function that does
+this using
+[`bufcpy`](https://github.com/vedderb/bldc/blob/master/lispBM/README.md#bufcpy):
+```clj
+(defun trim-null-byte (str) {
+    (var len (str-len str))
+    (var cpy (bufcreate len))
+    (bufcpy cpy 0 str 0 len)
+    cpy
+})
+```
 
 Providing an invalid handle will throw an `eval_error`.
 
 Setting the value of a characteristic automatically sends notifications or
 indications to subscribing clients if those flags were set when the
 characteristic was defined.
+
+Example that sets the value of the attribute with the handle 40 to "hello":
+```clj
+(ble-attr-set-value 40 "hello")
+; it now contains the bytes [0x68 0x65 0x6c 0x6c 0x6f 0x0]
+```
 
 ### `ble-get-services`
 
