@@ -47,6 +47,20 @@ static inline bool lbm_get_gc_mark(lbm_value x) {
   return x & LBM_GC_MASK;
 }
 
+// flag is the same bit as mark, but in car
+static inline bool lbm_get_gc_flag(lbm_value x) {
+  return x & LBM_GC_MARKED;
+}
+
+static inline lbm_value lbm_set_gc_flag(lbm_value x) {
+  return x | LBM_GC_MARKED;
+}
+
+static inline lbm_value lbm_clr_gc_flag(lbm_value x) {
+  return x & ~LBM_GC_MASK;
+}
+
+
 lbm_heap_state_t lbm_heap_state;
 
 lbm_const_heap_t *lbm_const_heap_state;
@@ -54,8 +68,24 @@ lbm_const_heap_t *lbm_const_heap_state;
 lbm_cons_t *lbm_heaps[2] = {NULL, NULL};
 
 static mutex_t lbm_const_heap_mutex;
-static bool    lbm_const_heap_mutex_initialized;
+static bool    lbm_const_heap_mutex_initialized = false;
 
+static mutex_t lbm_mark_mutex;
+static bool    lbm_mark_mutex_initialized = false;
+
+#ifdef USE_GC_PTR_REV
+void lbm_gc_lock(void) {
+  mutex_lock(&lbm_mark_mutex);
+}
+void lbm_gc_unlock(void) {
+  mutex_unlock(&lbm_mark_mutex);
+}
+#else
+void lbm_gc_lock(void) {
+}
+void lbm_gc_unlock(void) {
+}
+#endif
 
 /****************************************************/
 /* ENCODERS DECODERS                                */
@@ -598,10 +628,73 @@ lbm_uint lbm_get_gc_stack_size(void) {
   return lbm_heap_state.gc_stack.size;
 }
 
-int lbm_gc_mark_phase() {
+#ifdef USE_GC_PTR_REV
+static inline void value_assign(lbm_value *a, lbm_value b) {
+  lbm_value a_old = *a & LBM_GC_MASK;
+  *a = a_old | (b & ~LBM_GC_MASK);
+}
+
+void lbm_gc_mark_phase(lbm_value root) {
+  bool work_to_do = true;
+
+  if (!lbm_is_ptr(root)) return;
+
+  mutex_lock(&lbm_const_heap_mutex);
+  lbm_value curr = root;
+  lbm_value prev = lbm_enc_cons_ptr(LBM_PTR_NULL);
+
+  while (work_to_do) {
+    // follow leftwards pointers
+    while (lbm_is_ptr(curr) &&
+           (lbm_dec_ptr(curr) != LBM_PTR_NULL) &&
+           ((curr & LBM_PTR_TO_CONSTANT_BIT) == 0) &&
+           !lbm_get_gc_mark(lbm_cdr(curr))) {
+      // Mark the cell if not a constant cell
+      lbm_cons_t *cell = lbm_ref_cell(curr);
+      cell->cdr = lbm_set_gc_mark(cell->cdr);
+      if (lbm_is_cons_rw(curr)) {
+        lbm_value next = 0;
+        value_assign(&next, cell->car);
+        value_assign(&cell->car, prev);
+        value_assign(&prev,curr);
+        value_assign(&curr, next);
+      }
+      // Will jump out next iteration as gc mark is set in curr.
+    }
+    while (lbm_is_ptr(prev) &&
+           (lbm_dec_ptr(prev) != LBM_PTR_NULL) &&
+           lbm_get_gc_flag(lbm_car(prev)) ) {
+      // clear the flag
+      lbm_cons_t *cell = lbm_ref_cell(prev);
+      cell->car = lbm_clr_gc_flag(cell->car);
+      lbm_value next = 0;
+      value_assign(&next, cell->cdr);
+      value_assign(&cell->cdr, curr);
+      value_assign(&curr, prev);
+      value_assign(&prev, next);
+    }
+    if (lbm_is_ptr(prev) &&
+        lbm_dec_ptr(prev) == LBM_PTR_NULL) {
+      work_to_do = false;
+    } else if (lbm_is_ptr(prev)) {
+      // set the flag
+      lbm_cons_t *cell = lbm_ref_cell(prev);
+      cell->car = lbm_set_gc_flag(cell->car);
+      lbm_value next = 0;
+      value_assign(&next, cell->car);
+      value_assign(&cell->car, curr);
+      value_assign(&curr, cell->cdr);
+      value_assign(&cell->cdr, next);
+    }
+  }
+  mutex_unlock(&lbm_const_heap_mutex);
+}
+
+#else
+void lbm_gc_mark_phase(lbm_value root) {
 
   lbm_stack_t *s = &lbm_heap_state.gc_stack;
-  int res = 1;
+  s->data[s->sp++] = root;
 
   while (!lbm_stack_is_empty(s)) {
     lbm_value curr;
@@ -630,21 +723,20 @@ int lbm_gc_mark_phase() {
         t_ptr <= LBM_NON_CONS_POINTER_TYPE_LAST) continue;
 
     if (lbm_is_ptr(cell->cdr)) {
-      res &= lbm_push(s, cell->cdr);
-    }
-    if (!res) {
-      lbm_critical_error();
-      break;
+      if (!lbm_push(s, cell->cdr)) {
+        lbm_critical_error();
+        break;
+      }
     }
     curr = cell->car;
     goto mark_shortcut; // Skip a push/pop
   }
-  return res;
 }
+#endif
 
 // The free list should be a "proper list"
 // Using a while loop to traverse over the cdrs
-int lbm_gc_mark_freelist() {
+int lbm_gc_mark_freelist(void) {
 
   lbm_value curr;
   lbm_cons_t *t;
@@ -671,7 +763,24 @@ int lbm_gc_mark_freelist() {
   return 1;
 }
 
-int lbm_gc_mark_aux(lbm_uint *aux_data, lbm_uint aux_size) {
+//Environments are proper lists with a 2 element list stored in each car.
+void lbm_gc_mark_env(lbm_value env) {
+  lbm_value curr = env;
+  lbm_cons_t *c;
+
+  while (lbm_is_ptr(curr)) {
+    c = lbm_ref_cell(curr);
+    c->cdr = lbm_set_gc_mark(c->cdr); // mark the environent list structure.
+    lbm_cons_t *b = lbm_ref_cell(c->car);
+    b->cdr = lbm_set_gc_mark(b->cdr); // mark the binding list head cell.
+    lbm_gc_mark_phase(b->cdr);        // mark the bound object.
+    lbm_heap_state.gc_marked +=2;
+    curr = c->cdr;
+  }
+}
+
+
+void lbm_gc_mark_aux(lbm_uint *aux_data, lbm_uint aux_size) {
   for (lbm_uint i = 0; i < aux_size; i ++) {
     if (lbm_is_ptr(aux_data[i])) {
       lbm_type pt_t = lbm_type_of(aux_data[i]);
@@ -679,14 +788,17 @@ int lbm_gc_mark_aux(lbm_uint *aux_data, lbm_uint aux_size) {
       if( pt_t >= LBM_POINTER_TYPE_FIRST &&
           pt_t <= LBM_POINTER_TYPE_LAST &&
           pt_v < lbm_heap_state.heap_size) {
-        lbm_heap_state.gc_stack.data[lbm_heap_state.gc_stack.sp ++] = aux_data[i];
-        lbm_gc_mark_phase();
+        lbm_gc_mark_phase(aux_data[i]);
       }
     }
   }
-  return 1;
 }
 
+void lbm_gc_mark_roots(lbm_uint *roots, lbm_uint num_roots) {
+  for (lbm_uint i = 0; i < num_roots; i ++) {
+    lbm_gc_mark_phase(roots[i]);
+  }
+}
 
 // Sweep moves non-marked heap objects to the free list.
 int lbm_gc_sweep_phase(void) {
@@ -1158,6 +1270,11 @@ int lbm_const_heap_init(const_heap_write_fun w_fun,
   if (!lbm_const_heap_mutex_initialized) {
     mutex_init(&lbm_const_heap_mutex);
     lbm_const_heap_mutex_initialized = true;
+  }
+
+  if (!lbm_mark_mutex_initialized) {
+    mutex_init(&lbm_mark_mutex);
+    lbm_mark_mutex_initialized = true;
   }
 
   const_heap_write = w_fun;
