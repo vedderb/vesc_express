@@ -464,6 +464,10 @@ void ublox_cfg_append_enable_bds(unsigned char *buffer, int *ind,
 		bool en, bool en_b1, bool en_b2);
 void ublox_cfg_append_enable_glo(unsigned char *buffer, int *ind,
 		bool en, bool en_l1, bool en_l2);
+void ublox_cfg_append_uart1_baud(unsigned char *buffer, int *ind,
+		uint32_t baud, bool en_l1, bool en_l2);
+void ublox_cfg_append_rate(unsigned char *buffer, int *ind,
+		uint16_t meas_ms, uint16_t nav, bool en_l1, bool en_l2);
 
 // Message classes
 #define UBX_CLASS_NAV					0x01
@@ -527,6 +531,9 @@ void ublox_cfg_append_enable_glo(unsigned char *buffer, int *ind,
 #define CFG_SIGNAL_GLO_ENA              0x10310025 // GLONASS Enable
 #define CFG_SIGNAL_GLO_L1_ENA           0x10310018 // GLONASS L1
 #define CFG_SIGNAL_GLO_L2_ENA           0x1031001A // GLONASS L2 (only on u-blox F9)
+#define CFG_UART1_BAUDRATE				0x40520001 // UART1 baud rate
+#define CFG_RATE_MEAS					0x30210001 // Measurement rate in ms
+#define CFG_RATE_NAV					0x30210002 // Navigation rate
 
 // RTCM3 messages
 #define UBX_RTCM3_1005					0x05 // Stationary RTK reference station ARP

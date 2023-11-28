@@ -32,6 +32,7 @@
 #define BAUDRATE_UBX_DEFAULT		38400	// see UBX-18010854
 #else
 #define BAUDRATE_UBX_DEFAULT		9600
+#define BAUDRATE_UBX_DEFAULT_NEW	38400
 #endif
 #define BAUDRATE					115200
 #define LINE_BUFFER_SIZE			256
@@ -185,9 +186,10 @@ bool ublox_init(bool print) {
 
 	uint16_t ubx_rate = 500;
 
-	// Up to 5 retries
+	// Up to 4 retries
 	bool baud_ok = false;
-	for (int i = 0;i < 5;i++) {
+
+	for (int i = 0;i < 4;i++) {
 		// Make sure that the baudrate is correct on unconfigured UBX.
 		if (ublox_cfg_rate(ubx_rate, 1, 0) == -1) {
 			// Set default baudrate
@@ -227,6 +229,55 @@ bool ublox_init(bool print) {
 		}
 
 		vTaskDelay(500 / portTICK_PERIOD_MS);
+	}
+
+	if (!baud_ok) {
+		unsigned char buffer_baud[80];
+		int ind = 0;
+		ublox_cfg_append_uart1_baud(buffer_baud, &ind, BAUDRATE, true, true);
+		ublox_cfg_append_rate(buffer_baud, &ind, ubx_rate, 1, true, true);
+
+		for (int i = 0;i < 4;i++) {
+			// Make sure that the baudrate is correct on unconfigured UBX.
+			if (ublox_cfg_valset(buffer_baud, ind, BAUDRATE, true, true) == -1) {
+				// Set default baudrate
+				uart_config.baud_rate = BAUDRATE_UBX_DEFAULT_NEW;
+				uart_param_config(UART_NUM, &uart_config);
+
+				vTaskDelay(100 / portTICK_PERIOD_MS);
+				reset_decoder_state();
+				ublox_cfg_valset(buffer_baud, ind, BAUDRATE, true, true);
+
+				vTaskDelay(100 / portTICK_PERIOD_MS);
+				reset_decoder_state();
+				ublox_cfg_valset(buffer_baud, ind, BAUDRATE, true, true);
+
+				// Set configured baudrate
+				uart_config.baud_rate = BAUDRATE;
+				uart_param_config(UART_NUM, &uart_config);
+
+				vTaskDelay(100 / portTICK_PERIOD_MS);
+				reset_decoder_state();
+
+				if (ublox_cfg_valset(buffer_baud, ind, BAUDRATE, true, true) != -1) {
+					baud_ok = true;
+					break;
+				}
+
+				vTaskDelay(100 / portTICK_PERIOD_MS);
+				reset_decoder_state();
+
+				if (ublox_cfg_valset(buffer_baud, ind, BAUDRATE, true, true) != -1) {
+					baud_ok = true;
+					break;
+				}
+			} else {
+				baud_ok = true;
+				break;
+			}
+
+			vTaskDelay(500 / portTICK_PERIOD_MS);
+		}
 	}
 
 	if (!baud_ok) {
@@ -842,6 +893,20 @@ void ublox_cfg_append_enable_glo(unsigned char *buffer, int *ind,
 	ubx_put_U1(buffer, ind, en_l1);
 	ubx_put_X4(buffer, ind, CFG_SIGNAL_GLO_L2_ENA);
 	ubx_put_U1(buffer, ind, en_l2);
+}
+
+void ublox_cfg_append_uart1_baud(unsigned char *buffer, int *ind,
+		uint32_t baud, bool en_l1, bool en_l2) {
+	ubx_put_X4(buffer, ind, CFG_UART1_BAUDRATE);
+	ubx_put_U4(buffer, ind, baud);
+}
+
+void ublox_cfg_append_rate(unsigned char *buffer, int *ind,
+		uint16_t meas_ms, uint16_t nav, bool en_l1, bool en_l2) {
+	ubx_put_X4(buffer, ind, CFG_RATE_MEAS);
+	ubx_put_U2(buffer, ind, meas_ms);
+	ubx_put_X4(buffer, ind, CFG_RATE_NAV);
+	ubx_put_U2(buffer, ind, nav);
 }
 
 static void proc_byte(uint8_t ch) {
