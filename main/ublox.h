@@ -464,10 +464,9 @@ void ublox_cfg_append_enable_bds(unsigned char *buffer, int *ind,
 		bool en, bool en_b1, bool en_b2);
 void ublox_cfg_append_enable_glo(unsigned char *buffer, int *ind,
 		bool en, bool en_l1, bool en_l2);
-void ublox_cfg_append_uart1_baud(unsigned char *buffer, int *ind,
-		uint32_t baud, bool en_l1, bool en_l2);
-void ublox_cfg_append_rate(unsigned char *buffer, int *ind,
-		uint16_t meas_ms, uint16_t nav, bool en_l1, bool en_l2);
+void ublox_cfg_append_uart1_baud(unsigned char *buffer, int *ind, uint32_t baud);
+void ublox_cfg_append_rate(unsigned char *buffer, int *ind, uint16_t meas_ms, uint16_t nav);
+void ublox_cfg_append_u1(unsigned char *buffer, int *ind, uint32_t key, uint8_t val);
 
 // Message classes
 #define UBX_CLASS_NAV					0x01
@@ -534,6 +533,31 @@ void ublox_cfg_append_rate(unsigned char *buffer, int *ind,
 #define CFG_UART1_BAUDRATE				0x40520001 // UART1 baud rate
 #define CFG_RATE_MEAS					0x30210001 // Measurement rate in ms
 #define CFG_RATE_NAV					0x30210002 // Navigation rate
+
+// Message output keys
+#define CFG_MSGOUT_NMEA_ID_DTM_UART1	0x209100a7
+#define CFG_MSGOUT_NMEA_ID_GBS_UART1	0x209100de
+#define CFG_MSGOUT_NMEA_ID_GGA_UART1	0x209100bb
+#define CFG_MSGOUT_NMEA_ID_GLL_UART1	0x209100ca
+#define CFG_MSGOUT_NMEA_ID_GNS_UART1	0x209100b6
+#define CFG_MSGOUT_NMEA_ID_GRS_UART1	0x209100cf
+#define CFG_MSGOUT_NMEA_ID_GSA_UART1	0x209100c0
+#define CFG_MSGOUT_NMEA_ID_GST_UART1	0x209100d4
+#define CFG_MSGOUT_NMEA_ID_GSV_UART1	0x209100c5
+#define CFG_MSGOUT_NMEA_ID_RLM_UART1	0x20910401
+#define CFG_MSGOUT_NMEA_ID_RMC_UART1	0x209100ac
+#define CFG_MSGOUT_NMEA_ID_VLW_UART1	0x209100e8
+#define CFG_MSGOUT_NMEA_ID_VTG_UART1	0x209100b1
+#define CFG_MSGOUT_NMEA_ID_ZDA_UART1	0x209100d9
+#define CFG_MSGOUT_PUBX_ID_POLYP_UART1	0x209100ed
+
+#define CFG_MSGOUT_UBX_NAV_POSECEF_UART1	0x20910025
+#define CFG_MSGOUT_UBX_NAV_POSLLH_UART1		0x2091002a
+#define CFG_MSGOUT_UBX_NAV_STATUS_UART1		0x2091001b
+#define CFG_MSGOUT_UBX_NAV_TIMEUTC_UART1	0x2091005c
+#define CFG_MSGOUT_UBX_NAV_VELECEF_UART1	0x2091003e
+#define CFG_MSGOUT_UBX_NAV_VELNED_UART1		0x20910043
+#define CFG_MSGOUT_UBX_NAV_SAT_UART1		0x20910016
 
 // RTCM3 messages
 #define UBX_RTCM3_1005					0x05 // Stationary RTK reference station ARP
