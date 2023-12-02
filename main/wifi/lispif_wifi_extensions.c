@@ -873,6 +873,8 @@ typedef struct {
 	int socket;
 	int max_len;
 	bool as_str;
+	bool return_on_disconnect;
+	char terminator;
 	float timeout;
 } recv_task_state;
 
@@ -911,32 +913,27 @@ static void recv_task(void *arg) {
 				goto recv_cleanup;
 			}
 			}
+		} else if (len == 0) {
+			lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
+			goto recv_cleanup;
 		} else {
-			if (len == 0) {
-				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
-				goto recv_cleanup;
-			} else {
-				size_t result_size = len;
-				if (s->as_str) {
-					result_size++;
-					buffer[len] = '\0';
-				}
-
-				STORED_LOGF(
-						"packing flat value for array size: %u", result_size
-				);
-				lbm_flat_value_t value;
-				if (!f_pack_array(&value, buffer, result_size)) {
-					STORED_LOGF("lbm_start_flatten failed");
-					lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
-				}
-
-				if (!lbm_unblock_ctx(s->return_cid, &value)) {
-					lbm_free(value.buf);
-				}
-
-				goto recv_cleanup;
+			size_t result_size = len;
+			if (s->as_str) {
+				result_size++;
+				buffer[len] = '\0';
 			}
+
+			lbm_flat_value_t value;
+			if (!f_pack_array(&value, buffer, result_size)) {
+				STORED_LOGF("lbm_start_flatten failed");
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
+			}
+
+			if (!lbm_unblock_ctx(s->return_cid, &value)) {
+				lbm_free(value.buf);
+			}
+
+			goto recv_cleanup;
 		}
 
 		if (UTILS_AGE_S(start) > s->timeout) {
@@ -947,6 +944,118 @@ static void recv_task(void *arg) {
 	}
 
 	recv_cleanup:
+
+	if (buffer) {
+		free(buffer);
+	}
+
+	free(s);
+	vTaskDelete(NULL);
+}
+
+static void recv_to_char_task(void *arg) {
+	recv_task_state *s = (recv_task_state *)arg;
+
+	uint8_t *buffer = malloc(s->max_len + 1);
+
+	if (!buffer) {
+		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
+		lbm_set_error_reason(error_esp_no_memory);
+		goto recv_cleanup;
+	}
+
+	size_t total_len = 0;
+
+	int start = xTaskGetTickCount();
+
+	while (true) {
+		if (s->max_len == 0) {
+			break;
+		}
+
+		uint8_t byte;
+		ssize_t len = recv(s->socket, &byte, 1, MSG_DONTWAIT);
+
+		if (len < 0) {
+			switch (errno) {
+				case EWOULDBLOCK: {
+					vTaskDelay(1);
+					continue;
+				}
+				case ECONNRESET:
+				case ECONNABORTED:
+				case ENOTCONN: {
+					if (total_len == 0 || !s->return_on_disconnect) {
+						lbm_unblock_ctx_unboxed(
+							s->return_cid, ENC_SYM(symbol_disconnected)
+						);
+						goto recv_cleanup;
+					} else {
+						goto return_buffer;
+					}
+				}
+				default: {
+					// an error has occurred
+					STORED_LOGF("recv in socket_task failed, errno: %d", errno);
+					lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_NIL);
+					goto recv_cleanup;
+				}
+			}
+		} else if (len == 0) {
+			if (total_len == 0 || !s->return_on_disconnect) {
+				lbm_unblock_ctx_unboxed(
+					s->return_cid, ENC_SYM(symbol_disconnected)
+				);
+				goto recv_cleanup;
+			}
+			break;
+		} else {
+			buffer[total_len] = byte;
+			total_len        += 1;
+
+			if (byte == s->terminator || total_len >= s->max_len) {
+				break;
+			}
+		}
+
+		if (UTILS_AGE_S(start) > s->timeout) {
+			STORED_LOGF(
+				"timed out after %d seconds", (double)UTILS_AGE_S(start)
+			);
+			if (total_len == 0) {
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_no_data));
+				goto recv_cleanup;
+			} else {
+				break;
+			}
+		}
+	}
+
+return_buffer:
+
+	if (total_len > s->max_len) {
+		STORED_LOGF("recv buffer overflow: %u >= %u", total_len, s->max_len);
+		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
+		goto recv_cleanup;
+	}
+
+	size_t result_size = total_len;
+	if (s->as_str) {
+		result_size++;
+		buffer[total_len] = '\0';
+	}
+
+	lbm_flat_value_t value;
+	if (!f_pack_array(&value, buffer, result_size)) {
+		STORED_LOGF("lbm_start_flatten failed");
+		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
+	}
+
+	if (!lbm_unblock_ctx(s->return_cid, &value)) {
+		lbm_free(value.buf);
+	}
+
+recv_cleanup:
 
 	if (buffer) {
 		free(buffer);
@@ -998,7 +1107,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 	size_t max_len = lbm_dec_as_u32(args[1]);
 
 	bool should_wait   = true;
-	float timeout_secs = 1.0; // assign to get compiler to shut up
+	float timeout_secs = 1.0;
 	if (argn >= 3) {
 		if (!lbm_is_number(args[2]) && !lbm_is_symbol_nil(args[2])) {
 			return ENC_SYM_TERROR;
@@ -1023,7 +1132,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 
 		if (s) {
 			lbm_block_ctx_from_extension();
-			STORED_LOGF("socket_waiting_cid: %d", socket_waiting_cid);
 
 			s->return_cid = lbm_get_current_cid();
 			s->max_len = max_len;
@@ -1032,7 +1140,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			s->as_str = as_str;
 
 			xTaskCreatePinnedToCore(
-					recv_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
+				recv_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
 			);
 
 			return ENC_SYM_NIL;
@@ -1097,6 +1205,105 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+/**
+ * signature: (tcp-recv socket:number max-len:number terminator:char
+ * [timeout:number] [as-str:bool] [return-on-disconnect:bool]) -> byte-array|nil
+ *
+ * Receive a string until the specified character is encountered
+ *
+ * @param socket The socket to receive data over. Should have been
+ * created using tcp-connect.
+ * @param max_len The amount of bytes to receive at most. The terminator is
+ * included in this length.
+ * @param terminator The character to recv until. This character is included in
+ * the returned byte array. Will be interpreted as an 8-bit char.
+ * @param timeout [optional] The amount of seconds to wait for data * *at
+ * least*. (Default: 1.0)
+ * @param as_str [optional] Return the received data as a string.
+ * If true is passed, an additional terminating null byte is appended to the
+ * received buffer, to let it be interpreted as a string. (The maximum length of
+ * the returned buffer is then max_len + 1 to account for the terminating null
+ * byte.) If false is passed, the literal raw binary data received is returned.
+ * (Default: true)
+ * @param return_on_disconnect [optional] When the remote disconnects mid
+ * receive, return the data that has been received up until that point. If
+ * false, the symbol 'disconnected is always returned on disconnects. If no
+ * data had been received before the disconnect, the symbol 'disconnected is
+ * returned either way. (Default: false)
+ * @return The received data including the terminator, 'no-data if no data was
+ * received (either because there were none available this instant, or because
+ * the timeout was reached). 'disconnected is returned if the remote has closed
+ * the connection and there is no more data to receive (see
+ * return_on_disconnect). On other errors nil is returned, such as when an
+ * invalid socket was provided, or if another unknown (at the time of writing
+ * this) network error occurred.
+ */
+static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
+	if (!check_mode()) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!lbm_check_argn_range(argn, 3, 6)) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!lbm_is_number(args[0]) || !lbm_is_number(args[1])
+		|| !lbm_is_number(args[2])) {
+		return ENC_SYM_TERROR;
+	}
+	
+	int sock       = lbm_dec_as_i32(args[0]);
+	size_t max_len = lbm_dec_as_u32(args[1]);
+	char terminator = lbm_dec_as_char(args[2]);
+
+	float timeout_secs = 1.0;
+	if (argn >= 4) {
+		if (!lbm_is_number(args[3])) {
+			return ENC_SYM_TERROR;
+		}
+		timeout_secs = lbm_dec_as_float(args[3]);
+	}
+	
+	bool as_str = true;
+	if (argn >= 5) {
+		if (!lbm_is_bool(args[4])) {
+			return ENC_SYM_TERROR;
+		}
+		as_str = lbm_dec_bool(args[4]);
+	}
+	
+	bool return_on_disconnect = false;
+	if (argn >= 6) {
+		if (!lbm_is_bool(args[5])) {
+			return ENC_SYM_TERROR;
+		}
+		return_on_disconnect = lbm_dec_bool(args[5]);
+	}
+	
+	recv_task_state *s = malloc(sizeof(recv_task_state));
+	
+	if (s) {
+		lbm_block_ctx_from_extension();
+
+		s->return_cid = lbm_get_current_cid();
+		s->max_len = max_len;
+		s->timeout = timeout_secs;
+		s->socket = sock;
+		s->as_str = as_str;
+		s->return_on_disconnect = return_on_disconnect;
+		s->terminator = terminator;
+
+		xTaskCreatePinnedToCore(
+			recv_to_char_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
+		);
+
+		return ENC_SYM_NIL;
+	} else {
+		lbm_set_error_reason(error_esp_no_memory);
+		return ENC_SYM_FATAL_ERROR;
+	}
+}
+
 void lispif_load_wifi_extensions(void) {
 	if (!init_done) {
 		comm_wifi_set_event_listener(event_listener);
@@ -1129,4 +1336,5 @@ void lispif_load_wifi_extensions(void) {
 	lbm_add_extension("tcp-status", ext_tcp_status);
 	lbm_add_extension("tcp-send", ext_tcp_send);
 	lbm_add_extension("tcp-recv", ext_tcp_recv);
+	lbm_add_extension("tcp-recv-to-char", ext_tcp_recv_to_char);
 }

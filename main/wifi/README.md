@@ -346,6 +346,64 @@ try it yourself! :)
 > "HTTP/1.1 200 OK\r\nAge: 197780\r\nCache-Control: max-age=604800\r\nContent-Type: text/html; charset=UTF-8\r\nDate: Sun, 12 Nov 2023 16:40:09 GMT\r\nEtag: \"3147526947+ident\"\r\nExpires: Sun, 19 Nov 2023 16:40:09 GMT\r\nLast-Modified: Thu, 17 Oct 2019 07..." ; the string has been shortened
 ```
 
+### `tcp-recv-to-char`
+
+```clj
+(tcp-recv-to-char socket max-len terminator [timeout] [as-str] [return-on-disconnect])
+```
+
+Receive up to `max-len` bytes from the TCP connection under the specified
+`socket`, until the given `terminator` byte is encountered. The terminator
+character is included in the returned buffer.
+
+Optional arguments:
+- `timeout`: How long to wait for data to arrive at least in seconds. **Note**
+  that unlike [`tcp-recv`](#tcp-recv), this extension does not support passing
+  `nil`, and does therefore not support receiving only the currently available
+  data instanteniously. (**Default: `1.0`**)
+- `as-str`: If set to true, an additional null byte is appended to any returned
+  data to make sure that it can be processed as a string (strings in LBM are
+  just byte arrays with a terminating null byte). If false is passed, the
+  literal received bytes is just returned. Should be a bool (the symbols `true`
+  or `false`). (**Default: `true`**)
+- `return-on-disconnect`: In the case that the connection is broken in the
+  middle of sending a string before the terminating character is received, the
+  bytes that were received up until that point are normally thrown away and the
+  symbol `'disconnected` is instead returned. If passing true, these bytes that
+  were part of the broken message are then still returned. If no data had been
+  received yet before disconnecting, `'disconnected` is returned regardless of
+  this value. **Note** that this is a pretty rare scenario, since the connection
+  would have to break while the remote was still sending data. If the remote
+  simply disconnected after having sent the complete message, the received data
+  is kept in an internal buffer and the connection is not considered
+  disconnected until this data has been read by this extension. Should be a bool
+  (the symbols `true` or `false`). (**Default: `false`**)
+
+If the buffer is filled before encountering the terminator, the full buffer is
+just returned without the terminator, so you might want to call this a second
+time to receive the full message in that case.
+
+Example where the server on port 61 had sent the message `"Hello\0world"` and we
+receive the first message terminated by a zero byte:
+```clj
+(tcp-recv-to-char 61 100 0)
+> "Hello"
+```
+
+Example where we receive the first line of an HTTP request. This example should
+be runnable without any modifications, as example.com is a real domain:
+```clj
+; LBM sadly doesn't support newline character literals.
+(def char-newline 10b)
+
+(def socket (tcp-connect "example.com" 80))
+(print socket)
+(tcp-send socket "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: Close\r\n\r\n")
+
+(print (tcp-recv-to-char socket 200 char-newline))
+> "HTTP/1.1 200 OK\r\n"
+```
+
 ## Events
 This module defines the event `event-wifi-disconnect`, which is fired whenever
 the VESC has disconnected from the WiFi network **and the internal WiFi module
