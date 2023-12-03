@@ -145,7 +145,7 @@ lbm_value lbm_allocate_empty_list_grid(lbm_uint height, lbm_uint width);
  * or if the new size was larger than the previous (note that since this
  * function converts bytes to words, a larger size in bytes might not cause it
  * to fail, as the size in words could still be the same). Otherwise true is
- * returned.
+ * returned. 
 */
 bool lbm_memory_shrink_bytes(void *ptr, lbm_uint size_bytes);
 
