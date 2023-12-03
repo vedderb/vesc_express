@@ -393,7 +393,6 @@ receive the first message terminated by a zero byte:
 Example where we receive the first line of an HTTP request. This example should
 be runnable without any modifications, as example.com is a real domain:
 ```clj
-; LBM sadly doesn't support newline character literals.
 (def char-newline 10b)
 
 (def socket (tcp-connect "example.com" 80))
