@@ -151,7 +151,7 @@ static void handle_wifi_disconnect_event(uint8_t reason, bool from_extension) {
 
 	if (!lbm_event(&flat)) {
 		STORED_LOGF(
-			"failed to send lbm wifi-disconnect event, reason: %u", reason
+			"failed to send lbm wifi-disconnect event, disconnect_reason: %u", reason
 		);
 		lbm_free(flat.buf);
 	}
@@ -161,25 +161,13 @@ static void event_listener(
 	esp_event_base_t event_base, int32_t event_id, void *event_data
 ) {
 	void return_unboxed(lbm_value value) {
-		STORED_LOGF("returning value to cid: %d", return_cid);
-
-		if (!lbm_unblock_ctx_unboxed(waiting_cid, value)) {
-			STORED_LOGF("lbm_unblock_ctx_unboxed failed");
-		} else {
-			STORED_LOGF("event_listener return_unboxed succeeded");
-		}
+		lbm_unblock_ctx_unboxed(waiting_cid, value);
 
 		is_waiting = false;
 	}
 	void return_flat(lbm_flat_value_t * value) {
-		STORED_LOGF("returning flat value to cid: %d", return_cid);
-
-		if (!lbm_unblock_ctx(waiting_cid, value)) {
-			STORED_LOGF("lbm_unblock_ctx failed, value: %p", value);
-		} else {
-			STORED_LOGF("event_listener return_flat succeeded");
-		}
-
+		lbm_unblock_ctx(waiting_cid, value);
+		
 		is_waiting = false;
 	}
 
@@ -203,8 +191,7 @@ static void event_listener(
 								break;
 							}
 							case ESP_ERR_INVALID_ARG: {
-								STORED_LOGF("esp_wifi_scan_get_ap_num returned "
-											"ESP_ERR_INVALID_ARG! :O");
+								// Does this ever happen?
 								esp_wifi_clear_ap_list();
 								return_unboxed(ENC_SYM_EERROR);
 								return;
@@ -212,11 +199,6 @@ static void event_listener(
 							case ESP_ERR_WIFI_NOT_INIT:
 							case ESP_ERR_WIFI_NOT_STARTED:
 							default: {
-								STORED_LOGF(
-									"esp_wifi_scan_get_ap_num failed, result: "
-									"%d",
-									result
-								);
 								esp_wifi_clear_ap_list();
 								return_unboxed(ENC_SYM_EERROR);
 								return;
@@ -257,9 +239,6 @@ static void event_listener(
 						}
 
 						if (!lbm_start_flatten(&value, size)) {
-							STORED_LOGF(
-								"Failed lbm_start_flatten of size: %u", size
-							);
 							return_unboxed(ENC_SYM_EERROR);
 							return;
 						}
@@ -334,12 +313,8 @@ static void event_listener(
 						|| data->reason == WIFI_REASON_AUTH_EXPIRE;
 
 					if (is_wrong_password) {
-						STORED_LOGF("returned ENC_SYM(symbol_wrong_password) "
-									"to the blocked thread");
 						return_unboxed(ENC_SYM(symbol_wrong_password));
 					} else if (!is_undetermined_disconnect) {
-						STORED_LOGF("returned ENC_SYM_NIL to the blocked thread"
-						);
 						return_unboxed(ENC_SYM_NIL);
 					}
 				}
@@ -350,7 +325,6 @@ static void event_listener(
 		switch (event_id) {
 			case IP_EVENT_STA_GOT_IP: {
 				if (is_waiting && waiting_op == WAITING_OP_CHANGE_NETWORK) {
-					STORED_LOGF("returned ENC_SYM_TRUE to the blocked thread");
 					return_unboxed(ENC_SYM_TRUE);
 				}
 				break;
@@ -653,15 +627,12 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
 
 	if (sock < 0) {
-		STORED_LOGF("comm_wifi_open_socket failed, result: %d", sock);
 		return ENC_SYM_NIL;
 	}
 
 	{
 		int result = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
 		if (result != 0) {
-			STORED_LOGF("connect failed, result: %d, errno: %d", result, errno);
-
 			shutdown(sock, 0);
 			close(sock);
 			return ENC_SYM_NIL;
@@ -786,7 +757,6 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
 	if (len != -1) {
 		connected = len != 0;
 	} else {
-		STORED_LOGF("recv for getting status failed, errno: %d", errno);
 		switch (errno) {
 			case EWOULDBLOCK: {
 				connected = true;
@@ -844,7 +814,6 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 
 	ssize_t len = send(sock, data, size, 0);
 	if (len == -1) {
-		STORED_LOGF("send failed, errno: %d", errno);
 		switch (errno) {
 			// Trying to send remote has disconnected seems to
 			// generate a ECONNABORTED the first time, then ENOTCONN
@@ -862,8 +831,6 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 			}
 		}
 	}
-
-	STORED_LOGF("sent %d bytes", len);
 
 	return ENC_SYM_TRUE;
 }
@@ -908,7 +875,6 @@ static void recv_task(void *arg) {
 			}
 			default: {
 				// an error has occurred
-				STORED_LOGF("recv in socket_task failed, errno: %d", errno);
 				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_NIL);
 				goto recv_cleanup;
 			}
@@ -925,7 +891,6 @@ static void recv_task(void *arg) {
 
 			lbm_flat_value_t value;
 			if (!f_pack_array(&value, buffer, result_size)) {
-				STORED_LOGF("lbm_start_flatten failed");
 				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
 			}
 
@@ -953,6 +918,7 @@ static void recv_task(void *arg) {
 	vTaskDelete(NULL);
 }
 
+// Maybe this can be merged with recv_task?
 static void recv_to_char_task(void *arg) {
 	recv_task_state *s = (recv_task_state *)arg;
 
@@ -996,7 +962,6 @@ static void recv_to_char_task(void *arg) {
 				}
 				default: {
 					// an error has occurred
-					STORED_LOGF("recv in socket_task failed, errno: %d", errno);
 					lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_NIL);
 					goto recv_cleanup;
 				}
@@ -1166,7 +1131,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 
 		ssize_t len = recv(sock, buffer, max_len, MSG_DONTWAIT);
 		if (len == -1) {
-			STORED_LOGF("recv failed, errno: %d", errno);
 			switch (errno) {
 				case EWOULDBLOCK: {
 					return ENC_SYM(symbol_no_data);
@@ -1181,8 +1145,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 				}
 			}
 		}
-
-		STORED_LOGF("got data of len %d", len);
 
 		if (len == 0) {
 			// Receiving 0 bytes seems to happen right before
@@ -1206,7 +1168,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 }
 
 /**
- * signature: (tcp-recv socket:number max-len:number terminator:char
+ * signature: (tcp-recv-to-char socket:number max-len:number terminator:char
  * [timeout:number] [as-str:bool] [return-on-disconnect:bool]) -> byte-array|nil
  *
  * Receive a string until the specified character is encountered

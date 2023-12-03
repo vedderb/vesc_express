@@ -457,7 +457,7 @@ static void gatts_event_handler(
 				"created attribute table; status: %u, svc_inst_id: %u, "
 				"num_handle: %u, waiting_add_service_index: %d",
 				param->add_attr_tab.status, param->add_attr_tab.svc_inst_id,
-				param->add_attr_tab.num_handle, waiting_add_service_index,
+				param->add_attr_tab.num_handle, waiting_add_service_index
 			);
 			STORED_LOGF(
 				"svc_uuid (%u): %s", param->add_attr_tab.svc_uuid.len,
