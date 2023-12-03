@@ -25,6 +25,9 @@
 #include "heap.h"
 #include "eval_cps.h"
 #include "lbm_flat_value.h"
+#include "commands.h"
+
+#include "lbm_vesc_utils.h"
 
 bool lbm_add_symbol_const_if_new(char *name, lbm_uint *id) {
 	if (!lbm_get_symbol_by_name(name, id) && !lbm_add_symbol_const(name, id)) {
@@ -85,6 +88,15 @@ lbm_value lbm_allocate_empty_list_grid(lbm_uint height, lbm_uint width) {
 	return outer;
 }
 
+bool lbm_memory_shrink_bytes(void *array, lbm_uint size_bytes) {
+	lbm_uint size_words = size_bytes / LBM_WORD_SIZE;
+	if (size_bytes % LBM_WORD_SIZE != 0) {
+		size_words += 1;
+	}
+	
+	return lbm_memory_shrink((lbm_uint *)array, size_words) > 0;
+}
+
 bool lbm_array_shrink(lbm_value array, lbm_uint new_size) {
 	if (!lbm_is_array_rw(array)) {
 		return false;
@@ -92,7 +104,7 @@ bool lbm_array_shrink(lbm_value array, lbm_uint new_size) {
 
 	lbm_array_header_t *header = (lbm_array_header_t *)lbm_car(array);
 
-	if (!lbm_memory_shrink(header->data, new_size)) {
+	if (!lbm_memory_shrink_bytes(header->data, new_size)) {
 		return false;
 	}
 	header->size = new_size;

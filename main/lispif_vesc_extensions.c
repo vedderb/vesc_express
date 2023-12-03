@@ -2504,6 +2504,92 @@ static lbm_value ext_buf_find(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(res);
 }
 
+/**
+ * signature: (buf-resize arr:array delta-size:number|nil [new-size:number])
+ * -> array
+ *
+ * If delta-size is passed, this extension calculates the new size by
+ * adding the relative size to the current size, otherwise new-size is simply
+ * used for the new size.
+ *
+ * If the new size is smaller than the current size, the array is just shrunk in
+ * place without allocating a new buffer. Either delta-size or new-size must not
+ * be nil.
+ * 
+ * Either way, the passed array is always resized mutably, with the returned
+ * reference only for convenience.
+ */
+static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3) || !lbm_is_array_rw(args[0])
+		|| (!lbm_is_number(args[1]) && !lbm_is_symbol_nil(args[1]))
+		|| (argn == 3 && !lbm_is_number(args[2]))) {
+		lbm_set_error_reason((char *)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	bool delta_size_passed = !lbm_is_symbol_nil(args[1]);
+	bool new_size_passed   = argn == 3;
+	if (!delta_size_passed && !new_size_passed) {
+		lbm_set_error_reason(
+			"delta-size (arg 2) was nil while new-size wasn't provided (arg 3)"
+		);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_array_header_t *header = lbm_dec_array_header(args[0]);
+	if (header == NULL) {
+		// Should be impossible, unless it contained null pointer to header.
+		return ENC_SYM_FATAL_ERROR;
+	}
+	
+	uint32_t new_size;
+	{
+		int32_t new_size_signed;
+		if (delta_size_passed) {
+			new_size_signed = header->size + lbm_dec_as_i32(args[1]);
+		} else {
+			new_size_signed = lbm_dec_as_i32(args[2]);
+		}
+		
+		if (new_size_signed < 0) {
+			lbm_set_error_reason("resulting size was negative");
+			return ENC_SYM_EERROR;
+		}
+		new_size = (uint32_t)new_size_signed;
+	}
+	
+	if (new_size == header->size) {
+		return args[0];
+	} else if (new_size < header->size) {
+		uint32_t allocated_size = new_size;
+		if (new_size == 0) {
+			// arrays of size 0 still need some memory allocated for them.
+			allocated_size = 1;
+		}
+		// We sadly can't trust the return value, as it fails if the allocation
+		// was previously a single word long. So we just throw it away.
+		lbm_memory_shrink_bytes(header->data, allocated_size);
+		
+		header->size = new_size;
+
+		return args[0];
+	} else {
+		void *buffer = lbm_malloc_reserve(new_size);
+		if (buffer == NULL) {
+			return ENC_SYM_MERROR;
+		}
+
+		memcpy(buffer, header->data, header->size);
+		memset(buffer + header->size, 0, new_size - header->size);
+
+		lbm_memory_free(header->data);
+		header->data = buffer;
+		header->size = new_size;
+
+		return args[0];
+	}
+}
+
 // WS2812-driver using RMT
 
 #define RMT_LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
@@ -4003,6 +4089,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("crc16", ext_crc16);
 	lbm_add_extension("crc32", ext_crc32);
 	lbm_add_extension("buf-find", ext_buf_find);
+	lbm_add_extension("buf-resize", ext_buf_resize);
 
 	// Configuration
 	lbm_add_extension("conf-get", ext_conf_get);
