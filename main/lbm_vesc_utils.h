@@ -24,6 +24,11 @@
 #include "heap.h"
 #include "lbm_flat_value.h"
 
+// Is this the right place to define this?
+/**
+ * Bytes per word in the LBM memory.
+*/
+#define LBM_WORD_SIZE 4
 
 /**
  * Add symbol to the symbol table if it doesn't already exist.
@@ -123,6 +128,26 @@ lbm_value lbm_allocate_empty_list(lbm_uint len);
  * @return The allocated list, or ENC_SYM_MERROR when out of memory.
 */
 lbm_value lbm_allocate_empty_list_grid(lbm_uint height, lbm_uint width);
+
+/**
+ * Wrapper around lbm_memory_shrink that takes number of bytes instead of number
+ * of words. Shrinks the size of an pointer allocated in LBM memory to the
+ * smallest possible size while still having capacity for the specified amount
+ * of bytes.
+ * 
+ * @param ptr Pointer to the allocated segment in LBM memory. Should have been
+ * obtained through lbm_malloc or other similar way at some point.
+ * @param size_bytes The new capacity of the allocation in bytes. Must be
+ * smaller or equal to the previous capacity.
+ * @return If the operation succeeded. The return value of lbm_memory_shrink is
+ * directly passed through, that is: false is returned either if ptr didn't
+ * point into the LBM memory/didn't point to the start of an allocated segment
+ * or if the new size was larger than the previous (note that since this
+ * function converts bytes to words, a larger size in bytes might not cause it
+ * to fail, as the size in words could still be the same). Otherwise true is
+ * returned. 
+*/
+bool lbm_memory_shrink_bytes(void *ptr, lbm_uint size_bytes);
 
 /**
  * Shrink an lbm array to the new specified size.
