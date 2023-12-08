@@ -3679,7 +3679,7 @@ static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID
 		if (fw_reply_rx) {
 			res = fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
 		} else {
-			lbm_block_ctx_from_extension_timeout(10.0);
+			lbm_block_ctx_from_extension_timeout(1.5);
 			res = ENC_SYM_TRUE;
 		}
 	}
