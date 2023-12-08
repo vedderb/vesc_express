@@ -183,6 +183,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if (update_handle != 0) {
 			if (esp_ota_end(update_handle) == ESP_OK) {
 				if (esp_ota_set_boot_partition(update_partition) == ESP_OK) {
+					comm_wifi_disconnect();
+					vTaskDelay(50 / portTICK_PERIOD_MS);
 					esp_restart();
 				}
 			}
