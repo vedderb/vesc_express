@@ -30,7 +30,6 @@
 // Settings
 #define BQ_ADDR					0x08
 #define CRC_KEY					7
-#define CELL_NUM				13
 
 // Registers
 #define REG_SYS_STAT			0x00
@@ -60,8 +59,10 @@ static SemaphoreHandle_t i2c_mutex;
 static SemaphoreHandle_t bq_mutex;
 static int m_offset = 0.0;
 static int m_gain = 0.0;
-static bool m_bal_cells[CELL_NUM] = {false};
+static bool m_bal_cells[15] = {false};
 static volatile bool m_bq_active = false;
+
+static int m_cells = 13;
 
 static esp_err_t i2c_tx_rx(uint8_t addr,
 		const uint8_t* write_buffer, size_t write_size,
@@ -328,9 +329,16 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 		lbm_value vc_list = ENC_SYM_NIL;
 		for (int i = 0;i < 15;i++) {
 
-			// Skip cells that are not connected on this
-			// particular hardware
-			if (i == 8 || i == 13) {
+			// Skip cells that are not connected
+			if (m_cells < 15 && i == 13) {
+				i++;
+			}
+
+			if (m_cells < 14 && i == 8) {
+				i++;
+			}
+
+			if (m_cells < 13 && i == 3) {
 				i++;
 			}
 
@@ -451,7 +459,7 @@ static lbm_value ext_set_bal(lbm_value *args, lbm_uint argn) {
 	int ch = lbm_dec_as_i32(args[0]);
 	int state = lbm_dec_as_i32(args[1]);
 
-	if (ch >= CELL_NUM || !m_bq_active) {
+	if (ch >= m_cells || !m_bq_active) {
 		return ENC_SYM_NIL;
 	} else {
 		m_bal_cells[ch] = state;
@@ -464,11 +472,25 @@ static lbm_value ext_get_bal(lbm_value *args, lbm_uint argn) {
 
 	int ch = lbm_dec_as_i32(args[0]);
 
-	if (ch >= CELL_NUM) {
+	if (ch >= m_cells) {
 		return ENC_SYM_NIL;
 	} else {
 		return lbm_enc_i(m_bal_cells[ch] ? 1 : 0);
 	}
+}
+
+static lbm_value ext_set_cells(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int cells = lbm_dec_as_i32(args[0]);
+
+	if (cells == 12 || cells == 13 || cells == 14 || cells == 15) {
+		m_cells = cells;
+		return ENC_SYM_TRUE;
+	}
+
+	lbm_set_error_reason("Invalid cell count");
+	return ENC_SYM_TERROR;
 }
 
 typedef struct {
@@ -731,6 +753,8 @@ static void load_extensions(void) {
 	lbm_add_extension("bms-set-bal", ext_set_bal);
 	lbm_add_extension("bms-get-bal", ext_get_bal);
 
+	lbm_add_extension("bms-set-cells", ext_set_cells);
+
 	// Configuration
 	lbm_add_extension("bms-get-param", ext_bms_get_param);
 	lbm_add_extension("bms-set-param", ext_bms_set_param);
@@ -744,10 +768,10 @@ static void bal_task(void *arg) {
 	bool is_grp2 = false;
 
 	for (;;) {
-		bool bal_now[CELL_NUM];
+		bool bal_now[m_cells];
 		memset(bal_now, 0, sizeof(bal_now));
 
-		for (int i = (is_grp2 ? 0 : 1);i < CELL_NUM;i += 2) {
+		for (int i = (is_grp2 ? 0 : 1);i < m_cells;i += 2) {
 			bal_now[i] = m_bal_cells[i];
 		}
 
@@ -755,23 +779,31 @@ static void bal_task(void *arg) {
 		uint8_t cb2 = 0;
 		uint8_t cb3 = 0;
 
-		cb1 |= (bal_now[0] ? 1 : 0) << 0; // CB1
-		cb1 |= (bal_now[1] ? 1 : 0) << 1; // CB2
-		cb1 |= (bal_now[2] ? 1 : 0) << 2; // CB3
-		cb1 |= (bal_now[3] ? 1 : 0) << 3; // CB4
-		cb1 |= (bal_now[4] ? 1 : 0) << 4; // CB5
+		int ch = 0;
 
-		cb2 |= (bal_now[5] ? 1 : 0) << 0; // CB6
-		cb2 |= (bal_now[6] ? 1 : 0) << 1; // CB7
-		cb2 |= (bal_now[7] ? 1 : 0) << 2; // CB8
-		// Skip unused C9
-		cb2 |= (bal_now[8] ? 1 : 0) << 4; // CB10
+		cb1 |= (bal_now[ch++] ? 1 : 0) << 0; // CB1
+		cb1 |= (bal_now[ch++] ? 1 : 0) << 1; // CB2
+		cb1 |= (bal_now[ch++] ? 1 : 0) << 2; // CB3
+		if (m_cells >= 13) {
+			cb1 |= (bal_now[ch++] ? 1 : 0) << 3; // CB4
+		}
+		cb1 |= (bal_now[ch++] ? 1 : 0) << 4; // CB5
 
-		cb3 |= (bal_now[9] ? 1 : 0) << 0; // CB11
-		cb3 |= (bal_now[10] ? 1 : 0) << 1; // CB12
-		cb3 |= (bal_now[11] ? 1 : 0) << 2; // CB13
-		// Skip unused C14
-		cb3 |= (bal_now[12] ? 1 : 0) << 4; // CB15
+		cb2 |= (bal_now[ch++] ? 1 : 0) << 0; // CB6
+		cb2 |= (bal_now[ch++] ? 1 : 0) << 1; // CB7
+		cb2 |= (bal_now[ch++] ? 1 : 0) << 2; // CB8
+		if (m_cells >= 14) {
+			cb2 |= (bal_now[ch++] ? 1 : 0) << 3; // CB9
+		}
+		cb2 |= (bal_now[ch++] ? 1 : 0) << 4; // CB10
+
+		cb3 |= (bal_now[ch++] ? 1 : 0) << 0; // CB11
+		cb3 |= (bal_now[ch++] ? 1 : 0) << 1; // CB12
+		cb3 |= (bal_now[ch++] ? 1 : 0) << 2; // CB13
+		if (m_cells >= 15) {
+			cb3 |= (bal_now[ch++] ? 1 : 0) << 3; // CB14
+		}
+		cb3 |= (bal_now[ch++] ? 1 : 0) << 4; // CB15
 
 		xSemaphoreTake(bq_mutex, portMAX_DELAY);
 
