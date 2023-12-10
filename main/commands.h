@@ -24,8 +24,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "hw.h"
-
 typedef void (*send_func_t)(unsigned char *, unsigned int);
 
 // Functions
