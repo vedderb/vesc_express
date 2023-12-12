@@ -12,6 +12,7 @@ all at the moment for instance). It only supports the following actions:
    write no response, notify, and indicate.
 3. Defining a list of charactersistic descriptors to assign to a characteristic.
 4. Reading and writing the values of the characteristics and their descriptors.
+5. Customizing the advertisement and scan response packets sent.
 
 ## Configuring BLE Scripting
 
@@ -536,18 +537,22 @@ details.)
 If we run this code and open nRF Connect, we can find our device "device-name"
 in the scanner list.
 
-![A screenshot of the scanner view in nRF Connect app showing the device with the name "device-name"](../../doc/img/ble-example-adv.png)
+<img src="../../doc/img/ble-example-adv.png" alt='A screenshot of the scanner
+view in nRF Connect app showing the device with the name "device-name"'
+width=500>
 
 When connecting we see our characteristic
 `ae2d03db-5335-43af-9a70-ea5463ad3813` with the value 42 (or `0x2A` in hex).
 
-![A screenshot of the nRF Connect app connected with "device-name". You can see a characteristic with the value 0x2A in hexadecimal. ](../../doc/img/ble-example-adv.png)
+<img src="../../doc/img/ble-example-adv.png" alt='A screenshot of the nRF
+Connect app connected with "device-name". You can see a characteristic with the
+value 0x2A in hexadecimal.' width=500>
 
 ### References
 
 I've referenced the official Bluetooth specifications a lot in this section, but
-since most of the documents don't have any bookmarks, linking directly to the
-relevant sections is difficult. So you'll unfortunately have to go to the
+since most of the Bluetooth documents don't have any bookmarks, linking directly
+to the relevant sections is difficult. So you'll unfortunately have to go to the
 mentioned sections yourself.
 
 But here is a table of links to the specifications mentioned:
