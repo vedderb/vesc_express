@@ -83,7 +83,7 @@ Configure the if custom advertising data should be used, and which packets to
 send in that case. `use-custom` is a bool which if true specifies that the
 custom advertising and scan response packets should be used. If false,
 `adv-data` and `scan-rsp-data` are ignored and do not need to be provided, since
-a standard packet is used instead (see [BLE Advertising](#ble-advertising)).
+a standard packet is used instead (see the example below to see its contents).
 
 `adv-data` and `scan-rsp-data` are used to specify the packets that are used
 with advertising and scan responses. They can either be an array which specifies
@@ -140,7 +140,7 @@ default (assuming that you'd configured the device name to be "test").
 (ble-conf-adv true adv-data scan-rsp-data)
 ```
 
-Example that configures the default packets using raw byte-arrays:
+Example that configures the same default packets using raw byte-arrays instead:
 ```clj
 (def adv-data [
     0x02 0x01 0x06                ; flags
@@ -544,7 +544,7 @@ width=500>
 When connecting we see our characteristic
 `ae2d03db-5335-43af-9a70-ea5463ad3813` with the value 42 (or `0x2A` in hex).
 
-<img src="../../doc/img/ble-example-adv.png" alt='A screenshot of the nRF
+<img src="../../doc/img/ble-example-connected.png" alt='A screenshot of the nRF
 Connect app connected with "device-name". You can see a characteristic with the
 value 0x2A in hexadecimal.' width=500>
 
