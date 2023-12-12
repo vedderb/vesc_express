@@ -36,19 +36,11 @@
 bool lbm_add_symbol_const_if_new(char *name, lbm_uint *id);
 
 static inline bool lbm_is_bool(lbm_value value) {
-	return (lbm_is_symbol(value) && (lbm_dec_sym(value) == SYM_NIL || lbm_dec_sym(value) == SYM_TRUE));
+	return (
+		lbm_is_symbol(value)
+		&& (lbm_dec_sym(value) == SYM_NIL || lbm_dec_sym(value) == SYM_TRUE)
+	);
 }
-
-// nvm, this function already existed in the standard lbm library...
-// /**
-//  * Access the data of an lbm byte array as a string.
-//  * 
-//  * @param value The value whose content will be returned if it's a byte array.
-//  * The array may be a read-only array! (Contrary to lbm_heap_array_get_data
-//  * which only takes writable arrays.)
-//  * @return The str data, or NULL if value was not a byte array.
-// */
-// char *lbm_dec_str(lbm_value value);
 
 /**
  * Dec lbm value as a boolean.
@@ -174,7 +166,26 @@ bool lbm_array_shrink(lbm_value array, lbm_uint new_size);
 */
 bool lbm_check_argn_range(lbm_uint argn, lbm_uint n_min, lbm_uint n_max);
 
-#define LBM_CHECK_ARGN_RANGE(min, max) if (!lbm_check_argn_range(argn, (min), (max))) {return ENC_SYM_EERROR;}
+/**
+ * Check if the number of arguments is at large as long as specified. Sets
+ * error-reason if result is false.
+ * 
+ * The (open) range specified is inclusive!
+ * 
+ * @param argn Number of arguments.
+ * @param n_min Minimum number of arguments.
+ * 
+*/
+bool lbm_check_argn_least(lbm_uint argn, lbm_uint n_min);
+
+#define LBM_CHECK_ARGN_RANGE(min, max)                                         \
+	if (!lbm_check_argn_range(argn, (min), (max))) {                           \
+		return ENC_SYM_EERROR;                                                 \
+	}
+#define LBM_CHECK_ARGN_LEAST(min)                                              \
+	if (!lbm_check_argn_least(argn, (min))) {                                  \
+		return ENC_SYM_EERROR;                                                 \
+	}
 
 /**
  * Construct a flat value containing a single lbm array from a c array,
@@ -192,4 +203,4 @@ bool lbm_check_argn_range(lbm_uint argn, lbm_uint n_min, lbm_uint n_max);
  * @param size Length of the data in bytes.
  * @return If necessary allocations were successfull. 
 */
-bool f_pack_array(lbm_flat_value_t *result, void * data, size_t size);
+bool f_pack_array(lbm_flat_value_t *result, void *data, size_t size);

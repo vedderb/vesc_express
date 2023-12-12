@@ -41,7 +41,7 @@ lbm_array_header_t *lbm_dec_array_header(lbm_value value) {
 	if (!lbm_is_array_r(value)) {
 		return NULL;
 	}
-	
+
 	return (lbm_array_header_t *)lbm_car(value);
 }
 
@@ -49,7 +49,7 @@ void *lbm_dec_array_data(lbm_value value) {
 	if (!lbm_is_array_r(value)) {
 		return NULL;
 	}
-	
+
 	lbm_array_header_t *header = lbm_dec_array_header(value);
 	if (!header->data) {
 		return NULL;
@@ -93,7 +93,7 @@ bool lbm_memory_shrink_bytes(void *array, lbm_uint size_bytes) {
 	if (size_bytes % LBM_WORD_SIZE != 0) {
 		size_words += 1;
 	}
-	
+
 	return lbm_memory_shrink((lbm_uint *)array, size_words) > 0;
 }
 
@@ -115,25 +115,34 @@ bool lbm_array_shrink(lbm_value array, lbm_uint new_size) {
 extern const char *lbm_error_str_num_args;
 bool lbm_check_argn_range(lbm_uint argn, lbm_uint n_min, lbm_uint n_max) {
 	if (!(n_min <= argn && argn <= n_max)) {
-		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		lbm_set_error_reason((char *)lbm_error_str_num_args);
 		return false;
 	}
-	
+
 	return true;
 }
 
-bool f_pack_array(lbm_flat_value_t *result, void * data, size_t size) {
+bool lbm_check_argn_least(lbm_uint argn, lbm_uint n_min) {
+	if (!(n_min <= argn)) {
+		lbm_set_error_reason((char *)lbm_error_str_num_args);
+		return false;
+	}
+
+	return true;
+}
+
+bool f_pack_array(lbm_flat_value_t *result, void *data, size_t size) {
 	if (!lbm_start_flatten(result, 5 + size)) {
 		return false;
 	}
-	
+
 	if (!f_lbm_array(result, size, data)) {
 		return false;
 	}
-	
+
 	if (!lbm_finish_flatten(result)) {
 		return false;
 	}
-	
+
 	return true;
 }

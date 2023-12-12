@@ -21,6 +21,7 @@
 #define MAIN_BLE_CUSTOM_BLE_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "esp_bt_defs.h"
 #include "esp_gatt_defs.h"
@@ -58,6 +59,8 @@ typedef enum {
 	/** Tried to remove a service which was not the most recent (not aldready
 	 * removed) one. */
 	CUSTOM_BLE_SERVICE_NOT_LAST       = 12,
+	/** The given array was too long. */
+	CUSTOM_BLE_TOO_LONG               = 13,
 } custom_ble_result_t;
 
 typedef struct {
@@ -113,6 +116,40 @@ typedef void (*attr_write_cb_t)(
  * - CUSTOM_BLE_NAME_TOO_LONG: The provided name was too long.
  */
 custom_ble_result_t custom_ble_set_name(const char *name);
+
+/**
+ * Configure if custom raw advertising and scan response packets should be used,
+ * and which should be set if that is the case.
+ * 
+ * The change will go into effect shortly after calling this, as an
+ * event listener has to be called before the packets are updated.
+ * If the BLE server has not been started yet the changes will take effect when
+ * started.
+ * 
+ * This function should not be called by multiple threads simultaneously.
+ * 
+ * @param use_raw If custom raw packets should be used. All other
+ * parameters are ignored if this is false.
+ * @param adv_len The length of adv_data_raw in bytes. Must not be larger than
+ * 31 bytes. Is ignored if adv_data_raw is NULL.
+ * @param adv_data_raw Buffer containing the data for advertising packets.
+ * Ownership is not transferred as a copy is made internally. The raw
+ * advertising data is left unchanged if NULL is passed.
+ * @param scan_rsp_len The length of adv_data_raw in bytes. Must not be larger than
+ * 31 bytes. Is ignored if scan_rsp_data_raw is NULL.
+ * @param scan_rsp_data_raw The buffer containing the data for scan response
+ * packets. Ownership is not transferred as a copy is made internally.
+ * The current raw scan response data is left unchanged if NULL is passed.
+ * @return Returns CUSTOM_BLE_OK if successfull, otherwise
+ * - CUSTOM_BLE_TOO_LONG:  adv_data_raw or scan_rsp_data_raw was longer than 31
+ *   bytes.
+ * - CUSTOM_BLE_ESP_ERROR: The internal call to esp_ble_gap_stop_advertising
+ *   failed.
+*/
+custom_ble_result_t custom_ble_update_adv(
+	bool use_raw, size_t adv_len, const uint8_t adv_data_raw[adv_len],
+	size_t scan_rsp_len, const uint8_t scan_rsp_data_raw[scan_rsp_len]
+);
 
 /**
  * Configure a function that will be called whenever the value of a

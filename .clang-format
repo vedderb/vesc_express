@@ -24,3 +24,4 @@ AlignConsecutiveMacros:
   Enabled: true
   AcrossEmptyLines: false
   AcrossComments: true
+ReflowComments: false
