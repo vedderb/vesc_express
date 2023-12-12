@@ -139,6 +139,10 @@ typedef struct {
 	lbm_uint ble_name;
 	lbm_uint ble_pin;
 
+	// Arrays
+	lbm_uint copy;
+	lbm_uint mut;
+	
 	// Other
 	lbm_uint half_duplex;
 } vesc_syms;
@@ -279,6 +283,12 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			get_add_symbol("ble-pin", comp);
 		}
 
+		else if (comp == &syms_vesc.copy) {
+			get_add_symbol("copy", comp);
+		} else if (comp == &syms_vesc.mut) {
+			get_add_symbol("mut", comp);
+		}
+		
 		else if (comp == &syms_vesc.half_duplex) {
 			get_add_symbol("half-duplex", comp);
 		}
@@ -2500,8 +2510,10 @@ static lbm_value ext_buf_find(lbm_value *args, lbm_uint argn) {
 }
 
 /**
- * signature: (buf-resize arr:array delta-size:number|nil [new-size:number])
+ * signature: (buf-resize arr:array delta-size:number|nil [new-size:number] [copy-arr:copy-symbol])
  * -> array
+ * where
+ *   copy-symbol = 'copy|'mut
  *
  * If delta-size is passed, this extension calculates the new size by
  * adding the relative size to the current size, otherwise new-size is simply
@@ -2511,19 +2523,48 @@ static lbm_value ext_buf_find(lbm_value *args, lbm_uint argn) {
  * place without allocating a new buffer. Either delta-size or new-size must not
  * be nil.
  * 
- * Either way, the passed array is always resized mutably, with the returned
- * reference only for convenience.
+ * Either way, the passed array is resized mutably, with the returned reference
+ * only for convenience, unless the symbol 'copy at the end. This makes it
+ * always allocate a new buffer with the new size. You can also pass the symbol
+ * 'mut to signify the default behaviour for completeness. The precise position
+ * of the copy symbol is not important as long as it's the last argument.
  */
 static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
-	if ((argn != 2 && argn != 3) || !lbm_is_array_rw(args[0])
-		|| (!lbm_is_number(args[1]) && !lbm_is_symbol_nil(args[1]))
-		|| (argn == 3 && !lbm_is_number(args[2]))) {
-		lbm_set_error_reason((char *)lbm_error_str_incorrect_arg);
-		return ENC_SYM_TERROR;
+	LBM_CHECK_ARGN_RANGE(2, 4);
+	
+	bool should_copy = false;
+	if (argn > 2 && lbm_is_symbol(args[argn - 1])) {
+		lbm_uint sym = lbm_dec_sym(args[argn - 1]);
+		if (compare_symbol(sym, &syms_vesc.copy)) {
+			should_copy = true;
+		} else if (compare_symbol(sym, &syms_vesc.mut)) {
+			should_copy = false;
+		} else {
+			lbm_set_error_suspect(args[argn - 1]);
+			return ENC_SYM_TERROR;
+		}
 	}
 
+	if ((!should_copy && !lbm_is_array_rw(args[0]))
+		|| (should_copy && !lbm_is_array_r(args[0]))) {
+		lbm_set_error_suspect(args[0]);
+		return ENC_SYM_TERROR;
+	}
+	
 	bool delta_size_passed = !lbm_is_symbol_nil(args[1]);
-	bool new_size_passed   = argn == 3;
+	bool new_size_passed   = argn > 2 && lbm_is_number(args[2]);
+	
+	if (delta_size_passed && !lbm_is_number(args[1])) {
+		lbm_set_error_suspect(args[1]);
+		return ENC_SYM_TERROR;
+	}
+	
+	if (argn == 4 && !lbm_is_number(args[2])) {
+		// The case where argn is 3 is covered by the first check.
+		lbm_set_error_suspect(args[2]);
+		return ENC_SYM_TERROR;
+	}
+	
 	if (!delta_size_passed && !new_size_passed) {
 		lbm_set_error_reason(
 			"delta-size (arg 2) was nil while new-size wasn't provided (arg 3)"
@@ -2553,107 +2594,54 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 		new_size = (uint32_t)new_size_signed;
 	}
 	
-	if (new_size == header->size) {
-		return args[0];
-	} else if (new_size < header->size) {
-		uint32_t allocated_size = new_size;
-		if (new_size == 0) {
-			// arrays of size 0 still need some memory allocated for them.
-			allocated_size = 1;
-		}
-		// We sadly can't trust the return value, as it fails if the allocation
-		// was previously a single word long. So we just throw it away.
-		lbm_memory_shrink_bytes(header->data, allocated_size);
-		
-		header->size = new_size;
-
-		return args[0];
-	} else {
-		void *buffer = lbm_malloc_reserve(new_size);
-		if (buffer == NULL) {
+	if (should_copy) {
+		void *buffer = lbm_malloc(new_size);
+		if (!buffer) {
 			return ENC_SYM_MERROR;
 		}
-
-		memcpy(buffer, header->data, header->size);
-		memset(buffer + header->size, 0, new_size - header->size);
-
-		lbm_memory_free(header->data);
-		header->data = buffer;
-		header->size = new_size;
-
-		return args[0];
-	}
-}
-
-/**
- * signature: (buf-resize-cpy arr:array delta-size:number|nil [new-size:number])
- * -> array
- *
- * Create a copy of arr with a new size.
- * 
- * If delta-size is passed, this extension calculates the new size by
- * adding the relative size to the current size, otherwise new-size is simply
- * used for the new size.
- *
- * The new size may be smaller than the current size. Either delta-size or
- * new-size must not be nil.
- * 
- * Either way, the passed array is left unchanged.
- */
-static lbm_value ext_buf_resize_cpy(lbm_value *args, lbm_uint argn) {
-	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0])
-		|| (!lbm_is_number(args[1]) && !lbm_is_symbol_nil(args[1]))
-		|| (argn == 3 && !lbm_is_number(args[2]))) {
-		lbm_set_error_reason((char *)lbm_error_str_incorrect_arg);
-		return ENC_SYM_TERROR;
-	}
-
-	bool delta_size_passed = !lbm_is_symbol_nil(args[1]);
-	bool new_size_passed   = argn == 3;
-	if (!delta_size_passed && !new_size_passed) {
-		lbm_set_error_reason(
-			"delta-size (arg 2) was nil while new-size wasn't provided (arg 3)"
-		);
-		return ENC_SYM_EERROR;
-	}
-
-	lbm_array_header_t *header = lbm_dec_array_header(args[0]);
-	if (header == NULL) {
-		// Should be impossible, unless it contained null pointer to header.
-		return ENC_SYM_FATAL_ERROR;
-	}
-	
-	uint32_t new_size;
-	{
-		int32_t new_size_signed;
-		if (delta_size_passed) {
-			new_size_signed = header->size + lbm_dec_as_i32(args[1]);
-		} else {
-			new_size_signed = lbm_dec_as_i32(args[2]);
+		
+		memcpy(buffer, header->data, MIN(header->size, new_size));
+		if (new_size > header->size) {
+			memset(buffer + header->size, 0, new_size - header->size);
 		}
 		
-		if (new_size_signed < 0) {
-			lbm_set_error_reason("resulting size was negative");
-			return ENC_SYM_EERROR;
+		lbm_value result;
+		if (!lbm_lift_array(&result, buffer, new_size)) {
+			return ENC_SYM_MERROR;
 		}
-		new_size = (uint32_t)new_size_signed;
+		return result;
+	} else {
+		if (new_size == header->size) {
+			return args[0];
+		} else if (new_size < header->size) {
+			uint32_t allocated_size = new_size;
+			if (new_size == 0) {
+				// arrays of size 0 still need some memory allocated for them.
+				allocated_size = 1;
+			}
+			// We sadly can't trust the return value, as it fails if the allocation
+			// was previously a single word long. So we just throw it away.
+			lbm_memory_shrink_bytes(header->data, allocated_size);
+			
+			header->size = new_size;
+
+			return args[0];
+		} else {
+			void *buffer = lbm_malloc(new_size);
+			if (buffer == NULL) {
+				return ENC_SYM_MERROR;
+			}
+
+			memcpy(buffer, header->data, header->size);
+			memset(buffer + header->size, 0, new_size - header->size);
+
+			lbm_memory_free(header->data);
+			header->data = buffer;
+			header->size = new_size;
+
+			return args[0];
+		}
 	}
-	
-	void *buffer = lbm_malloc(new_size);
-	if (!buffer) {
-		return ENC_SYM_MERROR;
-	}
-	
-	memcpy(buffer, header->data, MIN(header->size, new_size));
-	if (new_size > header->size) {
-		memset(buffer + header->size, 0, new_size - header->size);
-	}
-	
-	lbm_value result;
-	if (!lbm_lift_array(&result, buffer, new_size)) {
-		return ENC_SYM_MERROR;
-	}
-	return result;
 }
 
 // WS2812-driver using RMT
@@ -4156,7 +4144,6 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("crc32", ext_crc32);
 	lbm_add_extension("buf-find", ext_buf_find);
 	lbm_add_extension("buf-resize", ext_buf_resize);
-	lbm_add_extension("buf-resize-cpy", ext_buf_resize_cpy);
 
 	// Configuration
 	lbm_add_extension("conf-get", ext_conf_get);
