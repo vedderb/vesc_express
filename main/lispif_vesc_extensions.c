@@ -2585,6 +2585,77 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+/**
+ * signature: (buf-resize-cpy arr:array delta-size:number|nil [new-size:number])
+ * -> array
+ *
+ * Create a copy of arr with a new size.
+ * 
+ * If delta-size is passed, this extension calculates the new size by
+ * adding the relative size to the current size, otherwise new-size is simply
+ * used for the new size.
+ *
+ * The new size may be smaller than the current size. Either delta-size or
+ * new-size must not be nil.
+ * 
+ * Either way, the passed array is left unchanged.
+ */
+static lbm_value ext_buf_resize_cpy(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0])
+		|| (!lbm_is_number(args[1]) && !lbm_is_symbol_nil(args[1]))
+		|| (argn == 3 && !lbm_is_number(args[2]))) {
+		lbm_set_error_reason((char *)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	bool delta_size_passed = !lbm_is_symbol_nil(args[1]);
+	bool new_size_passed   = argn == 3;
+	if (!delta_size_passed && !new_size_passed) {
+		lbm_set_error_reason(
+			"delta-size (arg 2) was nil while new-size wasn't provided (arg 3)"
+		);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_array_header_t *header = lbm_dec_array_header(args[0]);
+	if (header == NULL) {
+		// Should be impossible, unless it contained null pointer to header.
+		return ENC_SYM_FATAL_ERROR;
+	}
+	
+	uint32_t new_size;
+	{
+		int32_t new_size_signed;
+		if (delta_size_passed) {
+			new_size_signed = header->size + lbm_dec_as_i32(args[1]);
+		} else {
+			new_size_signed = lbm_dec_as_i32(args[2]);
+		}
+		
+		if (new_size_signed < 0) {
+			lbm_set_error_reason("resulting size was negative");
+			return ENC_SYM_EERROR;
+		}
+		new_size = (uint32_t)new_size_signed;
+	}
+	
+	void *buffer = lbm_malloc(new_size);
+	if (!buffer) {
+		return ENC_SYM_MERROR;
+	}
+	
+	memcpy(buffer, header->data, MIN(header->size, new_size));
+	if (new_size > header->size) {
+		memset(buffer + header->size, 0, new_size - header->size);
+	}
+	
+	lbm_value result;
+	if (!lbm_lift_array(&result, buffer, new_size)) {
+		return ENC_SYM_MERROR;
+	}
+	return result;
+}
+
 // WS2812-driver using RMT
 
 #define RMT_LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
@@ -4085,6 +4156,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("crc32", ext_crc32);
 	lbm_add_extension("buf-find", ext_buf_find);
 	lbm_add_extension("buf-resize", ext_buf_resize);
+	lbm_add_extension("buf-resize-cpy", ext_buf_resize_cpy);
 
 	// Configuration
 	lbm_add_extension("conf-get", ext_conf_get);
