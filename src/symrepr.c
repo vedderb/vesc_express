@@ -73,6 +73,8 @@ special_sym const special_symbols[] =  {
   {"unflatten"    , SYM_UNFLATTEN},
   {"kill"         , SYM_KILL},
   {"sleep"        , SYM_SLEEP},
+  {"merge"        , SYM_MERGE},
+  {"sort"         , SYM_SORT},
   {"gc"           , SYM_PERFORM_GC},
   {"loop"         , SYM_LOOP},
 
@@ -234,6 +236,9 @@ static lbm_uint symbol_table_size_list_flash = 0;
 static lbm_uint symbol_table_size_strings = 0;
 static lbm_uint symbol_table_size_strings_flash = 0;
 
+lbm_value symbol_x = ENC_SYM_NIL;
+lbm_value symbol_y = ENC_SYM_NIL;
+
 int lbm_symrepr_init(void) {
   symlist = NULL;
   next_symbol_id = RUNTIME_SYMBOLS_START;
@@ -243,6 +248,13 @@ int lbm_symrepr_init(void) {
   symbol_table_size_list_flash = 0;
   symbol_table_size_strings = 0;
   symbol_table_size_strings_flash = 0;
+
+  lbm_uint x;
+  lbm_uint y;
+  lbm_add_symbol("x", &x);
+  lbm_add_symbol("y", &y);
+  symbol_x = lbm_enc_sym(x);
+  symbol_y = lbm_enc_sym(y);
   return 1;
 }
 
