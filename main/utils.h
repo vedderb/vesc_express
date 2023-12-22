@@ -30,6 +30,7 @@ int64_t utils_ms_tot(void);
 void utils_byte_to_binary(int x, char *b);
 void utils_rotate_vector3(float *input, float *rotation, float *output, bool reverse);
 bool utils_rmtree(const char *path);
+float utils_throttle_curve(float val, float curve_acc, float curve_brake, int mode);
 
 const char *bool_to_str(bool value);
 
