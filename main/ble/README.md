@@ -79,7 +79,7 @@ and returns `nil`.
 (ble-conf-adv use-custom adv-data scan-rsp-data)
 ```
 
-Configure the if custom advertising data should be used, and which packets to
+Configure if custom advertising data should be used, and which packets to
 send in that case. `use-custom` is a bool which if true specifies that the
 custom advertising and scan response packets should be used. If false,
 `adv-data` and `scan-rsp-data` are ignored and do not need to be provided, since
@@ -91,7 +91,7 @@ the raw bytes to be sent as the packet, or a list with cons cells of the form
 `(name-symbol-or-number . array)` (Must be an integer from 1 to 255 inclusive if
 a number, see [BLE Advertising](#ble-advertising) for valid symbols and other
 details). If the resulting packet is longer than 31
-bytes an `eval_error` is thrown. You can pass `nil` for either to specify that
+bytes an `eval_error` is thrown. You can pass `nil` to either to specify that
 it should not be updated and that the previously configured packet should remain
 in effect (both custom packets are initialized to be an empty array before
 configuring them with `ble-conf-adv`).
