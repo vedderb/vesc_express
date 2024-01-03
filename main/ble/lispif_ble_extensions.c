@@ -49,6 +49,10 @@ static char *error_internal_allocation_failed =
 static char *error_name_too_long       = "Name too long, max: 30 characters.";
 static char *error_invalid_handle      = "Handle did not exist.";
 static char *error_service_wrong_order = "Service not last.";
+static char *error_packet_too_long =
+	"Adv or scan rsp packet too long, max: 31 bytes.";
+static char *error_invalid_packet_def =
+	"Invalid packet definition structure/type.";
 
 /**
  * Reverse the elements of an array.
@@ -89,24 +93,58 @@ static lbm_uint symbol_prop_write_nr = 0;
 static lbm_uint symbol_prop_indicate = 0;
 static lbm_uint symbol_prop_notify   = 0;
 
+static lbm_uint symbol_flags               = 0;
+static lbm_uint symbol_incomplete_uuid_16  = 0;
+static lbm_uint symbol_complete_uuid_16    = 0;
+static lbm_uint symbol_incomplete_uuid_32  = 0;
+static lbm_uint symbol_complete_uuid_32    = 0;
+static lbm_uint symbol_incomplete_uuid_128 = 0;
+static lbm_uint symbol_complete_uuid_128   = 0;
+static lbm_uint symbol_name_short          = 0;
+static lbm_uint symbol_name_complete       = 0;
+static lbm_uint symbol_tx_power_level      = 0;
+static lbm_uint symbol_device_id           = 0;
+static lbm_uint symbol_conn_interval_range = 0;
+static lbm_uint symbol_service_data_16     = 0;
+static lbm_uint symbol_service_data_32     = 0;
+static lbm_uint symbol_service_data_128    = 0;
+static lbm_uint symbol_appearance          = 0;
+static lbm_uint symbol_manufacturer_data   = 0;
+
 static bool register_symbols(void) {
 	bool res = true;
 
+	// clang-format off
 	res = res && lbm_add_symbol_const_if_new("uuid", &symbol_uuid);
 	res = res && lbm_add_symbol_const_if_new("prop", &symbol_prop);
 	res = res && lbm_add_symbol_const_if_new("max-len", &symbol_max_len);
-	res = res
-		&& lbm_add_symbol_const_if_new("default-value", &symbol_default_value);
+	res = res && lbm_add_symbol_const_if_new("default-value", &symbol_default_value);
 	res = res && lbm_add_symbol_const_if_new("descr", &symbol_descr);
 
 	res = res && lbm_add_symbol_const_if_new("prop-read", &symbol_prop_read);
 	res = res && lbm_add_symbol_const_if_new("prop-write", &symbol_prop_write);
-	res = res
-		&& lbm_add_symbol_const_if_new("prop-write-nr", &symbol_prop_write_nr);
-	res = res
-		&& lbm_add_symbol_const_if_new("prop-indicate", &symbol_prop_indicate);
-	res = res
-		&& lbm_add_symbol_const_if_new("prop-notify", &symbol_prop_notify);
+	res = res && lbm_add_symbol_const_if_new("prop-write-nr", &symbol_prop_write_nr);
+	res = res && lbm_add_symbol_const_if_new("prop-indicate", &symbol_prop_indicate);
+	res = res && lbm_add_symbol_const_if_new("prop-notify", &symbol_prop_notify);
+
+	res = res && lbm_add_symbol_const_if_new("flags", &symbol_flags);
+	res = res && lbm_add_symbol_const_if_new("incomplete-uuid-16", &symbol_incomplete_uuid_16);
+	res = res && lbm_add_symbol_const_if_new("complete-uuid-16", &symbol_complete_uuid_16);
+	res = res && lbm_add_symbol_const_if_new("incomplete-uuid-32", &symbol_incomplete_uuid_32);
+	res = res && lbm_add_symbol_const_if_new("complete-uuid-32", &symbol_complete_uuid_32);
+	res = res && lbm_add_symbol_const_if_new("incomplete-uuid-128", &symbol_incomplete_uuid_128);
+	res = res && lbm_add_symbol_const_if_new("complete-uuid-128", &symbol_complete_uuid_128);
+	res = res && lbm_add_symbol_const_if_new("name-short", &symbol_name_short);
+	res = res && lbm_add_symbol_const_if_new("name-complete", &symbol_name_complete);
+	res = res && lbm_add_symbol_const_if_new("tx-power-level", &symbol_tx_power_level);
+	res = res && lbm_add_symbol_const_if_new("device-id", &symbol_device_id);
+	res = res && lbm_add_symbol_const_if_new("conn-interval-range", &symbol_conn_interval_range);
+	res = res && lbm_add_symbol_const_if_new("service-data-16", &symbol_service_data_16);
+	res = res && lbm_add_symbol_const_if_new("service-data-32", &symbol_service_data_32);
+	res = res && lbm_add_symbol_const_if_new("service-data-128", &symbol_service_data_128);
+	res = res && lbm_add_symbol_const_if_new("appearance", &symbol_appearance);
+	res = res && lbm_add_symbol_const_if_new("manufacturer-data", &symbol_manufacturer_data);
+	// clang-format on
 
 	return res;
 }
@@ -206,6 +244,7 @@ typedef enum {
 	PARSE_LBM_TOO_MANY_ATTRIBUTES = 3,
 	PARSE_LBM_MEMORY_ERROR        = 4,
 	PARSE_LBM_INTERNAL_ERROR      = 5,
+	PARSE_LBM_TOO_LONG_RESULT     = 6,
 } parse_lbm_result_t;
 
 typedef struct {
@@ -253,6 +292,99 @@ static void attr_write_handler(
 	if (!lbm_event(&flat)) {
 		lbm_free(flat.buf);
 	}
+}
+
+static uint8_t convert_sym_to_adv_type(lbm_uint sym) {
+	// lovely else if tree... ;)
+	if (sym == symbol_flags) {
+		return 0x01;
+	} else if (sym == symbol_incomplete_uuid_16) {
+		return 0x02;
+	} else if (sym == symbol_complete_uuid_16) {
+		return 0x03;
+	} else if (sym == symbol_incomplete_uuid_32) {
+		return 0x04;
+	} else if (sym == symbol_complete_uuid_32) {
+		return 0x05;
+	} else if (sym == symbol_incomplete_uuid_128) {
+		return 0x06;
+	} else if (sym == symbol_complete_uuid_128) {
+		return 0x07;
+	} else if (sym == symbol_name_short) {
+		return 0x08;
+	} else if (sym == symbol_name_complete) {
+		return 0x09;
+	} else if (sym == symbol_tx_power_level) {
+		return 0x0A;
+	} else if (sym == symbol_device_id) {
+		return 0x10;
+	} else if (sym == symbol_conn_interval_range) {
+		return 0x12;
+	} else if (sym == symbol_service_data_16) {
+		return 0x16;
+	} else if (sym == symbol_service_data_32) {
+		return 0x20;
+	} else if (sym == symbol_service_data_128) {
+		return 0x21;
+	} else if (sym == symbol_appearance) {
+		return 0x19;
+	} else if (sym == symbol_manufacturer_data) {
+		return 0xFF;
+	} else {
+		return 0;
+	}
+}
+
+static parse_lbm_result_t parse_lbm_adv_packet(
+	lbm_value value, uint8_t dest_buffer[31], size_t *dest_len
+) {
+	if (!lbm_is_list(value)) {
+		return PARSE_LBM_INCORRECT_STRUCTURE;
+	}
+
+	*dest_len      = 0;
+	lbm_value next = value;
+	while (lbm_is_cons(next)) {
+		// `this` expected structure: (type . array)
+		lbm_value this = lbm_car(next);
+		next           = lbm_cdr(next);
+
+		if (!lbm_is_cons(this)) {
+			return PARSE_LBM_INCORRECT_STRUCTURE;
+		}
+
+		lbm_value type = lbm_car(this);
+		uint8_t number = 0;
+		if (lbm_is_number(type)) {
+			number = lbm_dec_as_u32(type);
+		} else if (lbm_is_symbol(type)) {
+			number = convert_sym_to_adv_type(lbm_dec_sym(type));
+		} else {
+			return PARSE_LBM_INVALID_TYPE;
+		}
+		if (number == 0) {
+			return PARSE_LBM_INVALID_TYPE;
+		}
+
+		lbm_value data                 = lbm_cdr(this);
+		lbm_array_header_t *data_array = lbm_dec_array_header(data);
+		if (data_array == NULL) {
+			return PARSE_LBM_INVALID_TYPE;
+		}
+
+		if (*dest_len + 2 + data_array->size > 31) {
+			return PARSE_LBM_TOO_LONG_RESULT;
+		}
+
+		dest_buffer[(*dest_len)++] = 1 + data_array->size; // length
+		dest_buffer[(*dest_len)++] = number;               // type
+		memcpy(
+			dest_buffer + *dest_len, data_array->data, data_array->size
+		); // size
+		*dest_len += data_array->size;
+	}
+
+	return PARSE_LBM_OK;
 }
 
 static parse_lbm_result_t parse_lbm_descr_def(
@@ -465,8 +597,6 @@ static parse_lbm_result_t parse_lbm_chr_def(
 			parse_lbm_result_t result =
 				parse_lbm_descr_def(lbm_car(next), &descriptors[i], NULL);
 			if (result != PARSE_LBM_OK) {
-				STORED_LOGF("descr parse lbm error: %d", result);
-
 				lbm_free(descriptors);
 				return result;
 			}
@@ -498,8 +628,7 @@ static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
 			lbm_cons(lbm_enc_u(handles[i]), prepared_handles_list);
 		if (prepared_handles_list == ENC_SYM_MERROR) {
 			// TODO: deregister service.
-			STORED_LOGF("oh nose, memory error! BLE state is now invalid! :("
-			);
+			STORED_LOGF("oh nose, memory error! BLE state is now invalid! :(");
 			break;
 		}
 	}
@@ -528,7 +657,6 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 			for (size_t j = 0; j < i; j++) {
 				lbm_free(characteristics[j].descriptors);
 			}
-			STORED_LOGF("encountered not cons value");
 			res_error = PARSE_LBM_INCORRECT_STRUCTURE;
 			goto error;
 		}
@@ -540,7 +668,6 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 			for (size_t j = 0; j < i; j++) {
 				lbm_free(characteristics[j].descriptors);
 			}
-			STORED_LOGF("chr parse lbm error: %d", result);
 			res_error = result;
 			goto error;
 		}
@@ -548,9 +675,6 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 		next = lbm_cdr(next);
 	}
 
-	STORED_LOGF(
-		"create custom ble service with %u characteristics", chr_count
-	);
 	custom_ble_result_t result = custom_ble_add_service(
 		service_uuid, chr_count, characteristics, store_handle_list
 	);
@@ -594,9 +718,6 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 	return prepared_handles_list;
 
 error:
-
-	STORED_LOGF("parse lbm error: %d", res_error);
-
 	switch (res_error) {
 		case PARSE_LBM_INVALID_TYPE: {
 			return ENC_SYM_TERROR;
@@ -642,7 +763,6 @@ static lbm_value ext_ble_start_app(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 		default: {
-			STORED_LOGF("custom_ble_start failed, rc: %d", result);
 			return ENC_SYM_EERROR;
 		}
 	}
@@ -675,8 +795,153 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 		default: {
-			STORED_LOGF("custom_ble_set_name failed, rc: %d", result);
 			return ENC_SYM_EERROR;
+		}
+	}
+}
+
+/**
+ * signature:
+ *   (ble-conf-adv use-custom:false) -> bool
+ *   (ble-conf-adv use-custom:bool adv-data:array|field-list|nil
+ *     scan-rsp-data:array|field-list|nil) -> bool
+ * where
+ *   field-list = (..field)
+ *   field = (type . array)
+ *   type = number
+ *     | 'flags
+ *     | 'incomplete-uuid-16
+ *     | 'complete-uuid-16
+ *     | 'incomplete-uuid-32
+ *     | 'complete-uuid-32
+ *     | 'incomplete-uuid-128
+ *     | 'complete-uuid-128
+ *     | 'name-short
+ *     | 'name-complete
+ *     | 'tx-power-level
+ *     | 'device-id
+ *     | 'conn-interval-range
+ *     | 'service-data
+ *     | 'appearance
+ *     | 'manufacturer-data
+ *
+ * @param use_custom If the custom raw advertising and scan response packets
+ * should be used. Otherwise the default is used.
+ * @param adv_data The buffer or structure containing the raw packet used for
+ * advertisement. Pass nil to leave current value unchanged. Must not be longer
+ * than 31 bytes. 
+ * @param scan_rsp_data The buffer or structure containing the raw packet used
+ * for scan responses. Pass nil to leave current value unchanged. Must not be
+ * longer than 31 bytes.
+ * @return False is returned if any internal error occurred, otherwise true.
+ * @throw eval_error if any resulting buffer was longer than 31 bytes.
+ */
+static lbm_value ext_ble_conf_adv(lbm_value *args, lbm_uint argn) {
+	static uint8_t adv_buffer[31];
+	static uint8_t scan_rsp_buffer[31];
+
+	LBM_CHECK_ARGN_LEAST(1);
+
+	if (!lbm_is_bool(args[0])) {
+		lbm_set_error_suspect(args[0]);
+		return ENC_SYM_TERROR;
+	}
+
+	bool use_custom = lbm_dec_bool(args[0]);
+
+	size_t adv_data_len      = 0;
+	uint8_t *adv_data        = NULL;
+	size_t scan_rsp_data_len = 0;
+	uint8_t *scan_rsp_data   = NULL;
+	if (use_custom) {
+		LBM_CHECK_ARGN(3);
+
+		if (lbm_is_cons(args[1])) {
+			adv_data = adv_buffer;
+			parse_lbm_result_t result =
+				parse_lbm_adv_packet(args[1], adv_data, &adv_data_len);
+			switch (result) {
+				case PARSE_LBM_OK: {
+					break;
+				}
+				case PARSE_LBM_INCORRECT_STRUCTURE:
+				case PARSE_LBM_INVALID_TYPE: {
+					lbm_set_error_reason(error_invalid_packet_def);
+					lbm_set_error_suspect(args[1]);
+					return ENC_SYM_TERROR;
+				}
+				case PARSE_LBM_TOO_LONG_RESULT: {
+					lbm_set_error_reason(error_packet_too_long);
+					lbm_set_error_suspect(args[1]);
+					return ENC_SYM_EERROR;
+				}
+				default: {
+					// Should not occur.
+					lbm_set_error_suspect(args[1]);
+					return ENC_SYM_FATAL_ERROR;
+				}
+			}
+		} else if (lbm_is_array_r(args[1])) {
+			lbm_array_header_t *array = lbm_dec_array_header(args[1]);
+			adv_data_len              = array->size;
+			adv_data                  = (uint8_t *)array->data;
+		} else if (!lbm_is_symbol_nil(args[1])) {
+			lbm_set_error_suspect(args[1]);
+			return ENC_SYM_TERROR;
+		}
+
+		if (lbm_is_cons(args[2])) {
+			scan_rsp_data             = scan_rsp_buffer;
+			parse_lbm_result_t result = parse_lbm_adv_packet(
+				args[2], scan_rsp_data, &scan_rsp_data_len
+			);
+			switch (result) {
+				case PARSE_LBM_OK: {
+					break;
+				}
+				case PARSE_LBM_INCORRECT_STRUCTURE:
+				case PARSE_LBM_INVALID_TYPE: {
+					lbm_set_error_reason(error_invalid_packet_def);
+					lbm_set_error_suspect(args[2]);
+					return ENC_SYM_TERROR;
+				}
+				case PARSE_LBM_TOO_LONG_RESULT: {
+					lbm_set_error_reason(error_packet_too_long);
+					lbm_set_error_suspect(args[2]);
+					return ENC_SYM_EERROR;
+				}
+				default: {
+					// Should not occur.
+					lbm_set_error_suspect(args[2]);
+					return ENC_SYM_FATAL_ERROR;
+				}
+			}
+		} else if (lbm_is_array_r(args[2])) {
+			lbm_array_header_t *array = lbm_dec_array_header(args[2]);
+			scan_rsp_data_len         = array->size;
+			scan_rsp_data             = (uint8_t *)array->data;
+		} else if (!lbm_is_symbol_nil(args[2])) {
+			lbm_set_error_suspect(args[2]);
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	custom_ble_result_t result = custom_ble_update_adv(
+		use_custom, adv_data_len, adv_data, scan_rsp_data_len, scan_rsp_data
+	);
+
+	switch (result) {
+		case CUSTOM_BLE_OK: {
+			return ENC_SYM_TRUE;
+		}
+		case CUSTOM_BLE_TOO_LONG: {
+			lbm_set_error_reason(error_packet_too_long);
+			return ENC_SYM_EERROR;
+		}
+		case CUSTOM_BLE_ESP_ERROR:
+		default: {
+			// Should we maybe throw an eval error here?
+			return ENC_SYM_NIL;
 		}
 	}
 }
@@ -687,12 +952,12 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
  * needs to be called after ble-start-app
  *
  * characteristic list example:
- * 	chrs = (list ...(
+ * 	chrs = (list ..(
  * 		('uuid . uuid)
  * 		('prop . prop-value)
  *      ('max-len . number)
  *      [('default-value . byte-array)]
- * 		[('descr . (list ...(
+ * 		[('descr . (list ..(
  * 			('uuid . uuid)
  *          ('max-len . number)
  *          [('default-value . byte-array)]
@@ -711,6 +976,7 @@ static lbm_value ext_ble_add_service(lbm_value *args, lbm_uint argn) {
 
 	esp_bt_uuid_t uuid;
 	if (!lbm_dec_uuid(args[0], &uuid)) {
+		lbm_set_error_suspect(args[0]);
 		return ENC_SYM_TERROR;
 	}
 
@@ -911,6 +1177,7 @@ void lispif_load_ble_extensions(void) {
 
 	lbm_add_extension("ble-start-app", ext_ble_start_app);
 	lbm_add_extension("ble-set-name", ext_ble_set_name);
+	lbm_add_extension("ble-conf-adv", ext_ble_conf_adv);
 	lbm_add_extension("ble-add-service", ext_ble_add_service);
 	lbm_add_extension("ble-remove-service", ext_ble_remove_service);
 	lbm_add_extension("ble-attr-get-value", ext_ble_attr_get_value);

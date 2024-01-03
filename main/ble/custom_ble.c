@@ -28,6 +28,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 #include "esp_bt.h"
 #include "esp_bt_defs.h"
@@ -103,6 +104,8 @@ static uint16_t ble_current_mtu = 20;
 
 static uint8_t adv_config_done = 0;
 
+static bool use_custom_adv_data = false;
+
 static esp_ble_adv_data_t ble_adv_data = {
 	.set_scan_rsp     = false,
 	.include_name     = true,
@@ -133,6 +136,11 @@ static esp_ble_adv_data_t ble_scan_rsp_data = {
 	// .p_service_uuid = ble_service_uuid128,
 	.flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
 };
+
+static size_t ble_adv_data_raw_len       = 0;
+static uint8_t ble_adv_data_raw[31]      = {0};
+static size_t ble_scan_rsp_data_raw_len  = 0;
+static uint8_t ble_scan_rsp_data_raw[31] = {0};
 
 static esp_ble_adv_params_t ble_adv_params = {
 	.adv_int_min       = 0x20,
@@ -210,8 +218,7 @@ static void print_attr_db(
 }
 
 // not used anywhere currently, but I can't bring myself to removing it...
-__attribute__((unused))
-static bool uuid_eq(esp_bt_uuid_t a, esp_bt_uuid_t b) {
+__attribute__((unused)) static bool uuid_eq(esp_bt_uuid_t a, esp_bt_uuid_t b) {
 	if (a.len != b.len) {
 		return false;
 	}
@@ -314,21 +321,42 @@ static void gap_event_handler(
 
 	switch (event) {
 		case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
+		case ESP_GAP_BLE_ADV_DATA_RAW_SET_COMPLETE_EVT: {
 			adv_config_done &= (~ADV_CFG_FLAG);
 			if (adv_config_done == 0) {
 				esp_ble_gap_start_advertising(&ble_adv_params);
 			}
 			break;
-
+		}
 		case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
+		case ESP_GAP_BLE_SCAN_RSP_DATA_RAW_SET_COMPLETE_EVT: {
 			adv_config_done &= (~SCAN_RSP_CFG_FLAG);
 			if (adv_config_done == 0) {
 				esp_ble_gap_start_advertising(&ble_adv_params);
 			}
 			break;
+		}
+		case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT: {
+			// This only occurs when someone is updating the adv data.
 
-		default:
+			adv_config_done |= ADV_CFG_FLAG | SCAN_RSP_CFG_FLAG;
+
+			if (use_custom_adv_data) {
+				esp_ble_gap_config_adv_data_raw(
+					ble_adv_data_raw, ble_adv_data_raw_len
+				);
+				esp_ble_gap_config_scan_rsp_data_raw(
+					ble_scan_rsp_data_raw, ble_scan_rsp_data_raw_len
+				);
+			} else {
+				esp_ble_gap_config_adv_data(&ble_adv_data);
+				esp_ble_gap_config_adv_data(&ble_scan_rsp_data);
+			}
 			break;
+		}
+		default: {
+			break;
+		}
 	}
 }
 
@@ -344,11 +372,18 @@ static void gatts_event_handler(
 
 			esp_ble_gap_set_device_name(device_name);
 
-			esp_ble_gap_config_adv_data(&ble_adv_data);
-			adv_config_done |= ADV_CFG_FLAG;
-
-			esp_ble_gap_config_adv_data(&ble_scan_rsp_data);
-			adv_config_done |= SCAN_RSP_CFG_FLAG;
+			adv_config_done |= ADV_CFG_FLAG | SCAN_RSP_CFG_FLAG;
+			if (use_custom_adv_data) {
+				esp_ble_gap_config_adv_data_raw(
+					ble_adv_data_raw, ble_adv_data_raw_len
+				);
+				esp_ble_gap_config_scan_rsp_data_raw(
+					ble_scan_rsp_data_raw, ble_scan_rsp_data_raw_len
+				);
+			} else {
+				esp_ble_gap_config_adv_data(&ble_adv_data);
+				esp_ble_gap_config_adv_data(&ble_scan_rsp_data);
+			}
 
 			break;
 		}
@@ -392,11 +427,6 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_DELETE_EVT: {
-			STORED_LOGF(
-				"remove service, status: %d, service_handle: %u",
-				param->del.status, param->del.service_handle
-			);
-
 			if (waiting_remove_service_handle != -1
 				&& waiting_remove_service_handle == param->del.service_handle) {
 				result_status = param->del.status;
@@ -406,10 +436,6 @@ static void gatts_event_handler(
 			break;
 		}
 		case ESP_GATTS_START_EVT: {
-			STORED_LOGF(
-				"service start, status: %d, service_handle: %u",
-				param->start.status, param->start.service_handle
-			);
 			break;
 		}
 		case ESP_GATTS_CONNECT_EVT: {
@@ -600,6 +626,34 @@ custom_ble_result_t custom_ble_set_name(const char *name) {
 
 	return CUSTOM_BLE_OK;
 };
+
+custom_ble_result_t custom_ble_update_adv(
+	bool use_raw, size_t adv_len, const uint8_t adv_data_raw[adv_len],
+	size_t scan_rsp_len, const uint8_t scan_rsp_data_raw[scan_rsp_len]
+) {
+	use_custom_adv_data = use_raw;
+	if (use_custom_adv_data) {
+		if ((adv_data_raw != NULL && adv_len > 31)
+			|| (scan_rsp_data_raw != NULL && scan_rsp_len > 31)) {
+			return CUSTOM_BLE_TOO_LONG;
+		}
+
+		if (adv_data_raw != NULL) {
+			memcpy(ble_adv_data_raw, adv_data_raw, adv_len);
+			ble_adv_data_raw_len = adv_len;
+		}
+		if (scan_rsp_data_raw != NULL) {
+			memcpy(ble_scan_rsp_data_raw, scan_rsp_data_raw, scan_rsp_len);
+			ble_scan_rsp_data_raw_len = scan_rsp_len;
+		}
+	}
+
+	if (has_started && esp_ble_gap_stop_advertising() != ESP_OK) {
+		return CUSTOM_BLE_ESP_ERROR;
+	}
+
+	return CUSTOM_BLE_OK;
+}
 
 void custom_ble_set_attr_write_handler(attr_write_cb_t callback) {
 	attr_write_cb = callback;
@@ -913,9 +967,7 @@ custom_ble_result_t custom_ble_set_attr_value(
 	esp_err_t result = esp_ble_gatts_set_attr_value(attr_handle, length, value);
 
 	if (result != ESP_OK) {
-		STORED_LOGF(
-			"esp_ble_gatts_set_attr_value failed, result: %d", result
-		);
+		STORED_LOGF("esp_ble_gatts_set_attr_value failed, result: %d", result);
 		return CUSTOM_BLE_ESP_ERROR;
 	}
 
