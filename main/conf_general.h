@@ -55,6 +55,9 @@
 
 //#define HW_HEADER					"hw_lb_hc_v3.h"
 //#define HW_SOURCE					"hw_lb_hc_v3.c"
+
+//#define HW_HEADER					"hw_lb_chg.h"
+//#define HW_SOURCE					"hw_lb_chg.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
