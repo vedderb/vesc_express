@@ -47,8 +47,6 @@ set(COMPONENT_SRCS
 "lispBM/platform/freertos/src/platform_mutex.c"
 "lispBM/src/lbm_channel.c"
 "lispBM/src/lbm_c_interop.c"
-"lispBM/src/lbm_variables.c"
-"lispBM/src/lbm_variables.c"
 "lispBM/src/lbm_custom_type.c"
 "lispBM/src/lbm_flat_value.c"
 "lispBM/src/lbm_flags.c"
