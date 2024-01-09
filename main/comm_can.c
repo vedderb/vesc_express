@@ -34,6 +34,7 @@
 #include "lispif.h"
 #include "bms.h"
 #include "utils.h"
+#include "soc/gpio_sig_map.h"
 
 #include <string.h>
 
@@ -621,11 +622,13 @@ void comm_can_update_baudrate(void) {
 #ifndef CAN_TX_GPIO_NUM
 	return;
 #else
+	xSemaphoreTake(send_mutex, portMAX_DELAY);
 	twai_stop();
 	twai_driver_uninstall();
 	update_baud(backup.config.can_baud_rate);
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
+	xSemaphoreGive(send_mutex);
 #endif
 }
 
@@ -633,12 +636,23 @@ void comm_can_change_pins(int tx, int rx) {
 #ifndef CAN_TX_GPIO_NUM
 	return;
 #else
-	twai_stop();
-	twai_driver_uninstall();
+	esp_rom_gpio_connect_out_signal(g_config.tx_io, SIG_GPIO_OUT_IDX, false, false);
+	esp_rom_gpio_connect_out_signal(g_config.rx_io, SIG_GPIO_OUT_IDX, false, false);
+
+	gpio_reset_pin(g_config.tx_io);
+	gpio_reset_pin(g_config.rx_io);
+
 	g_config.tx_io = tx;
 	g_config.rx_io = rx;
-	twai_driver_install(&g_config, &t_config, &f_config);
-	twai_start();
+
+	gpio_set_pull_mode(tx, GPIO_FLOATING);
+	esp_rom_gpio_connect_out_signal(tx, TWAI_TX_IDX, false, false);
+	esp_rom_gpio_pad_select_gpio(tx);
+
+	gpio_set_pull_mode(rx, GPIO_FLOATING);
+	esp_rom_gpio_connect_in_signal(rx, TWAI_RX_IDX, false);
+	esp_rom_gpio_pad_select_gpio(rx);
+	gpio_set_direction(rx, GPIO_MODE_INPUT);
 #endif
 }
 
