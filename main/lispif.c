@@ -85,15 +85,15 @@ static bool const_heap_write(lbm_uint ix, lbm_uint w);
 static void eval_thread(void *arg);
 
 void lispif_init(void) {
-	heap_size = 2048;
-	mem_size = LBM_MEMORY_SIZE_16K;
-	bitmap_size = LBM_MEMORY_BITMAP_SIZE_16K;
+	heap_size = (2048 + 512);
+	mem_size = LBM_MEMORY_SIZE_32K;
+	bitmap_size = LBM_MEMORY_BITMAP_SIZE_32K;
 
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
 			backup.config.ble_mode == BLE_MODE_DISABLED) {
-		heap_size *= 4;
-		mem_size *= 2;
-		bitmap_size *= 2;
+		heap_size *= 2;
+		mem_size *= 3;
+		bitmap_size *= 3;
 	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
 			backup.config.ble_mode == BLE_MODE_DISABLED) {
 		heap_size *= 2;
