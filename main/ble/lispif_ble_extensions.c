@@ -159,7 +159,7 @@ static bool lbm_dec_uuid(lbm_value value, esp_bt_uuid_t *result) {
 		return false;
 	}
 
-	uint8_t *data = lbm_heap_array_get_data(value);
+	const uint8_t *data = lbm_heap_array_get_data_ro(value);
 
 	switch (lbm_heap_array_get_size(value)) {
 		case ESP_UUID_LEN_16: {
@@ -448,7 +448,7 @@ static parse_lbm_result_t parse_lbm_descr_def(
 				return PARSE_LBM_INCORRECT_STRUCTURE;
 			}
 
-			default_value = lbm_heap_array_get_data(value);
+			default_value = (uint8_t*)lbm_heap_array_get_data_ro(value);
 		}
 	}
 
@@ -555,7 +555,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 				return PARSE_LBM_INCORRECT_STRUCTURE;
 			}
 
-			default_value = lbm_heap_array_get_data(value);
+			default_value = (uint8_t*)lbm_heap_array_get_data_ro(value);
 		} else if (key == symbol_descr) {
 			has_descr = true;
 
@@ -780,7 +780,7 @@ static lbm_value ext_ble_set_name(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	const char *str = (char *)lbm_heap_array_get_data(args[0]);
+	const char *str = (char *)lbm_heap_array_get_data_ro(args[0]);
 
 	custom_ble_result_t result = custom_ble_set_name(str);
 	switch (result) {
@@ -1071,7 +1071,7 @@ static lbm_value ext_ble_attr_set_value(lbm_value *args, lbm_uint argn) {
 
 	uint16_t handle = (uint16_t)lbm_dec_as_u32(args[0]);
 	uint16_t len    = (uint16_t)lbm_heap_array_get_size(args[1]);
-	uint8_t *value  = lbm_heap_array_get_data(args[1]);
+	const uint8_t *value  = lbm_heap_array_get_data_ro(args[1]);
 	if (value == NULL) {
 		// Maybe return internal error here?
 		return ENC_SYM_EERROR;

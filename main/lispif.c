@@ -45,7 +45,7 @@ static size_t bitmap_size = 0;
 static lbm_cons_t *heap;
 static uint32_t *memory_array;
 static uint32_t *bitmap_array;
-static extension_fptr extension_storage[EXTENSION_STORAGE_SIZE];
+static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE];
 
 static lbm_const_heap_t const_heap;
 static lbm_uint *const_heap_ptr = 0;
@@ -139,7 +139,12 @@ static void print_ctx_info(eval_context_t *ctx, void *arg1, void *arg2) {
 }
 
 static void sym_it(const char *str) {
-	commands_printf_lisp("%s", str);
+	bool sym_name_flash = lbm_symbol_in_flash((char *)str);
+	bool sym_entry_flash = lbm_symbol_list_entry_in_flash((char *)str);
+	commands_printf_lisp("[%s, %s]: %s\n",
+			sym_name_flash ? "FLASH" : "LBM_MEM",
+					sym_entry_flash ? "FLASH" : "LBM_MEM",
+							str);
 }
 
 static void prof_timer_callback(void* arg) {
