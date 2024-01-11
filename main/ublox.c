@@ -63,6 +63,7 @@ static bool m_print_next_cfg_gnss = false;
 static decoder_state m_decoder_state;
 static SemaphoreHandle_t wait_sem;
 static volatile bool wait_was_ack;
+static volatile bool m_init_ok = false;
 
 // Private functions
 static void proc_byte(uint8_t ch);
@@ -128,6 +129,8 @@ static void rx_task(void *arg) {
 }
 
 bool ublox_init(bool print) {
+	m_init_ok = false;
+
 	wait_sem = xSemaphoreCreateBinary();
 
 	uart_config_t uart_config = {
@@ -395,7 +398,13 @@ bool ublox_init(bool print) {
 			"[msg]",
 			ubx_terminal_cmd_poll);
 
+	m_init_ok = true;
+
 	return true;
+}
+
+bool ublox_init_ok(void) {
+	return m_init_ok;
 }
 
 void ublox_send(unsigned char *data, unsigned int len) {

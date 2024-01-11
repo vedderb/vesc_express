@@ -31,6 +31,7 @@
 #include "packet.h"
 #include "commands.h"
 #include "nmea.h"
+#include "ublox.h"
 #include "lispif.h"
 #include "bms.h"
 #include "utils.h"
@@ -401,6 +402,77 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				break;
 			}
 		}
+	} break;
+
+	case CAN_PACKET_GNSS_TIME: {
+		if (ublox_init_ok()) {
+			break;
+		}
+
+		nmea_state_t *s = nmea_get_state();
+
+		s->gga.ms_today = buffer_get_int32(data8, &ind);
+		s->rmc.yy = buffer_get_int16(data8, &ind);
+		s->rmc.mo = data8[ind++];
+		s->rmc.dd = data8[ind++];
+
+		s->gga_cnt++;
+		s->rmc_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+		s->rmc.update_time = xTaskGetTickCount();
+	} break;
+
+	case CAN_PACKET_GNSS_LAT: {
+		if (ublox_init_ok()) {
+			break;
+		}
+
+		nmea_state_t *s = nmea_get_state();
+
+		ind = 0;
+		volatile double tmp = buffer_get_double64(data8, D(1e16), &ind);
+
+		portDISABLE_INTERRUPTS();
+		s->gga.lat = tmp;
+		portENABLE_INTERRUPTS();
+
+		s->gga_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+	} break;
+
+	case CAN_PACKET_GNSS_LON: {
+		if (ublox_init_ok()) {
+			break;
+		}
+
+		nmea_state_t *s = nmea_get_state();
+
+		ind = 0;
+		volatile double tmp = buffer_get_double64(data8, D(1e16), &ind);
+
+		portDISABLE_INTERRUPTS();
+		s->gga.lon = tmp;
+		portENABLE_INTERRUPTS();
+
+		s->gga_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+	} break;
+
+	case CAN_PACKET_GNSS_ALT_SPEED_HDOP: {
+		if (ublox_init_ok()) {
+			break;
+		}
+
+		nmea_state_t *s = nmea_get_state();
+
+		s->gga.height = buffer_get_float32_auto(data8, &ind);
+		s->rmc.speed = buffer_get_float16(data8, 1.0e2, &ind);
+		s->gga.h_dop = buffer_get_float16(data8, 1.0e2, &ind);
+
+		s->gga_cnt++;
+		s->rmc_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+		s->rmc.update_time = xTaskGetTickCount();
 	} break;
 
 	default:
