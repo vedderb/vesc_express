@@ -157,7 +157,7 @@ void app_main(void) {
 #ifdef HW_UART_COMM
 	comm_uart_init();
 #else
-	ublox_init(false);
+	ublox_init(false, 500);
 #endif
 #endif
 
@@ -232,5 +232,5 @@ static void terminal_nmea(int argc, const char **argv) {
 
 static void terminal_ublox_reinit(int argc, const char **argv) {
 	(void)argc;(void)argv;
-	commands_printf("Res: %d", ublox_init(true));
+	commands_printf("Res: %d", ublox_init(true, 500));
 }

@@ -43,6 +43,7 @@
 #include "crc.h"
 #include "bms.h"
 #include "nmea.h"
+#include "ublox.h"
 #include "log_comm.h"
 #include "comm_wifi.h"
 #include "enc_as504x.h"
@@ -3130,6 +3131,20 @@ static lbm_value ext_gnss_age(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float(UTILS_AGE_S(nmea_get_state()->gga.update_time));
 }
 
+static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
+	if ((argn != 0 && argn != 1) || (argn == 1 && !lbm_is_number(args[0]))) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	uint16_t rate = 500;
+	if (argn == 1) {
+		rate = lbm_dec_as_i32(args[0]);
+	}
+
+	return ublox_init(false, rate) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
@@ -4303,6 +4318,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("gnss-hdop", ext_gnss_hdop);
 	lbm_add_extension("gnss-date-time", ext_gnss_date_time);
 	lbm_add_extension("gnss-age", ext_gnss_age);
+	lbm_add_extension("ublox-init", ext_ublox_init);
 
 	// Sleep
 	lbm_add_extension("sleep-deep", ext_sleep_deep);

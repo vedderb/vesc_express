@@ -435,7 +435,7 @@ typedef struct {
 } ubx_cfg_nmea;
 
 // Functions
-bool ublox_init(bool print);
+bool ublox_init(bool print, uint16_t rate_ms);
 bool ublox_init_ok(void);
 void ublox_send(unsigned char *data, unsigned int len);
 void ublox_set_rx_callback_nav_sol(void(*func)(ubx_nav_sol *sol));

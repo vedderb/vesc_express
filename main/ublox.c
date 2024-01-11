@@ -128,7 +128,7 @@ static void rx_task(void *arg) {
 	}
 }
 
-bool ublox_init(bool print) {
+bool ublox_init(bool print, uint16_t rate_ms) {
 	m_init_ok = false;
 
 	wait_sem = xSemaphoreCreateBinary();
@@ -183,15 +183,13 @@ bool ublox_init(bool print) {
 	uart.out_nmea = true;
 	uart.out_rtcm3 = false;
 
-	uint16_t ubx_rate = 500;
-
 	bool baud_ok = false;
 	bool is_m10 = false;
 
 	// Up to 4 retries
 	for (int i = 0;i < 4;i++) {
 		// Make sure that the baudrate is correct on unconfigured UBX.
-		if (ublox_cfg_rate(ubx_rate, 1, 0) == -1) {
+		if (ublox_cfg_rate(rate_ms, 1, 0) == -1) {
 			// Set default baudrate
 			uart_config.baud_rate = BAUDRATE_UBX_DEFAULT;
 			uart_param_config(UART_NUM, &uart_config);
@@ -211,7 +209,7 @@ bool ublox_init(bool print) {
 			vTaskDelay(100 / portTICK_PERIOD_MS);
 			reset_decoder_state();
 
-			if (ublox_cfg_rate(ubx_rate, 1, 0) != -1) {
+			if (ublox_cfg_rate(rate_ms, 1, 0) != -1) {
 				baud_ok = true;
 				break;
 			}
@@ -219,7 +217,7 @@ bool ublox_init(bool print) {
 			vTaskDelay(100 / portTICK_PERIOD_MS);
 			reset_decoder_state();
 
-			if (ublox_cfg_rate(ubx_rate, 1, 0) != -1) {
+			if (ublox_cfg_rate(rate_ms, 1, 0) != -1) {
 				baud_ok = true;
 				break;
 			}
@@ -235,7 +233,7 @@ bool ublox_init(bool print) {
 		unsigned char buffer_baud[80];
 		int ind = 0;
 		ublox_cfg_append_uart1_baud(buffer_baud, &ind, BAUDRATE);
-		ublox_cfg_append_rate(buffer_baud, &ind, ubx_rate, 1);
+		ublox_cfg_append_rate(buffer_baud, &ind, rate_ms, 1);
 
 		for (int i = 0;i < 4;i++) {
 			// Make sure that the baudrate is correct on unconfigured UBX.
@@ -293,7 +291,7 @@ bool ublox_init(bool print) {
 
 	if (!is_m10) {
 		ublox_cfg_prt_uart(&uart);
-		ublox_cfg_rate(ubx_rate, 1, 0);
+		ublox_cfg_rate(rate_ms, 1, 0);
 
 		// Dynamic model
 		ubx_cfg_nav5 nav5;
