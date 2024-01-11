@@ -66,6 +66,8 @@ static lbm_uint symbol_no_data        = 0;
 static lbm_uint symbol_connected      = 0;
 static lbm_uint symbol_connecting     = 0;
 static lbm_uint symbol_disconnected   = 0;
+static lbm_uint symbol_socket_error   = 0;
+static lbm_uint symbol_connect_error  = 0;
 
 static volatile bool init_done = false;
 
@@ -83,7 +85,10 @@ static bool register_symbols(void) {
 	res = res && lbm_add_symbol_const_if_new("connecting", &symbol_connecting);
 	res = res
 		&& lbm_add_symbol_const_if_new("disconnected", &symbol_disconnected);
-
+	res = res
+		&& lbm_add_symbol_const_if_new("socket-error", &symbol_socket_error);
+	res = res
+		&& lbm_add_symbol_const_if_new("connect-error", &symbol_connect_error);
 	return res;
 }
 
@@ -627,15 +632,34 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
 
 	if (sock < 0) {
-		return ENC_SYM_NIL;
+		char *errstr        = strerror(errno);
+		lbm_value errstrval = ENC_SYM_NIL;
+		if (lbm_lift_array(&errstrval, errstr, strlen(errstr) + 1) == 0) {
+			return errstrval;
+		}
+
+		lbm_value errval = ENC_SYM_NIL;
+		errval           = lbm_cons(errstrval, errval);
+		errval           = lbm_cons(ENC_SYM(symbol_socket_error), errval);
+		return errval;
 	}
 
 	{
 		int result = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
 		if (result != 0) {
+
+			char *errstr        = strerror(errno);
+			lbm_value errstrval = ENC_SYM_NIL;
+			if (lbm_lift_array(&errstrval, errstr, strlen(errstr) + 1) == 0) {
+				return errstrval;
+			}
+
 			shutdown(sock, 0);
 			close(sock);
-			return ENC_SYM_NIL;
+			lbm_value errval = ENC_SYM_NIL;
+			errval           = lbm_cons(errstrval, errval);
+			errval           = lbm_cons(ENC_SYM(symbol_connect_error), errval);
+			return errval;
 		}
 	}
 
