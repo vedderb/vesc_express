@@ -39,6 +39,7 @@ typedef struct {
 	float temp_ic;
 	float temp_hum;
 	float hum;
+	float pressure;
 	float temp_max_cell;
 	float soc;
 	float soh;

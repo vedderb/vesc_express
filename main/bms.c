@@ -227,6 +227,9 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 				m_values.temp_hum = buffer_get_float16(data8, 1e2, &ind);
 				m_values.hum = buffer_get_float16(data8, 1e2, &ind);
 				m_values.temp_ic = buffer_get_float16(data8, 1e2, &ind);
+				if (len == 8) {
+					m_values.pressure = buffer_get_float16(data8, 1e-1, &ind);
+				}
 			}
 		} break;
 
@@ -321,6 +324,9 @@ void bms_process_cmd(unsigned char *data, unsigned int len,
 		buffer_append_float32_auto(send_buffer, m_values.wh_cnt_chg_total, &ind);
 		buffer_append_float32_auto(send_buffer, m_values.ah_cnt_dis_total, &ind);
 		buffer_append_float32_auto(send_buffer, m_values.wh_cnt_dis_total, &ind);
+
+		// Pressure
+		buffer_append_float16(send_buffer, m_values.pressure, 1e-1, &ind);
 
 		reply_func(send_buffer, ind);
 	} break;

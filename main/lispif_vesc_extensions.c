@@ -89,6 +89,7 @@ typedef struct {
 	lbm_uint temp_ic;
 	lbm_uint temp_hum;
 	lbm_uint hum;
+	lbm_uint pres;
 	lbm_uint temp_max_cell;
 	lbm_uint soc;
 	lbm_uint soh;
@@ -190,6 +191,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			get_add_symbol("bms-temp-hum", comp);
 		} else if (comp == &syms_vesc.hum) {
 			get_add_symbol("bms-hum", comp);
+		} else if (comp == &syms_vesc.pres) {
+			get_add_symbol("bms-pres", comp);
 		} else if (comp == &syms_vesc.temp_max_cell) {
 			get_add_symbol("bms-temp-cell-max", comp);
 		} else if (comp == &syms_vesc.soc) {
@@ -493,6 +496,8 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &val->temp_hum, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.hum)) {
 		res = get_or_set_float(set, &val->hum, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.pres)) {
+		res = get_or_set_float(set, &val->pressure, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temp_max_cell)) {
 		res = get_or_set_float(set, &val->temp_max_cell, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.soc)) {
