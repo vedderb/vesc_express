@@ -87,6 +87,9 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 				m_values.soc = msg.soc;
 				m_values.soh = msg.soh;
 				m_values.temp_max_cell = msg.t_cell_max;
+				m_values.is_charging = msg.is_charging ? 1 : 0;
+				m_values.is_balancing = msg.is_balancing ? 1 : 0;
+				m_values.is_charge_allowed = msg.is_charge_allowed ? 1 : 0;
 			}
 
 			// In case there is more than one BMS, keep track of the limiting
@@ -477,7 +480,10 @@ void bms_send_status_can(void) {
 	buffer[send_index++] = (uint8_t)(m_values.soc * 255.0);
 	buffer[send_index++] = (uint8_t)(m_values.soh * 255.0);
 	buffer[send_index++] = (int8_t)m_values.temp_max_cell;
-	buffer[send_index++] = 0;
+	buffer[send_index++] =
+			((m_values.is_charging ? 1 : 0) << 0) |
+			((m_values.is_balancing ? 1 : 0) << 1) |
+			((m_values.is_charge_allowed ? 1 : 0) << 2);
 	comm_can_transmit_eid(id | ((uint32_t)CAN_PACKET_BMS_SOC_SOH_TEMP_STAT << 8), buffer, send_index);
 
 	send_index = 0;

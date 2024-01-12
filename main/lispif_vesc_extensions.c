@@ -99,6 +99,7 @@ typedef struct {
 	lbm_uint ah_cnt_dis_total;
 	lbm_uint wh_cnt_dis_total;
 	lbm_uint msg_age;
+	lbm_uint chg_allowed;
 
 	// GPIO
 	lbm_uint pin_mode_out;
@@ -211,6 +212,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			get_add_symbol("bms-wh-cnt-dis-total", comp);
 		} else if (comp == &syms_vesc.msg_age) {
 			get_add_symbol("bms-msg-age", comp);
+		} else if (comp == &syms_vesc.chg_allowed) {
+			get_add_symbol("bms-chg-allowed", comp);
 		}
 
 		else if (comp == &syms_vesc.pin_mode_out) {
@@ -516,6 +519,8 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &val->wh_cnt_dis_total, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.msg_age)) {
 		res = lbm_enc_float(UTILS_AGE_S(val->update_time));
+	} else if (compare_symbol(name, &syms_vesc.chg_allowed)) {
+		res = get_or_set_i(set, &val->is_charge_allowed, &set_arg);
 	}
 
 	if (res != ENC_SYM_EERROR && set) {
@@ -536,6 +541,34 @@ static lbm_value ext_set_bms_val(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_send_bms_can(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	bms_send_status_can();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_set_bms_chg_allowed(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int allowed = lbm_dec_as_i32(args[0]);
+
+	uint8_t data[2];
+	data[0] = COMM_BMS_SET_CHARGE_ALLOWED;
+	data[1] = allowed;
+
+	bms_process_cmd(data, 2, 0);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_bms_force_balance(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int force = lbm_dec_as_i32(args[0]);
+
+	uint8_t data[2];
+	data[0] = COMM_BMS_FORCE_BALANCE;
+	data[1] = force;
+
+	bms_process_cmd(data, 2, 0);
+
 	return ENC_SYM_TRUE;
 }
 
@@ -4193,6 +4226,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("get-bms-val", ext_get_bms_val);
 	lbm_add_extension("set-bms-val", ext_set_bms_val);
 	lbm_add_extension("send-bms-can", ext_send_bms_can);
+	lbm_add_extension("set-bms-chg-allowed", ext_set_bms_chg_allowed);
+	lbm_add_extension("bms-force-balance", ext_bms_force_balance);
 	lbm_add_extension("get-adc", ext_get_adc);
 	lbm_add_extension("systime", ext_systime);
 	lbm_add_extension("secs-since", ext_secs_since);

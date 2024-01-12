@@ -48,6 +48,9 @@ typedef struct {
 	float wh_cnt_chg_total;
 	float ah_cnt_dis_total;
 	float wh_cnt_dis_total;
+	int is_charging;
+	int is_balancing;
+	int is_charge_allowed;
 	uint32_t update_time;
 } bms_values;
 
