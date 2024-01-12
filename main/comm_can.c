@@ -708,6 +708,9 @@ void comm_can_change_pins(int tx, int rx) {
 #ifndef CAN_TX_GPIO_NUM
 	return;
 #else
+	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	twai_stop();
+
 	esp_rom_gpio_connect_out_signal(g_config.tx_io, SIG_GPIO_OUT_IDX, false, false);
 	esp_rom_gpio_connect_out_signal(g_config.rx_io, SIG_GPIO_OUT_IDX, false, false);
 
@@ -725,6 +728,9 @@ void comm_can_change_pins(int tx, int rx) {
 	esp_rom_gpio_connect_in_signal(rx, TWAI_RX_IDX, false);
 	esp_rom_gpio_pad_select_gpio(rx);
 	gpio_set_direction(rx, GPIO_MODE_INPUT);
+
+	twai_start();
+	xSemaphoreGive(send_mutex);
 #endif
 }
 
