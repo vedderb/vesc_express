@@ -302,16 +302,11 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 		wifi_event_sta_disconnected_t *data =
 			(wifi_event_sta_disconnected_t *)event_data;
-			
-		bool wrong_password = data->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
-			|| data->reason == WIFI_REASON_NO_AP_FOUND
-			|| data->reason == WIFI_REASON_HANDSHAKE_TIMEOUT;
 
 		bool is_expected_reason = data->reason == WIFI_REASON_ASSOC_LEAVE
 			|| data->reason == WIFI_REASON_AUTH_EXPIRE;
 			
-		bool will_reconnect = !wrong_password && !wifi_disabled
-			&& (wifi_auto_reconnect || is_expected_reason);
+		bool will_reconnect = !wifi_disabled && (wifi_auto_reconnect || is_expected_reason);
 
 		STORED_LOGF(
 			"disconnected, ssid_len: %u, ssid: '%s', reason: '%s' (%u), rssi: "
