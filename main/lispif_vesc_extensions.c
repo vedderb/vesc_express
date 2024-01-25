@@ -1,7 +1,7 @@
 /*
-	Copyright 2023 Benjamin Vedder      benjamin@vedder.se
-	Copyright 2022 Joel Svensson        svenssonjoel@yahoo.se
-	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
+	Copyright 2023 Benjamin Vedder       benjamin@vedder.se
+	Copyright 2022, 2024 Joel Svensson   svenssonjoel@yahoo.se
+	Copyright 2023 Rasmus Söderhielm     rasmus.soderhielm@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -57,6 +57,7 @@
 #include "driver/i2c.h"
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
+#include "driver/uart.h"
 #include "nvs_flash.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
@@ -4187,6 +4188,154 @@ static lbm_value ext_get_imu_gyro_derot(lbm_value *args, lbm_uint argn) {
 	return imu_data;
 }
 
+// UART
+static int uart_number = -1;
+
+// (uart-start uart-num rx-pin tx-pin baud)
+static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
+	if ((argn != 4) ||
+			!lbm_is_number(args[0]) ||
+			!lbm_is_number(args[1]) ||
+			!lbm_is_number(args[2]) ||
+			!lbm_is_number(args[3])) {
+			return ENC_SYM_EERROR;
+	}
+
+	int uart_num = lbm_dec_as_i32(args[0]);
+	int rx_pin = lbm_dec_as_i32(args[1]);
+	int tx_pin = lbm_dec_as_i32(args[2]);
+	int baud = lbm_dec_as_i32(args[3]);
+
+	if (baud < 10 || baud > 10000000) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!gpio_is_valid(rx_pin) && !gpio_is_valid(tx_pin)) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (uart_is_driver_installed(uart_num)) {
+		uart_driver_delete(uart_num);
+	}
+
+	uart_config_t uart_config = {
+			.baud_rate = baud,
+			.data_bits = UART_DATA_8_BITS,
+			.parity    = UART_PARITY_DISABLE,
+			.stop_bits = UART_STOP_BITS_1,
+			.flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+			.source_clk = UART_SCLK_DEFAULT,
+	};
+	esp_err_t r;
+	r = uart_driver_install(uart_num, 512, 512, 0, 0, 0);
+	if (r != ESP_OK) {
+		return ENC_SYM_NIL;
+	}
+	r = uart_param_config(uart_num, &uart_config);
+	if (r != ESP_OK) {
+		return ENC_SYM_NIL;
+	}
+	r = uart_set_pin(uart_num, tx_pin, rx_pin, -1, -1);
+	if (r != ESP_OK) {
+		return ENC_SYM_NIL;
+	}
+
+	uart_number = uart_num;
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
+	if (argn != 1 || (!lbm_is_cons(args[0]) && !lbm_is_array_r(args[0]))) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (uart_number < 0) {
+		return ENC_SYM_NIL;
+	}
+
+	const int max_len = 20;
+	uint8_t to_send[max_len];
+	uint8_t *to_send_ptr = to_send;
+	int ind = 0;
+
+	if (lbm_is_array_r(args[0])) {
+		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+		to_send_ptr = (uint8_t*)array->data;
+		ind = array->size;
+	} else {
+		lbm_value curr = args[0];
+		while (lbm_is_cons(curr)) {
+			lbm_value  arg = lbm_car(curr);
+
+			if (lbm_is_number(arg)) {
+				to_send[ind++] = lbm_dec_as_u32(arg);
+			} else {
+				return ENC_SYM_EERROR;
+			}
+
+			if (ind == max_len) {
+				break;
+			}
+
+			curr = lbm_cdr(curr);
+		}
+	}
+	// This may take a while for large buffer, while lbm is blocked.
+	uart_write_bytes(uart_number,to_send_ptr, ind);
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3 && argn != 4) ||
+			!lbm_is_array_r(args[0]) || !lbm_is_number(args[1])) {
+		return ENC_SYM_EERROR;
+	}
+
+	unsigned int num = lbm_dec_as_u32(args[1]);
+	if (num > 512) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (num == 0 || (uart_number < 0)) {
+		return lbm_enc_i(0);
+	}
+
+	unsigned int offset = 0;
+	if (argn >= 3) {
+		if (!lbm_is_number(args[2])) {
+			return ENC_SYM_EERROR;
+		}
+		offset = lbm_dec_as_u32(args[2]);
+	}
+
+	int stop_at = -1;
+	if (argn >= 4) {
+		if (!lbm_is_number(args[3])) {
+			return ENC_SYM_EERROR;
+		}
+		stop_at = lbm_dec_as_u32(args[3]);
+	}
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+	if (array->size < (num + offset)) {
+		return ENC_SYM_EERROR;
+	}
+
+	unsigned int count = 0;
+	uint8_t c;
+	int res = uart_read_bytes(uart_number, &c, 1, 0);
+	while (res == 1) {
+		((uint8_t*)array->data)[offset + count] = c;
+		count++;
+		if (c == stop_at || count >= num) {
+			break;
+		}
+		res = uart_read_bytes(uart_number, &c, 1, 0);
+	}
+	return lbm_enc_i(count);
+}
+
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -4421,8 +4570,10 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("get-imu-acc-derot", ext_get_imu_acc_derot);
 	lbm_add_extension("get-imu-gyro-derot", ext_get_imu_gyro_derot);
 
-	// TODO:
-	// - uart?
+	// UART
+	lbm_add_extension("uart-start", ext_uart_start);
+	lbm_add_extension("uart-write", ext_uart_write)	;
+	lbm_add_extension("uart-read", ext_uart_read);
 
 	// Extension libraries
 	lbm_array_extensions_init();
