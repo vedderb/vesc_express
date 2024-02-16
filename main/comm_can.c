@@ -627,18 +627,27 @@ static void update_baud(CAN_BAUD baudrate) {
 	} break;
 
 	case CAN_BAUD_1M: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_1MBITS();
-		t_config = t_config2;
+		#if CONFIG_IDF_TARGET_ESP32
+		#else
+			twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_1MBITS();
+			t_config = t_config2;
+		#endif
 	} break;
 
 	case CAN_BAUD_10K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_10KBITS();
-		t_config = t_config2;
+		#if CONFIG_IDF_TARGET_ESP32
+		#else
+			twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_10KBITS();
+			t_config = t_config2;
+		#endif
 	} break;
 
 	case CAN_BAUD_20K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_20KBITS();
-		t_config = t_config2;
+		#if CONFIG_IDF_TARGET_ESP32
+		#else
+			twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_20KBITS();
+			t_config = t_config2;
+		#endif
 	} break;
 
 	case CAN_BAUD_50K: {
