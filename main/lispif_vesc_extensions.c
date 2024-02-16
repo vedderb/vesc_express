@@ -3213,10 +3213,12 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	}
 
 	gpio_set_direction(pin, GPIO_MODE_INPUT);
-
+#if CONFIG_IDF_TARGET_ESP32C3
+	esp_deep_sleep_enable_gpio_wakeup(1 << pin,mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
+#else
 	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0); 
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
-
+#endif
 	return ENC_SYM_TRUE;
 }
 
