@@ -75,7 +75,7 @@
 
 // Bluetooth Mode
 #ifndef CONF_BLE_MODE
-#define CONF_BLE_MODE 1
+#define CONF_BLE_MODE 0
 #endif
 
 // Name

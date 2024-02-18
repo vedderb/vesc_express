@@ -53,6 +53,9 @@ if(DEFINED HW_NAME AND DEFINED HW_TARGET AND DEFINED HW_FILE_NAME)
     # Set our sdkconfig based on hw target
     file(REMOVE sdkconfig)
     configure_file(sdkconfig.${HW_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig COPYONLY)
+    SET(IDF_TARGET ${HW_TARGET})
+    execute_process(COMMAND "idf.py reconfigure" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
     # Pass through hw file paths
     add_compile_definitions(HW_HEADER="${HW_FILE}.h" HW_SOURCE="${HW_FILE}.c")
 else ()

@@ -40,3 +40,8 @@ idf.py build -DHW_TARGET="VESC Express T"
 ```
 
 That will create vesc_express.$target.bin in the bin directory, which can be used with the bootloader in VESC Tool. If the ESP32, ESP32c3 or ESP32s3 does not come with firmware preinstalled, the USB-port can be used for flashing firmware using the built-in bootloader. That also requires bootloader.bin and partition-table.bin which also can be found in the build directory. This can be done from VESC Tool or using idf.py.
+
+When switching targets, you need to clean the build directory
+```bash
+idf.py fullclean
+```
