@@ -27,19 +27,9 @@
 
 #define HW_INIT_HOOK()				hw_init()
 
-// LEDs
-//#define LED_RED_PIN	                0			    
-#define LED_BLUE_PIN				47
-
-#define LED_RED_ON()				printf("Red LED on")
-#define LED_RED_OFF()				printf("Red LED off")
-
-#define LED_BLUE_ON()				gpio_set_level(LED_BLUE_PIN, 1)
-#define LED_BLUE_OFF()				gpio_set_level(LED_BLUE_PIN, 0)
-
 // CAN
-//#define CAN_TX_GPIO_NUM				16
-//#define CAN_RX_GPIO_NUM				17
+#define CAN_TX_GPIO_NUM				16
+#define CAN_RX_GPIO_NUM				17
 
 // UART
 #define UART_NUM					0

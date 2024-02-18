@@ -23,6 +23,7 @@
 #include "adc.h"
 
 #define HW_NAME						"Devkit C3"
+#define HW_TARGET					"esp32c3"
 #define HW_UART_COMM
 
 #define HW_INIT_HOOK()				hw_init()
