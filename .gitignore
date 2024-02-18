@@ -4,4 +4,5 @@
 build
 esp_idf_components
 sdkconfig.old
+sdkconfig
 .vscode
