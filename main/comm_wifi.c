@@ -530,7 +530,7 @@ void comm_wifi_init(void) {
 		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 3500, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
-	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 1024, NULL, 8, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", 2048, NULL, 8, NULL, tskNO_AFFINITY);
 }
 
 WIFI_MODE comm_wifi_get_mode(void) {
