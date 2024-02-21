@@ -24,6 +24,7 @@
 
 #define HW_NAME						"rESCue Mini"
 #define HW_TARGET                   "esp32"
+#define HW_NO_UART
 
 #define HW_INIT_HOOK()				hw_init()
 
