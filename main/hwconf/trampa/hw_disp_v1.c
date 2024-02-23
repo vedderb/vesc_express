@@ -19,6 +19,46 @@
 
 #include "hw_disp_v1.h"
 
-void hw_init(void) {
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/i2c.h"
+#include "esp_rom_gpio.h"
+#include "soc/gpio_sig_map.h"
+#include "driver/gpio.h"
 
+#include "lispif.h"
+#include "lispbm.h"
+#include "terminal.h"
+#include "commands.h"
+#include "utils.h"
+
+static float v_ext = 0.0;
+static float v_btn = 0.0;
+
+static void hw_task(void *arg) {
+	for(;;) {
+		UTILS_LP_FAST(v_ext, adc_get_voltage(HW_ADC_CH1), 0.1);
+		UTILS_LP_FAST(v_btn, adc_get_voltage(HW_ADC_CH3), 0.1);
+		vTaskDelay(1);
+	}
+}
+
+static lbm_value ext_v_ext(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return lbm_enc_float(v_ext);
+}
+
+static lbm_value ext_v_btn(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return lbm_enc_float(v_btn);
+}
+
+static void load_extensions(void) {
+	lbm_add_extension("v-ext", ext_v_ext);
+	lbm_add_extension("v-btn", ext_v_btn);
+}
+
+void hw_init(void) {
+	xTaskCreatePinnedToCore(hw_task, "hw disp", 1024, NULL, 6, NULL, tskNO_AFFINITY);
+	lispif_set_ext_load_callback(load_extensions);
 }
