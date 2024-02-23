@@ -4355,7 +4355,7 @@ void lispif_load_vesc_extensions(void) {
 		}
 		xSemaphoreGive(rmsg_mutex);
 
-		xTaskCreatePinnedToCore(event_task, "LBM Events", 640, NULL, 7, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(event_task, "LBM Events", 1280, NULL, 7, NULL, tskNO_AFFINITY);
 		event_task_running = true;
 	}
 
