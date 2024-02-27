@@ -104,6 +104,7 @@ static const char *color_desc = "Color";
 
 static lbm_uint symbol_indexed2 = 0;
 static lbm_uint symbol_indexed4 = 0;
+static lbm_uint symbol_indexed16 = 0;
 static lbm_uint symbol_rgb332 = 0;
 static lbm_uint symbol_rgb565 = 0;
 static lbm_uint symbol_rgb888 = 0;
@@ -134,6 +135,7 @@ static color_format_t sym_to_color_format(lbm_value v) {
 	lbm_uint s = lbm_dec_sym(v);
 	if (s == symbol_indexed2) return indexed2;
 	if (s == symbol_indexed4) return indexed4;
+	if (s == symbol_indexed16) return indexed16;
 	if (s == symbol_rgb332) return rgb332;
 	if (s == symbol_rgb565) return rgb565;
 	if (s == symbol_rgb888) return rgb888;
@@ -159,6 +161,9 @@ static uint32_t image_dims_to_size_bytes(color_format_t fmt, uint16_t width, uin
 		if (num_pix % 4 != 0) return (num_pix / 4) + 1;
 		else return (num_pix / 4);
 		break;
+	case indexed16: // Two pixels per byte
+		if (num_pix % 2 != 0) return (num_pix / 2) + 1;
+		else return (num_pix / 2);
 	case rgb332:
 		return num_pix;
 		break;
@@ -290,6 +295,7 @@ static bool register_symbols(void) {
 	bool res = true;
 	res = res && lbm_add_symbol_const("indexed2", &symbol_indexed2);
 	res = res && lbm_add_symbol_const("indexed4", &symbol_indexed4);
+	res = res && lbm_add_symbol_const("indexed16", &symbol_indexed16);
 	res = res && lbm_add_symbol_const("rgb332", &symbol_rgb332);
 	res = res && lbm_add_symbol_const("rgb565", &symbol_rgb565);
 	res = res && lbm_add_symbol_const("rgb888", &symbol_rgb888);
@@ -426,6 +432,14 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 		memset(img->data+img->data_offset, index4_table[ix], bytes);
 	}
 	break;
+	case indexed16: {
+		int extra = img_size & 0x2;
+		int bytes = (img_size >> 1) + (extra ? 1 : 0);
+		uint8_t ix = (cc & 0xF);
+		uint8_t color = (ix | ix << 4);  // create a color based on duplication of index
+		memset(img->data+img->data_offset, color, bytes);
+	}
+	break;
 	case rgb332: {
 		memset(img->data+img->data_offset, rgb888to332(cc), img_size);
 	}
@@ -455,6 +469,9 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 
 static const uint8_t indexed4_mask[4] = {0x03, 0x0C, 0x30, 0xC0};
 static const uint8_t indexed4_shift[4] = {0, 2, 4, 6};
+static const uint8_t indexed16_mask[4] = {0x0F, 0xF0};
+static const uint8_t indexed16_shift[4] = {0, 4};
+
 
 static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 	uint16_t w = img->width;
@@ -478,6 +495,13 @@ static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 			uint32_t byte = pos >> 2;
 			uint32_t ix  = 3 - (pos & 0x3);
 			data[byte] =  (data[byte] & ~indexed4_mask[ix]) | c << indexed4_shift[ix];
+			break;
+		}
+		case indexed16: {
+			int pos = y*w + x;
+			uint32_t byte = pos >> 1;
+			uint32_t ix  = 1 - (pos & 0x1);
+			data[byte] =  (data[byte] & ~ indexed16_mask[ix]) | c << indexed16_shift[ix];
 			break;
 		}
 		case rgb332: {
@@ -522,6 +546,12 @@ static uint32_t getpixel(image_buffer_t* img, uint16_t x, uint16_t y) {
 			uint32_t byte = pos >> 2;
 			uint32_t ix  = 3 - (pos & 0x3);
 			return (uint32_t)((data[byte] & indexed4_mask[ix]) >> indexed4_shift[ix]);
+		}
+		case indexed16: {
+			int pos = y*w + x;
+			uint32_t byte = pos >> 1;
+			uint32_t ix  = 1 - (pos & 0x1);
+			return (uint32_t)((data[byte] & indexed16_mask[ix]) >> indexed16_shift[ix]);
 		}
 		case rgb332: {
 			int pos = y*w + x;
@@ -1928,6 +1958,7 @@ static lbm_value ext_image_buffer_from_bin(lbm_value *args, lbm_uint argn) {
 		switch(bits) {
 		case 1: fmt = indexed2; break;
 		case 2: fmt = indexed4; break;
+		case 4: fmt = indexed16; break;
 		case 8: fmt = rgb332; break;
 		case 16: fmt = rgb565; break;
 		case 24: fmt = rgb888; break;
@@ -2326,6 +2357,7 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 	img_args_t arg_dec = decode_args(args, argn, 5);
 
 	if (!arg_dec.is_valid) {
+		commands_printf_lisp("Not a valid decode");
 		return ENC_SYM_TERROR;
 	}
 
