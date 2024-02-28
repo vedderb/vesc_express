@@ -113,6 +113,28 @@ static void blast_indexed4(image_buffer_t *img, color_t *colors) {
 	hwspi_data_stream_finish();
 }
 
+static void blast_indexed16(image_buffer_t *img, color_t *colors) {
+	command_start(0x2C);
+	hwspi_data_stream_start();
+
+	uint8_t *data = img->data;
+	int num_pix = img->width * img->height;
+
+	for (int i = 0; i < num_pix; i++) {
+		int byte = i >> 1;    // byte to access is pix / 2
+		int bit = (1 - (i & 0x01)) * 4; // bit position to access within byte
+		int color_ind = (data[byte] & (0x0F << bit)) >> bit; // extract 4 bit value.
+
+		uint16_t c = to_disp_color(
+				COLOR_TO_RGB888(colors[color_ind], i % img->width, i / img->width));
+		hwspi_data_stream_write((uint8_t)c);
+		hwspi_data_stream_write((uint8_t)(c >> 8));
+	}
+
+	hwspi_data_stream_finish();
+}
+
+
 static void blast_rgb332(uint8_t *data, uint32_t num_pix) {
 	command_start(0x2C);
 	hwspi_data_stream_start();
@@ -197,6 +219,10 @@ bool disp_st7789_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color
 	case indexed4:
 		if (!colors) return false;
 		blast_indexed4(img, colors);
+		break;
+	case indexed16:
+		if (!colors) return false;
+		blast_indexed16(img, colors);
 		break;
 	case rgb332:
 		blast_rgb332(img->data + img->data_offset, num_pix);

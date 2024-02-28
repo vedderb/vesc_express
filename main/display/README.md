@@ -4,7 +4,7 @@
 # Introduction
 
 The graphics library provides a set of functions for drawing onto rectangular
-images, called Image-buffers, from LispBM. 
+images, called Image-buffers, from LispBM.
 
 Drivers for a specific display is loaded with the associated `disp-load` function:
 
@@ -26,11 +26,12 @@ implemented per display.
 The graphics library is based on image-buffers, that are rectangular arrays
 of pixels where all pixels are of a certain format. The formats we support in
 image-buffers are:
-1. indexed2 - 2 colors (1 bit per pixel) 
-2. indexed4 - 4 colors (2 bits per pixel)
-3. rgb332   - 8Bit color
-4. rgb565   - 16Bit color
-5. rgb888   - 24Bit color
+1. indexed2  - 2 colors (1 bit per pixel)
+2. indexed4  - 4 colors (2 bits per pixel)
+3. indexed16 - 16 colors (4 bits per pixel)
+4. rgb332    - 8Bit color
+5. rgb565    - 16Bit color
+6. rgb888    - 24Bit color
 
 Image-buffers can be created in two ways using the graphics library:
 1. `img-buffer` - allocates a blank image-buffer in lbm memory.
@@ -42,9 +43,10 @@ For example, creating a 100x100 image-buffer of `indexed2` colors is done as:
 (def my-img (img-buffer 'indexed2 100 100))
 ```
 
-When drawing on `indexed2` or `indexed4` image-buffers, colors are expressed
-as an integer. 0,1 for `indexed2` and 0,1,2,3 for `indexed4`. For `rgb332`, `rgb565`
-and `rgb888` image-buffers a color is given in hex notation 0xRRGGBB. 
+When drawing on `indexed2` or `indexed4` image-buffers, colors are
+expressed as an integer. 0,1 for `indexed2`, 0,1,2,3 for `indexed4`
+and 0 to 15 for `indexed16`. For `rgb332`, `rgb565` and `rgb888`
+image-buffers a color is given in hex notation 0xRRGGBB.
 
 Example that draws a line from pos (0,0) to pos (90,90) in color 1 on an `indexed2` image-buffer:
 
@@ -54,16 +56,17 @@ Example that draws a line from pos (0,0) to pos (90,90) in color 1 on an `indexe
 
 When an image-buffer is rendered onto the display (using the
 disp-render function) the colors of the image-buffer are mapped to the
-color space of the display.  In the case of `indexed2` and `indexed4`
+color space of the display.  In the case of `indexed2`, `indexed4` and `indexed16`
 this mapping is performed using a list of target colors expressed in
-RGB888 format. 
+RGB888 format.
 
 Note that the RAM requirement of a 100x100 image is:
-1. at indexed2: 1250 Bytes
-2. at indexed4: 2500 Bytes
-3. at rgb332:   10000 Bytes
-4. at rgb565:   20000 Bytes
-5. at rgb888:   30000 Bytes
+1. at indexed2:  1250 Bytes
+2. at indexed4:  2500 Bytes
+3. at indexed16: 5000 Bytes
+3. at rgb332:    10000 Bytes
+4. at rgb565:    20000 Bytes
+5. at rgb888:    30000 Bytes
 
 There are a number of function for drawing onto an image-buffer:
 1. img-setpix
@@ -81,7 +84,7 @@ There are a number of function for drawing onto an image-buffer:
 The purpose of most of these are given by their names. `img-blit` draws an
 image onto another image and can while doing so rotate and scale the image it
 is drawing. More details on each of these functions are available in the later
-reference sections. 
+reference sections.
 
 The functions that draw onto an image-buffer takes optional arguments
 that specify extra attributes to apply when drawing. These attributes are:
@@ -90,7 +93,7 @@ that specify extra attributes to apply when drawing. These attributes are:
    inwards. But for `img-triangle` and `img-line`, it extends equal outwards and inwards,
    so the total line thickness is actually equal to two times `w`.
 2. `'(dotted d-len d-space-len)`: Dotted or dashed lines with `d-len` long line segments separated by `d-space-len`.
-3. `'(filled)`: Specifies that the shape should be filled. 
+3. `'(filled)`: Specifies that the shape should be filled.
 4. `'(rounded radius)`: Specifies that the shape should have rounded corners.
    Additionally, the `img-arc` function can take this argument in the form
    `'(rounded)` to specify that, when the arc isn't filled or dotted, the line ends
@@ -109,16 +112,16 @@ that specify extra attributes to apply when drawing. These attributes are:
    shapes, or dotted circles.
    The default is `80`.
 
- 
+
 Not all attributes are applicable to all drawing functions. The
 applicable attributes for each drawing-function is listed in the
-description of the function in the reference section. 
+description of the function in the reference section.
 
 ## Rendering and color mapping
 
 An image-buffer can be rendered to the display using `disp-render`.
-If the image is an `indexed2` or `indexed4` color image, it is when
-rendering the image you decide what color each index in the image represents. 
+If the image is an `indexed2`, `indexed4` or `indexed16` color image, it is when
+rendering the image you decide what color each index in the image represents.
 
 For example you can draw an indexed2 image using a very red and a green color as:
 ```clj
@@ -137,7 +140,7 @@ type can represent normal colors, such as 0xFF0000, but can also represent
 gradients to be applied to the image in x or y direction upon rendering.
 
 # Displays
- 
+
 ## sh8501b
 
 * Resolution: 194 * 368
@@ -161,7 +164,7 @@ SPI clock at 40MHz:
 
 ```clj
 (disp-load-sh8501b 6 5 7 8 40)
-``` 
+```
 
 ## ili9341
 
@@ -197,7 +200,7 @@ The SPI clock is set to 40MHz.
 * Interface: I2C
 
 Can display images of `indexed2` format and is limited to displaying
-only full screen images starting at position (0, 0). 
+only full screen images starting at position (0, 0).
 
 ### disp-load-ssd1306
 
@@ -208,7 +211,7 @@ only full screen images starting at position (0, 0).
 Load the ssd1306 driver. The ssd1306 talks I2C over the GPIOs
 `gpio-sda` (serial data) and `gpio-scl` (clock).
 
-Example using GPIO pins 7 and 6 for serial data and clock. 
+Example using GPIO pins 7 and 6 for serial data and clock.
 
 ```clj
 (disp-load-ssd1306 7 6 700000)
@@ -240,7 +243,7 @@ The SPI clock is set to 40MHz.
 (disp-load-st7789 6 5 19 18 7 40)
 ```
 
-**Note**  
+**Note**
 Many st7789-based displays do not have the full resolution that the driver supports in the panel. Some of them also have an offset where the panel starts. The panel size and offset has to be taken into account when using disp-render.
 
 ## st7735
@@ -269,7 +272,7 @@ The SPI clock is set to 40MHz.
 (disp-load-st7789 6 5 19 18 7 40)
 ```
 
-**Note**  
+**Note**
 Many st7735-based displays do not have the full resolution that the driver supports in the panel. Some of them also have an offset where the panel starts. The panel size and offset has to be taken into account when using disp-render.
 
 ## ili9488
@@ -347,7 +350,7 @@ SPI clock at 40MHz:
 
 ```clj
 (disp-load-icna3306 6 5 7 8 40)
-``` 
+```
 
 # Common display operations
 
@@ -381,7 +384,7 @@ Clears the display to the given color. The color is expressed in hex rgb888 form
 ```
 
 Renders an image `img` at position (`px`, `py`).
-If the picture is of `'indexed2` or `'indexed4` format
+If the picture is of `'indexed2`, `'indexed4` or `indexed16` format
 the `colors` argument is used to map the values of the image to colors on
 the display.
 
@@ -404,9 +407,9 @@ As an example, the two programs below render an image using colors black and red
 ```clj
 (disp-render img 0 0 '(0x000000 0xFF0000))
 ```
-*using a list of colors* 
+*using a list of colors*
 ```clj
-(disp-render img 0 0 (list (img-color 'regular 0x000000) 
+(disp-render img 0 0 (list (img-color 'regular 0x000000)
                            (img-color 'regular 0xFF0000)))
 ```
 
@@ -421,11 +424,11 @@ to img-color. look up `img-color` for more information.
 ```
 Decodes and displays a jpg at position (`px`, `py`).
 
-Example that imports and displays a jpg image. 
+Example that imports and displays a jpg image.
 ```clj
 (import "img_test_jpg.jpg" 'img-jpg)
 (disp-render-jpg img-jpg 0 0)
-``` 
+```
 
 # Graphics library
 
@@ -459,12 +462,12 @@ Example drawing an arc with rounded corners
 Example drawing a dashed (dotted) arc:
 ```clj
 (img-arc img 100 100 50 160 320 1 '(dotted 15 15))
-``` 
+```
 
 ## img-blit
 
 ```clj
-(img-blit img-dst img-src px py tc opt-attr1 ... opt-attrN) 
+(img-blit img-dst img-src px py tc opt-attr1 ... opt-attrN)
 ```
 
 Draws the source image `img-src` onto the destination image `img-dst`
@@ -495,16 +498,17 @@ Creates an image-buffer of size `width` * `height` of colors of format `color-fm
 `color-fmt` can be one of the following symbols:
 1. indexed2
 2. indexed4
-3. rgb332
-4. rgb565
-5. rgb888
+3. indexed16
+4. rgb332
+5. rgb565
+6. rgb888
 
 Image-buffers are allocated from the lbm-memory, not heap.
 
 Example that creates and names an image-buffer:
 ```clj
 (def img (img-buffer 'indexed2 100 100))
-``` 
+```
 
 ## img-buffer-from-bin
 
@@ -531,7 +535,7 @@ test-op (img-circle img cx cy r color opt-attr1 ... opt-attrN)
 ```
 
 Draws a circle with its center at (`cx`, `cy`) and radius r in color `color`.
-Additional attributes are optional. 
+Additional attributes are optional.
 
 Applicable attributes:
 1. dotted
@@ -542,7 +546,7 @@ Applicable attributes:
 Example drawing a filled circle with radius 80:
 ```clj
 (img-circle img 100 100 80 1 '(filled))
-``` 
+```
 
 ## img-circle-sector
 
@@ -569,7 +573,7 @@ Example drawing a thick circle-sector of 45 degrees and radius 80.
 
 ```clj
 (img-circle-segment img cx cy r ang-s ang-e color opt-attr1 ... opt-attrN)
-``` 
+```
 
 Draw a circle-segment. Imagine a line (chord) drawn between the points of the circle
 at angle `ang-s` and `ang-e` cutting off a circle segment. The segment is the part
@@ -731,7 +735,7 @@ using `img-color-setpre`.
 (img-dims img)
 ```
 
-Returns the dimensions of the image, its width and height, as a list. 
+Returns the dimensions of the image, its width and height, as a list.
 
 ## img-line
 
@@ -753,9 +757,9 @@ Example that draws a thick dashed (dotted) line:
 
 ```clj
 (img-rectangle img x y width height color opt-attr1 ... opt-attrN)
-``` 
+```
 Draws a rectangle with its upper left corner in point (`x`,`y`) and
-width `width` and height `height` in color `color`.  
+width `width` and height `height` in color `color`.
 
 Applicable attributes:
 1. dotted
@@ -768,9 +772,9 @@ Example drawing a filled rectangle with rounded corners:
 
 ```clj
 (img-rectangle img 10 10 120 180 1 '(filled) '(rounded 45) )
-``` 
+```
 
-Note that the argument to rounded should be at most 45 degrees. 
+Note that the argument to rounded should be at most 45 degrees.
 
 ## img-setpix
 
@@ -783,7 +787,7 @@ Set pixel (`x`,`y`) in image `img` to color `color`.
 example that sets a pixel:
 ```clj
 (img-setpix 10 10 1)
-``` 
+```
 
 ## img-text
 
@@ -830,9 +834,9 @@ Example that draws a filled triangle:
 
 ```clj
 (img-line img 10 10 300 50 1)
-(img-line img 10 30 300 70 1 '(dotted 15 15)) 
+(img-line img 10 30 300 70 1 '(dotted 15 15))
 (img-line img 10 50 300 90 1 '(thickness 3))
-(img-line img 10 70 300 110 1 '(thickness 3) '(dotted 15 15)) 
+(img-line img 10 70 300 110 1 '(thickness 3) '(dotted 15 15))
 (disp-render img 0 0 (list 0x000000 0xFF0000))
 ```
 
@@ -858,7 +862,7 @@ Example that draws a filled triangle:
 ```clj
 (img-circle-sector img 40 40 40 90 200 1)
 (img-circle-sector img 130 40 40 90 200 1 '(dotted 15 15))
-(img-circle-sector img 220 40 40 90 200 1 '(thickness 3)) 
+(img-circle-sector img 220 40 40 90 200 1 '(thickness 3))
 (img-circle-sector img 40 130 40 90 200 1 '(dotted 15 15) '(thickness 3))
 (img-circle-sector img 130 130 40 90 200 1 '(filled))
 (disp-render img 0 0 (list 0x000000 0xFF0000))
@@ -887,7 +891,7 @@ Example that draws a filled triangle:
 (img-triangle img 10 10 80 20 40 80 1)
 (img-triangle img 100 10 170 20 130 80 1 '(dotted 15 15))
 (img-triangle img 190 10 260 20 220 80 1 '(thickness 3))
-(img-triangle img 10 100 80 110 40 170 1 '(dotted 15 15) '(thickness 3)) 
+(img-triangle img 10 100 80 110 40 170 1 '(dotted 15 15) '(thickness 3))
 (img-triangle img 100 100 170 110 130 170 1 '(filled))
 (disp-render img 0 0 (list 0x000000 0xFF0000))
 ```
@@ -900,10 +904,10 @@ Example that draws a filled triangle:
 ```clj
 (img-rectangle img 10 10 70 70 1)
 (img-rectangle img 90 10 70 70 1 '(dotted 15 15))
-(img-rectangle img 170 10 70 70 1 '(thickness 3)) 
+(img-rectangle img 170 10 70 70 1 '(thickness 3))
 (img-rectangle img 10 90 70 70 1 '(dotted 15 15) '(thickness 3))
-(img-rectangle img 90 90 70 70 1 '(filled)) 
-(img-rectangle img 170 90 70 70 1 '(rounded 10)) 
+(img-rectangle img 90 90 70 70 1 '(filled))
+(img-rectangle img 170 90 70 70 1 '(rounded 10))
 (img-rectangle img 10 170 70 60 1 '(rounded 10) '(filled))
 (disp-render img 0 0 (list 0x000000 0xFF0000))
 ```
