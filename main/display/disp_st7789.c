@@ -121,17 +121,9 @@ static void blast_indexed16(image_buffer_t *img, color_t *colors) {
 	int num_pix = img->width * img->height;
 
 	for (int i = 0; i < num_pix; i++) {
-		int byte = i / 2; // Each byte holds two pixels
-		bool isHighNibble = i % 2 == 0; // Determine if this is the high or low nibble
-		int color_ind;
-
-		if (isHighNibble) {
-			// Extract color index from the high nibble
-			color_ind = (data[byte] & 0xF0) >> 4;
-		} else {
-			// Extract color index from the low nibble
-			color_ind = data[byte] & 0x0F;
-		}
+		int byte = i >> 1;    // byte to access is pix / 2
+		int bit = (1 - (i & 0x01)) * 4; // bit position to access within byte
+		int color_ind = (data[byte] & (0x0F << bit)) >> bit; // extract 4 bit value.
 
 		uint16_t c = to_disp_color(
 				COLOR_TO_RGB888(colors[color_ind], i % img->width, i / img->width));
