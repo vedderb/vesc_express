@@ -64,6 +64,9 @@ static decoder_state m_decoder_state;
 static SemaphoreHandle_t wait_sem;
 static volatile bool wait_was_ack;
 static volatile bool m_init_ok = false;
+static volatile bool sem_init_done = false;
+static volatile bool should_terminate = true;
+static volatile bool thd_rx_is_running = false;
 
 // Private functions
 static void proc_byte(uint8_t ch);
@@ -121,17 +124,29 @@ static void(*rx_gnss)(ubx_cfg_gnss *gnss) = 0;
 static void rx_task(void *arg) {
 	reset_decoder_state();
 
-	for (;;) {
-		uint8_t buf[1];
-		uart_read_bytes(UART_NUM, buf, 1, portMAX_DELAY);
-		proc_byte(buf[0]);
+	while (!should_terminate) {
+		if (!uart_is_driver_installed(UART_NUM)) {
+			break;
+		}
+
+		uint8_t c;
+		int res = uart_read_bytes(UART_NUM, &c, 1, 10);
+		if (res == 1) {
+			proc_byte(c);
+		}
 	}
+
+	thd_rx_is_running = false;
+	vTaskDelete(NULL);
 }
 
 bool ublox_init(bool print, uint16_t rate_ms) {
 	m_init_ok = false;
 
-	wait_sem = xSemaphoreCreateBinary();
+	if (!sem_init_done) {
+		wait_sem = xSemaphoreCreateBinary();
+		sem_init_done = true;
+	}
 
 	uart_config_t uart_config = {
 			.baud_rate = BAUDRATE,
@@ -142,10 +157,21 @@ bool ublox_init(bool print, uint16_t rate_ms) {
 			.source_clk = UART_SCLK_DEFAULT,
 	};
 
+	should_terminate = true;
+	while (thd_rx_is_running) {
+		vTaskDelay(1);
+	}
+
+	if (uart_is_driver_installed(UART_NUM)) {
+		uart_driver_delete(UART_NUM);
+	}
+
 	uart_driver_install(UART_NUM, 512, 512, 0, 0, 0);
 	uart_param_config(UART_NUM, &uart_config);
 	uart_set_pin(UART_NUM, UART_TX, UART_RX, -1, -1);
 
+	should_terminate = false;
+	thd_rx_is_running = true;
 	xTaskCreatePinnedToCore(rx_task, "ublox_rx", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 
 	// Prevent unused warnings
@@ -283,6 +309,11 @@ bool ublox_init(bool print, uint16_t rate_ms) {
 	}
 
 	if (!baud_ok) {
+		should_terminate = true;
+		while (thd_rx_is_running) {
+			vTaskDelay(1);
+		}
+
 		if (print) {
 			commands_printf("Could not set baud rate");
 		}
