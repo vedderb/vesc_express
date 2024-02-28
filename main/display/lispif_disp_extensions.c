@@ -2357,7 +2357,6 @@ static lbm_value ext_rectangle(lbm_value *args, lbm_uint argn) {
 	img_args_t arg_dec = decode_args(args, argn, 5);
 
 	if (!arg_dec.is_valid) {
-		commands_printf_lisp("Not a valid decode");
 		return ENC_SYM_TERROR;
 	}
 
@@ -2608,13 +2607,13 @@ static lbm_value ext_disp_render(lbm_value *args, lbm_uint argn) {
 
 	image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
 
-	color_t colors[4];
-	memset(colors, 0, sizeof(color_t) * 4);
+	color_t colors[16];
+	memset(colors, 0, sizeof(color_t) * 16);
 
 	if (argn == 4 && lbm_is_list(args[3])) {
 		int i = 0;
 		lbm_value curr = args[3];
-		while (lbm_is_cons(curr) && i < 4) {
+		while (lbm_is_cons(curr) && i < 16) {
 			lbm_value arg = lbm_car(curr);
 
 			if (lbm_is_number(arg)) {
