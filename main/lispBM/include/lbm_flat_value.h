@@ -32,8 +32,8 @@ typedef struct {
 #define S_SYM_VALUE       0x2 // 1      value
 #define S_SYM_STRING      0x3
 #define S_BYTE_VALUE      0x4
-#define S_I_VALUE         0x5
-#define S_U_VALUE         0x6
+#define S_I28_VALUE       0x5
+#define S_U28_VALUE       0x6
 #define S_I32_VALUE       0x7
 #define S_U32_VALUE       0x8
 #define S_FLOAT_VALUE     0x9
@@ -41,6 +41,8 @@ typedef struct {
 #define S_U64_VALUE       0xB
 #define S_DOUBLE_VALUE    0xC
 #define S_LBM_ARRAY       0xD
+#define S_I56_VALUE       0xE
+#define S_U56_VALUE       0xF
 
 // Maximum number of recursive calls
 #define FLATTEN_VALUE_MAXIMUM_DEPTH 2000
@@ -53,6 +55,11 @@ typedef struct {
 #define FLATTEN_VALUE_ERROR_MAXIMUM_DEPTH       -5
 #define FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY   -6
 #define FLATTEN_VALUE_ERROR_FATAL               -7
+
+#define UNFLATTEN_MALFORMED     -2
+#define UNFLATTEN_GC_RETRY      -1
+#define UNFLATTEN_OK             0
+
 
 bool lbm_start_flatten(lbm_flat_value_t *v, size_t buffer_size);
 bool lbm_finish_flatten(lbm_flat_value_t *v);
@@ -69,6 +76,8 @@ bool f_i64(lbm_flat_value_t *v, int64_t w);
 bool f_u64(lbm_flat_value_t *v, uint64_t w);
 bool f_lbm_array(lbm_flat_value_t *v, uint32_t num_bytes, uint8_t *data);
 lbm_value flatten_value(lbm_value v);
+int flatten_value_c(lbm_flat_value_t *fv, lbm_value v);
+int flatten_value_size(lbm_value v, int depth);
 void lbm_set_max_flatten_depth(int depth);
 
 /** Unflatten a flat value stored in an lbm_memory array onto the heap

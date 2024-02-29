@@ -405,7 +405,7 @@ static parse_lbm_result_t parse_lbm_descr_def(
 	esp_bt_uuid_t uuid;
 	uint16_t max_len = 0;
 	uint16_t value_len = 0;
-	uint8_t *default_value = NULL;
+	uint8_t *default_value = &default_zero;
 
 	lbm_value next = descr_def;
 	while (lbm_is_cons(next)) {
@@ -504,7 +504,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 	esp_gatt_char_prop_t prop = 0;
 	uint16_t max_len = 0;
 	uint16_t value_len = 0;
-	uint8_t *default_value = NULL;
+	uint8_t *default_value = &default_zero;
 
 	lbm_value descr_raw = ENC_SYM_NIL; // to get the compiler to shut up
 

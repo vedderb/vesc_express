@@ -22,8 +22,6 @@
 
 #include <setjmp.h>
 
-static jmp_buf flatten_value_result_jmp_buf;
-
 // ------------------------------------------------------------
 // Access to GC from eval_cps
 int lbm_perform_gc(void);
@@ -141,10 +139,11 @@ int f_sym_string_bytes(lbm_value sym) {
 
 bool f_i(lbm_flat_value_t *v, lbm_int i) {
   bool res = true;
-  res = res && write_byte(v,S_I_VALUE);
 #ifndef LBM64
+  res = res && write_byte(v,S_I28_VALUE);
   res = res && write_word(v,(uint32_t)i);
 #else
+  res = res && write_byte(v,S_I56_VALUE);
   res = res && write_dword(v, (uint64_t)i);
 #endif
   return res;
@@ -152,10 +151,11 @@ bool f_i(lbm_flat_value_t *v, lbm_int i) {
 
 bool f_u(lbm_flat_value_t *v, lbm_uint u) {
   bool res = true;
-  res = res && write_byte(v,S_U_VALUE);
 #ifndef LBM64
+  res = res && write_byte(v,S_U28_VALUE);
   res = res && write_word(v,(uint32_t)u);
 #else
+  res = res && write_byte(v,S_U56_VALUE);
   res = res && write_dword(v,(uint64_t)u);
 #endif
   return res;
@@ -234,26 +234,22 @@ void lbm_set_max_flatten_depth(int depth) {
   flatten_maximum_depth = depth;
 }
 
-void flatten_set_result(int val) {
-  flatten_value_result = val;
-  longjmp(flatten_value_result_jmp_buf, 1);
+void flatten_error(jmp_buf jb, int val) {
+  longjmp(jb, val);
 }
 
-int flatten_value_size(lbm_value v, int depth, int n_cons, int max_cons) {
+int flatten_value_size_internal(jmp_buf jb, lbm_value v, int depth) {
   if (depth > flatten_maximum_depth) {
-    flatten_set_result(FLATTEN_VALUE_ERROR_MAXIMUM_DEPTH);
-  }
-  if (n_cons > max_cons) {
-    flatten_set_result(FLATTEN_VALUE_ERROR_CIRCULAR);
+    flatten_error(jb, FLATTEN_VALUE_ERROR_MAXIMUM_DEPTH);
   }
 
   switch (lbm_type_of(v)) {
   case LBM_TYPE_CONS: /* fall through */
   case LBM_TYPE_CONS_CONST: {
     int s2 = 0;
-    int s1 = flatten_value_size(lbm_car(v), depth + 1, n_cons+1, max_cons);
+    int s1 = flatten_value_size_internal(jb,lbm_car(v), depth + 1);
     if (s1 > 0) {
-      s2 = flatten_value_size(lbm_cdr(v), depth + 1, n_cons+1, max_cons);
+      s2 = flatten_value_size_internal(jb,lbm_cdr(v), depth + 1);
       if (s2 > 0) {
         return (1 + s1 + s2);
       }
@@ -261,7 +257,7 @@ int flatten_value_size(lbm_value v, int depth, int n_cons, int max_cons) {
     return 0; // already terminated with error
   }
   case LBM_TYPE_BYTE:
-    return 1;
+    return 1 + 1;
   case LBM_TYPE_U: /* fall through */
   case LBM_TYPE_I:
 #ifndef LBM64
@@ -280,29 +276,38 @@ int flatten_value_size(lbm_value v, int depth, int n_cons, int max_cons) {
   case LBM_TYPE_SYMBOL: {
     int s = f_sym_string_bytes(v);
     if (s > 0) return 1 + s;
-    flatten_set_result(s);
+    flatten_error(jb, s);
   } return 0; // already terminated with error
   case LBM_TYPE_ARRAY: {
     lbm_int s = lbm_heap_array_get_size(v);
     if (s > 0)
       return 1 + 4 + s;
-    flatten_set_result(s);
+    flatten_error(jb, s);
   } return 0; // already terminated with error
   default:
     return FLATTEN_VALUE_ERROR_CANNOT_BE_FLATTENED;
   }
 }
 
-int flatten_value_internal(lbm_flat_value_t *fv, lbm_value v) {
+int flatten_value_size(lbm_value v, int depth) {
+  jmp_buf jb;
+  int r = setjmp(jb);
+  if (r != 0) {
+    return r;
+  }
+  return flatten_value_size_internal(jb, v, depth);
+}
+
+int flatten_value_c(lbm_flat_value_t *fv, lbm_value v) {
   switch (lbm_type_of(v)) {
   case LBM_TYPE_CONS: /* fall through */
   case LBM_TYPE_CONS_CONST: {
     bool res = true;
     res = res && f_cons(fv);
     if (res) {
-      int fv_r = flatten_value_internal(fv, lbm_car(v));
+      int fv_r = flatten_value_c(fv, lbm_car(v));
       if (fv_r == FLATTEN_VALUE_OK) {
-        fv_r = flatten_value_internal(fv, lbm_cdr(v));
+        fv_r = flatten_value_c(fv, lbm_cdr(v));
       }
       return fv_r;
     }
@@ -391,7 +396,9 @@ lbm_value handle_flatten_error(int err_val) {
   return ENC_SYM_NIL;
 }
 
-lbm_value flatten_value( lbm_value v) {
+lbm_value flatten_value(lbm_value v) {
+
+  jmp_buf jb;
 
   lbm_value array_cell = lbm_heap_allocate_cell(LBM_TYPE_CONS, ENC_SYM_NIL, ENC_SYM_ARRAY_TYPE);
   if (lbm_type_of(array_cell) == LBM_TYPE_SYMBOL) {
@@ -400,26 +407,26 @@ lbm_value flatten_value( lbm_value v) {
   }
 
   lbm_flat_value_t fv;
-  if (setjmp(flatten_value_result_jmp_buf) > 0) {
+  if (setjmp(jb) > 0) {
     lbm_set_car_and_cdr(array_cell, ENC_SYM_NIL, ENC_SYM_NIL);
     return handle_flatten_error(flatten_value_result);
   }
 
   lbm_array_header_t *array = NULL;
-  int required_mem = flatten_value_size(v, 0, 0, (int)lbm_heap_size());
+  int required_mem = flatten_value_size(v, 0);
   if (required_mem > 0) {
     array = (lbm_array_header_t *)lbm_malloc(sizeof(lbm_array_header_t));
     if (array == NULL) {
-      flatten_set_result(FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY);
+      flatten_error(jb, FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY);
     }
 
     bool r = lbm_start_flatten(&fv, (lbm_uint)required_mem);
     if (!r) {
       lbm_free(array);
-      flatten_set_result(FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY);
+      flatten_error(jb, FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY);
     }
 
-    if (flatten_value_internal(&fv, v) == FLATTEN_VALUE_OK) {
+    if (flatten_value_c(&fv, v) == FLATTEN_VALUE_OK) {
       // it would be wasteful to run finish_flatten here.
       r = true;
     }
@@ -432,7 +439,7 @@ lbm_value flatten_value( lbm_value v) {
       array_cell = lbm_set_ptr_type(array_cell, LBM_TYPE_ARRAY);
       return array_cell;
     } else {
-      flatten_set_result(FLATTEN_VALUE_ERROR_FATAL);
+      flatten_error(jb, FLATTEN_VALUE_ERROR_FATAL);
     }
   }
 
@@ -481,10 +488,6 @@ static bool extract_dword(lbm_flat_value_t *v, uint64_t *r) {
   return false;
 }
 
-#define UNFLATTEN_MALFORMED     -2
-#define UNFLATTEN_GC_RETRY      -1
-#define UNFLATTEN_OK             0
-
 /* Recursive and potentially stack hungry for large flat values */
 static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
   if (v->buf_size == v->buf_pos) return UNFLATTEN_MALFORMED;
@@ -526,35 +529,55 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     uint8_t tmp;
     bool b = extract_byte(v, &tmp);
     if (b) {
-      *res = lbm_enc_char((char)tmp);
+      *res = lbm_enc_char((uint8_t)tmp);
       return UNFLATTEN_OK;
     }
     return UNFLATTEN_MALFORMED;
   }
-  case S_I_VALUE: {
+  case S_I28_VALUE: {
     lbm_uint tmp;
     bool b;
-#ifndef LBM64
     b = extract_word(v, &tmp);
-#else
-    b = extract_dword(v, &tmp);
-#endif
     if (b) {
       *res = lbm_enc_i((int32_t)tmp);
       return UNFLATTEN_OK;
     }
     return UNFLATTEN_MALFORMED;
   }
-  case S_U_VALUE: {
+  case S_U28_VALUE: {
     lbm_uint tmp;
     bool b;
-#ifndef LBM64
     b = extract_word(v, &tmp);
-#else
-    b = extract_dword(v, &tmp);
-#endif
     if (b) {
       *res = lbm_enc_u((uint32_t)tmp);
+      return UNFLATTEN_OK;
+    }
+    return UNFLATTEN_MALFORMED;
+  }
+  case S_I56_VALUE: {
+    uint64_t tmp;
+    bool b;
+    b = extract_dword(v, &tmp);
+    if (b) {
+#ifndef LBM64
+      *res = lbm_enc_i64((int64_t)tmp);
+#else
+      *res = lbm_enc_i(tmp);
+#endif
+      return UNFLATTEN_OK;
+    }
+    return UNFLATTEN_MALFORMED;
+  }
+  case S_U56_VALUE: {
+    uint64_t tmp;
+    bool b;
+    b = extract_dword(v, &tmp);
+    if (b) {
+#ifndef LBM64
+      *res = lbm_enc_u64(tmp);
+#else
+      *res = lbm_enc_u(tmp);
+#endif
       return UNFLATTEN_OK;
     }
     return UNFLATTEN_MALFORMED;
@@ -616,9 +639,9 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     return UNFLATTEN_MALFORMED;
   }
   case S_I64_VALUE: {
-   uint64_t tmp;
+   uint64_t tmp = 0;
     if (extract_dword(v, &tmp)) {
-      lbm_value im = lbm_enc_i64((int32_t)tmp);
+      lbm_value im = lbm_enc_i64((int64_t)tmp);
       if (lbm_is_symbol_merror(im)) {
         return UNFLATTEN_GC_RETRY;
       }
@@ -628,7 +651,7 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     return UNFLATTEN_MALFORMED;
   }
   case S_U64_VALUE: {
-    uint64_t tmp;
+    uint64_t tmp = 0;
     if (extract_dword(v, &tmp)) {
       lbm_value im = lbm_enc_u64(tmp);
       if (lbm_is_symbol_merror(im)) {
