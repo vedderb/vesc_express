@@ -2742,6 +2742,8 @@ static rmt_channel_handle_t led_chan = NULL;
 static rmt_encoder_handle_t led_encoder = NULL;
 static uint8_t *led_pixels = NULL;
 static int led_num = -1;
+static int led_colors = 3;
+static unsigned int led_type = 0;
 
 static rmt_transmit_config_t tx_config = {
 		.loop_count = 0, // no transfer loop
@@ -2866,7 +2868,12 @@ static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(2);
+	LBM_CHECK_NUMBER_ALL();
+
+	if (argn != 2 && argn != 3) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
 
 	int pin = lbm_dec_as_i32(args[0]);
 	if (!gpio_is_valid(pin)) {
@@ -2881,15 +2888,31 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
+	unsigned int type_led = 0;
+	if (argn >= 3) {
+		type_led = lbm_dec_as_u32(args[2]);
+		if (type_led >= 4) {
+			lbm_set_error_reason("Invalid LED type");
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	if (type_led >= 2) {
+		led_colors = 4;
+	} else {
+		led_colors = 3;
+	}
+
 	ext_rgbled_deinit(0, 0);
 
-	led_pixels = calloc(num_leds, 3);
+	led_pixels = calloc(num_leds * led_colors, sizeof(led_pixels));
 
 	if (!led_pixels) {
 		lbm_set_error_reason("Not enough memory");
 		return ENC_SYM_EERROR;
 	}
 
+	led_type = type_led;
 	led_num = num_leds;
 
 	rmt_tx_channel_config_t tx_chan_config = {
@@ -2931,15 +2954,43 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 
 	uint32_t color = lbm_dec_as_u32(args[1]);
 
+	uint8_t w = (color >> 24) & 0xFF;
 	uint8_t r = (color >> 16) & 0xFF;
 	uint8_t g = (color >> 8) & 0xFF;
 	uint8_t b = color & 0xFF;
 
-	led_pixels[led * 3 + 0] = g;
-	led_pixels[led * 3 + 1] = r;
-	led_pixels[led * 3 + 2] = b;
+	switch (led_type) {
+	case 0: // GRB
+		led_pixels[led * 3 + 0] = g;
+		led_pixels[led * 3 + 1] = r;
+		led_pixels[led * 3 + 2] = b;
+		break;
 
-	rmt_transmit(led_chan, led_encoder, led_pixels, sizeof(led_pixels), &tx_config);
+	case 1: // RGB
+		led_pixels[led * 3 + 0] = r;
+		led_pixels[led * 3 + 1] = g;
+		led_pixels[led * 3 + 2] = b;
+		break;
+
+	case 2: // GRBW
+		led_pixels[led * 4 + 0] = g;
+		led_pixels[led * 4 + 1] = r;
+		led_pixels[led * 4 + 2] = b;
+		led_pixels[led * 4 + 3] = w;
+		break;
+
+	case 3: // RGBW
+		led_pixels[led * 4 + 0] = r;
+		led_pixels[led * 4 + 1] = g;
+		led_pixels[led * 4 + 2] = b;
+		led_pixels[led * 4 + 3] = w;
+		break;
+
+	default:
+		break;
+	}
+
+	rmt_transmit(led_chan, led_encoder, led_pixels, led_num * led_colors, &tx_config);
 
 	return ENC_SYM_TRUE;
 }
