@@ -21,6 +21,20 @@
 #include "lispbm.h"
 
 static const char* functions[] = {
+"(defun uart-read-bytes (buffer n ofs)"
+"(let ((rd (uart-read buffer n ofs)))"
+"(if (= rd n)"
+"(bufset-u8 buffer (+ ofs rd) 0)"
+"(progn (yield 4000) (uart-read-bytes buffer (- n rd) (+ ofs rd)))"
+")))",
+
+"(defun uart-read-until (buffer n ofs end)"
+"(let ((rd (uart-read buffer n ofs end)))"
+"(if (and (> rd 0) (or (= rd n) (= (bufget-u8 buffer (+ ofs (- rd 1))) end)))"
+"(bufset-u8 buffer (+ ofs rd) 0)"
+"(progn (yield 10000) (uart-read-until buffer (- n rd) (+ ofs rd) end))"
+")))",
+
 "(defun iota (n) (range n))",
 
 "(defun foldl (f init lst)"
