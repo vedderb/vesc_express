@@ -3222,17 +3222,34 @@ static lbm_value ext_gnss_age(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
-	if ((argn != 0 && argn != 1) || (argn == 1 && !lbm_is_number(args[0]))) {
+	if (argn > 4) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
 	}
 
+	LBM_CHECK_NUMBER_ALL();
+
 	uint16_t rate = 500;
-	if (argn == 1) {
+	if (argn >= 1) {
 		rate = lbm_dec_as_i32(args[0]);
 	}
 
-	return ublox_init(false, rate) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	int uart_num = UART_NUM;
+	if (argn >= 2) {
+		uart_num = lbm_dec_as_i32(args[1]);
+	}
+
+	int pin_rx = UART_RX;
+	if (argn >= 3) {
+		pin_rx = lbm_dec_as_i32(args[2]);
+	}
+
+	int pin_tx = UART_TX;
+	if (argn >= 4) {
+		pin_tx = lbm_dec_as_i32(args[3]);
+	}
+
+	return ublox_init(false, rate, uart_num, pin_rx, pin_tx) ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
