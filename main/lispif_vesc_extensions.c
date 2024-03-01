@@ -2099,16 +2099,23 @@ static lbm_value ext_wifi_set_chan(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	uint8_t prim;
-	wifi_second_chan_t second;
-	esp_err_t res = esp_wifi_get_channel(&prim, &second);
+	// Change country code so that all channels can be used
+	wifi_country_t country;
+	country.cc[0] = 'J';
+	country.cc[1] = 'P';
+	country.cc[2] = '\0';
+	country.schan = 1;
+	country.nchan = 14;
+	country.policy = WIFI_COUNTRY_POLICY_MANUAL;
+
+	esp_wifi_set_country(&country);
+
+	esp_err_t res = esp_wifi_set_channel(ch, 0);
 
 	if (res == ESP_ERR_WIFI_NOT_INIT) {
 		lbm_set_error_reason(str_wifi_not_init_msg);
 		return ENC_SYM_EERROR;
 	}
-
-	esp_wifi_set_channel(ch, second);
 
 	return ENC_SYM_TRUE;
 }
