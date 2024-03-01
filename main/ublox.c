@@ -141,7 +141,7 @@ static void rx_task(void *arg) {
 	vTaskDelete(NULL);
 }
 
-bool ublox_init(bool print, uint16_t rate_ms, int uart_num, int pin_rx, int pin_tx) {
+bool ublox_init(bool print, uint16_t rate_ms, int num_uart, int pin_rx, int pin_tx) {
 	m_init_ok = false;
 
 	if (!sem_init_done) {
@@ -162,6 +162,8 @@ bool ublox_init(bool print, uint16_t rate_ms, int uart_num, int pin_rx, int pin_
 	while (thd_rx_is_running) {
 		vTaskDelay(1);
 	}
+
+	uart_num = num_uart;
 
 	if (uart_is_driver_installed(uart_num)) {
 		uart_driver_delete(uart_num);
