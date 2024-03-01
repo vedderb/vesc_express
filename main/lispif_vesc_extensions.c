@@ -3249,6 +3249,16 @@ static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
 		pin_tx = lbm_dec_as_i32(args[3]);
 	}
 
+	if (!gpio_is_valid(pin_rx) || !gpio_is_valid(pin_tx)) {
+		lbm_set_error_reason(pin_invalid_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
 	return ublox_init(false, rate, uart_num, pin_rx, pin_tx) ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
@@ -4281,6 +4291,7 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (!gpio_is_valid(rx_pin) && !gpio_is_valid(tx_pin)) {
+		lbm_set_error_reason(pin_invalid_msg);
 		return ENC_SYM_EERROR;
 	}
 
