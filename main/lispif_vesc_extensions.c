@@ -3234,7 +3234,7 @@ static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
 		rate = lbm_dec_as_i32(args[0]);
 	}
 
-	int uart_num = UART_NUM;
+	unsigned int uart_num = UART_NUM;
 	if (argn >= 2) {
 		uart_num = lbm_dec_as_i32(args[1]);
 	}
