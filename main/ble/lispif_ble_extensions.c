@@ -959,9 +959,6 @@ static lbm_value ext_ble_conf_adv(lbm_value *args, lbm_uint argn) {
  * @return False is returned if any internal error occurred, otherwise true.
  */
 static lbm_value ext_ble_conf_adv_set_channels(lbm_value *args, lbm_uint argn) {
-	static uint8_t adv_buffer[31];
-	static uint8_t scan_rsp_buffer[31];
-
 	LBM_CHECK_ARGN_LEAST(1);
 
 	if (!lbm_is_list(args[0])) {
