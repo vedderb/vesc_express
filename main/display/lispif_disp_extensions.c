@@ -2746,7 +2746,7 @@ static lbm_value ext_disp_load_st7789(lbm_value *args, lbm_uint argn) {
 	if (!gpio_is_valid(gpio_sd0) ||
 			!gpio_is_valid(gpio_clk) ||
 			!gpio_is_valid(gpio_cs) ||
-			!gpio_is_valid(gpio_reset) ||
+			(!gpio_is_valid(gpio_reset) && gpio_reset >= 0) ||
 			!gpio_is_valid(gpio_dc)) {
 		lbm_set_error_reason(msg_invalid_gpio);
 		return ENC_SYM_EERROR;
