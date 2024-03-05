@@ -966,31 +966,48 @@ static lbm_value ext_ble_conf_adv_set_channels(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	ble_adv_params.channel_map = 0;
+	uint32_t channels = 0;
 	// loop over the list and set the bits in the channel map
 	lbm_value next = args[0];
 	while (lbm_is_cons(next)) {
-		lbm_value this = lbm_car(next);
-		next           = lbm_cdr(next);
+		lbm_value current = lbm_car(next);
+		next              = lbm_cdr(next);
 
-		if (!lbm_is_number(this)) {
-			lbm_set_error_suspect(this);
+		if (!lbm_is_number(current)) {
+			lbm_set_error_suspect(current);
 			return ENC_SYM_TERROR;
 		}
 
-		uint8_t channel = (uint8_t)lbm_dec_as_u32(this);
-		if (channel < 37 || channel > 39) {
+		uint32_t chan = lbm_dec_as_u32(current);
+		if (chan < 37 || chan > 39) {
 			lbm_set_error_reason(error_invalid_adv_channel);
 			return ENC_SYM_EERROR;
 		}
 
-		ble_adv_params.channel_map |= 1 << (channel - 37);
+		channels |= 1 << (chan - 37);
 	}
-	if (ble_adv_params.channel_map == 0) {
+
+	if (channels == 0) {
 		lbm_set_error_reason(error_invalid_adv_channel);
 		return ENC_SYM_EERROR;
 	}
-	return ENC_SYM_NIL;
+
+	if (channels == 0b111) {
+		ble_adv_params.channel_map = ADV_CHNL_ALL;
+	} else {
+		ble_adv_params.channel_map = 0;
+		if (channels & 0b001) {
+			ble_adv_params.channel_map |= ADV_CHNL_37;
+		}
+		if (channels & 0b010) {
+			ble_adv_params.channel_map |= ADV_CHNL_38;
+		}
+		if (channels & 0b100) {
+			ble_adv_params.channel_map |= ADV_CHNL_39;
+		}
+	}
+
+	return ENC_SYM_TRUE;
 }
 
 /**
