@@ -25,7 +25,9 @@
 #define CAN_STATUS_MSGS_TO_STORE	10
 
 // Functions
-void comm_can_init(void);
+void comm_can_start(int pin_tx, int pin_rx);
+void comm_can_stop(void);
+void comm_can_use_vesc_decoder(bool use_vesc_dec);
 void comm_can_update_baudrate(void);
 void comm_can_change_pins(int tx, int rx);
 void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len);

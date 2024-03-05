@@ -1,5 +1,5 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 - 2024 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -51,20 +51,34 @@ static io_board_adc_values io_board_adc_5_8[CAN_STATUS_MSGS_TO_STORE];
 static io_board_digial_inputs io_board_digital_in[CAN_STATUS_MSGS_TO_STORE];
 static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 
-#ifdef CAN_TX_GPIO_NUM
 #define RX_BUFFER_NUM				2
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
+#define RXBUF_LEN					50
 
 static twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
 static const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM, TWAI_MODE_NORMAL);
+static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(0, 0, TWAI_MODE_NORMAL);
+
+static volatile bool init_done = false;
+static volatile bool sem_init_done = false;
+static volatile bool stop_threads = false;
+static volatile bool stop_rx = false;
+static volatile bool status_running = false;
+static volatile bool rx_running = false;
 
 static SemaphoreHandle_t ping_sem;
+static SemaphoreHandle_t proc_sem;
+static SemaphoreHandle_t status_sem;
 static SemaphoreHandle_t send_mutex;
 static volatile HW_TYPE ping_hw_last = HW_TYPE_VESC;
 uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
 int rx_buffer_offset[RX_BUFFER_NUM];
 static unsigned int rx_buffer_last_id;
+
+static twai_message_t rx_buf[RXBUF_LEN];
+static volatile int rx_write = 0;
+static volatile int rx_read = 0;
+static volatile bool use_vesc_decoder = true;
 
 // Private functions
 static void update_baud(CAN_BAUD baudrate);
@@ -488,17 +502,11 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 	}
 }
 
-#define RXBUF_LEN			50
-static twai_message_t rx_buf[RXBUF_LEN];
-static volatile int rx_write = 0;
-static volatile int rx_read = 0;
-static SemaphoreHandle_t proc_sem;
-
 static void rx_task(void *arg) {
 	twai_message_t rx_message;
 
-	for (;;) {
-		esp_err_t res = twai_receive(&rx_message, 10 / portTICK_PERIOD_MS);
+	while (!stop_threads && !stop_rx) {
+		esp_err_t res = twai_receive(&rx_message, 2);
 
 		if (res == ESP_OK) {
 			rx_buf[rx_write] = rx_message;
@@ -511,6 +519,7 @@ static void rx_task(void *arg) {
 		}
 	}
 
+	rx_running = false;
 	vTaskDelete(NULL);
 }
 
@@ -527,24 +536,28 @@ static void process_task(void *arg) {
 
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
 
-			if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
-				if (msg->extd) {
-					decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+			if (use_vesc_decoder) {
+				if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
+					if (msg->extd) {
+						decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+					}
 				}
 			}
 		}
 	}
+
+	vTaskDelete(NULL);
 }
 
 static void status_task(void *arg) {
 	int gga_cnt_last = 0;
 	int rmc_cnt_last = 0;
 
-	for (;;) {
+	while (!stop_threads) {
 		int rate = backup.config.can_status_rate_hz;
 
 		if (rate < 1) {
-			vTaskDelay(10 / portTICK_PERIOD_MS);
+			xSemaphoreTake(status_sem, 10);
 			continue;
 		}
 
@@ -613,8 +626,11 @@ static void status_task(void *arg) {
 			}
 		}
 
-		vTaskDelay(configTICK_RATE_HZ / rate);
+		xSemaphoreTake(status_sem, configTICK_RATE_HZ / rate);
 	}
+
+	status_running = false;
+	vTaskDelete(NULL);
 }
 
 static void update_baud(CAN_BAUD baudrate) {
@@ -662,9 +678,30 @@ static void update_baud(CAN_BAUD baudrate) {
 		break;
 	}
 }
-#endif
 
-void comm_can_init(void) {
+static void start_rx_thd(void) {
+	if (rx_running) {
+		return;
+	}
+
+	stop_rx = false;
+	rx_running = true;
+	xTaskCreatePinnedToCore(rx_task, "can_rx", 640, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
+}
+
+static void stop_rx_thd(void) {
+	stop_rx = true;
+	while (rx_running) {
+		vTaskDelay(1);
+	}
+}
+
+void comm_can_start(int pin_tx, int pin_rx) {
+	if (init_done) {
+		comm_can_change_pins(pin_tx, pin_rx);
+		return;
+	}
+
 	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
 		stat_msgs[i].id = -1;
 		stat_msgs_2[i].id = -1;
@@ -680,43 +717,84 @@ void comm_can_init(void) {
 		psw_stat[i].id = -1;
 	}
 
-#ifdef CAN_TX_GPIO_NUM
-	ping_sem = xSemaphoreCreateBinary();
-	proc_sem = xSemaphoreCreateBinary();
-	send_mutex = xSemaphoreCreateMutex();
+	if (!sem_init_done) {
+		ping_sem = xSemaphoreCreateBinary();
+		proc_sem = xSemaphoreCreateBinary();
+		status_sem = xSemaphoreCreateBinary();
+		send_mutex = xSemaphoreCreateMutex();
+
+		// The process-task is left running after the first init in case comm_can_stop
+		// is called from it.
+		xTaskCreatePinnedToCore(process_task, "can_proc", 3072, NULL, 8, NULL, tskNO_AFFINITY);
+
+		sem_init_done = true;
+	}
 
 	update_baud(backup.config.can_baud_rate);
 
-	g_config.rx_queue_len = 15;
+	g_config.rx_queue_len = 20;
+	g_config.tx_io = pin_tx;
+	g_config.rx_io = pin_rx;
 
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
 
+	stop_threads = false;
+	status_running = true;
+
 	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
-	xTaskCreatePinnedToCore(rx_task, "can_rx", 640, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
-	xTaskCreatePinnedToCore(process_task, "can_proc", 3072, NULL, 8, NULL, tskNO_AFFINITY);
-#endif
+	start_rx_thd();
+
+	init_done = true;
+}
+
+void comm_can_stop(void) {
+	if (!init_done) {
+		return;
+	}
+
+	init_done = false;
+
+	stop_threads = true;
+	xSemaphoreGive(status_sem);
+	while (status_running || rx_running) {
+		vTaskDelay(2);
+	}
+
+	twai_stop();
+	twai_driver_uninstall();
+}
+
+void comm_can_use_vesc_decoder(bool use_vesc_dec) {
+	use_vesc_decoder = use_vesc_dec;
 }
 
 void comm_can_update_baudrate(void) {
-#ifndef CAN_TX_GPIO_NUM
-	return;
-#else
+	if (!init_done) {
+		return;
+	}
+
 	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	stop_rx_thd();
+
 	twai_stop();
 	twai_driver_uninstall();
 	update_baud(backup.config.can_baud_rate);
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
+
+	start_rx_thd();
 	xSemaphoreGive(send_mutex);
-#endif
 }
 
 void comm_can_change_pins(int tx, int rx) {
-#ifndef CAN_TX_GPIO_NUM
-	return;
-#else
+	if (!init_done) {
+		return;
+	}
+
 	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	stop_rx_thd();
+
 	twai_stop();
 
 	esp_rom_gpio_connect_out_signal(g_config.tx_io, SIG_GPIO_OUT_IDX, false, false);
@@ -738,14 +816,16 @@ void comm_can_change_pins(int tx, int rx) {
 	gpio_set_direction(rx, GPIO_MODE_INPUT);
 
 	twai_start();
+
+	start_rx_thd();
 	xSemaphoreGive(send_mutex);
-#endif
 }
 
 void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
-#ifndef CAN_TX_GPIO_NUM
-	return;
-#else
+	if (!init_done) {
+		return;
+	}
+
 	if (len > 8) {
 		len = 8;
 	}
@@ -759,18 +839,20 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 
 	xSemaphoreTake(send_mutex, portMAX_DELAY);
 	if (twai_transmit(&tx_msg, 5 / portTICK_PERIOD_MS) != ESP_OK) {
+		stop_rx_thd();
 		twai_stop();
 		twai_initiate_recovery();
 		twai_start();
+		start_rx_thd();
 	}
 	xSemaphoreGive(send_mutex);
-#endif
 }
 
 void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
-#ifndef CAN_TX_GPIO_NUM
-	return;
-#else
+	if (!init_done) {
+		return;
+	}
+
 	if (len > 8) {
 		len = 8;
 	}
@@ -784,12 +866,13 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 
 	xSemaphoreTake(send_mutex, portMAX_DELAY);
 	if (twai_transmit(&tx_msg, 5 / portTICK_PERIOD_MS) != ESP_OK) {
+		stop_rx_thd();
 		twai_stop();
 		twai_initiate_recovery();
 		twai_start();
+		start_rx_thd();
 	}
 	xSemaphoreGive(send_mutex);
-#endif
 }
 
 /**
@@ -889,9 +972,10 @@ void comm_can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len
  * True for success, false otherwise.
  */
 bool comm_can_ping(uint8_t controller_id, HW_TYPE *hw_type) {
-#ifndef CAN_TX_GPIO_NUM
-	return false;
-#else
+	if (!init_done) {
+		return false;
+	}
+
 	uint8_t buffer[1];
 	buffer[0] = backup.config.controller_id;
 	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_PING << 8), buffer, 1);
@@ -905,7 +989,6 @@ bool comm_can_ping(uint8_t controller_id, HW_TYPE *hw_type) {
 	}
 
 	return ret;
-#endif
 }
 
 void comm_can_set_duty(uint8_t controller_id, float duty) {

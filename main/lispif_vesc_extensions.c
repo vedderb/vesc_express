@@ -311,6 +311,32 @@ static bool is_symbol_true_false(lbm_value v) {
 	return res;
 }
 
+static bool gpio_is_valid(int pin) {
+	switch (pin) {
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+	case 10:
+	case 18:
+	case 19:
+	case 20:
+	case 21:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+static char *pin_invalid_msg = "Invalid pin";
+
 // Various commands
 
 static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
@@ -1133,6 +1159,60 @@ static lbm_value ext_can_list_devs(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_can_local_id(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	return lbm_enc_i(backup.config.controller_id);
+}
+
+static lbm_value ext_can_start(lbm_value *args, lbm_uint argn) {
+	if (argn > 2) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+#ifdef CAN_TX_GPIO_NUM
+	int pin_tx = CAN_TX_GPIO_NUM;
+#else
+	int pin_tx = -1;
+#endif
+	if (argn >= 1) {
+		pin_tx = lbm_dec_as_u32(args[0]);
+	}
+
+#ifdef CAN_RX_GPIO_NUM
+	int pin_rx = CAN_RX_GPIO_NUM;
+#else
+	int pin_rx = -1;
+#endif
+	if (argn >= 2) {
+		pin_rx = lbm_dec_as_u32(args[1]);
+	}
+
+	if (!gpio_is_valid(pin_tx) && !gpio_is_valid(pin_rx)) {
+		lbm_set_error_reason(pin_invalid_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	comm_can_start(pin_tx, pin_rx);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	comm_can_stop();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_use_vesc(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	if (!is_symbol_true_false(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+
+	comm_can_use_vesc_decoder(lbm_is_symbol_true(args[0]));
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_can_scan(lbm_value *args, lbm_uint argn) {
@@ -2386,32 +2466,6 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 
 	return lbm_enc_i(i2c_tx_rx(addr, txbuf, txlen, rxbuf, rxlen));
 }
-
-static bool gpio_is_valid(int pin) {
-	switch (pin) {
-	case 0:
-	case 1:
-	case 2:
-	case 3:
-	case 4:
-	case 5:
-	case 6:
-	case 7:
-	case 8:
-	case 9:
-	case 10:
-	case 18:
-	case 19:
-	case 20:
-	case 21:
-		return true;
-
-	default:
-		return false;
-	}
-}
-
-static char *pin_invalid_msg = "Invalid pin";
 
 static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(2);
@@ -4568,6 +4622,9 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("eeprom-read-i", ext_eeprom_read_i);
 
 	// CAN-comands
+	lbm_add_extension("can-start", ext_can_start);
+	lbm_add_extension("can-stop", ext_can_stop);
+	lbm_add_extension("can-use-vesc", ext_can_use_vesc);
 	lbm_add_extension("can-scan", ext_can_scan);
 	lbm_add_extension("can-send-sid", ext_can_send_sid);
 	lbm_add_extension("can-send-eid", ext_can_send_eid);

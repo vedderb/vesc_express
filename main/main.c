@@ -117,7 +117,9 @@ void app_main(void) {
 	mempools_init();
 	bms_init();
 	commands_init();
-	comm_can_init();
+#ifdef CAN_TX_GPIO_NUM
+	comm_can_start(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
+#endif
 	comm_usb_init();
 
 	vTaskDelay(1);

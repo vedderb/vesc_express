@@ -35,7 +35,7 @@
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
-#define EXTENSION_STORAGE_SIZE	280
+#define EXTENSION_STORAGE_SIZE	290
 #define PROF_DATA_NUM			30
 
 static size_t heap_size = 0;
