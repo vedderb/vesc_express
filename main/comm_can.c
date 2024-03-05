@@ -753,7 +753,9 @@ void comm_can_stop(void) {
 		return;
 	}
 
+	xSemaphoreTake(send_mutex, portMAX_DELAY);
 	init_done = false;
+	xSemaphoreGive(send_mutex);
 
 	stop_threads = true;
 	xSemaphoreGive(status_sem);
@@ -789,6 +791,10 @@ void comm_can_update_baudrate(void) {
 
 void comm_can_change_pins(int tx, int rx) {
 	if (!init_done) {
+		return;
+	}
+
+	if (g_config.tx_io == tx && g_config.rx_io == rx) {
 		return;
 	}
 
@@ -838,6 +844,12 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 	tx_msg.data_length_code = len;
 
 	xSemaphoreTake(send_mutex, portMAX_DELAY);
+
+	if (!init_done) {
+		xSemaphoreGive(send_mutex);
+		return;
+	}
+
 	if (twai_transmit(&tx_msg, 5 / portTICK_PERIOD_MS) != ESP_OK) {
 		stop_rx_thd();
 		twai_stop();
@@ -865,6 +877,12 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 	tx_msg.data_length_code = len;
 
 	xSemaphoreTake(send_mutex, portMAX_DELAY);
+
+	if (!init_done) {
+		xSemaphoreGive(send_mutex);
+		return;
+	}
+
 	if (twai_transmit(&tx_msg, 5 / portTICK_PERIOD_MS) != ESP_OK) {
 		stop_rx_thd();
 		twai_stop();
