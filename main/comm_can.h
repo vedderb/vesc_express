@@ -27,6 +27,7 @@
 // Functions
 void comm_can_start(int pin_tx, int pin_rx);
 void comm_can_stop(void);
+int comm_can_get_rx_recovery_cnt(void);
 void comm_can_use_vesc_decoder(bool use_vesc_dec);
 void comm_can_update_baudrate(void);
 void comm_can_change_pins(int tx, int rx);

@@ -153,6 +153,7 @@ void terminal_process_string(char *str) {
 		commands_printf("BLE MTU           : %d", comm_ble_mtu_now());
 		commands_printf("BLE Connected     : %d", comm_ble_is_connected());
 		commands_printf("Custom BLE Started: %d", custom_ble_started());
+		commands_printf("CAN RX Recoveries : %d", comm_can_get_rx_recovery_cnt());
 
 		esp_ip4_addr_t ip = comm_wifi_get_ip();
 		esp_ip4_addr_t ip_client = comm_wifi_get_ip_client();

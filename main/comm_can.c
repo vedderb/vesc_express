@@ -80,6 +80,8 @@ static volatile int rx_write = 0;
 static volatile int rx_read = 0;
 static volatile bool use_vesc_decoder = true;
 
+static volatile int rx_recovery_cnt = 0;
+
 // Private functions
 static void update_baud(CAN_BAUD baudrate);
 
@@ -505,6 +507,8 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 static void rx_task(void *arg) {
 	twai_message_t rx_message;
 
+	twai_reconfigure_alerts(TWAI_ALERT_ABOVE_ERR_WARN | TWAI_ALERT_ERR_PASS | TWAI_ALERT_BUS_OFF, NULL);
+
 	while (!stop_threads && !stop_rx) {
 		esp_err_t res = twai_receive(&rx_message, 2);
 
@@ -516,6 +520,15 @@ static void rx_task(void *arg) {
 			}
 
 			xSemaphoreGive(proc_sem);
+		}
+
+		uint32_t alerts;
+		res = twai_read_alerts(&alerts, 0);
+		if (res == ESP_OK) {
+			if ((alerts & TWAI_ALERT_BUS_OFF) || (alerts & TWAI_ALERT_ERR_PASS)) {
+				twai_initiate_recovery(); // Needs 128 occurrences of bus free signal
+				rx_recovery_cnt++;
+			}
 		}
 	}
 
@@ -765,6 +778,10 @@ void comm_can_stop(void) {
 
 	twai_stop();
 	twai_driver_uninstall();
+}
+
+int comm_can_get_rx_recovery_cnt(void) {
+	return rx_recovery_cnt;
 }
 
 void comm_can_use_vesc_decoder(bool use_vesc_dec) {
