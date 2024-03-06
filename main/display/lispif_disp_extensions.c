@@ -628,22 +628,25 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 		break;
 
 	default: {
-		// to offset the coordinaets by 0.5, we double all sizes and add 1 to
-		// each coordinate
+		int r_sq = radius * radius;
+		for (int y1 = 0; y1 <= radius; y1++) {
+			int y1_sq = y1 * y1;
+			for (int x1 = 0; x1 <= radius; x1++) {
+				int x1_sq = x1 * x1;
+				if (x1_sq + y1_sq <= r_sq) {
+					// Draw pixels using symmetry across the circle's axes
+					putpixel(img, x + x1, y + y1, color); // Quadrant 1
+					putpixel(img, x - x1, y + y1, color); // Quadrant 2
+					putpixel(img, x + x1, y - y1, color); // Quadrant 4
+					putpixel(img, x - x1, y - y1, color); // Quadrant 3
 
-		int r_dbl_sq = (radius * radius) * 4;
-		for (int y1 = -radius; y1 <= 0; y1++) {
-			int y_dbl_offs = 2 * y1 + 1;
-			int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
-			for(int x1 = -radius;x1 <= 0;x1++) {
-				int x_dbl_offs = 2 * x1 + 1;
-				if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= r_dbl_sq)
-				{
-					h_line(img, x + x1, y + y1, 2 * (-x1), color);
-					if (y1 != 0) {
-						h_line(img, x + x1, y - y1 - 1, 2 * (-x1), color);
+					// For the edge cases to cover the full circle, avoiding duplicates
+					if (x1 != 0 && y1 != 0) {
+						putpixel(img, x + y1, y + x1, color); // Mix Quadrant 1 & 2
+						putpixel(img, x - y1, y + x1, color); // Mix Quadrant 3 & 2
+						putpixel(img, x + y1, y - x1, color); // Mix Quadrant 4 & 1
+						putpixel(img, x - y1, y - x1, color); // Mix Quadrant 3 & 4
 					}
-					break;
 				}
 			}
 		}
