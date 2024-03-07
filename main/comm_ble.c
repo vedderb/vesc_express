@@ -42,7 +42,11 @@
 #include "conf_general.h"
 #include "main.h"
 
+#if CONFIG_IDF_TARGET_ESP32
+#define GATTS_CHAR_VAL_LEN_MAX 23
+#else
 #define GATTS_CHAR_VAL_LEN_MAX 255
+#endif
 #define BLE_CHAR_COUNT 2
 #define BLE_SERVICE_HANDLE_NUM (1 + (3 * BLE_CHAR_COUNT))
 #define ADV_CFG_FLAG (1 << 0)
