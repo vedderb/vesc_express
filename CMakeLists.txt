@@ -55,7 +55,6 @@ if(DEFINED HW_NAME AND DEFINED HW_TARGET AND DEFINED HW_FILE_NAME)
         file(REMOVE sdkconfig)
         configure_file(sdkconfig.${HW_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig COPYONLY)
         execute_process(COMMAND "idf.py reconfigure" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-        execute_process(COMMAND "idf.py reconfigure" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     endfunction()
 
     set(TARGET_NAME_CACHE_LOCATION ${CMAKE_BINARY_DIR}/last_target)
