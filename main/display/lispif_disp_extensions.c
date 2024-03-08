@@ -629,24 +629,22 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 
 	default: {
 		int r_sq = radius * radius;
-		for (int y1 = 0; y1 <= radius; y1++) {
-			int y1_sq = y1 * y1;
-			for (int x1 = 0; x1 <= radius; x1++) {
-				int x1_sq = x1 * x1;
-				if (x1_sq + y1_sq <= r_sq) {
-					// Draw pixels using symmetry across the circle's axes
-					putpixel(img, x + x1, y + y1, color); // Quadrant 1
-					putpixel(img, x - x1, y + y1, color); // Quadrant 2
-					putpixel(img, x + x1, y - y1, color); // Quadrant 4
-					putpixel(img, x - x1, y - y1, color); // Quadrant 3
-
-					// For the edge cases to cover the full circle, avoiding duplicates
-					if (x1 != 0 && y1 != 0) {
-						putpixel(img, x + y1, y + x1, color); // Mix Quadrant 1 & 2
-						putpixel(img, x - y1, y + x1, color); // Mix Quadrant 3 & 2
-						putpixel(img, x + y1, y - x1, color); // Mix Quadrant 4 & 1
-						putpixel(img, x - y1, y - x1, color); // Mix Quadrant 3 & 4
+		for (int y1 = -radius; y1 <= radius; y1++) {
+			for (int x1 = -radius; x1 <= radius; x1++) {
+				if (x1 * x1 + y1 * y1 <= r_sq) {
+					// Compute the start and end position for x axis
+					int x_left = x1;
+					while ((x1 + 1) <= radius && ((x1 + 1) * (x1 + 1) + y1 * y1) <= r_sq) {
+						x1++;
 					}
+					int x_right = x1;
+
+					// Draw line at this level y
+					int length = x_right - x_left + 1;
+					h_line(img, x + x_left, y + y1, length, color);
+
+					// Break out of innter loop for this level y
+					break;
 				}
 			}
 		}
