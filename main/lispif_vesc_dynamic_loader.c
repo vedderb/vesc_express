@@ -81,6 +81,10 @@ static const char* macros[] = {
 "(define loopwhile-thd (macro (stk cnd body) `(spawn ,stk (fn () (loopwhile ,cnd ,body)))))",
 };
 
+#define DYN_LOAD_CALLBACK_LEN	10
+
+bool(*dyn_load_callbacks[DYN_LOAD_CALLBACK_LEN])(const char*, const char**) = {0};
+
 static bool strmatch(const char *str1, const char *str2) {
 	unsigned int len = strlen(str1);
 
@@ -114,5 +118,25 @@ bool lispif_vesc_dynamic_loader(const char *str, const char **code) {
 		}
 	}
 
+	for (int i = 0;i < DYN_LOAD_CALLBACK_LEN;i++) {
+		if (dyn_load_callbacks[i] == 0) {
+			break;
+		}
+
+		if (dyn_load_callbacks[i](str, code)) {
+			return true;
+		}
+	}
+
+
 	return false;
+}
+
+void lispif_add_dyn_load_callback(bool (*p_func)(const char*, const char**)) {
+	for (int i = 0;i < DYN_LOAD_CALLBACK_LEN;i++) {
+		if (dyn_load_callbacks[i] == 0 || dyn_load_callbacks[i] == p_func) {
+			dyn_load_callbacks[i] = p_func;
+			break;
+		}
+	}
 }

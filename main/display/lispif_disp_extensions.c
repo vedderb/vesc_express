@@ -3027,3 +3027,13 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("disp-render", ext_disp_render);
 	lbm_add_extension("disp-render-jpg", ext_disp_render_jpg);
 }
+
+void lispif_disp_set_callbacks(
+		bool(* volatile render_image)(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors),
+		void(* volatile clear)(uint32_t color),
+		void(* volatile reset)(void)
+) {
+	disp_render_image = render_image;
+	disp_clear = clear;
+	disp_reset = reset;
+}

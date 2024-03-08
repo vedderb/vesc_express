@@ -106,7 +106,11 @@ bool lispif_disp_is_image_buffer(lbm_value v);
 bool lispif_disp_is_color(lbm_value v);
 uint32_t lispif_disp_rgb888_from_color(color_t color, int x, int y);
 
-// Load extensions
 void lispif_load_disp_extensions(void);
+void lispif_disp_set_callbacks(
+		bool(* volatile render_image)(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors),
+		void(* volatile clear)(uint32_t color),
+		void(* volatile reset)(void)
+);
 
 #endif

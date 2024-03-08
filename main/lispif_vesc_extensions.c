@@ -72,8 +72,6 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-static void(*ext_callback)(void) = 0;
-
 typedef struct {
 	// BMS
 	lbm_uint v_tot;
@@ -4912,14 +4910,6 @@ void lispif_load_vesc_extensions(void) {
 	lbm_array_extensions_init();
 	lbm_string_extensions_init();
 	lbm_math_extensions_init();
-
-	if (ext_callback) {
-		ext_callback();
-	}
-}
-
-void lispif_set_ext_load_callback(void (*p_func)(void)) {
-	ext_callback = p_func;
 }
 
 void lispif_disable_all_events(void) {
