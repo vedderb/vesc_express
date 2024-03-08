@@ -38,7 +38,8 @@ static float v_btn = 0.0;
 static void hw_task(void *arg) {
 	for(;;) {
 		UTILS_LP_FAST(v_ext, adc_get_voltage(HW_ADC_CH1), 0.1);
-		UTILS_LP_FAST(v_btn, adc_get_voltage(HW_ADC_CH3), 0.1);
+//		UTILS_LP_FAST(v_btn, adc_get_voltage(HW_ADC_CH3), 0.1); // For prototype
+		UTILS_LP_FAST(v_btn, adc_get_voltage(HW_ADC_CH0), 0.1);
 		vTaskDelay(1);
 	}
 }
