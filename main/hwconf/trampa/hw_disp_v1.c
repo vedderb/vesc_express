@@ -27,6 +27,10 @@
 #include "driver/gpio.h"
 #include "lispif_disp_extensions.h"
 #include "disp_st7789.h"
+#include "esp_wifi.h"
+#include "esp_bt.h"
+#include "esp_bt_main.h"
+#include "esp_sleep.h"
 
 #include "lispif.h"
 #include "lispbm.h"
@@ -34,10 +38,17 @@
 #include "commands.h"
 #include "utils.h"
 
-#define HW_IS_PROTO 0
+// Set to 1 for prototype hardware pin mapping
+#define HW_IS_PROTO		0
 
 static float v_ext = 0.0;
 static float v_btn = 0.0;
+
+// Pins
+static int pin_bl = 5;
+static int pin_3v3 = 21;
+static int pin_psw = 2;
+static int pin_btn = 3;
 
 static void hw_task(void *arg) {
 	for(;;) {
@@ -63,16 +74,6 @@ static lbm_value ext_v_btn(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
-
-#if HW_IS_PROTO
-	int pin_bl = 3;
-	int pin_3v3 = 21;
-	int pin_psw = 2;
-#else
-	int pin_bl = 5;
-	int pin_3v3 = 21;
-	int pin_psw = -1;
-#endif
 
 	gpio_reset_pin(pin_bl);
 	gpio_set_direction(pin_bl, GPIO_MODE_OUTPUT);
@@ -108,13 +109,41 @@ static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	esp_bluedroid_disable();
+	esp_bt_controller_disable();
+	esp_wifi_stop();
+
+	gpio_set_level(pin_bl, 0);
+	while (v_btn < 2.0) {
+		vTaskDelay(5);
+	}
+
+	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
+	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_LOW);
+
+	esp_deep_sleep_start();
+
+	return ENC_SYM_TRUE;
+}
+
 static void load_extensions(void) {
 	lbm_add_extension("v-ext", ext_v_ext);
 	lbm_add_extension("v-btn", ext_v_btn);
 	lbm_add_extension("hw-init", ext_hw_init);
+	lbm_add_extension("hw-sleep", ext_hw_sleep);
 }
 
 void hw_init(void) {
+#if HW_IS_PROTO
+	pin_bl = 3;
+	pin_3v3 = 21;
+	pin_psw = -1;
+	pin_btn = 2;
+#endif
+
 	xTaskCreatePinnedToCore(hw_task, "hw disp", 1024, NULL, 6, NULL, tskNO_AFFINITY);
 	lispif_add_ext_load_callback(load_extensions);
 }
