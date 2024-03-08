@@ -2224,6 +2224,45 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+static lbm_value ext_esp_now_del_peer(lbm_value *args, lbm_uint argn) {
+	if (!esp_now_initialized) {
+		lbm_set_error_reason(esp_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	if (argn != 1 || !lbm_is_list(args[0])) {
+		return ENC_SYM_EERROR;
+	}
+
+	uint8_t addr[ESP_NOW_ETH_ALEN] = {255, 255, 255, 255, 255, 255};
+	int ind = 0;
+
+	lbm_value curr = args[0];
+	while (lbm_is_cons(curr)) {
+		lbm_value  arg = lbm_car(curr);
+
+		if (lbm_is_number(arg)) {
+			addr[ind++] = lbm_dec_as_u32(arg);
+		} else {
+			return ENC_SYM_TERROR;
+		}
+
+		if (ind == ESP_NOW_ETH_ALEN) {
+			break;
+		}
+
+		curr = lbm_cdr(curr);
+	}
+
+	esp_err_t res = esp_now_del_peer(addr);
+
+	if (res == ESP_OK || res == ESP_ERR_ESPNOW_NOT_FOUND) {
+		return ENC_SYM_TRUE;
+	} else {
+		return ENC_SYM_EERROR;
+	}
+}
+
 static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 	(void) args; (void) argn;
 
@@ -4772,6 +4811,7 @@ void lispif_load_vesc_extensions(void) {
 	// ESP NOW
 	lbm_add_extension("esp-now-start", ext_esp_now_start);
 	lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
+	lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
 	lbm_add_extension("esp-now-send", ext_esp_now_send);
 	lbm_add_extension("esp-now-recv", ext_esp_now_recv);
 	lbm_add_extension("get-mac-addr", ext_get_mac_addr);
