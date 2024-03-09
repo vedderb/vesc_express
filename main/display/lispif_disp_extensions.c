@@ -628,21 +628,22 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 		break;
 
 	default: {
-		// to offset the coordinaets by 0.5, we double all sizes and add 1 to
-		// each coordinate
-
-		int r_dbl_sq = (radius * radius) * 4;
-		for (int y1 = -radius; y1 <= 0; y1++) {
-			int y_dbl_offs = 2 * y1 + 1;
-			int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
-			for(int x1 = -radius;x1 <= 0;x1++) {
-				int x_dbl_offs = 2 * x1 + 1;
-				if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= r_dbl_sq)
-				{
-					h_line(img, x + x1, y + y1, 2 * (-x1), color);
-					if (y1 != 0) {
-						h_line(img, x + x1, y - y1 - 1, 2 * (-x1), color);
+		int r_sq = radius * radius;
+		for (int y1 = -radius; y1 <= radius; y1++) {
+			for (int x1 = -radius; x1 <= radius; x1++) {
+				if (x1 * x1 + y1 * y1 <= r_sq) {
+					// Compute the start and end position for x axis
+					int x_left = x1;
+					while ((x1 + 1) <= radius && ((x1 + 1) * (x1 + 1) + y1 * y1) <= r_sq) {
+						x1++;
 					}
+					int x_right = x1;
+
+					// Draw line at this level y
+					int length = x_right - x_left + 1;
+					h_line(img, x + x_left, y + y1, length, color);
+
+					// Break out of innter loop for this level y
 					break;
 				}
 			}
