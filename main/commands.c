@@ -176,6 +176,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = 0;
 		}
 
+		send_buffer[ind++] = 0; // No NRF flags
+
+		strcpy((char*)(send_buffer + ind), FW_NAME);
+		ind += strlen(FW_NAME) + 1;
+
+		buffer_append_uint32(send_buffer, main_calc_hw_crc(), &ind);
+
 		reply_func(send_buffer, ind);
 	} break;
 

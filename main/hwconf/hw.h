@@ -28,6 +28,10 @@
 #define HW_DEFAULT_ID				2
 #endif
 
+#ifndef FW_NAME
+#define FW_NAME ""
+#endif
+
 #ifndef LED_RED_ON
 #define LED_RED_ON()
 #define LED_RED_OFF()

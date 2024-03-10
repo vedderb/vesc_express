@@ -79,6 +79,7 @@ typedef struct {
 extern volatile backup_data backup;
 
 // Functions
+uint32_t main_calc_hw_crc(void);
 void main_store_backup_data(void);
 bool main_init_done(void);
 void main_wait_until_init_done(void);

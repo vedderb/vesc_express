@@ -29,6 +29,14 @@
 #include "comm_can.h"
 #include "comm_wifi.h"
 #include "commands.h"
+#include "flash_helper.h"
+#include "crc.h"
+
+#ifdef OVR_CONF_XML_H
+#include OVR_CONF_XML_H
+#else
+#include "confxml.h"
+#endif
 
 #ifdef OVR_CONF_PARSER_H
 #include OVR_CONF_PARSER_H
@@ -180,6 +188,24 @@ void app_main(void) {
 	for (;;) {
 		vTaskDelay(5000 / portTICK_PERIOD_MS);
 	}
+}
+
+uint32_t main_calc_hw_crc(void) {
+	uint32_t crc = 0;
+
+	crc = crc32_with_init(
+			data_main_config_t_,
+			DATA_MAIN_CONFIG_T__SIZE,
+			crc);
+
+	if (flash_helper_code_size(CODE_IND_QML) > 0) {
+		crc = crc32_with_init(
+				flash_helper_code_data_ptr(CODE_IND_QML),
+				flash_helper_code_size(CODE_IND_QML),
+				crc);
+	}
+
+	return crc;
 }
 
 void main_store_backup_data(void) {
