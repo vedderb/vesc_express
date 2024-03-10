@@ -83,6 +83,13 @@ static esp_ota_handle_t update_handle = 0;
 // Function pointers
 static send_func_t send_func = 0;
 static send_func_t send_func_can_fwd = 0;
+static send_func_t send_func_blocking = 0;
+
+// Blocking thread
+static SemaphoreHandle_t block_sem;
+static uint8_t blocking_thread_cmd_buffer[PACKET_MAX_PL_LEN];
+static volatile unsigned int blocking_thread_cmd_len = 0;
+static volatile bool is_blocking = false;
 
 #if LOGS_ENABLED
 volatile send_func_t stored_send_func;
@@ -114,8 +121,57 @@ static void send_func_dummy(unsigned char *data, unsigned int len) {
 	(void)data; (void)len;
 }
 
+static void block_task(void *arg) {
+	for (;;) {
+		is_blocking = false;
+
+		xSemaphoreTake(block_sem, portMAX_DELAY);
+
+		uint8_t *data = blocking_thread_cmd_buffer;
+		unsigned int len = blocking_thread_cmd_len;
+
+		COMM_PACKET_ID packet_id;
+		static uint8_t send_buffer[512];
+
+		packet_id = data[0];
+		data++;
+		len--;
+
+		switch (packet_id) {
+		case COMM_PING_CAN: {
+			int32_t ind = 0;
+			send_buffer[ind++] = COMM_PING_CAN;
+
+			for (uint8_t i = 0;i < 255;i++) {
+				HW_TYPE hw_type;
+				if (comm_can_ping(i, &hw_type)) {
+					send_buffer[ind++] = i;
+				}
+			}
+
+			if (send_func_blocking) {
+				send_func_blocking(send_buffer, ind);
+			}
+		} break;
+
+		case COMM_TERMINAL_CMD:
+			data[len] = '\0';
+			terminal_process_string((char*)data);
+			break;
+
+		default:
+			break;
+		}
+
+	}
+
+	vTaskDelete(NULL);
+}
+
 void commands_init(void) {
 	print_mutex = xSemaphoreCreateMutex();
+	block_sem = xSemaphoreCreateBinary();
+	xTaskCreatePinnedToCore(block_task, "comm_block", 2500, NULL, 7, NULL, tskNO_AFFINITY);
 	init_done = true;
 }
 
@@ -256,22 +312,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		comm_can_send_buffer(data[0], data + 1, len - 1, 0);
 		break;
 
-	case COMM_PING_CAN: {
-		int32_t ind = 0;
-		uint8_t *send_buffer_global = mempools_get_packet_buffer();
-		send_buffer_global[ind++] = COMM_PING_CAN;
-
-		for (uint8_t i = 0;i < 255;i++) {
-			HW_TYPE hw_type;
-			if (comm_can_ping(i, &hw_type)) {
-				send_buffer_global[ind++] = i;
-			}
-		}
-
-		reply_func(send_buffer_global, ind);
-		mempools_free_packet_buffer(send_buffer_global);
-	} break;
-
 	case COMM_CAN_FWD_FRAME: {
 		int32_t ind = 0;
 		uint32_t id = buffer_get_uint32(data, &ind);
@@ -377,11 +417,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		reply_func(send_buffer_global, ind);
 		mempools_free_packet_buffer(send_buffer_global);
 	} break;
-
-	case COMM_TERMINAL_CMD:
-		data[len] = '\0';
-		terminal_process_string((char*)data);
-		break;
 
 	case COMM_FILE_LIST: {
 		int32_t ind = 0;
@@ -919,6 +954,18 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		reply_func(send_buffer, ind);
 	} break;
+
+	// Blocking commands
+	case COMM_TERMINAL_CMD:
+	case COMM_PING_CAN:
+		if (!is_blocking) {
+			memcpy(blocking_thread_cmd_buffer, data - 1, len + 1);
+			blocking_thread_cmd_len = len + 1;
+			is_blocking = true;
+			send_func_blocking = reply_func;
+			xSemaphoreGive(block_sem);
+		}
+		break;
 
 	default:
 		break;
