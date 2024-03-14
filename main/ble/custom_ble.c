@@ -148,7 +148,7 @@ static uint8_t ble_adv_data_raw[31]      = {0};
 static size_t ble_scan_rsp_data_raw_len  = 0;
 static uint8_t ble_scan_rsp_data_raw[31] = {0};
 
-static esp_ble_adv_params_t ble_adv_params = {
+esp_ble_adv_params_t ble_adv_params = {
 	.adv_int_min       = 0x20,
 	.adv_int_max       = 0x40,
 	.adv_type          = ADV_TYPE_IND,

@@ -29,6 +29,14 @@
 #include "comm_can.h"
 #include "comm_wifi.h"
 #include "commands.h"
+#include "flash_helper.h"
+#include "crc.h"
+
+#ifdef OVR_CONF_XML_H
+#include OVR_CONF_XML_H
+#else
+#include "confxml.h"
+#endif
 
 #ifdef OVR_CONF_PARSER_H
 #include OVR_CONF_PARSER_H
@@ -117,7 +125,9 @@ void app_main(void) {
 	mempools_init();
 	bms_init();
 	commands_init();
-	comm_can_init();
+#ifdef CAN_TX_GPIO_NUM
+	comm_can_start(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
+#endif
 	comm_usb_init();
 
 	vTaskDelay(1);
@@ -157,7 +167,7 @@ void app_main(void) {
 #ifdef HW_UART_COMM
 	comm_uart_init();
 #else
-	ublox_init(false, 500);
+	ublox_init(false, 500, UART_NUM, UART_RX, UART_TX);
 #endif
 #endif
 
@@ -178,6 +188,24 @@ void app_main(void) {
 	for (;;) {
 		vTaskDelay(5000 / portTICK_PERIOD_MS);
 	}
+}
+
+uint32_t main_calc_hw_crc(void) {
+	uint32_t crc = 0;
+
+	crc = crc32_with_init(
+			data_main_config_t_,
+			DATA_MAIN_CONFIG_T__SIZE,
+			crc);
+
+	if (flash_helper_code_size(CODE_IND_QML) > 0) {
+		crc = crc32_with_init(
+				flash_helper_code_data_ptr(CODE_IND_QML),
+				flash_helper_code_size(CODE_IND_QML),
+				crc);
+	}
+
+	return crc;
 }
 
 void main_store_backup_data(void) {
@@ -232,5 +260,5 @@ static void terminal_nmea(int argc, const char **argv) {
 
 static void terminal_ublox_reinit(int argc, const char **argv) {
 	(void)argc;(void)argv;
-	commands_printf("Res: %d", ublox_init(true, 500));
+	commands_printf("Res: %d", ublox_init(true, 500, UART_NUM, UART_RX, UART_TX));
 }

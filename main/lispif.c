@@ -35,8 +35,9 @@
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
-#define EXTENSION_STORAGE_SIZE	280
+#define EXTENSION_STORAGE_SIZE	290
 #define PROF_DATA_NUM			30
+#define EXT_LOAD_CALLBACK_LEN	10
 
 static size_t heap_size = 0;
 static size_t mem_size = 0;
@@ -72,6 +73,9 @@ static volatile bool prof_running = false;
 const esp_timer_create_args_t periodic_timer_args = {
 		.callback = &prof_timer_callback,
 };
+
+// Extension load callbacks
+void(*ext_load_callbacks[EXT_LOAD_CALLBACK_LEN])(void) = {0};
 
 /*
  * TODO:
@@ -706,6 +710,14 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 		}
 
 		lispif_load_vesc_extensions();
+		for (int i = 0;i < EXT_LOAD_CALLBACK_LEN;i++) {
+			if (ext_load_callbacks[i] == 0) {
+				break;
+			}
+
+			ext_load_callbacks[i]();
+		}
+
 		lbm_set_dynamic_load_callback(lispif_vesc_dynamic_loader);
 
 		int code_chars = 0;
@@ -764,6 +776,15 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	}
 
 	return res;
+}
+
+void lispif_add_ext_load_callback(void (*p_func)(void)) {
+	for (int i = 0;i < EXT_LOAD_CALLBACK_LEN;i++) {
+		if (ext_load_callbacks[i] == 0 || ext_load_callbacks[i] == p_func) {
+			ext_load_callbacks[i] = p_func;
+			break;
+		}
+	}
 }
 
 static uint32_t timestamp_callback(void) {

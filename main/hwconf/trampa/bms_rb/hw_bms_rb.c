@@ -838,7 +838,7 @@ void hw_init(void) {
 	i2c_param_config(0, &conf);
 	i2c_driver_install(0, conf.mode, 0, 0, 0);
 
-	lispif_set_ext_load_callback(load_extensions);
+	lispif_add_ext_load_callback(load_extensions);
 
 	xTaskCreatePinnedToCore(bal_task, "balance", 1024, NULL, 6, NULL, tskNO_AFFINITY);
 }

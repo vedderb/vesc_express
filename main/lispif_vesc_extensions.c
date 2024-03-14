@@ -72,8 +72,6 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-static void(*ext_callback)(void) = 0;
-
 typedef struct {
 	// BMS
 	lbm_uint v_tot;
@@ -310,6 +308,32 @@ static bool is_symbol_true_false(lbm_value v) {
 	lbm_set_error_reason("Argument must be t or nil (true or false)");
 	return res;
 }
+
+static bool gpio_is_valid(int pin) {
+	switch (pin) {
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+	case 10:
+	case 18:
+	case 19:
+	case 20:
+	case 21:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+static char *pin_invalid_msg = "Invalid pin";
 
 // Various commands
 
@@ -950,6 +974,76 @@ static lbm_value ext_can_cmd(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_can_msg_age(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int id = lbm_dec_as_i32(args[0]);
+	int msg = lbm_dec_as_i32(args[1]);
+
+	if (id < 0 || id > 253) {
+		return ENC_SYM_EERROR;
+	}
+
+	switch (msg) {
+	case 1: {
+		can_status_msg *stat = comm_can_get_status_msg_id(lbm_dec_as_i32(args[0]));
+		if (stat) {
+			return lbm_enc_float(UTILS_AGE_S(stat->rx_time));
+		} else {
+			return ENC_SYM_NIL;
+		}
+	}
+
+	case 2: {
+		can_status_msg_2 *stat = comm_can_get_status_msg_2_id(lbm_dec_as_i32(args[0]));
+		if (stat) {
+			return lbm_enc_float(UTILS_AGE_S(stat->rx_time));
+		} else {
+			return ENC_SYM_NIL;
+		}
+	}
+
+	case 3: {
+		can_status_msg_3 *stat = comm_can_get_status_msg_3_id(lbm_dec_as_i32(args[0]));
+		if (stat) {
+			return lbm_enc_float(UTILS_AGE_S(stat->rx_time));
+		} else {
+			return ENC_SYM_NIL;
+		}
+	}
+
+	case 4: {
+		can_status_msg_4 *stat = comm_can_get_status_msg_4_id(lbm_dec_as_i32(args[0]));
+		if (stat) {
+			return lbm_enc_float(UTILS_AGE_S(stat->rx_time));
+		} else {
+			return ENC_SYM_NIL;
+		}
+	}
+
+	case 5: {
+		can_status_msg_5 *stat = comm_can_get_status_msg_5_id(lbm_dec_as_i32(args[0]));
+		if (stat) {
+			return lbm_enc_float(UTILS_AGE_S(stat->rx_time));
+		} else {
+			return ENC_SYM_NIL;
+		}
+	}
+
+	case 6: {
+		can_status_msg_6 *stat = comm_can_get_status_msg_6_id(lbm_dec_as_i32(args[0]));
+		if (stat) {
+			return lbm_enc_float(UTILS_AGE_S(stat->rx_time));
+		} else {
+			return ENC_SYM_NIL;
+		}
+	}
+
+	default:
+		return ENC_SYM_EERROR;
+	}
+}
+
 static lbm_value ext_can_get_current(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 	can_status_msg *stat0 = comm_can_get_status_msg_id(lbm_dec_as_i32(args[0]));
@@ -1133,6 +1227,60 @@ static lbm_value ext_can_list_devs(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_can_local_id(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	return lbm_enc_i(backup.config.controller_id);
+}
+
+static lbm_value ext_can_start(lbm_value *args, lbm_uint argn) {
+	if (argn > 2) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+#ifdef CAN_TX_GPIO_NUM
+	int pin_tx = CAN_TX_GPIO_NUM;
+#else
+	int pin_tx = -1;
+#endif
+	if (argn >= 1) {
+		pin_tx = lbm_dec_as_u32(args[0]);
+	}
+
+#ifdef CAN_RX_GPIO_NUM
+	int pin_rx = CAN_RX_GPIO_NUM;
+#else
+	int pin_rx = -1;
+#endif
+	if (argn >= 2) {
+		pin_rx = lbm_dec_as_u32(args[1]);
+	}
+
+	if (!gpio_is_valid(pin_tx) && !gpio_is_valid(pin_rx)) {
+		lbm_set_error_reason(pin_invalid_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	comm_can_start(pin_tx, pin_rx);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	comm_can_stop();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_can_use_vesc(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	if (!is_symbol_true_false(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+
+	comm_can_use_vesc_decoder(lbm_is_symbol_true(args[0]));
+
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_can_scan(lbm_value *args, lbm_uint argn) {
@@ -2074,6 +2222,45 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+static lbm_value ext_esp_now_del_peer(lbm_value *args, lbm_uint argn) {
+	if (!esp_now_initialized) {
+		lbm_set_error_reason(esp_init_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	if (argn != 1 || !lbm_is_list(args[0])) {
+		return ENC_SYM_EERROR;
+	}
+
+	uint8_t addr[ESP_NOW_ETH_ALEN] = {255, 255, 255, 255, 255, 255};
+	int ind = 0;
+
+	lbm_value curr = args[0];
+	while (lbm_is_cons(curr)) {
+		lbm_value  arg = lbm_car(curr);
+
+		if (lbm_is_number(arg)) {
+			addr[ind++] = lbm_dec_as_u32(arg);
+		} else {
+			return ENC_SYM_TERROR;
+		}
+
+		if (ind == ESP_NOW_ETH_ALEN) {
+			break;
+		}
+
+		curr = lbm_cdr(curr);
+	}
+
+	esp_err_t res = esp_now_del_peer(addr);
+
+	if (res == ESP_OK || res == ESP_ERR_ESPNOW_NOT_FOUND) {
+		return ENC_SYM_TRUE;
+	} else {
+		return ENC_SYM_EERROR;
+	}
+}
+
 static lbm_value ext_get_mac_addr(lbm_value *args, lbm_uint argn) {
 	(void) args; (void) argn;
 
@@ -2099,16 +2286,23 @@ static lbm_value ext_wifi_set_chan(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	uint8_t prim;
-	wifi_second_chan_t second;
-	esp_err_t res = esp_wifi_get_channel(&prim, &second);
+	// Change country code so that all channels can be used
+	wifi_country_t country;
+	country.cc[0] = 'J';
+	country.cc[1] = 'P';
+	country.cc[2] = '\0';
+	country.schan = 1;
+	country.nchan = 14;
+	country.policy = WIFI_COUNTRY_POLICY_MANUAL;
+
+	esp_wifi_set_country(&country);
+
+	esp_err_t res = esp_wifi_set_channel(ch, 0);
 
 	if (res == ESP_ERR_WIFI_NOT_INIT) {
 		lbm_set_error_reason(str_wifi_not_init_msg);
 		return ENC_SYM_EERROR;
 	}
-
-	esp_wifi_set_channel(ch, second);
 
 	return ENC_SYM_TRUE;
 }
@@ -2379,32 +2573,6 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 
 	return lbm_enc_i(i2c_tx_rx(addr, txbuf, txlen, rxbuf, rxlen));
 }
-
-static bool gpio_is_valid(int pin) {
-	switch (pin) {
-	case 0:
-	case 1:
-	case 2:
-	case 3:
-	case 4:
-	case 5:
-	case 6:
-	case 7:
-	case 8:
-	case 9:
-	case 10:
-	case 18:
-	case 19:
-	case 20:
-	case 21:
-		return true;
-
-	default:
-		return false;
-	}
-}
-
-static char *pin_invalid_msg = "Invalid pin";
 
 static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(2);
@@ -2742,6 +2910,8 @@ static rmt_channel_handle_t led_chan = NULL;
 static rmt_encoder_handle_t led_encoder = NULL;
 static uint8_t *led_pixels = NULL;
 static int led_num = -1;
+static int led_colors = 3;
+static unsigned int led_type = 0;
 
 static rmt_transmit_config_t tx_config = {
 		.loop_count = 0, // no transfer loop
@@ -2866,7 +3036,12 @@ static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(2);
+	LBM_CHECK_NUMBER_ALL();
+
+	if (argn != 2 && argn != 3) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
 
 	int pin = lbm_dec_as_i32(args[0]);
 	if (!gpio_is_valid(pin)) {
@@ -2881,15 +3056,31 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
+	unsigned int type_led = 0;
+	if (argn >= 3) {
+		type_led = lbm_dec_as_u32(args[2]);
+		if (type_led >= 4) {
+			lbm_set_error_reason("Invalid LED type");
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	if (type_led >= 2) {
+		led_colors = 4;
+	} else {
+		led_colors = 3;
+	}
+
 	ext_rgbled_deinit(0, 0);
 
-	led_pixels = calloc(num_leds, 3);
+	led_pixels = calloc(num_leds * led_colors, sizeof(led_pixels));
 
 	if (!led_pixels) {
 		lbm_set_error_reason("Not enough memory");
 		return ENC_SYM_EERROR;
 	}
 
+	led_type = type_led;
 	led_num = num_leds;
 
 	rmt_tx_channel_config_t tx_chan_config = {
@@ -2931,15 +3122,43 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 
 	uint32_t color = lbm_dec_as_u32(args[1]);
 
+	uint8_t w = (color >> 24) & 0xFF;
 	uint8_t r = (color >> 16) & 0xFF;
 	uint8_t g = (color >> 8) & 0xFF;
 	uint8_t b = color & 0xFF;
 
-	led_pixels[led * 3 + 0] = g;
-	led_pixels[led * 3 + 1] = r;
-	led_pixels[led * 3 + 2] = b;
+	switch (led_type) {
+	case 0: // GRB
+		led_pixels[led * 3 + 0] = g;
+		led_pixels[led * 3 + 1] = r;
+		led_pixels[led * 3 + 2] = b;
+		break;
 
-	rmt_transmit(led_chan, led_encoder, led_pixels, sizeof(led_pixels), &tx_config);
+	case 1: // RGB
+		led_pixels[led * 3 + 0] = r;
+		led_pixels[led * 3 + 1] = g;
+		led_pixels[led * 3 + 2] = b;
+		break;
+
+	case 2: // GRBW
+		led_pixels[led * 4 + 0] = g;
+		led_pixels[led * 4 + 1] = r;
+		led_pixels[led * 4 + 2] = b;
+		led_pixels[led * 4 + 3] = w;
+		break;
+
+	case 3: // RGBW
+		led_pixels[led * 4 + 0] = r;
+		led_pixels[led * 4 + 1] = g;
+		led_pixels[led * 4 + 2] = b;
+		led_pixels[led * 4 + 3] = w;
+		break;
+
+	default:
+		break;
+	}
+
+	rmt_transmit(led_chan, led_encoder, led_pixels, led_num * led_colors, &tx_config);
 
 	return ENC_SYM_TRUE;
 }
@@ -3171,17 +3390,44 @@ static lbm_value ext_gnss_age(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
-	if ((argn != 0 && argn != 1) || (argn == 1 && !lbm_is_number(args[0]))) {
+	if (argn > 4) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
 	}
 
+	LBM_CHECK_NUMBER_ALL();
+
 	uint16_t rate = 500;
-	if (argn == 1) {
+	if (argn >= 1) {
 		rate = lbm_dec_as_i32(args[0]);
 	}
 
-	return ublox_init(false, rate) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	unsigned int uart_num = UART_NUM;
+	if (argn >= 2) {
+		uart_num = lbm_dec_as_i32(args[1]);
+	}
+
+	int pin_rx = UART_RX;
+	if (argn >= 3) {
+		pin_rx = lbm_dec_as_i32(args[2]);
+	}
+
+	int pin_tx = UART_TX;
+	if (argn >= 4) {
+		pin_tx = lbm_dec_as_i32(args[3]);
+	}
+
+	if (!gpio_is_valid(pin_rx) || !gpio_is_valid(pin_tx)) {
+		lbm_set_error_reason(pin_invalid_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
+	return ublox_init(false, rate, uart_num, pin_rx, pin_tx) ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
@@ -4192,6 +4438,8 @@ static lbm_value ext_get_imu_gyro_derot(lbm_value *args, lbm_uint argn) {
 }
 
 // UART
+static SemaphoreHandle_t uart_mutex;
+static bool uart_mutex_init_done = false;
 static int uart_number = -1;
 
 // (uart-start uart-num rx-pin tx-pin baud)
@@ -4214,12 +4462,20 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (!gpio_is_valid(rx_pin) && !gpio_is_valid(tx_pin)) {
+		lbm_set_error_reason(pin_invalid_msg);
 		return ENC_SYM_EERROR;
 	}
 
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
+	xSemaphoreTake(uart_mutex, portMAX_DELAY);
 	if (uart_is_driver_installed(uart_num)) {
 		uart_driver_delete(uart_num);
 	}
+	xSemaphoreGive(uart_mutex);
 
 	uart_config_t uart_config = {
 			.baud_rate = baud,
@@ -4247,6 +4503,20 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_uart_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	if (uart_number >= 0) {
+		xSemaphoreTake(uart_mutex, portMAX_DELAY);
+		if (uart_is_driver_installed(uart_number)) {
+			uart_driver_delete(uart_number);
+		}
+		xSemaphoreGive(uart_mutex);
+	}
+
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 || (!lbm_is_cons(args[0]) && !lbm_is_array_r(args[0]))) {
 		return ENC_SYM_EERROR;
@@ -4256,7 +4526,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_NIL;
 	}
 
-	const int max_len = 20;
+	const int max_len = 50;
 	uint8_t to_send[max_len];
 	uint8_t *to_send_ptr = to_send;
 	int ind = 0;
@@ -4288,10 +4558,50 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+typedef struct {
+	lbm_cid id;
+	unsigned int num;
+	unsigned int offset;
+	int stop_at;
+	TickType_t timeout;
+	uint8_t *data;
+	bool unblock;
+	unsigned int res;
+} uart_rx_args;
+
+static void uart_rx_task(void *arg) {
+	uart_rx_args *a = (uart_rx_args*)arg;
+	int restart_cnt = lispif_get_restart_cnt();
+
+	xSemaphoreTake(uart_mutex, portMAX_DELAY);
+	unsigned int count = 0;
+	uint8_t c;
+	int res = uart_read_bytes(uart_number, &c, 1, a->timeout);
+	while (res == 1) {
+		a->data[a->offset + count] = c;
+		count++;
+		if (c == a->stop_at || count >= a->num) {
+			break;
+		}
+		res = uart_read_bytes(uart_number, &c, 1, a->timeout);
+	}
+	xSemaphoreGive(uart_mutex);
+
+	a->res = count;
+
+	if (a->unblock) {
+		if (restart_cnt == lispif_get_restart_cnt()) {
+			lbm_unblock_ctx_unboxed(a->id, lbm_enc_u(a->res));
+		}
+		vTaskDelete(NULL);
+	}
+}
+
+// (uart-read array num optOffset optStopAt optTimeout)
 static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
-	if ((argn != 2 && argn != 3 && argn != 4) ||
+	if ((argn != 2 && argn != 3 && argn != 4 && argn != 5) ||
 			!lbm_is_array_r(args[0]) || !lbm_is_number(args[1])) {
-		return ENC_SYM_EERROR;
+		return ENC_SYM_TERROR;
 	}
 
 	unsigned int num = lbm_dec_as_u32(args[1]);
@@ -4305,18 +4615,23 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 
 	unsigned int offset = 0;
 	if (argn >= 3) {
-		if (!lbm_is_number(args[2])) {
-			return ENC_SYM_EERROR;
+		if (lbm_is_number(args[2])) {
+			offset = lbm_dec_as_u32(args[2]);
 		}
-		offset = lbm_dec_as_u32(args[2]);
 	}
 
 	int stop_at = -1;
 	if (argn >= 4) {
-		if (!lbm_is_number(args[3])) {
-			return ENC_SYM_EERROR;
+		if (lbm_is_number(args[3])) {
+			stop_at = lbm_dec_as_u32(args[3]);
 		}
-		stop_at = lbm_dec_as_u32(args[3]);
+	}
+
+	TickType_t timeout = 0;
+	if (argn >= 5) {
+		if (lbm_is_number(args[4])) {
+			timeout = (TickType_t)(lbm_dec_as_float(args[4]) * (float)portTICK_PERIOD_MS * 1000.0);
+		}
 	}
 
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
@@ -4324,25 +4639,35 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	unsigned int count = 0;
-	uint8_t c;
-	int res = uart_read_bytes(uart_number, &c, 1, 0);
-	while (res == 1) {
-		((uint8_t*)array->data)[offset + count] = c;
-		count++;
-		if (c == stop_at || count >= num) {
-			break;
-		}
-		res = uart_read_bytes(uart_number, &c, 1, 0);
-	}
-	return lbm_enc_i(count);
-}
+	static uart_rx_args a;
+	a.id = lbm_get_current_cid();
+	a.num = num;
+	a.offset = offset;
+	a.stop_at = stop_at;
+	a.timeout = timeout;
+	a.data = (uint8_t*)array->data;
 
+	if (timeout == 0) {
+		a.unblock = false;
+		uart_rx_task(&a);
+		return lbm_enc_u(a.res);
+	} else {
+		a.unblock = true;
+		lbm_block_ctx_from_extension();
+		xTaskCreatePinnedToCore(uart_rx_task, "Uart Rx", 2048, &a, 7, NULL, tskNO_AFFINITY);
+		return ENC_SYM_TRUE;
+	}
+}
 
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
 		i2c_mutex_init_done = true;
+	}
+
+	if (!uart_mutex_init_done) {
+		uart_mutex = xSemaphoreCreateMutex();
+		uart_mutex_init_done = true;
 	}
 
 	if (!event_task_running) {
@@ -4407,6 +4732,9 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("eeprom-read-i", ext_eeprom_read_i);
 
 	// CAN-comands
+	lbm_add_extension("can-start", ext_can_start);
+	lbm_add_extension("can-stop", ext_can_stop);
+	lbm_add_extension("can-use-vesc", ext_can_use_vesc);
 	lbm_add_extension("can-scan", ext_can_scan);
 	lbm_add_extension("can-send-sid", ext_can_send_sid);
 	lbm_add_extension("can-send-eid", ext_can_send_eid);
@@ -4416,6 +4744,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("can-list-devs", ext_can_list_devs);
 	lbm_add_extension("can-local-id", ext_can_local_id);
 
+	lbm_add_extension("can-msg-age", ext_can_msg_age);
 	lbm_add_extension("canget-current", ext_can_get_current);
 	lbm_add_extension("canget-current-dir", ext_can_get_current_dir);
 	lbm_add_extension("canget-current-in", ext_can_get_current_in);
@@ -4483,6 +4812,7 @@ void lispif_load_vesc_extensions(void) {
 	// ESP NOW
 	lbm_add_extension("esp-now-start", ext_esp_now_start);
 	lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
+	lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
 	lbm_add_extension("esp-now-send", ext_esp_now_send);
 	lbm_add_extension("esp-now-recv", ext_esp_now_recv);
 	lbm_add_extension("get-mac-addr", ext_get_mac_addr);
@@ -4575,6 +4905,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// UART
 	lbm_add_extension("uart-start", ext_uart_start);
+	lbm_add_extension("uart-stop", ext_uart_stop);
 	lbm_add_extension("uart-write", ext_uart_write)	;
 	lbm_add_extension("uart-read", ext_uart_read);
 
@@ -4582,14 +4913,6 @@ void lispif_load_vesc_extensions(void) {
 	lbm_array_extensions_init();
 	lbm_string_extensions_init();
 	lbm_math_extensions_init();
-
-	if (ext_callback) {
-		ext_callback();
-	}
-}
-
-void lispif_set_ext_load_callback(void (*p_func)(void)) {
-	ext_callback = p_func;
 }
 
 void lispif_disable_all_events(void) {

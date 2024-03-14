@@ -67,6 +67,7 @@ static volatile bool m_init_ok = false;
 static volatile bool sem_init_done = false;
 static volatile bool should_terminate = true;
 static volatile bool thd_rx_is_running = false;
+static volatile int uart_num = 0;
 
 // Private functions
 static void proc_byte(uint8_t ch);
@@ -125,12 +126,12 @@ static void rx_task(void *arg) {
 	reset_decoder_state();
 
 	while (!should_terminate) {
-		if (!uart_is_driver_installed(UART_NUM)) {
+		if (!uart_is_driver_installed(uart_num)) {
 			break;
 		}
 
 		uint8_t c;
-		int res = uart_read_bytes(UART_NUM, &c, 1, 10);
+		int res = uart_read_bytes(uart_num, &c, 1, 10);
 		if (res == 1) {
 			proc_byte(c);
 		}
@@ -140,7 +141,7 @@ static void rx_task(void *arg) {
 	vTaskDelete(NULL);
 }
 
-bool ublox_init(bool print, uint16_t rate_ms) {
+bool ublox_init(bool print, uint16_t rate_ms, int num_uart, int pin_rx, int pin_tx) {
 	m_init_ok = false;
 
 	if (!sem_init_done) {
@@ -162,13 +163,15 @@ bool ublox_init(bool print, uint16_t rate_ms) {
 		vTaskDelay(1);
 	}
 
-	if (uart_is_driver_installed(UART_NUM)) {
-		uart_driver_delete(UART_NUM);
+	uart_num = num_uart;
+
+	if (uart_is_driver_installed(uart_num)) {
+		uart_driver_delete(uart_num);
 	}
 
-	uart_driver_install(UART_NUM, 512, 512, 0, 0, 0);
-	uart_param_config(UART_NUM, &uart_config);
-	uart_set_pin(UART_NUM, UART_TX, UART_RX, -1, -1);
+	uart_driver_install(uart_num, 512, 512, 0, 0, 0);
+	uart_param_config(uart_num, &uart_config);
+	uart_set_pin(uart_num, pin_tx, pin_rx, -1, -1);
 
 	should_terminate = false;
 	thd_rx_is_running = true;
@@ -218,7 +221,7 @@ bool ublox_init(bool print, uint16_t rate_ms) {
 		if (ublox_cfg_rate(rate_ms, 1, 0) == -1) {
 			// Set default baudrate
 			uart_config.baud_rate = BAUDRATE_UBX_DEFAULT;
-			uart_param_config(UART_NUM, &uart_config);
+			uart_param_config(uart_num, &uart_config);
 
 			vTaskDelay(100 / portTICK_PERIOD_MS);
 			reset_decoder_state();
@@ -230,7 +233,7 @@ bool ublox_init(bool print, uint16_t rate_ms) {
 
 			// Set configured baudrate
 			uart_config.baud_rate = BAUDRATE;
-			uart_param_config(UART_NUM, &uart_config);
+			uart_param_config(uart_num, &uart_config);
 
 			vTaskDelay(100 / portTICK_PERIOD_MS);
 			reset_decoder_state();
@@ -266,7 +269,7 @@ bool ublox_init(bool print, uint16_t rate_ms) {
 			if (ublox_cfg_valset(buffer_baud, ind, BAUDRATE, true, true) == -1) {
 				// Set default baudrate
 				uart_config.baud_rate = BAUDRATE_UBX_DEFAULT_NEW;
-				uart_param_config(UART_NUM, &uart_config);
+				uart_param_config(uart_num, &uart_config);
 
 				vTaskDelay(100 / portTICK_PERIOD_MS);
 				reset_decoder_state();
@@ -278,7 +281,7 @@ bool ublox_init(bool print, uint16_t rate_ms) {
 
 				// Set configured baudrate
 				uart_config.baud_rate = BAUDRATE;
-				uart_param_config(UART_NUM, &uart_config);
+				uart_param_config(uart_num, &uart_config);
 
 				vTaskDelay(100 / portTICK_PERIOD_MS);
 				reset_decoder_state();
@@ -438,8 +441,8 @@ bool ublox_init_ok(void) {
 
 void ublox_send(unsigned char *data, unsigned int len) {
 	// Wait for the previous transmission to finish.
-	uart_wait_tx_done(UART_NUM, 1000 / portTICK_PERIOD_MS);
-	uart_write_bytes(UART_NUM, data, len);
+	uart_wait_tx_done(uart_num, 1000 / portTICK_PERIOD_MS);
+	uart_write_bytes(uart_num, data, len);
 }
 
 void ublox_set_rx_callback_nav_sol(void(*func)(ubx_nav_sol *sol)) {

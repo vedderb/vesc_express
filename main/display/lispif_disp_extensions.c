@@ -628,21 +628,22 @@ static void fill_circle(image_buffer_t *img, int x, int y, int radius, uint32_t 
 		break;
 
 	default: {
-		// to offset the coordinaets by 0.5, we double all sizes and add 1 to
-		// each coordinate
-
-		int r_dbl_sq = (radius * radius) * 4;
-		for (int y1 = -radius; y1 <= 0; y1++) {
-			int y_dbl_offs = 2 * y1 + 1;
-			int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
-			for(int x1 = -radius;x1 <= 0;x1++) {
-				int x_dbl_offs = 2 * x1 + 1;
-				if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= r_dbl_sq)
-				{
-					h_line(img, x + x1, y + y1, 2 * (-x1), color);
-					if (y1 != 0) {
-						h_line(img, x + x1, y - y1 - 1, 2 * (-x1), color);
+		int r_sq = radius * radius;
+		for (int y1 = -radius; y1 <= radius; y1++) {
+			for (int x1 = -radius; x1 <= radius; x1++) {
+				if (x1 * x1 + y1 * y1 <= r_sq) {
+					// Compute the start and end position for x axis
+					int x_left = x1;
+					while ((x1 + 1) <= radius && ((x1 + 1) * (x1 + 1) + y1 * y1) <= r_sq) {
+						x1++;
 					}
+					int x_right = x1;
+
+					// Draw line at this level y
+					int length = x_right - x_left + 1;
+					h_line(img, x + x_left, y + y1, length, color);
+
+					// Break out of innter loop for this level y
 					break;
 				}
 			}
@@ -1645,9 +1646,11 @@ static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t 
 	uint8_t w = font_data[0];
 	uint8_t h = font_data[1];
 	uint8_t char_num = font_data[2];
-	int bytes_per_char = (w * h) / 8;
-	
-	if ((w * h) % 8 != 0) {
+	uint8_t bits_per_pixel = font_data[3];
+
+	int pixels_per_byte = 8 / bits_per_pixel;
+	int bytes_per_char = (w * h) / pixels_per_byte;
+	if ((w * h) % pixels_per_byte != 0) {
 		bytes_per_char += 1;
 	}
 
@@ -1661,14 +1664,25 @@ static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t 
 		return;
 	}
 
-	for (int i = 0; i < w * h; i++) {
-		uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 8)];
-		uint8_t bit_pos = i % 8;
-		uint8_t bit = byte & (1 << bit_pos);
-		if (bit || bg >= 0) {
+	if (bits_per_pixel == 2) {
+		for (int i = 0; i < w * h; i++) {
+			uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 4)];
+			uint8_t bit_pos = i % pixels_per_byte;
+			uint8_t pixel_value = (byte >> (bit_pos * 2)) & 0x03;
 			int x0 = i % w;
 			int y0 = i / w;
-			putpixel(img, x + x0, y + y0, bit ? fg : bg);
+			putpixel(img, x + x0, y + y0, pixel_value);
+		}
+	} else {
+		for (int i = 0; i < w * h; i++) {
+			uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 8)];
+			uint8_t bit_pos = i % 8;
+			uint8_t bit = byte & (1 << bit_pos);
+			if (bit || bg >= 0) {
+				int x0 = i % w;
+				int y0 = i / w;
+				putpixel(img, x + x0, y + y0, bit ? fg : bg);
+			}
 		}
 	}
 }
@@ -2746,7 +2760,7 @@ static lbm_value ext_disp_load_st7789(lbm_value *args, lbm_uint argn) {
 	if (!gpio_is_valid(gpio_sd0) ||
 			!gpio_is_valid(gpio_clk) ||
 			!gpio_is_valid(gpio_cs) ||
-			!gpio_is_valid(gpio_reset) ||
+			(!gpio_is_valid(gpio_reset) && gpio_reset >= 0) ||
 			!gpio_is_valid(gpio_dc)) {
 		lbm_set_error_reason(msg_invalid_gpio);
 		return ENC_SYM_EERROR;
@@ -3026,4 +3040,14 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("disp-clear", ext_disp_clear);
 	lbm_add_extension("disp-render", ext_disp_render);
 	lbm_add_extension("disp-render-jpg", ext_disp_render_jpg);
+}
+
+void lispif_disp_set_callbacks(
+		bool(* volatile render_image)(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors),
+		void(* volatile clear)(uint32_t color),
+		void(* volatile reset)(void)
+) {
+	disp_render_image = render_image;
+	disp_clear = clear;
+	disp_reset = reset;
 }

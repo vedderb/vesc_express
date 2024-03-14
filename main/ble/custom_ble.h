@@ -25,6 +25,7 @@
 
 #include "esp_bt_defs.h"
 #include "esp_gatt_defs.h"
+#include "esp_gap_ble_api.h"
 
 #define CUSTOM_BLE_MAX_NAME_LEN 30
 
@@ -358,5 +359,7 @@ custom_ble_result_t custom_ble_start();
 bool custom_ble_started();
 
 void custom_ble_init();
+
+extern esp_ble_adv_params_t ble_adv_params;
 
 #endif /* MAIN_BLE_CUSTOM_BLE_H_ */

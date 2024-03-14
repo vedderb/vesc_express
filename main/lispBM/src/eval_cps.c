@@ -91,15 +91,18 @@ static jmp_buf critical_error_jmp_buf;
 #define LOOP_CONDITION        CONTINUATION(42)
 #define MERGE_REST            CONTINUATION(43)
 #define MERGE_LAYER           CONTINUATION(44)
-#define NUM_CONTINUATIONS     45
+#define CLOSURE_ARGS_REST     CONTINUATION(45)
+#define NUM_CONTINUATIONS     46
 
 #define FM_NEED_GC       -1
 #define FM_NO_MATCH      -2
 #define FM_PATTERN_ERROR -3
 
-#define BL_OK             0
-#define BL_NO_MEMORY     -1
-#define BL_INCORRECT_KEY -2
+typedef enum {
+  BL_OK = 0,
+  BL_NO_MEMORY,
+  BL_INCORRECT_KEY
+} binding_location_status;
 
 #define FB_OK             0
 #define FB_TYPE_ERROR    -1
@@ -654,6 +657,28 @@ static lbm_value allocate_closure(lbm_value params, lbm_value body, lbm_value en
     error_ctx(ENC_SYM_FATAL_ERROR);
   }
   return res;
+}
+
+// Allocate a binding and attach it to a list (if so desired)
+static lbm_value allocate_binding(lbm_value key, lbm_value val, lbm_value the_cdr) {
+  if (lbm_heap_num_free() < 2) {
+    gc();
+    if (lbm_heap_num_free() < 2) {
+      error_ctx(ENC_SYM_MERROR);
+    }
+  }
+  lbm_cons_t* heap = lbm_heap_state.heap;
+  lbm_value binding_cell = lbm_heap_state.freelist;
+  lbm_uint binding_cell_ix = lbm_dec_ptr(binding_cell);
+  lbm_value list_cell = heap[binding_cell_ix].cdr;
+  lbm_uint list_cell_ix = lbm_dec_ptr(list_cell);
+  lbm_heap_state.freelist = heap[list_cell_ix].cdr;
+  lbm_heap_state.num_alloc += 2;
+  heap[binding_cell_ix].car = key;
+  heap[binding_cell_ix].cdr = val;
+  heap[list_cell_ix].car = binding_cell;
+  heap[list_cell_ix].cdr = the_cdr;
+  return list_cell;
 }
 
 #define CLO_PARAMS 0
@@ -1807,7 +1832,7 @@ static void eval_move_to_flash(eval_context_t *ctx) {
 }
 
 // Create a named location in an environment to later receive a value.
-static int create_binding_location(lbm_value key, lbm_value *env) {
+static binding_location_status create_binding_location(lbm_value key, lbm_value *env) {
 
   if (lbm_is_symbol(key) &&
       (key == ENC_SYM_NIL ||
@@ -1846,22 +1871,23 @@ static void let_bind_values_eval(lbm_value binds, lbm_value exp, lbm_value env, 
   while (lbm_is_cons(curr)) {
     lbm_value new_env_tmp = env;
     lbm_value key = get_caar(curr);
-    int r = create_binding_location(key, &new_env_tmp);
-    if (r < 0) {
+    binding_location_status r = create_binding_location(key, &new_env_tmp);
+    if (r != BL_OK) {
       if (r == BL_NO_MEMORY) {
         new_env_tmp = env;
         lbm_gc_mark_phase(env);
         gc();
         r = create_binding_location(key, &new_env_tmp);
       }
-      if (r < 0) {
-        if (r == BL_INCORRECT_KEY)
-          error_ctx(ENC_SYM_TERROR);
-        else if (r == BL_NO_MEMORY)
-          error_ctx(ENC_SYM_MERROR);
-        else
-          error_ctx(ENC_SYM_FATAL_ERROR);
-        return;
+      switch(r) {
+      case BL_OK:
+        break;
+      case BL_NO_MEMORY:
+        error_ctx(ENC_SYM_MERROR);
+        break;
+      case BL_INCORRECT_KEY:
+        error_ctx(ENC_SYM_TERROR);
+        break;
       }
     }
     env = new_env_tmp;
@@ -2316,16 +2342,24 @@ static void apply_wait(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
 static void apply_eval(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   if ( nargs == 1) {
     ctx->curr_exp = args[0];
-    lbm_stack_drop(&ctx->K, nargs+1);
+  } else if (nargs == 2) {
+    ctx->curr_exp = args[1];
+    ctx->curr_env = args[0];
   } else {
     lbm_set_error_reason((char*)lbm_error_str_num_args);
     error_at_ctx(ENC_SYM_EERROR, ENC_SYM_EVAL);
   }
+  lbm_stack_drop(&ctx->K, nargs+1);
 }
 
 static void apply_eval_program(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
-  if (nargs == 1) {
-    lbm_value prg = args[0];
+  int prg_pos = 0;
+  if (nargs == 2) {
+    prg_pos = 1;
+    ctx->curr_env = args[0];
+  }
+  if (nargs == 1 || nargs == 2) {
+    lbm_value prg = args[prg_pos];
     lbm_value app_cont;
     lbm_value app_cont_prg;
     lbm_value new_prg;
@@ -2719,6 +2753,21 @@ static void apply_sort(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   error_ctx(ENC_SYM_TERROR);
 }
 
+static void apply_rest_args(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
+  lbm_value res;
+  if (lbm_env_lookup_b(&res, ENC_SYM_REST_ARGS, ctx->curr_env)) {
+    if (nargs == 1 && lbm_is_number(args[0])) {
+      int32_t ix = lbm_dec_as_i32(args[0]);
+      res = lbm_index_list(res, ix);
+    }
+    ctx->r = res;
+  } else {
+    ctx->r = ENC_SYM_NIL;
+  }
+  lbm_stack_drop(&ctx->K, nargs+1);
+  ctx->app_cont = true;
+}
+
 /***************************************************/
 /* Application lookup table                        */
 
@@ -2746,6 +2795,7 @@ static const apply_fun fun_table[] =
    apply_sleep,
    apply_merge,
    apply_sort,
+   apply_rest_args,
   };
 
 /***************************************************/
@@ -2793,7 +2843,10 @@ static void application(eval_context_t *ctx, lbm_value *fun_args, lbm_uint arg_c
     fun_table[SYMBOL_IX(fun_val)](&fun_args[1], arg_count, ctx);
     break;
   default:
-    error_ctx(ENC_SYM_FATAL_ERROR);
+    // Symbols that are "special" but not in the way caught above
+    // ends up here.
+    lbm_set_error_reason("Symbol does not represent a function");
+    error_at_ctx(ENC_SYM_EERROR,fun_args[0]);
     break;
   }
 }
@@ -2810,42 +2863,32 @@ static void cont_closure_application_args(eval_context_t *ctx) {
   lbm_value car_params, cdr_params;
   get_car_and_cdr(params, &car_params, &cdr_params);
 
-  if (lbm_heap_num_free() < 2) {
-    gc();
-    if (lbm_heap_num_free() < 2) {
-      error_ctx(ENC_SYM_MERROR);
-    }
-  }
-  lbm_cons_t* heap = lbm_heap_state.heap;
-  lbm_value cell0 = lbm_heap_state.freelist;
-  lbm_uint cell0_ix = lbm_dec_ptr(cell0);
-  lbm_value cell1 = heap[cell0_ix].cdr;
-  lbm_uint cell1_ix = lbm_dec_ptr(cell1);
-  lbm_heap_state.freelist = heap[cell1_ix].cdr;
-  lbm_heap_state.num_alloc += 2;
-
-  heap[cell0_ix].car = car_params;
-  heap[cell0_ix].cdr = ctx->r;
-  heap[cell1_ix].car = cell0;
-  heap[cell1_ix].cdr = clo_env;
-  clo_env = cell1;
-
   bool a_nil = args == ENC_SYM_NIL;
   bool p_nil = cdr_params == ENC_SYM_NIL;
+
+  lbm_value binder = allocate_binding(car_params, ctx->r, clo_env);
 
   if (!a_nil && !p_nil) {
     lbm_value car_args, cdr_args;
     get_car_and_cdr(args, &car_args, &cdr_args);
-    sptr[2] = clo_env;
+    sptr[2] = binder;
     sptr[3] = cdr_params;
     sptr[4] = cdr_args;
     stack_push(&ctx->K, CLOSURE_ARGS);
     ctx->curr_exp = car_args;
     ctx->curr_env = arg_env;
+  } else if (p_nil && !a_nil) {
+    lbm_value rest_binder = allocate_binding(ENC_SYM_REST_ARGS, ENC_SYM_NIL, binder);
+    sptr[2] = rest_binder;
+    sptr[3] = get_cdr(args);
+    sptr[4] = get_car(rest_binder); // last element of rest_args so far
+    stack_push(&ctx->K, CLOSURE_ARGS_REST);
+    ctx->curr_exp = get_car(args);
+    ctx->curr_env = arg_env;
   } else if (a_nil && p_nil) {
     // Arguments and parameters match up in number
     lbm_stack_drop(&ctx->K, 5);
-    ctx->curr_env = clo_env;
+    ctx->curr_env = binder;
     ctx->curr_exp = exp;
   } else {
     lbm_set_error_reason((char*)lbm_error_str_num_args);
@@ -2853,6 +2896,43 @@ static void cont_closure_application_args(eval_context_t *ctx) {
   }
 }
 
+
+static void cont_closure_args_rest(eval_context_t *ctx) {
+  lbm_uint* sptr = get_stack_ptr(ctx, 5);
+  lbm_value arg_env = (lbm_value)sptr[0];
+  lbm_value exp     = (lbm_value)sptr[1];
+  lbm_value clo_env = (lbm_value)sptr[2];
+  lbm_value args    = (lbm_value)sptr[3];
+  lbm_value last    = (lbm_value)sptr[4];
+  lbm_cons_t* heap = lbm_heap_state.heap;
+
+  lbm_value binding = lbm_heap_state.freelist;
+  if (binding == ENC_SYM_NIL) {
+    gc();
+    binding = lbm_heap_state.freelist;
+    if (binding == ENC_SYM_NIL) error_ctx(ENC_SYM_MERROR);
+  }
+  lbm_uint binding_ix = lbm_dec_ptr(binding);
+  lbm_heap_state.freelist = heap[binding_ix].cdr;
+  lbm_heap_state.num_alloc += 1;
+  heap[binding_ix].car = ctx->r;
+  heap[binding_ix].cdr = ENC_SYM_NIL;
+
+
+  lbm_set_cdr(last, binding);
+  sptr[4] = binding;
+
+  if (args == ENC_SYM_NIL) {
+    lbm_stack_drop(&ctx->K, 5);
+    ctx->curr_env = clo_env;
+    ctx->curr_exp = exp;
+  } else {
+    stack_push(&ctx->K, CLOSURE_ARGS_REST);
+    sptr[3] = get_cdr(args);
+    ctx->curr_exp = get_car(args);
+    ctx->curr_env = arg_env;
+  }
+}
 
 static void cont_application_args(eval_context_t *ctx) {
   lbm_uint *sptr = get_stack_ptr(ctx, 3);
@@ -2983,6 +3063,7 @@ static void cont_match(eval_context_t *ctx) {
 
   if (lbm_is_symbol_nil(patterns)) {
     // no more patterns
+    lbm_stack_drop(&ctx->K, 2);
     ctx->r = ENC_SYM_NO_MATCH;
     ctx->app_cont = true;
   } else if (lbm_is_cons(patterns)) {
@@ -3421,7 +3502,7 @@ static void cont_read_next_token(eval_context_t *ctx) {
 
   /* Attempt to extract tokens from the character stream */
   int n = 0;
-  lbm_value res;
+  lbm_value res = ENC_SYM_NIL;
   unsigned int string_len = 0;
 
   /*
@@ -3434,7 +3515,7 @@ static void cont_read_next_token(eval_context_t *ctx) {
       error_ctx(ENC_SYM_FATAL_ERROR);
     }
     ctx->app_cont = true;
-    lbm_uint do_next;
+    lbm_uint do_next = 0;
     switch(match) {
     case TOKOPENPAR:
       sptr[0] = ENC_SYM_NIL;
@@ -3726,6 +3807,8 @@ static void cont_read_start_array(eval_context_t *ctx) {
       lbm_set_error_reason("Out of memory while reading.");
       lbm_channel_reader_close(str);
       error_ctx(ENC_SYM_FATAL_ERROR);
+      // NOTE: If array is not created evaluation ends here.
+      // Static analysis seems unaware.
     }
 
     sptr[0] = array;
@@ -3750,7 +3833,11 @@ static void cont_read_append_array(eval_context_t *ctx) {
     error_ctx(ENC_SYM_MERROR);
   }
 
-  lbm_array_header_t *arr = (lbm_array_header_t*)get_car(array); // TODO: Check
+  // get_car can return nil. Whose value is 0!
+  // So static Analysis is right about this being a potential NULL pointer.
+  // However, if the array was created correcly to begin with, it should be fine.
+  lbm_value arr_car = get_car(array);
+  lbm_array_header_t *arr = (lbm_array_header_t*)arr_car;
 
   if (lbm_is_number(ctx->r)) {
     ((uint8_t*)arr->data)[ix] = (uint8_t)lbm_dec_as_u32(ctx->r);
@@ -3994,16 +4081,10 @@ static void cont_application_start(eval_context_t *ctx) {
       lbm_value arg0, arg_rest;
       get_car_and_cdr(args, &arg0, &arg_rest);
       sptr[1] = cl[CLO_BODY];
-      if (lbm_is_symbol_nil(args)) {
-        if (lbm_is_symbol_nil(cl[CLO_PARAMS])) {
-          // No param closure
-          ctx->curr_exp = cl[CLO_BODY];
-          ctx->curr_env = cl[CLO_ENV];
-        } else {
-          ctx->app_cont = true;
-        }
-        lbm_stack_drop(&ctx->K, 2);
-      } else {
+      bool a_nil = lbm_is_symbol_nil(args);
+      bool p_nil = lbm_is_symbol_nil(cl[CLO_PARAMS]);
+
+      if (!a_nil && !p_nil) {
         lbm_value *reserved = stack_reserve(ctx, 4);
         reserved[0] = cl[CLO_ENV];
         reserved[1] = cl[CLO_PARAMS];
@@ -4011,7 +4092,30 @@ static void cont_application_start(eval_context_t *ctx) {
         reserved[3] = CLOSURE_ARGS;
         ctx->curr_exp = arg0;
         ctx->curr_env = arg_env;
+        return;
       }
+      if (a_nil && p_nil) {
+          // No params, No args
+        lbm_stack_drop(&ctx->K, 2);
+        ctx->curr_exp = cl[CLO_BODY];
+        ctx->curr_env = cl[CLO_ENV];
+        return;
+      }
+      if (p_nil) {
+        lbm_value rest_binder = allocate_binding(ENC_SYM_REST_ARGS, ENC_SYM_NIL, cl[CLO_ENV]);
+        lbm_value *reserved = stack_reserve(ctx, 4);
+        sptr[0] = arg_env;
+        sptr[1] = cl[CLO_BODY];
+        reserved[0] = rest_binder;
+        reserved[1] = get_cdr(args);
+        reserved[2] = get_car(rest_binder);
+        reserved[3] = CLOSURE_ARGS_REST;
+        ctx->curr_exp = get_car(args);
+        ctx->curr_env = arg_env;
+        return;
+      }
+      lbm_set_error_reason((char*)lbm_error_str_num_args);
+      error_at_ctx(ENC_SYM_EERROR, ctx->r);
     } break;
     case ENC_SYM_CONT:{
       /* Continuation created using call-cc.
@@ -4535,6 +4639,7 @@ static const cont_fun continuations[NUM_CONTINUATIONS] =
     cont_loop_condition,
     cont_merge_rest,
     cont_merge_layer,
+    cont_closure_args_rest,
   };
 
 /*********************************************************/

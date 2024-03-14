@@ -53,6 +53,10 @@ static char *error_packet_too_long =
 	"Adv or scan rsp packet too long, max: 31 bytes.";
 static char *error_invalid_packet_def =
 	"Invalid packet definition structure/type.";
+static char *error_invalid_adv_channel = "Invalid advertising channel. Only 37, 38, "
+	"and 39 are valid.";
+static char *error_invalid_adv_interval = "Invalid advertising interval. Must be "
+	"between 20 and 10240 ms.";
 
 /**
  * Reverse the elements of an array.
@@ -947,6 +951,95 @@ static lbm_value ext_ble_conf_adv(lbm_value *args, lbm_uint argn) {
 }
 
 /**
+ * signature:
+ *   (ble-conf-adv-set-channels list) -> bool
+ *
+ * @param channels A list of channel numbers to use for advertising. The list can only contain
+ * numbers between 37 and 39.
+ * @return False is returned if any internal error occurred, otherwise true.
+ */
+static lbm_value ext_ble_conf_adv_set_channels(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_LEAST(1);
+
+	if (!lbm_is_list(args[0])) {
+		lbm_set_error_suspect(args[0]);
+		return ENC_SYM_TERROR;
+	}
+
+	uint32_t channels = 0;
+	// loop over the list and set the bits in the channel map
+	lbm_value next = args[0];
+	while (lbm_is_cons(next)) {
+		lbm_value current = lbm_car(next);
+		next              = lbm_cdr(next);
+
+		if (!lbm_is_number(current)) {
+			lbm_set_error_suspect(current);
+			return ENC_SYM_TERROR;
+		}
+
+		uint32_t chan = lbm_dec_as_u32(current);
+		if (chan < 37 || chan > 39) {
+			lbm_set_error_reason(error_invalid_adv_channel);
+			return ENC_SYM_EERROR;
+		}
+
+		channels |= 1 << (chan - 37);
+	}
+
+	if (channels == 0) {
+		lbm_set_error_reason(error_invalid_adv_channel);
+		return ENC_SYM_EERROR;
+	}
+
+	if (channels == 0b111) {
+		ble_adv_params.channel_map = ADV_CHNL_ALL;
+	} else {
+		ble_adv_params.channel_map = 0;
+		if (channels & 0b001) {
+			ble_adv_params.channel_map |= ADV_CHNL_37;
+		}
+		if (channels & 0b010) {
+			ble_adv_params.channel_map |= ADV_CHNL_38;
+		}
+		if (channels & 0b100) {
+			ble_adv_params.channel_map |= ADV_CHNL_39;
+		}
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+/**
+ * signature:
+ *   (ble-conf-adv-set-interval min:int max:int) -> bool
+ *
+ * @param min The minimum advertising interval in 0.625 ms units. Must be between 0x0020 and 0x4000.
+ * @param max The maximum advertising interval in 0.625 ms units. Must be between 0x0020 and 0x4000.
+ * @return False is returned if any internal error occurred, otherwise true.
+ */
+static lbm_value ext_ble_conf_adv_set_interval(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	if (!lbm_is_number(args[0]) || !lbm_is_number(args[1])) {
+		return ENC_SYM_TERROR;
+	}
+
+	uint16_t min = (uint16_t)lbm_dec_as_u32(args[0]);
+	uint16_t max = (uint16_t)lbm_dec_as_u32(args[1]);
+
+	if (min < 0x0020 || min > 0x4000 || max < 0x0020 || max > 0x4000) {
+		lbm_set_error_reason(error_invalid_adv_interval);
+		return ENC_SYM_EERROR;
+	}
+
+	ble_adv_params.adv_int_min = min;
+	ble_adv_params.adv_int_max = max;
+
+	return ENC_SYM_TRUE;
+}
+
+/**
  * signature: (ble-add-service service-uuid chrs)
  *
  * needs to be called after ble-start-app
@@ -1178,6 +1271,9 @@ void lispif_load_ble_extensions(void) {
 	lbm_add_extension("ble-start-app", ext_ble_start_app);
 	lbm_add_extension("ble-set-name", ext_ble_set_name);
 	lbm_add_extension("ble-conf-adv", ext_ble_conf_adv);
+	lbm_add_extension("ble-conf-adv-set-channels", ext_ble_conf_adv_set_channels);
+	lbm_add_extension("ble-conf-adv-set-interval", ext_ble_conf_adv_set_interval);
+
 	lbm_add_extension("ble-add-service", ext_ble_add_service);
 	lbm_add_extension("ble-remove-service", ext_ble_remove_service);
 	lbm_add_extension("ble-attr-get-value", ext_ble_attr_get_value);

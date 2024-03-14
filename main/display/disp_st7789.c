@@ -348,7 +348,10 @@ void disp_st7789_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int p
 	m_pin_dc    = pin_dc;
 
 	gpio_config_t gpconf = {0};
-	gpconf.pin_bit_mask = BIT(m_pin_reset) | BIT(m_pin_dc);
+	gpconf.pin_bit_mask = BIT(m_pin_dc);
+	if (m_pin_reset >= 0) {
+		gpconf.pin_bit_mask |= BIT(m_pin_reset);
+	}
 	gpconf.mode = GPIO_MODE_OUTPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
 	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
@@ -356,7 +359,9 @@ void disp_st7789_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int p
 
 	gpio_config(&gpconf);
 
-	gpio_set_level(m_pin_reset, 1);
+	if (m_pin_reset >= 0) {
+		gpio_set_level(m_pin_reset, 1);
+	}
 	gpio_set_level(m_pin_dc, 0);
 
 	lbm_add_extension("ext-disp-cmd", ext_disp_cmd);
@@ -390,10 +395,12 @@ static const uint8_t init_cmds[][16] = {
 };
 
 void disp_st7789_reset(void) {
-	gpio_set_level(m_pin_reset, 0);
-	vTaskDelay(5);
-	gpio_set_level(m_pin_reset, 1);
-	vTaskDelay(120);
+	if (m_pin_reset >= 0) {
+		gpio_set_level(m_pin_reset, 0);
+		vTaskDelay(5);
+		gpio_set_level(m_pin_reset, 1);
+		vTaskDelay(120);
+	}
 
 	for (int i = 0; i < 13; i ++) {
 		int argn = init_cmds[i][0] - 1;

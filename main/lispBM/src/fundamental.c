@@ -23,6 +23,7 @@
 #include "env.h"
 #include "lbm_utils.h"
 #include "lbm_custom_type.h"
+#include "lbm_constants.h"
 
 #include <stdio.h>
 #include <math.h>
@@ -313,6 +314,7 @@ static int compare(lbm_uint a, lbm_uint b) {
   lbm_uint t;
   PROMOTE(t, a, b);
   switch (t) {
+  case LBM_TYPE_CHAR: retval = CMP(lbm_dec_char(a), lbm_dec_char(b)); break;
   case LBM_TYPE_I: retval = CMP(lbm_dec_as_i32(a), lbm_dec_as_i32(b)); break;
   case LBM_TYPE_U: retval = CMP(lbm_dec_as_u32(a), lbm_dec_as_u32(b)); break;
   case LBM_TYPE_U32: retval = CMP(lbm_dec_as_u32(a), lbm_dec_as_u32(b)); break;
@@ -330,27 +332,6 @@ static void array_create(lbm_value *args, lbm_uint nargs, lbm_value *result) {
   *result = ENC_SYM_EERROR;
   if (nargs == 1 && IS_NUMBER(args[0])) {
     lbm_heap_allocate_array(result, lbm_dec_as_u32(args[0]));
-  }
-}
-
-static lbm_value index_list(lbm_value l, int32_t n) {
-  lbm_value curr = l;
-
-  if (n < 0) {
-    int32_t len = (int32_t)lbm_list_length(l);
-    n = len + n;
-    if (n < 0) return ENC_SYM_NIL;
-  }
-
-  while (lbm_is_cons(curr) &&
-          n > 0) {
-    curr = lbm_cdr(curr);
-    n --;
-  }
-  if (lbm_is_cons(curr)) {
-    return lbm_car(curr);
-  } else {
-    return ENC_SYM_NIL;
   }
 }
 
@@ -466,14 +447,13 @@ static lbm_value fundamental_div(lbm_value *args, lbm_uint nargs, eval_context_t
 
 static lbm_value fundamental_mod(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   (void) ctx;
-
-  lbm_uint res = args[0];
-  for (lbm_uint i = 1; i < nargs; i ++) {
-    res = mod2(res, args[i]);
-    if (lbm_type_of(res) == LBM_TYPE_SYMBOL) {
-      break;
-    }
+  if (nargs != 2) {
+    lbm_set_error_reason((char*)lbm_error_str_num_args);
+    return ENC_SYM_EERROR;
   }
+  lbm_value res = args[0];
+  lbm_value arg2 = args[1];
+  res = mod2(res, arg2);
   return res;
 }
 
@@ -551,7 +531,7 @@ static lbm_value fundamental_lt(lbm_value *args, lbm_uint nargs, eval_context_t 
   (void) ctx;
 
   lbm_uint a = args[0];
-  lbm_uint b;
+  lbm_uint b = ENC_SYM_NIL;
   bool r = true;
   bool ok = true;
 
@@ -582,7 +562,7 @@ static lbm_value fundamental_gt(lbm_value *args, lbm_uint nargs, eval_context_t 
   (void) ctx;
 
   lbm_uint a = args[0];
-  lbm_uint b;
+  lbm_uint b = ENC_SYM_NIL;
   bool r = true;
   bool ok = true;
 
@@ -613,7 +593,7 @@ static lbm_value fundamental_leq(lbm_value *args, lbm_uint nargs, eval_context_t
   (void) ctx;
 
   lbm_uint a = args[0];
-  lbm_uint b;
+  lbm_uint b = ENC_SYM_NIL;
   bool r = true;
   bool ok = true;
 
@@ -644,7 +624,7 @@ static lbm_value fundamental_geq(lbm_value *args, lbm_uint nargs, eval_context_t
   (void) ctx;
 
   lbm_uint a = args[0];
-  lbm_uint b;
+  lbm_uint b = ENC_SYM_NIL;
   bool r = true;
   bool ok = true;
 
@@ -773,7 +753,7 @@ static lbm_value fundamental_append(lbm_value *args, lbm_uint nargs, eval_contex
     }
     curr = args[i];
     for (int j = n-1; j >= 0; j --) {
-      res = lbm_cons(index_list(curr,j),res);
+      res = lbm_cons(lbm_index_list(curr,j),res);
     }
   }
   return(res);
@@ -841,17 +821,20 @@ static lbm_value fundamental_symbol_to_string(lbm_value *args, lbm_uint nargs, e
 static lbm_value fundamental_string_to_symbol(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   (void) ctx;
   lbm_value result = ENC_SYM_EERROR;
-  if (nargs < 1 ||
-      lbm_is_array_r(args[0]))
-    return result;
-  lbm_array_header_t *arr = (lbm_array_header_t *)lbm_car(args[0]);
-  if (!arr) return ENC_SYM_FATAL_ERROR;
-  char *str = (char *)arr->data;
-  lbm_uint sym;
-  if (lbm_get_symbol_by_name(str, &sym)) {
-    result = lbm_enc_sym(sym);
-  } else if (lbm_add_symbol(str, &sym)) {
-    result = lbm_enc_sym(sym);
+  if (nargs == 1 &&
+      lbm_is_array_r(args[0])) {
+    lbm_array_header_t *arr = (lbm_array_header_t *)lbm_car(args[0]);
+    // TODO: String to symbol, string should be in LBM_memory..
+    // Some better sanity check is possible here.
+    // Check that array points into lbm_memory.
+    // Additionally check that it is a zero-terminated string.
+    char *str = (char *)arr->data;
+    lbm_uint sym;
+    if (lbm_get_symbol_by_name(str, &sym)) {
+      result = lbm_enc_sym(sym);
+    } else if (lbm_add_symbol(str, &sym)) {
+      result = lbm_enc_sym(sym);
+    }
   }
   return result;
 }
@@ -910,7 +893,12 @@ static lbm_value fundamental_set_ix(lbm_value *args, lbm_uint nargs, eval_contex
         IS_NUMBER(args[1])) {
       lbm_value curr = args[0];
       lbm_uint i = 0;
-      lbm_uint ix = lbm_dec_as_u32(args[1]);
+      lbm_int ix_pre = lbm_dec_as_i32(args[1]);
+      if (ix_pre < 0) {
+        lbm_int len = (lbm_int)lbm_list_length(args[0]);
+        ix_pre = len + ix_pre;
+      }
+      lbm_uint ix = (lbm_uint)ix_pre;
       result = ENC_SYM_NIL;
       while (lbm_is_ptr(curr)) {
         if (i == ix) {
@@ -1003,7 +991,7 @@ static lbm_value fundamental_ix(lbm_value *args, lbm_uint nargs, eval_context_t 
   (void) ctx;
   lbm_value result = ENC_SYM_EERROR;
   if (nargs == 2 && IS_NUMBER(args[1])) {
-    result = index_list(args[0], lbm_dec_as_i32(args[1]));
+    result = lbm_index_list(args[0], lbm_dec_as_i32(args[1]));
   }
   return result;
 }

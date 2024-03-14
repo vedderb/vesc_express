@@ -72,6 +72,31 @@ This should be called *before* the BLE server has started (so before
 [`ble-start-app`](#ble-start-app) is called). Then `true` is returned. Calling it afterwards has no effect
 and returns `nil`.
 
+### `ble-conf-adv-set-channels`
+
+```clj
+(ble-conf-adv-set-channels channels)
+```
+
+Configure channels to use for advertising. Channels is a list and must contain a combination of 37, 38 and 39. By default all channels are used. Example:
+
+```clj
+; Use all channels for advertising
+(ble-conf-adv-set-channels '(37 38 39))
+```
+
+### `ble-conf-adv-set-interval`
+
+```clj
+(ble-conf-adv-set-interval min max)
+```
+
+Configure minimum and maximum advertising interval in units of 0.625 ms. Both intervals (min and max) must be within 0x0020 and 0x4000 (20 ms to 10.24 s). Example:
+
+```clj
+(ble-conf-adv-set-interval 0x400 0x800)
+```
+
 ### `ble-conf-adv`
 
 ```clj
