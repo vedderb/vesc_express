@@ -22,6 +22,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "soc/gpio_struct.h"
+#include "soc/gpio_reg.h"
 
 #include "disp_ssd1351.h"
 #include "hwspi.h"
@@ -35,11 +36,24 @@ static int display_height = 128;
 static int m_pin_reset = -1;
 static int m_pin_dc    = -1;
 
-#define DISP_REG_SET		GPIO.out_w1ts.val
-#define DISP_REG_CLR		GPIO.out_w1tc.val
+#if CONFIG_IDF_TARGET_ESP32S3
+	#define DISP_REG_SET		GPIO.out_w1ts
+	#define DISP_REG_CLR		GPIO.out_w1tc
+#elif CONFIG_IDF_TARGET_ESP32
+	#define DISP_REG_SET    GPIO_OUT_W1TS_REG
+	#define DISP_REG_CLR    GPIO_OUT_W1TC_REG
+#else
+	#define DISP_REG_SET		GPIO.out_w1ts.val
+	#define DISP_REG_CLR		GPIO.out_w1tc.val
+#endif
 
-#define COMMAND() 	    (DISP_REG_CLR = 1 << m_pin_dc)
-#define DATA() 	        (DISP_REG_SET = 1 << m_pin_dc)
+#if CONFIG_IDF_TARGET_ESP32
+	#define COMMAND() 	    REG_WRITE(DISP_REG_SET, (1 << m_pin_dc))
+	#define DATA() 	        REG_WRITE(GPIO_OUT_W1TC_REG, (1 << m_pin_dc))
+#else
+	#define COMMAND() 	    (DISP_REG_CLR = 1 << m_pin_dc)
+	#define DATA() 	        (DISP_REG_SET = 1 << m_pin_dc)
+#endif
 
 static void command_start(uint8_t cmd) {
 	COMMAND();

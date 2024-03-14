@@ -87,6 +87,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf"
 "hwconf/trampa"
 "hwconf/trampa/bms_rb"
+"hwconf/rescue"
+"hwconf/avaspark"
 
 "lispBM"
 "lispBM/include"
