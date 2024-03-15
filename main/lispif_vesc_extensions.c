@@ -3180,9 +3180,6 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
     uint8_t brightness = 255; // Default brightness is 255 (maximum)
     if (argn >= 3) {
         brightness = lbm_dec_as_u32(args[2]);
-        if (brightness > 255) {
-            brightness = 255;
-        }
     }
 
     int pin = -1;
