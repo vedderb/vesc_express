@@ -3165,11 +3165,11 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
     return ENC_SYM_TRUE;
 }
 
-// (rgbled-color led-num color optPIN) -> t, nil
+// (rgbled-color led-num color optBrightness optPIN) -> t, nil
 static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
     LBM_CHECK_NUMBER_ALL();
 
-    if (argn != 2 && argn != 3) {
+    if (argn != 2 && argn != 3 && argn != 4) {
         lbm_set_error_reason((char*)lbm_error_str_num_args);
         return ENC_SYM_TERROR;
     }
@@ -3177,9 +3177,17 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
     int led_num = lbm_dec_as_u32(args[0]);
     uint32_t color = lbm_dec_as_u32(args[1]);
 
-    int pin = -1;
+    uint8_t brightness = 255; // Default brightness is 255 (maximum)
     if (argn >= 3) {
-        pin = lbm_dec_as_i32(args[2]);
+        brightness = lbm_dec_as_u32(args[2]);
+        if (brightness > 255) {
+            brightness = 255;
+        }
+    }
+
+    int pin = -1;
+    if (argn >= 4) {
+        pin = lbm_dec_as_i32(args[3]);
     }
 
     led_strip_t *strip = NULL;
@@ -3208,10 +3216,10 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
         return ENC_SYM_TERROR;
     }
 
-    uint8_t w = (color >> 24) & 0xFF;
-    uint8_t r = (color >> 16) & 0xFF;
-    uint8_t g = (color >> 8) & 0xFF;
-    uint8_t b = color & 0xFF;
+    uint8_t w = (color >> 24) & 0xFF * brightness / 255;
+    uint8_t r = ((color >> 16) & 0xFF) * brightness / 255;
+    uint8_t g = ((color >> 8) & 0xFF) * brightness / 255;
+    uint8_t b = (color & 0xFF) * brightness / 255;
 
     switch (strip->led_type) {
         case 0: // GRB
@@ -3242,7 +3250,7 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 
     rmt_transmit(strip->chan, strip->encoder, strip->pixels, strip->num_leds * strip->colors_per_led, &tx_config);
 
-	return ENC_SYM_TRUE;
+    return ENC_SYM_TRUE;
 }
 
 // Logging
