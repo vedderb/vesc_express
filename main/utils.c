@@ -27,6 +27,9 @@
 #include <dirent.h>
 #include <string.h>
 
+// Global variables
+char *string_pin_invalid = "Invalid pin";
+
 int32_t utils_ms_today(void) {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
@@ -180,6 +183,30 @@ float utils_throttle_curve(float val, float curve_acc, float curve_brake, int mo
 	return ret;
 }
 
-const char *bool_to_str(bool value) {
+const char *utils_bool_to_str(bool value) {
 	return value ? "true" : "false";
+}
+
+bool utils_gpio_is_valid(int pin) {
+	switch (pin) {
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+	case 10:
+	case 18:
+	case 19:
+	case 20:
+	case 21:
+		return true;
+
+	default:
+		return false;
+	}
 }

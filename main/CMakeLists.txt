@@ -60,6 +60,8 @@ set(COMPONENT_SRCS
 "ble/custom_ble.c"
 "ble/lispif_ble_extensions.c"
 
+"rgbled/lispif_rgbled_extensions.c"
+
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
 "display/disp_ili9341.c"
@@ -87,6 +89,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf"
 "hwconf/trampa"
 "hwconf/trampa/bms_rb"
+"hwconf/vesc"
+"hwconf/vesc/vbms32"
 
 "lispBM"
 "lispBM/include"
@@ -94,6 +98,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "display"
 "wifi"
 "ble"
+"rgbled"
 "drivers"
 "drivers/bme280"
 "drivers/imu"
