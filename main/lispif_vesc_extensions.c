@@ -2894,10 +2894,10 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 	}
 }
 
-// WS2812-driver using RMT
+// WS2812 and SK6812 driver using RMT
 
 #define RMT_LED_STRIP_RESOLUTION_HZ                                            \
-10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
+	10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
 
 typedef struct {
 	rmt_encoder_t base;
@@ -2989,7 +2989,9 @@ static esp_err_t rmt_led_strip_encoder_reset(rmt_encoder_t *encoder) {
 	return ESP_OK;
 }
 
-esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
+esp_err_t rmt_new_led_strip_encoder(
+	rmt_encoder_handle_t *ret_encoder, int strip_type
+) {
 	rmt_led_strip_encoder_t *led_encoder = NULL;
 	led_encoder              = calloc(1, sizeof(rmt_led_strip_encoder_t));
 	led_encoder->base.encode = rmt_encode_led_strip;
@@ -2997,34 +2999,55 @@ esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
 	led_encoder->base.reset  = rmt_led_strip_encoder_reset;
 
 	// different led strip might have its own timing requirements, following parameter is for WS2812
-	rmt_bytes_encoder_config_t bytes_encoder_config = {
-		.bit0 =
-			{
-				.level0    = 1,
-				.duration0 = 0.3 * RMT_LED_STRIP_RESOLUTION_HZ
-					/ 1000000, // T0H=0.3us
-				.level1    = 0,
-				.duration1 = 0.9 * RMT_LED_STRIP_RESOLUTION_HZ
-					/ 1000000, // T0L=0.9us
-			},
-		.bit1 =
-			{
-				.level0    = 1,
-				.duration0 = 0.9 * RMT_LED_STRIP_RESOLUTION_HZ
-					/ 1000000, // T1H=0.9us
-				.level1    = 0,
-				.duration1 = 0.3 * RMT_LED_STRIP_RESOLUTION_HZ
-					/ 1000000, // T1L=0.3us
-			},
-		.flags.msb_first = 1 // WS2812 transfer bit order: G7...G0R7...R0B7...B0
-	};
-
+	rmt_bytes_encoder_config_t bytes_encoder_config;
+	uint32_t reset_ticks;
+	if (strip_type == 1) { //SK6812
+		bytes_encoder_config = (rmt_bytes_encoder_config_t){
+			.bit0 =
+				{
+					.level0    = 1,
+					.duration0 = 3, // T0H = 0.3µs
+					.level1    = 0,
+					.duration1 = 9, // T0L = 0.9µs
+				},
+			.bit1 =
+				{
+					.level0    = 1,
+					.duration0 = 6, // T1H = 0.6µs
+					.level1    = 0,
+					.duration1 = 6, // T1L = 0.6µs
+				},
+			.flags.msb_first =
+				1 // SK6812 transfer bit order: G7...G0R7...R0B7...B0
+		};
+		reset_ticks = RMT_LED_STRIP_RESOLUTION_HZ / 1000000 * 80
+			/ 2; // reset code duration set to 80us for SK6812
+	} else { //WS2812
+		bytes_encoder_config = (rmt_bytes_encoder_config_t){
+			.bit0 =
+				{
+					.level0    = 1,
+					.duration0 = 3, // T0H = 0.3µs
+					.level1    = 0,
+					.duration1 = 9, // T0L = 0.9µs
+				},
+			.bit1 =
+				{
+					.level0    = 1,
+					.duration0 = 9, // T1H = 0.9µs
+					.level1    = 0,
+					.duration1 = 3, // T1L = 0.3µs
+				},
+			.flags.msb_first =
+				1 // WS2812 transfer bit order: G7...G0R7...R0B7...B0
+		};
+		reset_ticks = RMT_LED_STRIP_RESOLUTION_HZ / 1000000 * 50
+			/ 2; // reset code duration set to 50us for WS2812
+	}
 	rmt_new_bytes_encoder(&bytes_encoder_config, &led_encoder->bytes_encoder);
 	rmt_copy_encoder_config_t copy_encoder_config = {};
 	rmt_new_copy_encoder(&copy_encoder_config, &led_encoder->copy_encoder);
 
-	uint32_t reset_ticks = RMT_LED_STRIP_RESOLUTION_HZ / 1000000 * 50
-		/ 2; // reset code duration defaults to 50us
 	led_encoder->reset_code = (rmt_symbol_word_t){
 		.level0    = 0,
 		.duration0 = reset_ticks,
@@ -3101,11 +3124,11 @@ static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-// (rgbled-init pin num-leds optLedType) -> t, nil
+// (rgbled-init pin num-leds optLedType optStripType) -> t, nil
 static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
-	if (argn != 2 && argn != 3) {
+	if (argn != 2 && argn != 3 && argn != 4) {
 		lbm_set_error_reason((char *)lbm_error_str_num_args);
 		return ENC_SYM_TERROR;
 	}
@@ -3128,6 +3151,15 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 		led_type = lbm_dec_as_u32(args[2]);
 		if (led_type >= 4) {
 			lbm_set_error_reason("Invalid LED type");
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	unsigned int strip_type = 0;
+	if (argn >= 4) {
+		strip_type = lbm_dec_as_u32(args[3]);
+		if (strip_type > 1) {
+			lbm_set_error_reason("Invalid LED strip type");
 			return ENC_SYM_TERROR;
 		}
 	}
@@ -3176,7 +3208,7 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	};
 	rmt_new_tx_channel(&tx_chan_config, &strip->chan);
 
-	rmt_new_led_strip_encoder(&strip->encoder);
+	rmt_new_led_strip_encoder(&strip->encoder, strip_type);
 	rmt_enable(strip->chan);
 
 	led_strip_used[slot] = 1;
