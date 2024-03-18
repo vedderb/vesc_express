@@ -1471,14 +1471,12 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	// radii or something...
 	if (!angle_is_closed && fabsf(angle1 - angle0) < 0.0174532925) { // one degree in radians
 		if (rounded) {
-			// compiler complains about uninitialized variables if this is named
-			// `radius` for some reason...
-			float radius_local = ((float)radius - (float)thickness / 2.0) + 0.5;
+			float rad_f = (float)radius - ((float)thickness / 2.0);
 
 			float angle = (angle0 + angle1) / 2.0;
 
-			int cap_center_x = (int)(cosf(angle) * radius_local);
-			int cap_center_y = (int)(sinf(angle) * radius_local);
+			int cap_center_x = floor(cosf(angle) * rad_f);
+			int cap_center_y = floor(sinf(angle) * rad_f);
 
 			fill_circle(img, c_x + cap_center_x, c_y + cap_center_y, thickness / 2, color);
 		}
@@ -1505,11 +1503,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	float angle1_cos = cosf(angle1);
 	float angle1_sin = sinf(angle1);
 	
-	int outer_x0 = (int)(angle0_cos * (float)(radius_outer + 1));
-	int outer_y0 = (int)(angle0_sin * (float)(radius_outer + 1));
+	int outer_x0 = angle0_cos * (float)radius_outer;
+	int outer_y0 = angle0_sin * (float)radius_outer;
 
-	int outer_x1 = (int)(angle1_cos * (float)(radius_outer + 1));
-	int outer_y1 = (int)(angle1_sin * (float)(radius_outer + 1));
+	int outer_x1 = angle1_cos * (float)radius_outer;
+	int outer_y1 = angle1_sin * (float)radius_outer;
 	
 	int inner_y0;
 	int inner_y1;
@@ -1561,11 +1559,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	}
 
 	for (int y = 0; y < radius_outer; y++) {
-		int y_dbl_offs = 2 * y + 1;
+		int y_dbl_offs = 2 * (y + 1);
 		int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
 
 		for (int x = -radius_outer; x <= 0; x++) {
-			int x_dbl_offs = 2 * x + 1;
+			int x_dbl_offs = 2 * (x + 1);
 			if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= radius_outer_dbl_sq) {
 				// This is horrible...
 				handle_arc_slice(img, x, y,
@@ -1593,13 +1591,13 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 
 	// draw rounded line corners
 	if (rounded && !filled && !sector && !segment) {
-		float radius = ((float)radius_inner + (float)thickness / 2.0) + 0.5;
+		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = (int)(angle0_cos * radius);
-		int cap0_center_y = (int)(angle0_sin * radius);
+		int cap0_center_x = floor(angle0_cos * rad_f);
+		int cap0_center_y = floor(angle0_sin * rad_f);
 
-		int cap1_center_x = (int)(angle1_cos * radius);
-		int cap1_center_y = (int)(angle1_sin * radius);
+		int cap1_center_x = floor(angle1_cos * rad_f);
+		int cap1_center_y = floor(angle1_sin * rad_f);
 
 		thickness /= 2;
 
@@ -1610,13 +1608,13 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	// draw sector arc cap to center lines
 	// (sectors are always rounded)
 	if (sector && !filled) {
-		float radius = ((float)radius_inner + (float)thickness / 2.0) + 0.5;
+		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = (int)(angle0_cos * radius);
-		int cap0_center_y = (int)(angle0_sin * radius);
+		int cap0_center_x = floor(angle0_cos * rad_f);
+		int cap0_center_y = floor(angle0_sin * rad_f);
 
-		int cap1_center_x = (int)(angle1_cos * radius);
-		int cap1_center_y = (int)(angle1_sin * radius);
+		int cap1_center_x = floor(angle1_cos * rad_f);
+		int cap1_center_y = floor(angle1_sin * rad_f);
 
 		thickness /= 2;
 
@@ -1627,13 +1625,13 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	}
 
 	if (segment && !filled) {
-		float radius = ((float)radius_inner + (float)thickness / 2.0) + 0.5;
+		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = (int)(angle0_cos * radius);
-		int cap0_center_y = (int)(angle0_sin * radius);
+		int cap0_center_x = floor(angle0_cos * rad_f);
+		int cap0_center_y = floor(angle0_sin * rad_f);
 
-		int cap1_center_x = (int)(angle1_cos * radius);
-		int cap1_center_y = (int)(angle1_sin * radius);
+		int cap1_center_x = floor(angle1_cos * rad_f);
+		int cap1_center_y = floor(angle1_sin * rad_f);
 
 		thickness /= 2;
 
