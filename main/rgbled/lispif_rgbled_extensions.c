@@ -349,7 +349,7 @@ static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
 void lispif_load_rgbled_extensions(void) {
 	lbm_add_extension("rgbled-init", ext_rgbled_init);
 	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
-	lbm_add_extension("rgbled-color-buffer", ext_rgbled_color_buffer);
+	lbm_add_extension("rgbled-buffer", ext_rgbled_color_buffer);
 	lbm_add_extension("rgbled-color", ext_rgbled_color);
 	lbm_add_extension("rgbled-update", ext_rgbled_update);
 }

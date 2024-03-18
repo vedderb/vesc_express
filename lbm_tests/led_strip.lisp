@@ -1,7 +1,7 @@
 (rgbled-init 20)
 
-(def strip1 (rgbled-color-buffer 10 2))
-(def strip2 (rgbled-color-buffer 10 0))
+(def strip1 (rgbled-buffer 10 2))
+(def strip2 (rgbled-buffer 10 0))
 
 (rgbled-color strip1 0 0x330000)
 (rgbled-color strip1 1 0x22000000u32)
