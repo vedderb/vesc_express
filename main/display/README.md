@@ -566,7 +566,7 @@ Applicable attributes:
 
 Example drawing a thick circle-sector of 45 degrees and radius 80.
 ```clj
-(img-circle-sector img 100 100 80 0  1 '(thickness 3))
+(img-circle-sector img 220 40 40 90 200 1 '(thickness 3))
 ```
 
 ## img-circle-segment
@@ -793,10 +793,11 @@ example that sets a pixel:
 
 ```clj
 (img-text img x y fg bg font str)
+(img-text img x y colors font str)
 ```
 
 Draws the text from the string  `str` at position (`x`,`y`) using font-data
-`font` with foreground color `fg` and background color `bg`.
+`font` with foreground color `fg` and background color `bg`. Alternatively, a list of colors can be provided instead of the foreground and background. The color-list is needed for 2-bit antialiased fonts and should contain 4 colors then.
 
 fonts can be loaded using the import facility.
 

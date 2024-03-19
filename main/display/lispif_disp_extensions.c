@@ -1640,7 +1640,7 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	}
 }
 
-static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t *font_data, uint8_t ch) {
+static void img_putc(image_buffer_t *img, int x, int y, int *colors, int num_colors, uint8_t *font_data, uint8_t ch) {
 	uint8_t w = font_data[0];
 	uint8_t h = font_data[1];
 	uint8_t char_num = font_data[2];
@@ -1663,15 +1663,30 @@ static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t 
 	}
 
 	if (bits_per_pixel == 2) {
+		if (num_colors < 4) {
+			return;
+		}
+
 		for (int i = 0; i < w * h; i++) {
 			uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 4)];
 			uint8_t bit_pos = i % pixels_per_byte;
 			uint8_t pixel_value = (byte >> (bit_pos * 2)) & 0x03;
 			int x0 = i % w;
 			int y0 = i / w;
-			putpixel(img, x + x0, y + y0, pixel_value);
+			putpixel(img, x + x0, y + y0, colors[pixel_value]);
 		}
 	} else {
+		if (num_colors < 1) {
+			return;
+		}
+
+		int fg = colors[0];
+		int bg = -1;
+
+		if (num_colors > 1) {
+			bg = colors[1];
+		}
+
 		for (int i = 0; i < w * h; i++) {
 			uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 8)];
 			uint8_t bit_pos = i % 8;
@@ -2464,24 +2479,49 @@ static lbm_value ext_triangle(lbm_value *args, lbm_uint argn) {
 
 // lisp args: img x y fg bg font str 
 static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
-	if (argn != 7) {
+	if (argn != 6 && argn != 7) {
 		return ENC_SYM_TERROR;
 	}
 
 	int x = lbm_dec_as_u32(args[1]);
 	int y = lbm_dec_as_u32(args[2]);
-	int fg = lbm_dec_as_i32(args[3]);
-	int bg = lbm_dec_as_i32(args[4]);
+
+	int colors[4] = {-1, -1, -1, -1};
+	if (argn == 7) {
+		if (!lbm_is_number(args[3]) || !lbm_is_number(args[4])) {
+			return ENC_SYM_TERROR;
+		}
+		colors[0] = lbm_dec_as_i32(args[3]);
+		colors[1] = lbm_dec_as_i32(args[4]);
+	} else {
+		lbm_value curr = args[3];
+		int ind = 0;
+		while (lbm_is_cons(curr)) {
+			lbm_value  arg = lbm_car(curr);
+
+			if (lbm_is_number(arg)) {
+				colors[ind++] = lbm_dec_as_u32(arg);
+			} else {
+				return ENC_SYM_TERROR;
+			}
+
+			if (ind == 4) {
+				break;
+			}
+
+			curr = lbm_cdr(curr);
+		}
+	}
 
 	if (!lispif_disp_is_image_buffer(args[0])) return ENC_SYM_TERROR;
 	image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
 
 	lbm_array_header_t *font = 0;
 	if (lbm_type_of(args[5]) == LBM_TYPE_ARRAY) {
-		font = (lbm_array_header_t *)lbm_car(args[5]);
+		font = (lbm_array_header_t *)lbm_car(args[argn - 2]);
 	}
 
-	char *txt = lbm_dec_str(args[6]);
+	char *txt = lbm_dec_str(args[argn - 1]);
 
 	if (!font || !txt || font->size < (4 + 5 * 5 * 10)) {
 		return ENC_SYM_TERROR;
@@ -2492,7 +2532,7 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 
 	int ind = 0;
 	while (txt[ind] != 0) {
-		img_putc(img, x + ind * w, y, fg, bg, font_data, txt[ind]);
+		img_putc(img, x + ind * w, y, colors, 4, font_data, txt[ind]);
 		ind++;
 	}
 
