@@ -1475,8 +1475,8 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 
 			float angle = (angle0 + angle1) / 2.0;
 
-			int cap_center_x = floor(cosf(angle) * rad_f);
-			int cap_center_y = floor(sinf(angle) * rad_f);
+			int cap_center_x = floorf(cosf(angle) * rad_f);
+			int cap_center_y = floorf(sinf(angle) * rad_f);
 
 			fill_circle(img, c_x + cap_center_x, c_y + cap_center_y, thickness / 2, color);
 		}
@@ -1593,11 +1593,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	if (rounded && !filled && !sector && !segment) {
 		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = floor(angle0_cos * rad_f);
-		int cap0_center_y = floor(angle0_sin * rad_f);
+		int cap0_center_x = floorf(angle0_cos * rad_f);
+		int cap0_center_y = floorf(angle0_sin * rad_f);
 
-		int cap1_center_x = floor(angle1_cos * rad_f);
-		int cap1_center_y = floor(angle1_sin * rad_f);
+		int cap1_center_x = floorf(angle1_cos * rad_f);
+		int cap1_center_y = floorf(angle1_sin * rad_f);
 
 		thickness /= 2;
 
@@ -1610,11 +1610,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	if (sector && !filled) {
 		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = floor(angle0_cos * rad_f);
-		int cap0_center_y = floor(angle0_sin * rad_f);
+		int cap0_center_x = floorf(angle0_cos * rad_f);
+		int cap0_center_y = floorf(angle0_sin * rad_f);
 
-		int cap1_center_x = floor(angle1_cos * rad_f);
-		int cap1_center_y = floor(angle1_sin * rad_f);
+		int cap1_center_x = floorf(angle1_cos * rad_f);
+		int cap1_center_y = floorf(angle1_sin * rad_f);
 
 		thickness /= 2;
 
@@ -1627,11 +1627,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	if (segment && !filled) {
 		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = floor(angle0_cos * rad_f);
-		int cap0_center_y = floor(angle0_sin * rad_f);
+		int cap0_center_x = floorf(angle0_cos * rad_f);
+		int cap0_center_y = floorf(angle0_sin * rad_f);
 
-		int cap1_center_x = floor(angle1_cos * rad_f);
-		int cap1_center_y = floor(angle1_sin * rad_f);
+		int cap1_center_x = floorf(angle1_cos * rad_f);
+		int cap1_center_y = floorf(angle1_sin * rad_f);
 
 		thickness /= 2;
 
