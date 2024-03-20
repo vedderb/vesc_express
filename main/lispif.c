@@ -443,6 +443,11 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				lbm_set_verbose(verbose_now);
 				commands_printf_lisp("Verbose errors %s", verbose_now ? "Enabled" : "Disabled");
 			} else {
+				if (repl_buffer) {
+					lispif_unlock_lbm();
+					break;
+				}
+
 				bool ok = true;
 				int timeout_cnt = 1000;
 				lbm_pause_eval_with_gc(30);
