@@ -150,6 +150,47 @@ bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t l
 		return false;
 	}
 
+	uint8_t *data_old = flash_helper_code_data_raw(ind);
+	bool erased = true;
+	for (int i = 0;i < len;i++) {
+		if (data_old[offset + i] != 0xff && data_old[offset + i] != data[i]) {
+			erased = false;
+			break;
+		}
+	}
+
+	// If the old flash already contains something we erase the sector first. The data that was
+	// there previously until that location is saved in RAM, then written back. Note that the
+	// data after the offset (if any) is not backed up. That is because we assume this only
+	// is used with LBM const data, where doing it this way is a better approach. TODO: Update
+	// this comment with an explanation on why that is the case.
+	if (!erased) {
+		uint32_t sector_start = (offset / part->erase_size) * part->erase_size;
+		uint32_t buf_len = offset - sector_start;
+
+		if (buf_len > 0) {
+			uint8_t *buf = calloc(buf_len, 1);
+			if (!buf) {
+				return false;
+			}
+			memcpy(buf, data_old + sector_start, buf_len);
+			bool erase_ok = esp_partition_erase_range(part, sector_start, part->erase_size) == ESP_OK;
+			bool write_ok = esp_partition_write(part, sector_start, buf, buf_len) == ESP_OK;
+			free(buf);
+
+
+			if (!erase_ok || !write_ok) {
+				return false;
+			}
+		} else {
+			bool erase_ok = esp_partition_erase_range(part, sector_start, part->erase_size) == ESP_OK;
+
+			if (!erase_ok) {
+				return false;
+			}
+		}
+	}
+
 	return esp_partition_write(part, offset, data, len) == ESP_OK;
 }
 
