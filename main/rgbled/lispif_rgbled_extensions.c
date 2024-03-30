@@ -46,6 +46,23 @@ static rmt_encoder_handle_t led_encoder = NULL;
 static unsigned int led_type_driver = 0;
 static int led_pin_driver = -1;
 
+static const uint8_t gamma_table[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4,
+		4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10, 10, 10,
+		11, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 16, 16, 17, 17, 18, 18,
+		19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25, 25, 26, 27, 27, 28, 29, 29,
+		30, 31, 31, 32, 33, 34, 34, 35, 36, 37, 37, 38, 39, 40, 40, 41, 42, 43,
+		44, 45, 46, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 58, 59,
+		60, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 76, 77, 78, 79,
+		80, 81, 83, 84, 85, 86, 87, 89, 90, 91, 92, 94, 95, 96, 98, 99, 100,
+		102, 103, 104, 106, 107, 109, 110, 111, 113, 114, 116, 117, 119, 120,
+		121, 123, 124, 126, 127, 129, 131, 132, 134, 135, 137, 138, 140, 142,
+		143, 145, 146, 148, 150, 151, 153, 155, 157, 158, 160, 162, 163, 165,
+		167, 169, 170, 172, 174, 176, 178, 180, 181, 183, 185, 187, 189, 191,
+		193, 195, 197, 198, 200, 202, 204, 206, 208, 210, 212, 214, 216, 218,
+		220, 223, 225, 227, 229, 231, 233, 235, 237, 239, 242, 244, 246, 248,
+		250, 253, 255 };
+
 static rmt_transmit_config_t tx_config = {
 		.loop_count = 0, // no transfer loop
 };
@@ -215,12 +232,20 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 
 	unsigned int num_led = lbm_dec_as_u32(args[0]);
 
-	unsigned int type_led = 0;
+	uint8_t type_led = 0;
 	if (argn >= 2) {
 		type_led = lbm_dec_as_u32(args[1]);
 		if (type_led >= 4) {
 			lbm_set_error_reason("Invalid LED type");
 			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t gamma_corr = 0;
+	if (argn >= 3) {
+		gamma_corr = lbm_dec_as_u32(args[2]);
+		if (gamma_corr > 1) {
+			gamma_corr = 1;
 		}
 	}
 
@@ -234,7 +259,7 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 		lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
 		uint8_t *data = (uint8_t*)arr->data;
 		memset(data, 0, arr->size);
-		data[0] = type_led;
+		data[0] = type_led | (gamma_corr << 4);
 		return res;
 	} else {
 		return ENC_SYM_MERROR;
@@ -242,8 +267,8 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
-	if (argn != 3 || !lbm_is_array_r(args[0]) ||
-			!lbm_is_number(args[1]) || !lbm_is_number(args[2])) {
+	if ((argn != 3 && argn != 4) || !lbm_is_array_r(args[0]) ||
+			!lbm_is_number(args[1]) || (!lbm_is_number(args[2]) && !lbm_is_list(args[2]))) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
 	}
@@ -255,11 +280,13 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 
 	char *invalid_arr_msg = "Invalid LED array";
 
-	unsigned int type_led = led_data[0];
+	uint8_t type_led = led_data[0] & 0x0F;
 	if (type_led >= 4) {
 		lbm_set_error_reason(invalid_arr_msg);
 		return ENC_SYM_TERROR;
 	}
+
+	uint8_t gamma_corr = led_data[0] >> 4;
 
 	int led_colors = 3;
 	if (type_led >= 2) {
@@ -272,49 +299,97 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	}
 
 	int led_num = led_data_len / led_colors;
-
 	int led = lbm_dec_as_u32(args[1]);
-	if (led >= led_num) {
-		lbm_set_error_reason("Invalid LED number");
-		return ENC_SYM_TERROR;
+
+	int curr = args[2];
+	bool number = lbm_is_number(curr);
+
+	float brightness = -1.0;
+	if (argn == 4) {
+		if (!lbm_is_number(args[3])) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+
+		brightness = lbm_dec_as_float(args[3]);
+		utils_truncate_number(&brightness, 0.0, 1.0);
 	}
 
-	uint32_t color = lbm_dec_as_u32(args[2]);
+	while (lbm_is_cons(curr) || number) {
+		lbm_value arg;
 
-	uint8_t w = (color >> 24) & 0xFF;
-	uint8_t r = (color >> 16) & 0xFF;
-	uint8_t g = (color >> 8) & 0xFF;
-	uint8_t b = color & 0xFF;
+		if (number) {
+			arg = curr;
+		} else {
+			arg = lbm_car(curr);
+		}
 
-	switch (type_led) {
-	case 0: // GRB
-		led_pixels[led * 3 + 0] = g;
-		led_pixels[led * 3 + 1] = r;
-		led_pixels[led * 3 + 2] = b;
-		break;
+		if (led >= led_num) {
+			break;
+		}
 
-	case 1: // RGB
-		led_pixels[led * 3 + 0] = r;
-		led_pixels[led * 3 + 1] = g;
-		led_pixels[led * 3 + 2] = b;
-		break;
+		if (lbm_is_number(arg)) {
+			uint32_t color = lbm_dec_as_u32(arg);
 
-	case 2: // GRBW
-		led_pixels[led * 4 + 0] = g;
-		led_pixels[led * 4 + 1] = r;
-		led_pixels[led * 4 + 2] = b;
-		led_pixels[led * 4 + 3] = w;
-		break;
+			uint8_t w = (color >> 24) & 0xFF;
+			uint8_t r = (color >> 16) & 0xFF;
+			uint8_t g = (color >> 8) & 0xFF;
+			uint8_t b = color & 0xFF;
 
-	case 3: // RGBW
-		led_pixels[led * 4 + 0] = r;
-		led_pixels[led * 4 + 1] = g;
-		led_pixels[led * 4 + 2] = b;
-		led_pixels[led * 4 + 3] = w;
-		break;
+			if (brightness >= 0.0) {
+				w = (uint8_t)roundf((float)w * brightness);
+				r = (uint8_t)roundf((float)r * brightness);
+				g = (uint8_t)roundf((float)g * brightness);
+				b = (uint8_t)roundf((float)b * brightness);
+			}
 
-	default:
-		break;
+			if (gamma_corr) {
+				w = gamma_table[w];
+				r = gamma_table[r];
+				g = gamma_table[g];
+				b = gamma_table[b];
+			}
+
+			switch (type_led) {
+			case 0: // GRB
+				led_pixels[led * 3 + 0] = g;
+				led_pixels[led * 3 + 1] = r;
+				led_pixels[led * 3 + 2] = b;
+				break;
+
+			case 1: // RGB
+				led_pixels[led * 3 + 0] = r;
+				led_pixels[led * 3 + 1] = g;
+				led_pixels[led * 3 + 2] = b;
+				break;
+
+			case 2: // GRBW
+				led_pixels[led * 4 + 0] = g;
+				led_pixels[led * 4 + 1] = r;
+				led_pixels[led * 4 + 2] = b;
+				led_pixels[led * 4 + 3] = w;
+				break;
+
+			case 3: // RGBW
+				led_pixels[led * 4 + 0] = r;
+				led_pixels[led * 4 + 1] = g;
+				led_pixels[led * 4 + 2] = b;
+				led_pixels[led * 4 + 3] = w;
+				break;
+
+			default:
+				break;
+			}
+		} else {
+			return ENC_SYM_EERROR;
+		}
+
+		if (number) {
+			break;
+		}
+
+		led++;
+		curr = lbm_cdr(curr);
 	}
 
 	return ENC_SYM_TRUE;
