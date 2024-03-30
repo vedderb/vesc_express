@@ -32,6 +32,9 @@
 #define HW_HEADER					"hw_xp_t.h"
 #define HW_SOURCE					"hw_xp_t.c"
 
+//#define HW_HEADER					"hw_str365.h"
+//#define HW_SOURCE					"hw_str365.c"
+
 //#define HW_HEADER					"hw_bms_rb.h"
 //#define HW_SOURCE					"hw_bms_rb.c"
 
