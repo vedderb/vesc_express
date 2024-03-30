@@ -420,7 +420,7 @@ to img-color. look up `img-color` for more information.
 ## disp-render-jpg
 
 ```clj
-(dips-render-jpg img-jpg px py)
+(disp-render-jpg img-jpg px py)
 ```
 Decodes and displays a jpg at position (`px`, `py`).
 
