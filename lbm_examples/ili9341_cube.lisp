@@ -28,7 +28,7 @@
                     (+ ofs-x (ix nb 0)) (+ ofs-y (ix nb 1))
 )))))))
 
-(defun rotate (ax ay) (let (
+(defun rotate-cube (ax ay) (let (
     (sx (sin ax))
     (cx (cos ax))
     (sy (sin ay))
@@ -53,7 +53,7 @@
         (def t-start (systime))
         (img-text img 4 210 1 0 font (str-from-n fps "FPS %.1f "))
         (draw-edges)
-        (rotate 0.1 0.05)
+        (rotate-cube 0.1 0.05)
         (disp-render img 0 0 '(0 0x00ff00))
         (img-clear img)
         (def fps (/ 1 (secs-since t-start)))

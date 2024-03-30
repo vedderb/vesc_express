@@ -30,7 +30,7 @@
         })
 })
 
-(defun rotate (ax ay) {
+(defun rotate-cube (ax ay) {
         (var sx (sin ax))
         (var cx (cos ax))
         (var sy (sin ay))
@@ -56,7 +56,7 @@
         (img-text img 90 10 1 0 font "FPS")
         (img-text img 90 40 1 0 font (str-from-n fps "%.1f "))
         (draw-edges)
-        (rotate 0.1 0.05)
+        (rotate-cube 0.1 0.05)
         (disp-render img 0 24 '(0 0xff0000))
         (img-clear img)
         (def fps (/ 1 (secs-since t-start)))
