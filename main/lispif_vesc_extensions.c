@@ -30,8 +30,8 @@
 #include "lispif_wifi_extensions.h"
 #include "lispif_ble_extensions.h"
 #include "lispif_rgbled_extensions.h"
+#include "lbm_color_extensions.h"
 #include "lbm_constants.h"
-
 #include "lbm_vesc_utils.h"
 #include "commands.h"
 #include "comm_can.h"
@@ -4687,6 +4687,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_array_extensions_init();
 	lbm_string_extensions_init();
 	lbm_math_extensions_init();
+	lbm_color_extensions_init();
 }
 
 void lispif_disable_all_events(void) {

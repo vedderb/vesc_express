@@ -33,6 +33,7 @@ set(COMPONENT_SRCS
 "lbm_vesc_utils.c"
 "lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
+"lbm_color_extensions.c"
 "lispBM/src/env.c"
 "lispBM/src/fundamental.c"
 "lispBM/src/heap.c"
