@@ -71,9 +71,10 @@ static SemaphoreHandle_t proc_sem;
 static SemaphoreHandle_t status_sem;
 static SemaphoreHandle_t send_mutex;
 static volatile HW_TYPE ping_hw_last = HW_TYPE_VESC;
-uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
-int rx_buffer_offset[RX_BUFFER_NUM];
-static unsigned int rx_buffer_last_id;
+static uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
+static int rx_buffer_offset[RX_BUFFER_NUM];
+static volatile unsigned int rx_buffer_last_id;
+static volatile unsigned int rx_buffer_response_type = 1;
 
 static twai_message_t rx_buf[RXBUF_LEN];
 static volatile int rx_write = 0;
@@ -86,7 +87,7 @@ static volatile int rx_recovery_cnt = 0;
 static void update_baud(CAN_BAUD baudrate);
 
 static void send_packet_wrapper(unsigned char *data, unsigned int len) {
-	comm_can_send_buffer(rx_buffer_last_id, data, len, 1);
+	comm_can_send_buffer(rx_buffer_last_id, data, len, rx_buffer_response_type);
 }
 
 static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) {
@@ -142,8 +143,14 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			unsigned int last_id = data8[ind++];
 			commands_send = data8[ind++];
 
-			if (commands_send == 0) {
+			if (commands_send == 0 || commands_send == 3) {
 				rx_buffer_last_id = last_id;
+			}
+
+			if (commands_send == 3) {
+				rx_buffer_response_type = 0;
+			} else {
+				rx_buffer_response_type = 1;
 			}
 
 			int rxbuf_len = (int)data8[ind++] << 8;
@@ -190,6 +197,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 				switch (commands_send) {
 				case 0:
+				case 3:
 					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, send_packet_wrapper);
 					break;
 				case 1:
@@ -206,8 +214,18 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 		case CAN_PACKET_PROCESS_SHORT_BUFFER:
 			ind = 0;
-			rx_buffer_last_id = data8[ind++];
+			unsigned int last_id = data8[ind++];
 			commands_send = data8[ind++];
+
+			if (commands_send == 0 || commands_send == 3) {
+				rx_buffer_last_id = last_id;
+			}
+
+			if (commands_send == 3) {
+				rx_buffer_response_type = 0;
+			} else {
+				rx_buffer_response_type = 1;
+			}
 
 			if (is_replaced) {
 				if (data8[ind] == COMM_JUMP_TO_BOOTLOADER ||
@@ -221,6 +239,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 			switch (commands_send) {
 			case 0:
+			case 3:
 				commands_process_packet(data8 + ind, len - ind, send_packet_wrapper);
 				break;
 			case 1:
@@ -929,6 +948,7 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
  * 1: Packet goes to commands_send_packet of receiver
  * 2: Packet goes to commands_process and send function is set to null
  *    so that no reply is sent back.
+ * 3: Same as 0, but the reply is processed locally and not sent out on the last interface.
  */
 void comm_can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len, uint8_t send) {
 	uint8_t send_buffer[8];
