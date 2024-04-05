@@ -61,6 +61,7 @@
 #include "driver/i2c.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "nvs_flash.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
@@ -4440,6 +4441,94 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+// PWM
+
+static int pwm_last_duty = 0;
+static int pwm_max = 255;
+
+static lbm_value ext_pwm_start(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 && argn != 3) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	uint32_t freq = lbm_dec_as_u32(args[0]);
+
+	int pin = lbm_dec_as_i32(args[1]);
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
+		return ENC_SYM_TERROR;
+	}
+
+	int bits = 10;
+	if (argn == 3) {
+		bits = lbm_dec_as_u32(args[2]);
+		if (bits < 2 || bits > 14) {
+			lbm_set_error_reason("Invalid number of bits");
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	pwm_max = (1 << bits);
+
+	ledc_timer_config_t ledc_timer = {
+			.speed_mode       = LEDC_LOW_SPEED_MODE,
+			.timer_num        = LEDC_TIMER_1,
+			.duty_resolution  = bits,
+			.freq_hz          = freq,
+			.clk_cfg          = LEDC_AUTO_CLK
+	};
+
+	if (ledc_timer_config(&ledc_timer) != ESP_OK) {
+		lbm_set_error_reason("Invalid bit and frequency combination");
+		return ENC_SYM_EERROR;
+	}
+
+	ledc_channel_config_t ledc_channel = {
+			.speed_mode     = LEDC_LOW_SPEED_MODE,
+			.channel        = LEDC_CHANNEL_0,
+			.timer_sel      = LEDC_TIMER_1,
+			.intr_type      = LEDC_INTR_DISABLE,
+			.gpio_num       = pin,
+			.duty           = pwm_last_duty,
+			.hpoint         = 0
+	};
+
+	if (ledc_channel_config(&ledc_channel) != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_i(ledc_get_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_1));
+}
+
+static lbm_value ext_pwm_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	pwm_last_duty = 0;
+	ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_pwm_set_duty(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	float duty = lbm_dec_as_float(args[0]);
+	utils_truncate_number(&duty, 0.0, 1.0);
+
+	pwm_last_duty = (int)(duty * (float)pwm_max);
+
+	if (ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, pwm_last_duty) != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0) != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_float((float)pwm_last_duty / (float)pwm_max);
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -4682,6 +4771,11 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("uart-stop", ext_uart_stop);
 	lbm_add_extension("uart-write", ext_uart_write)	;
 	lbm_add_extension("uart-read", ext_uart_read);
+
+	// PWM
+	lbm_add_extension("pwm-start", ext_pwm_start);
+	lbm_add_extension("pwm-stop", ext_pwm_stop);
+	lbm_add_extension("pwm-set-duty", ext_pwm_set_duty);
 
 	// Extension libraries
 	lbm_array_extensions_init();
