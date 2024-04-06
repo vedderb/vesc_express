@@ -21,6 +21,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "driver/uart.h"
 
 #include "conf_general.h"
 #include "comm_ble.h"
@@ -165,7 +166,7 @@ void app_main(void) {
 
 #ifndef HW_NO_UART
 #ifdef HW_UART_COMM
-	comm_uart_init();
+	comm_uart_init(UART_TX, UART_RX, UART_NUM, UART_BAUDRATE);
 #else
 	ublox_init(false, 500, UART_NUM, UART_RX, UART_TX);
 #endif

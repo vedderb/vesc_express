@@ -742,10 +742,11 @@ static void send_app_data(unsigned char *data, unsigned int len, int interface, 
 		break;
 
 	case 3:
-		comm_uart_send_packet(send_buffer_global, index);
+		comm_uart_send_packet(send_buffer_global, index, 0);
 		break;
 
 	case 4:
+		comm_uart_send_packet(send_buffer_global, index, 1);
 		break;
 
 	case 5:
@@ -4220,19 +4221,13 @@ static lbm_value ext_get_imu_gyro_derot(lbm_value *args, lbm_uint argn) {
 }
 
 // UART
-static SemaphoreHandle_t uart_mutex;
+static SemaphoreHandle_t m_uart_mutex;
 static bool uart_mutex_init_done = false;
-static int uart_number = -1;
+static volatile int m_uart_number = -1;
 
 // (uart-start uart-num rx-pin tx-pin baud)
 static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
-	if ((argn != 4) ||
-			!lbm_is_number(args[0]) ||
-			!lbm_is_number(args[1]) ||
-			!lbm_is_number(args[2]) ||
-			!lbm_is_number(args[3])) {
-			return ENC_SYM_EERROR;
-	}
+	LBM_CHECK_ARGN_NUMBER(4);
 
 	int uart_num = lbm_dec_as_i32(args[0]);
 	int rx_pin = lbm_dec_as_i32(args[1]);
@@ -4253,11 +4248,14 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	xSemaphoreTake(uart_mutex, portMAX_DELAY);
+	ublox_stop(uart_num);
+	comm_uart_stop(uart_num);
+
+	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	if (uart_is_driver_installed(uart_num)) {
 		uart_driver_delete(uart_num);
 	}
-	xSemaphoreGive(uart_mutex);
+	xSemaphoreGive(m_uart_mutex);
 
 	uart_config_t uart_config = {
 			.baud_rate = baud,
@@ -4281,20 +4279,25 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_NIL;
 	}
 
-	uart_number = uart_num;
+	m_uart_number = uart_num;
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_uart_stop(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	if (uart_number >= 0) {
-		xSemaphoreTake(uart_mutex, portMAX_DELAY);
-		if (uart_is_driver_installed(uart_number)) {
-			uart_driver_delete(uart_number);
+	if (m_uart_number >= 0) {
+		ublox_stop(m_uart_number);
+		comm_uart_stop(m_uart_number);
+
+		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
+		if (uart_is_driver_installed(m_uart_number)) {
+			uart_driver_delete(m_uart_number);
 		}
-		xSemaphoreGive(uart_mutex);
+		xSemaphoreGive(m_uart_mutex);
 	}
+
+	m_uart_number = -1;
 
 	return ENC_SYM_TRUE;
 }
@@ -4304,7 +4307,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (uart_number < 0) {
+	if (m_uart_number < 0) {
 		return ENC_SYM_NIL;
 	}
 
@@ -4336,7 +4339,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		}
 	}
 	// This may take a while for large buffer, while lbm is blocked.
-	uart_write_bytes(uart_number,to_send_ptr, ind);
+	uart_write_bytes(m_uart_number,to_send_ptr, ind);
 	return ENC_SYM_TRUE;
 }
 
@@ -4355,19 +4358,19 @@ static void uart_rx_task(void *arg) {
 	uart_rx_args *a = (uart_rx_args*)arg;
 	int restart_cnt = lispif_get_restart_cnt();
 
-	xSemaphoreTake(uart_mutex, portMAX_DELAY);
+	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	unsigned int count = 0;
 	uint8_t c;
-	int res = uart_read_bytes(uart_number, &c, 1, a->timeout);
+	int res = uart_read_bytes(m_uart_number, &c, 1, a->timeout);
 	while (res == 1) {
 		a->data[a->offset + count] = c;
 		count++;
 		if (c == a->stop_at || count >= a->num) {
 			break;
 		}
-		res = uart_read_bytes(uart_number, &c, 1, a->timeout);
+		res = uart_read_bytes(m_uart_number, &c, 1, a->timeout);
 	}
-	xSemaphoreGive(uart_mutex);
+	xSemaphoreGive(m_uart_mutex);
 
 	a->res = count;
 
@@ -4391,7 +4394,7 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (num == 0 || (uart_number < 0)) {
+	if (num == 0 || (m_uart_number < 0)) {
 		return lbm_enc_i(0);
 	}
 
@@ -4439,6 +4442,66 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 		xTaskCreatePinnedToCore(uart_rx_task, "Uart Rx", 2048, &a, 7, NULL, tskNO_AFFINITY);
 		return ENC_SYM_TRUE;
 	}
+}
+
+// UARTCOMM
+
+// (uartcomm-start uart-num rx-pin tx-pin baud)
+static lbm_value ext_uartcomm_start(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(4);
+
+	int uart_num = lbm_dec_as_i32(args[0]);
+	int rx_pin = lbm_dec_as_i32(args[1]);
+	int tx_pin = lbm_dec_as_i32(args[2]);
+	int baud = lbm_dec_as_i32(args[3]);
+
+	if (baud < 10 || baud > 10000000) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!utils_gpio_is_valid(rx_pin) && !utils_gpio_is_valid(tx_pin)) {
+		lbm_set_error_reason(string_pin_invalid);
+		return ENC_SYM_EERROR;
+	}
+
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
+	if (m_uart_number == uart_num) {
+		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
+		m_uart_number = -1;
+		xSemaphoreGive(m_uart_mutex);
+	}
+
+	ublox_stop(uart_num);
+	bool res = comm_uart_init(tx_pin, rx_pin, uart_num, baud);
+
+	return res ? ENC_SYM_TRUE : ENC_SYM_EERROR;
+}
+
+// (uartcomm-stop uart-num)
+static lbm_value ext_uartcomm_stop(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int uart_num = lbm_dec_as_i32(args[0]);
+
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
+	if (m_uart_number == uart_num) {
+		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
+		m_uart_number = -1;
+		xSemaphoreGive(m_uart_mutex);
+	}
+
+	ublox_stop(uart_num);
+	comm_uart_stop(uart_num);
+
+	return ENC_SYM_TRUE;
 }
 
 // PWM
@@ -4536,9 +4599,10 @@ void lispif_load_vesc_extensions(void) {
 	}
 
 	if (!uart_mutex_init_done) {
-		uart_mutex = xSemaphoreCreateMutex();
+		m_uart_mutex = xSemaphoreCreateMutex();
 		uart_mutex_init_done = true;
 	}
+
 
 	if (!event_task_running) {
 		rmsg_mutex = xSemaphoreCreateMutex();
@@ -4771,6 +4835,10 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("uart-stop", ext_uart_stop);
 	lbm_add_extension("uart-write", ext_uart_write)	;
 	lbm_add_extension("uart-read", ext_uart_read);
+
+	// UARTCOMM
+	lbm_add_extension("uartcomm-start", ext_uartcomm_start);
+	lbm_add_extension("uartcomm-stop", ext_uartcomm_stop);
 
 	// PWM
 	lbm_add_extension("pwm-start", ext_pwm_start);
