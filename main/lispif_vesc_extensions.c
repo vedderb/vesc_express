@@ -673,42 +673,26 @@ static lbm_value ext_reboot(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_get_adc(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
-#ifdef HW_HAS_ADC
 	if (argn == 0) {
 		return lbm_enc_float(adc_get_voltage(HW_ADC_CH0));
 	} else if (argn == 1) {
 		lbm_int channel = lbm_dec_as_i32(args[0]);
 		if (channel == 0) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH0));
-		}
-
-#ifdef HW_ADC_CH1
-		else if (channel == 1) {
+		} else if (channel == 1) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH1));
-		}
-#endif
-
-#ifdef HW_ADC_CH2
-		else if (channel == 2) {
+		} else if (channel == 2) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH2));
-		}
-#endif
-
-#ifdef HW_ADC_CH3
-		else if (channel == 3) {
+		} else if (channel == 3) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH3));
-		}
-#endif
-
-		else {
+		} else if (channel == 4) {
+			return lbm_enc_float(adc_get_voltage(HW_ADC_CH4));
+		} else {
 			return ENC_SYM_EERROR;
 		}
 	} else {
 		return ENC_SYM_EERROR;
 	}
-#else
-	return ENC_SYM_EERROR;
-#endif
 }
 
 static lbm_value ext_systime(lbm_value *args, lbm_uint argn) {

@@ -24,8 +24,6 @@
 
 #include <math.h>
 
-#ifdef HW_HAS_ADC
-
 // Private variables
 static bool cal_ok = false;
 static esp_adc_cal_characteristics_t adc1_chars;
@@ -64,5 +62,3 @@ float adc_get_voltage(adc1_channel_t ch) {
 
 	return res;
 }
-
-#endif

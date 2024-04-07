@@ -21,6 +21,7 @@
 #define MAIN_HWCONF_HW_H_
 
 #include "conf_general.h"
+#include "adc.h"
 
 #include HW_HEADER
 
@@ -57,6 +58,22 @@
 #define UART_BAUDRATE				115200
 #define UART_TX						21
 #define UART_RX						20
+#endif
+
+#ifndef HW_ADC_CH0
+#define HW_ADC_CH0					ADC1_CHANNEL_0
+#endif
+#ifndef HW_ADC_CH1
+#define HW_ADC_CH1					ADC1_CHANNEL_1
+#endif
+#ifndef HW_ADC_CH2
+#define HW_ADC_CH2					ADC1_CHANNEL_2
+#endif
+#ifndef HW_ADC_CH3
+#define HW_ADC_CH3					ADC1_CHANNEL_3
+#endif
+#ifndef HW_ADC_CH4
+#define HW_ADC_CH4					ADC1_CHANNEL_4
 #endif
 
 #endif /* MAIN_HWCONF_HW_H_ */

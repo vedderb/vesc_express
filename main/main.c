@@ -158,9 +158,7 @@ void app_main(void) {
 	log_mount_card(SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK, SD_PIN_CS, SDMMC_FREQ_DEFAULT);
 #endif
 
-#ifdef HW_HAS_ADC
 	adc_init();
-#endif
 
 #ifndef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();

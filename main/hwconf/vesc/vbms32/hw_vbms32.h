@@ -177,7 +177,6 @@ typedef struct {
 #define PIN_PSW_EN					10
 
 // ADC
-#define HW_HAS_ADC
 #define HW_ADC_CH0					ADC1_CHANNEL_0 // DIV_CHG
 #define HW_ADC_CH1					ADC1_CHANNEL_1 // DIV_OUT
 

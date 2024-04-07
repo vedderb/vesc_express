@@ -20,8 +20,6 @@
 #ifndef MAIN_HWCONF_DEVKIT_C3_H_
 #define MAIN_HWCONF_DEVKIT_C3_H_
 
-#include "adc.h"
-
 #define HW_NAME						"Devkit C3"
 #define HW_UART_COMM
 
@@ -32,13 +30,6 @@
 #define UART_BAUDRATE				115200
 #define UART_TX						21
 #define UART_RX						20
-
-// ADC
-#define HW_HAS_ADC
-#define HW_ADC_CH0					ADC1_CHANNEL_0
-#define HW_ADC_CH1					ADC1_CHANNEL_1
-#define HW_ADC_CH2					ADC1_CHANNEL_2
-#define HW_ADC_CH3					ADC1_CHANNEL_3
 
 // Functions
 void hw_init(void);
