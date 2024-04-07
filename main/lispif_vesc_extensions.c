@@ -4506,11 +4506,12 @@ static lbm_value ext_uartcomm_stop(lbm_value *args, lbm_uint argn) {
 
 // PWM
 
-static int pwm_last_duty = 0;
-static int pwm_max = 255;
+static int pwm_max[LEDC_TIMER_MAX];
+static char *err_invalid_chan = "Invalid channel";
 
+// (pwm-start freq duty channel pin optBits)
 static lbm_value ext_pwm_start(lbm_value *args, lbm_uint argn) {
-	if (argn != 2 && argn != 3) {
+	if (argn != 4 && argn != 5) {
 		lbm_set_error_reason((char*)lbm_error_str_num_args);
 		return ENC_SYM_TERROR;
 	}
@@ -4519,26 +4520,37 @@ static lbm_value ext_pwm_start(lbm_value *args, lbm_uint argn) {
 
 	uint32_t freq = lbm_dec_as_u32(args[0]);
 
-	int pin = lbm_dec_as_i32(args[1]);
+	float duty = lbm_dec_as_float(args[1]);
+	utils_truncate_number(&duty, 0.0, 1.0);
+
+	uint32_t chan = lbm_dec_as_u32(args[2]);
+	if (chan >= LEDC_TIMER_MAX) {
+		lbm_set_error_reason(err_invalid_chan);
+		return ENC_SYM_TERROR;
+	}
+
+	int pin = lbm_dec_as_i32(args[3]);
 	if (!utils_gpio_is_valid(pin)) {
 		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_TERROR;
 	}
 
 	int bits = 10;
-	if (argn == 3) {
-		bits = lbm_dec_as_u32(args[2]);
+	if (argn >= 5) {
+		bits = lbm_dec_as_u32(args[4]);
 		if (bits < 2 || bits > 14) {
 			lbm_set_error_reason("Invalid number of bits");
 			return ENC_SYM_TERROR;
 		}
 	}
 
-	pwm_max = (1 << bits);
+	pwm_max[chan] = (1 << bits);
+
+	int duty_i = (int)(duty * (float)pwm_max[chan]);
 
 	ledc_timer_config_t ledc_timer = {
 			.speed_mode       = LEDC_LOW_SPEED_MODE,
-			.timer_num        = LEDC_TIMER_1,
+			.timer_num        = chan,
 			.duty_resolution  = bits,
 			.freq_hz          = freq,
 			.clk_cfg          = LEDC_AUTO_CLK
@@ -4551,11 +4563,11 @@ static lbm_value ext_pwm_start(lbm_value *args, lbm_uint argn) {
 
 	ledc_channel_config_t ledc_channel = {
 			.speed_mode     = LEDC_LOW_SPEED_MODE,
-			.channel        = LEDC_CHANNEL_0,
-			.timer_sel      = LEDC_TIMER_1,
+			.channel        = chan,
+			.timer_sel      = chan,
 			.intr_type      = LEDC_INTR_DISABLE,
 			.gpio_num       = pin,
-			.duty           = pwm_last_duty,
+			.duty           = duty_i,
 			.hpoint         = 0
 	};
 
@@ -4563,33 +4575,47 @@ static lbm_value ext_pwm_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	return lbm_enc_i(ledc_get_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_1));
+	return lbm_enc_i(ledc_get_freq(LEDC_LOW_SPEED_MODE, chan));
 }
 
+// (pwm-stop channel)
 static lbm_value ext_pwm_stop(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-	pwm_last_duty = 0;
-	ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint32_t chan = lbm_dec_as_u32(args[0]);
+	if (chan >= LEDC_TIMER_MAX) {
+		lbm_set_error_reason(err_invalid_chan);
+		return ENC_SYM_TERROR;
+	}
+
+	ledc_stop(LEDC_LOW_SPEED_MODE, chan, 0);
 	return ENC_SYM_TRUE;
 }
 
+// (pwm-set-duty duty channel)
 static lbm_value ext_pwm_set_duty(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	uint32_t chan = lbm_dec_as_u32(args[1]);
+	if (chan >= LEDC_TIMER_MAX) {
+		lbm_set_error_reason(err_invalid_chan);
+		return ENC_SYM_TERROR;
+	}
 
 	float duty = lbm_dec_as_float(args[0]);
 	utils_truncate_number(&duty, 0.0, 1.0);
 
-	pwm_last_duty = (int)(duty * (float)pwm_max);
+	int duty_i = (int)(duty * (float)pwm_max[chan]);
 
-	if (ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, pwm_last_duty) != ESP_OK) {
+	if (ledc_set_duty(LEDC_LOW_SPEED_MODE, chan, duty_i) != ESP_OK) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0) != ESP_OK) {
+	if (ledc_update_duty(LEDC_LOW_SPEED_MODE, chan) != ESP_OK) {
 		return ENC_SYM_EERROR;
 	}
 
-	return lbm_enc_float((float)pwm_last_duty / (float)pwm_max);
+	return lbm_enc_float((float)duty_i / (float)pwm_max[chan]);
 }
 
 void lispif_load_vesc_extensions(void) {
