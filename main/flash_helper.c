@@ -35,6 +35,7 @@ typedef struct {
 } _code_checks;
 
 static _code_checks code_checks[2] = {0};
+static unsigned int write_erase_cnt = 0;
 
 static const esp_partition_t* get_partition(int ind) {
 	return esp_partition_find_first(
@@ -189,6 +190,8 @@ bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t l
 				return false;
 			}
 		}
+
+		write_erase_cnt++;
 	}
 
 	return esp_partition_write(part, offset, data, len) == ESP_OK;
@@ -243,4 +246,8 @@ uint32_t flash_helper_code_size(int ind) {
 uint16_t flash_helper_code_flags(int ind) {
 	code_check(ind);
 	return code_checks[ind].flags;
+}
+
+unsigned int flash_helper_write_erase_cnt(void) {
+	return write_erase_cnt;
 }

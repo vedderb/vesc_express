@@ -34,5 +34,6 @@ uint8_t* flash_helper_code_data_raw(int ind);
 int flash_helper_code_size_raw(int ind);
 uint32_t flash_helper_code_size(int ind);
 uint16_t flash_helper_code_flags(int ind);
+unsigned int flash_helper_write_erase_cnt(void);
 
 #endif /* FLASH_HELPER_H_ */

@@ -358,6 +358,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Size: %u Bytes\n", const_heap.size);
 				commands_printf_lisp("Used cells: %d\n", const_heap.next);
 				commands_printf_lisp("Free cells: %d\n", const_heap.size / 4 - const_heap.next);
+				commands_printf_lisp("Write Erase Cnt: %d\n", flash_helper_write_erase_cnt());
 			} else if (strncmp(str, ":prof start", 11) == 0) {
 				if (prof_running) {
 					lbm_prof_init(prof_data, PROF_DATA_NUM);
