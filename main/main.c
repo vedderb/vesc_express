@@ -154,6 +154,9 @@ void app_main(void) {
 
 	nmea_init();
 	log_init();
+#ifdef SD_PIN_MOSI
+	log_mount_card(SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK, SD_PIN_CS, SDMMC_FREQ_DEFAULT);
+#endif
 
 #ifdef HW_HAS_ADC
 	adc_init();

@@ -22,9 +22,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "esp_vfs_fat.h"
+#include "sdmmc_cmd.h"
 
 // Functions
 bool log_init(void);
+bool log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq);
+void log_unmount_card(void);
 void log_process_packet(unsigned char *data, unsigned int len);
 
 #endif /* MAIN_LOG_H_ */

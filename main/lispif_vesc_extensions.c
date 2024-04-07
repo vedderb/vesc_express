@@ -3385,6 +3385,45 @@ static FILE* file_from_arg(lbm_value arg) {
 	return f;
 }
 
+// (f-connect pin-mosi pin-miso pin-sck pin-cs optSpiSpeed) -> t or nil
+static lbm_value ext_f_connect(lbm_value *args, lbm_uint argn) {
+	if (argn != 4 && argn != 5) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	int pin_mosi = lbm_dec_as_u32(args[0]);
+	int pin_miso = lbm_dec_as_u32(args[1]);
+	int pin_sck = lbm_dec_as_u32(args[2]);
+	int pin_cs = lbm_dec_as_u32(args[3]);
+
+	int spi_speed = SDMMC_FREQ_DEFAULT;
+	if (argn >= 5) {
+		spi_speed = lbm_dec_as_u32(args[4]);
+	}
+
+	if (!utils_gpio_is_valid(pin_mosi) ||
+			!utils_gpio_is_valid(pin_miso) ||
+			!utils_gpio_is_valid(pin_sck) ||
+			!utils_gpio_is_valid(pin_cs)) {
+		lbm_set_error_reason((char*)string_pin_invalid);
+		return ENC_SYM_TERROR;
+	}
+
+	bool res = log_mount_card(pin_mosi, pin_miso, pin_sck, pin_cs, spi_speed);
+
+	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+// (f-disconnect) -> t
+static lbm_value ext_f_disconnect(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	log_unmount_card();
+	return ENC_SYM_TRUE;
+}
+
 // (f-open path mode) -> file
 static lbm_value ext_f_open(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(2);
@@ -4815,6 +4854,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("canmsg-send", ext_canmsg_send);
 
 	// File System
+	lbm_add_extension("f-connect", ext_f_connect);
+	lbm_add_extension("f-disconnect", ext_f_disconnect);
 	lbm_add_extension("f-open", ext_f_open);
 	lbm_add_extension("f-close", ext_f_close);
 	lbm_add_extension("f-read", ext_f_read);
