@@ -81,7 +81,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 			msg.is_balancing = (stat >> 1) & 1;
 			msg.is_charge_allowed = (stat >> 2) & 1;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
 				m_values.soc = msg.soc;
@@ -123,7 +123,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_V_TOT: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -135,7 +135,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_I: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -147,7 +147,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_AH_WH: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -159,7 +159,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_V_CELL: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -180,7 +180,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_BAL: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -202,7 +202,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_TEMPS: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -223,7 +223,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_HUM: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -239,7 +239,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_AH_WH_CHG_TOTAL: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
@@ -251,7 +251,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 		case CAN_PACKET_BMS_AH_WH_DIS_TOTAL: {
 			used_data = true;
 
-			if (id == m_values.can_id || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
+			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				int32_t ind = 0;
 				m_values.can_id = id;
 				m_values.update_time = xTaskGetTickCount();
