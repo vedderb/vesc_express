@@ -25,6 +25,10 @@
 #include <stdbool.h>
 #include <math.h>
 
+// Global variables
+extern char *string_pin_invalid;
+
+// Functions
 int32_t utils_ms_today(void);
 int64_t utils_ms_tot(void);
 void utils_byte_to_binary(int x, char *b);
@@ -32,7 +36,8 @@ void utils_rotate_vector3(float *input, float *rotation, float *output, bool rev
 bool utils_rmtree(const char *path);
 float utils_throttle_curve(float val, float curve_acc, float curve_brake, int mode);
 
-const char *bool_to_str(bool value);
+const char *utils_bool_to_str(bool value);
+bool utils_gpio_is_valid(int pin);
 
 #define UTILS_AGE_S(x)		((float)(xTaskGetTickCount() - x) / ((float)portTICK_PERIOD_MS * 1000.0))
 

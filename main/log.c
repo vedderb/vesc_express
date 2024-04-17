@@ -47,6 +47,9 @@ typedef struct {
 #define LOG_MAX_FIELDS		120
 
 // Private variables
+static sdmmc_host_t m_host = SDSPI_HOST_DEFAULT();
+static sdmmc_card_t *m_card = 0;
+
 static volatile log_header m_headers[LOG_MAX_FIELDS];
 
 static log_header m_header_ts;
@@ -76,6 +79,11 @@ static void log_task(void *arg) {
 	int64_t ms_last = utils_ms_tot();
 
 	for (;;) {
+		if (!m_card) {
+			vTaskDelay(10);
+			continue;
+		}
+
 		nmea_state_t *s = nmea_get_state();
 
 		bool date_valid = true;
@@ -249,8 +257,56 @@ static void log_task(void *arg) {
 	}
 }
 
+bool log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq) {
+	esp_err_t ret;
+
+	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+			.format_if_mount_failed = true,
+			.max_files = 5,
+			.allocation_unit_size = 0
+	};
+
+	m_host.max_freq_khz = freq;
+
+	spi_bus_config_t bus_cfg = {
+			.mosi_io_num = pin_mosi,
+			.miso_io_num = pin_miso,
+			.sclk_io_num = pin_sck,
+			.quadwp_io_num = -1,
+			.quadhd_io_num = -1,
+			.max_transfer_sz = 4092,
+	};
+
+	log_unmount_card();
+
+	ret = spi_bus_initialize(m_host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
+	if (ret != ESP_OK) {
+		return false;
+	}
+
+	sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+	slot_config.gpio_cs = pin_cs;
+	slot_config.host_id = m_host.slot;
+
+	ret = esp_vfs_fat_sdspi_mount("/sdcard", &m_host, &slot_config, &mount_config, &m_card);
+
+	if (ret != ESP_OK) {
+		return false;
+	}
+
+	return true;
+}
+
+void log_unmount_card(void) {
+	if (m_card) {
+		esp_vfs_fat_sdcard_unmount("/sdcard", m_card);
+		m_card = 0;
+	}
+
+	spi_bus_free(m_host.slot);
+}
+
 bool log_init(void) {
-#ifdef SD_PIN_MOSI
 	for (int i = 0;i < LOG_MAX_FIELDS;i++) {
 		sprintf((char*)m_headers[i].key, "key_h%d", i);
 		sprintf((char*)m_headers[i].name, "name_h%d", i);
@@ -326,46 +382,9 @@ bool log_init(void) {
 	m_header_hvel.value = 0.0;
 	m_header_hvel.updated = false;
 
-	esp_err_t ret;
-
-	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-			.format_if_mount_failed = true,
-			.max_files = 5,
-			.allocation_unit_size = 0
-	};
-
-	sdmmc_card_t *card;
-	sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-//	host.max_freq_khz = 20000;
-
-	spi_bus_config_t bus_cfg = {
-			.mosi_io_num = SD_PIN_MOSI,
-			.miso_io_num = SD_PIN_MISO,
-			.sclk_io_num = SD_PIN_SCK,
-			.quadwp_io_num = -1,
-			.quadhd_io_num = -1,
-			.max_transfer_sz = 4092,
-	};
-
-	spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
-
-	sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-	slot_config.gpio_cs = SD_PIN_CS;
-	slot_config.host_id = host.slot;
-
-	ret = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot_config, &mount_config, &card);
-
-	if (ret != ESP_OK) {
-		return false;
-	}
-
 	xTaskCreatePinnedToCore(log_task, "log", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 
 	return true;
-#else
-	(void)log_task;
-	return true;
-#endif
 }
 
 void log_process_packet(unsigned char *data, unsigned int len) {

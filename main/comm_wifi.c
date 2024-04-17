@@ -313,7 +313,7 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 			"%d, will_reconnect: %s",
 			data->ssid_len, data->ssid,
 			wifi_reason_to_str(data->reason),
-			data->reason, data->rssi, bool_to_str(will_reconnect)
+			data->reason, data->rssi, utils_bool_to_str(will_reconnect)
 		);
 
 		// We don't cleanup custom sockets here (which are all most likely

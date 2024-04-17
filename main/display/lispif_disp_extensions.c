@@ -1471,14 +1471,12 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	// radii or something...
 	if (!angle_is_closed && fabsf(angle1 - angle0) < 0.0174532925) { // one degree in radians
 		if (rounded) {
-			// compiler complains about uninitialized variables if this is named
-			// `radius` for some reason...
-			float radius_local = ((float)radius - (float)thickness / 2.0) + 0.5;
+			float rad_f = (float)radius - ((float)thickness / 2.0);
 
 			float angle = (angle0 + angle1) / 2.0;
 
-			int cap_center_x = (int)(cosf(angle) * radius_local);
-			int cap_center_y = (int)(sinf(angle) * radius_local);
+			int cap_center_x = floorf(cosf(angle) * rad_f);
+			int cap_center_y = floorf(sinf(angle) * rad_f);
 
 			fill_circle(img, c_x + cap_center_x, c_y + cap_center_y, thickness / 2, color);
 		}
@@ -1505,11 +1503,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	float angle1_cos = cosf(angle1);
 	float angle1_sin = sinf(angle1);
 	
-	int outer_x0 = (int)(angle0_cos * (float)(radius_outer + 1));
-	int outer_y0 = (int)(angle0_sin * (float)(radius_outer + 1));
+	int outer_x0 = angle0_cos * (float)radius_outer;
+	int outer_y0 = angle0_sin * (float)radius_outer;
 
-	int outer_x1 = (int)(angle1_cos * (float)(radius_outer + 1));
-	int outer_y1 = (int)(angle1_sin * (float)(radius_outer + 1));
+	int outer_x1 = angle1_cos * (float)radius_outer;
+	int outer_y1 = angle1_sin * (float)radius_outer;
 	
 	int inner_y0;
 	int inner_y1;
@@ -1561,11 +1559,11 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	}
 
 	for (int y = 0; y < radius_outer; y++) {
-		int y_dbl_offs = 2 * y + 1;
+		int y_dbl_offs = 2 * (y + 1);
 		int y_dbl_offs_sq = y_dbl_offs * y_dbl_offs;
 
 		for (int x = -radius_outer; x <= 0; x++) {
-			int x_dbl_offs = 2 * x + 1;
+			int x_dbl_offs = 2 * (x + 1);
 			if (x_dbl_offs * x_dbl_offs + y_dbl_offs_sq <= radius_outer_dbl_sq) {
 				// This is horrible...
 				handle_arc_slice(img, x, y,
@@ -1593,13 +1591,13 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 
 	// draw rounded line corners
 	if (rounded && !filled && !sector && !segment) {
-		float radius = ((float)radius_inner + (float)thickness / 2.0) + 0.5;
+		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = (int)(angle0_cos * radius);
-		int cap0_center_y = (int)(angle0_sin * radius);
+		int cap0_center_x = floorf(angle0_cos * rad_f);
+		int cap0_center_y = floorf(angle0_sin * rad_f);
 
-		int cap1_center_x = (int)(angle1_cos * radius);
-		int cap1_center_y = (int)(angle1_sin * radius);
+		int cap1_center_x = floorf(angle1_cos * rad_f);
+		int cap1_center_y = floorf(angle1_sin * rad_f);
 
 		thickness /= 2;
 
@@ -1610,13 +1608,13 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	// draw sector arc cap to center lines
 	// (sectors are always rounded)
 	if (sector && !filled) {
-		float radius = ((float)radius_inner + (float)thickness / 2.0) + 0.5;
+		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = (int)(angle0_cos * radius);
-		int cap0_center_y = (int)(angle0_sin * radius);
+		int cap0_center_x = floorf(angle0_cos * rad_f);
+		int cap0_center_y = floorf(angle0_sin * rad_f);
 
-		int cap1_center_x = (int)(angle1_cos * radius);
-		int cap1_center_y = (int)(angle1_sin * radius);
+		int cap1_center_x = floorf(angle1_cos * rad_f);
+		int cap1_center_y = floorf(angle1_sin * rad_f);
 
 		thickness /= 2;
 
@@ -1627,13 +1625,13 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	}
 
 	if (segment && !filled) {
-		float radius = ((float)radius_inner + (float)thickness / 2.0) + 0.5;
+		float rad_f = (float)radius - ((float)thickness / 2.0);
 
-		int cap0_center_x = (int)(angle0_cos * radius);
-		int cap0_center_y = (int)(angle0_sin * radius);
+		int cap0_center_x = floorf(angle0_cos * rad_f);
+		int cap0_center_y = floorf(angle0_sin * rad_f);
 
-		int cap1_center_x = (int)(angle1_cos * radius);
-		int cap1_center_y = (int)(angle1_sin * radius);
+		int cap1_center_x = floorf(angle1_cos * rad_f);
+		int cap1_center_y = floorf(angle1_sin * rad_f);
 
 		thickness /= 2;
 
@@ -1642,7 +1640,7 @@ static void arc(image_buffer_t *img, int c_x, int c_y, int radius, float angle0,
 	}
 }
 
-static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t *font_data, uint8_t ch) {
+static void img_putc(image_buffer_t *img, int x, int y, int *colors, int num_colors, uint8_t *font_data, uint8_t ch) {
 	uint8_t w = font_data[0];
 	uint8_t h = font_data[1];
 	uint8_t char_num = font_data[2];
@@ -1665,15 +1663,30 @@ static void img_putc(image_buffer_t *img, int x, int y, int fg, int bg, uint8_t 
 	}
 
 	if (bits_per_pixel == 2) {
+		if (num_colors < 4) {
+			return;
+		}
+
 		for (int i = 0; i < w * h; i++) {
 			uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 4)];
 			uint8_t bit_pos = i % pixels_per_byte;
 			uint8_t pixel_value = (byte >> (bit_pos * 2)) & 0x03;
 			int x0 = i % w;
 			int y0 = i / w;
-			putpixel(img, x + x0, y + y0, pixel_value);
+			putpixel(img, x + x0, y + y0, colors[pixel_value]);
 		}
 	} else {
+		if (num_colors < 1) {
+			return;
+		}
+
+		int fg = colors[0];
+		int bg = -1;
+
+		if (num_colors > 1) {
+			bg = colors[1];
+		}
+
 		for (int i = 0; i < w * h; i++) {
 			uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 8)];
 			uint8_t bit_pos = i % 8;
@@ -2466,24 +2479,49 @@ static lbm_value ext_triangle(lbm_value *args, lbm_uint argn) {
 
 // lisp args: img x y fg bg font str 
 static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
-	if (argn != 7) {
+	if (argn != 6 && argn != 7) {
 		return ENC_SYM_TERROR;
 	}
 
 	int x = lbm_dec_as_u32(args[1]);
 	int y = lbm_dec_as_u32(args[2]);
-	int fg = lbm_dec_as_i32(args[3]);
-	int bg = lbm_dec_as_i32(args[4]);
+
+	int colors[4] = {-1, -1, -1, -1};
+	if (argn == 7) {
+		if (!lbm_is_number(args[3]) || !lbm_is_number(args[4])) {
+			return ENC_SYM_TERROR;
+		}
+		colors[0] = lbm_dec_as_i32(args[3]);
+		colors[1] = lbm_dec_as_i32(args[4]);
+	} else {
+		lbm_value curr = args[3];
+		int ind = 0;
+		while (lbm_is_cons(curr)) {
+			lbm_value  arg = lbm_car(curr);
+
+			if (lbm_is_number(arg)) {
+				colors[ind++] = lbm_dec_as_u32(arg);
+			} else {
+				return ENC_SYM_TERROR;
+			}
+
+			if (ind == 4) {
+				break;
+			}
+
+			curr = lbm_cdr(curr);
+		}
+	}
 
 	if (!lispif_disp_is_image_buffer(args[0])) return ENC_SYM_TERROR;
 	image_buffer_t *img = (image_buffer_t*)lbm_get_custom_value(args[0]);
 
 	lbm_array_header_t *font = 0;
 	if (lbm_type_of(args[5]) == LBM_TYPE_ARRAY) {
-		font = (lbm_array_header_t *)lbm_car(args[5]);
+		font = (lbm_array_header_t *)lbm_car(args[argn - 2]);
 	}
 
-	char *txt = lbm_dec_str(args[6]);
+	char *txt = lbm_dec_str(args[argn - 1]);
 
 	if (!font || !txt || font->size < (4 + 5 * 5 * 10)) {
 		return ENC_SYM_TERROR;
@@ -2494,7 +2532,7 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 
 	int ind = 0;
 	while (txt[ind] != 0) {
-		img_putc(img, x + ind * w, y, fg, bg, font_data, txt[ind]);
+		img_putc(img, x + ind * w, y, colors, 4, font_data, txt[ind]);
 		ind++;
 	}
 

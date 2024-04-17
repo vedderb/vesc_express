@@ -35,7 +35,6 @@
 #define CAN_RX_GPIO_NUM				0
 
 // ADC
-#define HW_HAS_ADC
 #define HW_ADC_CH0					ADC1_CHANNEL_3 // Button
 #define HW_ADC_CH1					ADC1_CHANNEL_4 // External Button
 #define HW_ADC_CH3					ADC1_CHANNEL_2 // Button on proto

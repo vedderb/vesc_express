@@ -29,8 +29,9 @@
 #include "lispif_disp_extensions.h"
 #include "lispif_wifi_extensions.h"
 #include "lispif_ble_extensions.h"
+#include "lispif_rgbled_extensions.h"
+#include "lbm_color_extensions.h"
 #include "lbm_constants.h"
-
 #include "lbm_vesc_utils.h"
 #include "commands.h"
 #include "comm_can.h"
@@ -48,6 +49,9 @@
 #include "comm_wifi.h"
 #include "enc_as504x.h"
 #include "imu.h"
+#include "comm_usb.h"
+#include "comm_uart.h"
+#include "comm_ble.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -55,9 +59,9 @@
 #include "esp_now.h"
 #include "esp_crc.h"
 #include "driver/i2c.h"
-#include "driver/rmt_encoder.h"
-#include "driver/rmt_tx.h"
 #include "driver/uart.h"
+#include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "nvs_flash.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
@@ -308,32 +312,6 @@ static bool is_symbol_true_false(lbm_value v) {
 	lbm_set_error_reason("Argument must be t or nil (true or false)");
 	return res;
 }
-
-static bool gpio_is_valid(int pin) {
-	switch (pin) {
-	case 0:
-	case 1:
-	case 2:
-	case 3:
-	case 4:
-	case 5:
-	case 6:
-	case 7:
-	case 8:
-	case 9:
-	case 10:
-	case 18:
-	case 19:
-	case 20:
-	case 21:
-		return true;
-
-	default:
-		return false;
-	}
-}
-
-static char *pin_invalid_msg = "Invalid pin";
 
 // Various commands
 
@@ -695,42 +673,26 @@ static lbm_value ext_reboot(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_get_adc(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
-#ifdef HW_HAS_ADC
 	if (argn == 0) {
 		return lbm_enc_float(adc_get_voltage(HW_ADC_CH0));
 	} else if (argn == 1) {
 		lbm_int channel = lbm_dec_as_i32(args[0]);
 		if (channel == 0) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH0));
-		}
-
-#ifdef HW_ADC_CH1
-		else if (channel == 1) {
+		} else if (channel == 1) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH1));
-		}
-#endif
-
-#ifdef HW_ADC_CH2
-		else if (channel == 2) {
+		} else if (channel == 2) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH2));
-		}
-#endif
-
-#ifdef HW_ADC_CH3
-		else if (channel == 3) {
+		} else if (channel == 3) {
 			return lbm_enc_float(adc_get_voltage(HW_ADC_CH3));
-		}
-#endif
-
-		else {
+		} else if (channel == 4) {
+			return lbm_enc_float(adc_get_voltage(HW_ADC_CH4));
+		} else {
 			return ENC_SYM_EERROR;
 		}
 	} else {
 		return ENC_SYM_EERROR;
 	}
-#else
-	return ENC_SYM_EERROR;
-#endif
 }
 
 static lbm_value ext_systime(lbm_value *args, lbm_uint argn) {
@@ -743,13 +705,90 @@ static lbm_value ext_secs_since(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float(UTILS_AGE_S(lbm_dec_as_u32(args[0])));
 }
 
+static void send_app_data(unsigned char *data, unsigned int len, int interface, int can_id) {
+	int32_t index = 0;
+	uint8_t *send_buffer_global = mempools_get_packet_buffer();
+	send_buffer_global[index++] = COMM_CUSTOM_APP_DATA;
+	memcpy(send_buffer_global + index, data, len);
+	index += len;
+
+	switch (interface) {
+	case 0:
+		commands_send_packet(send_buffer_global, index);
+		break;
+
+	case 1:
+		comm_usb_send_packet(send_buffer_global, index);
+		break;
+
+	case 2:
+		comm_can_send_buffer(can_id, send_buffer_global, index, 3);
+		break;
+
+	case 3:
+		comm_uart_send_packet(send_buffer_global, index, 0);
+		break;
+
+	case 4:
+		comm_uart_send_packet(send_buffer_global, index, 1);
+		break;
+
+	case 5:
+		break;
+
+	case 6:
+		comm_wifi_send_packet_local(send_buffer_global, index);
+		break;
+
+	case 7:
+		comm_wifi_send_packet_hub(send_buffer_global, index);
+		break;
+
+	case 8:
+		comm_ble_send_packet(send_buffer_global, index);
+		break;
+
+	default:
+		break;
+	}
+
+
+	mempools_free_packet_buffer(send_buffer_global);
+}
+
 static lbm_value ext_send_data(lbm_value *args, lbm_uint argn) {
-	if (argn != 1 || (!lbm_is_cons(args[0]) && !lbm_is_array_r(args[0]))) {
-		return ENC_SYM_EERROR;
+	if (argn != 1 && argn != 2 && argn != 3) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	if (!lbm_is_cons(args[0]) && !lbm_is_array_r(args[0])) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	int interface = 0;
+	if (argn >= 2) {
+		if (!lbm_is_number(args[1])) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+
+		interface = lbm_dec_as_i32(args[1]);
+	}
+
+	int can_id = 0;
+	if (argn >= 3) {
+		if (!lbm_is_number(args[2])) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+
+		can_id = lbm_dec_as_i32(args[2]);
 	}
 
 	lbm_value curr = args[0];
-	const int max_len = 50;
+	const int max_len = 100;
 	uint8_t to_send[max_len];
 	uint8_t *to_send_ptr = to_send;
 	int ind = 0;
@@ -776,7 +815,7 @@ static lbm_value ext_send_data(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
-	commands_send_app_data(to_send_ptr, ind);
+	send_app_data(to_send_ptr, ind, interface, can_id);
 
 	return ENC_SYM_TRUE;
 }
@@ -1255,8 +1294,8 @@ static lbm_value ext_can_start(lbm_value *args, lbm_uint argn) {
 		pin_rx = lbm_dec_as_u32(args[1]);
 	}
 
-	if (!gpio_is_valid(pin_tx) && !gpio_is_valid(pin_rx)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(pin_tx) && !utils_gpio_is_valid(pin_rx)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
@@ -2584,8 +2623,8 @@ static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 	int pin = lbm_dec_as_i32(args[0]);
 	lbm_uint name = lbm_dec_sym(args[1]);
 
-	if (!gpio_is_valid(pin)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
@@ -2643,8 +2682,8 @@ static lbm_value ext_gpio_write(lbm_value *args, lbm_uint argn) {
 	int pin = lbm_dec_as_i32(args[0]);
 	int state = lbm_dec_as_i32(args[1]);
 
-	if (!gpio_is_valid(pin)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
@@ -2657,8 +2696,8 @@ static lbm_value ext_gpio_read(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
 	int pin = lbm_dec_as_i32(args[0]);
-	if (!gpio_is_valid(pin)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
@@ -2892,275 +2931,6 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 			return args[0];
 		}
 	}
-}
-
-// WS2812-driver using RMT
-
-#define RMT_LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
-
-typedef struct {
-	rmt_encoder_t base;
-	rmt_encoder_t *bytes_encoder;
-	rmt_encoder_t *copy_encoder;
-	int state;
-	rmt_symbol_word_t reset_code;
-} rmt_led_strip_encoder_t;
-
-static rmt_channel_handle_t led_chan = NULL;
-static rmt_encoder_handle_t led_encoder = NULL;
-static uint8_t *led_pixels = NULL;
-static int led_num = -1;
-static int led_colors = 3;
-static unsigned int led_type = 0;
-
-static rmt_transmit_config_t tx_config = {
-		.loop_count = 0, // no transfer loop
-};
-
-static size_t rmt_encode_led_strip(
-		rmt_encoder_t *encoder, rmt_channel_handle_t channel,
-		const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state) {
-	rmt_led_strip_encoder_t *led_encoder = __containerof(encoder, rmt_led_strip_encoder_t, base);
-	rmt_encoder_handle_t bytes_encoder = led_encoder->bytes_encoder;
-	rmt_encoder_handle_t copy_encoder = led_encoder->copy_encoder;
-	rmt_encode_state_t session_state = 0;
-	rmt_encode_state_t state = 0;
-	size_t encoded_symbols = 0;
-	switch (led_encoder->state) {
-	case 0: // send RGB data
-		encoded_symbols += bytes_encoder->encode(bytes_encoder, channel, primary_data, data_size, &session_state);
-		if (session_state & RMT_ENCODING_COMPLETE) {
-			led_encoder->state = 1; // switch to next state when current encoding session finished
-		}
-		if (session_state & RMT_ENCODING_MEM_FULL) {
-			state |= RMT_ENCODING_MEM_FULL;
-			goto out; // yield if there's no free space for encoding artifacts
-		}
-		// fall-through
-		//no break
-	case 1: // send reset code
-		encoded_symbols += copy_encoder->encode(copy_encoder, channel, &led_encoder->reset_code,
-				sizeof(led_encoder->reset_code), &session_state);
-		if (session_state & RMT_ENCODING_COMPLETE) {
-			led_encoder->state = 0; // back to the initial encoding session
-			state |= RMT_ENCODING_COMPLETE;
-		}
-		if (session_state & RMT_ENCODING_MEM_FULL) {
-			state |= RMT_ENCODING_MEM_FULL;
-			goto out; // yield if there's no free space for encoding artifacts
-		}
-	}
-	out:
-	*ret_state = state;
-	return encoded_symbols;
-}
-
-static esp_err_t rmt_del_led_strip_encoder(rmt_encoder_t *encoder) {
-	rmt_led_strip_encoder_t *led_encoder = __containerof(encoder, rmt_led_strip_encoder_t, base);
-	rmt_del_encoder(led_encoder->bytes_encoder);
-	rmt_del_encoder(led_encoder->copy_encoder);
-	free(led_encoder);
-	return ESP_OK;
-}
-
-static esp_err_t rmt_led_strip_encoder_reset(rmt_encoder_t *encoder) {
-	rmt_led_strip_encoder_t *led_encoder = __containerof(encoder, rmt_led_strip_encoder_t, base);
-	rmt_encoder_reset(led_encoder->bytes_encoder);
-	rmt_encoder_reset(led_encoder->copy_encoder);
-	led_encoder->state = 0;
-	return ESP_OK;
-}
-
-esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
-	rmt_led_strip_encoder_t *led_encoder = NULL;
-	led_encoder = calloc(1, sizeof(rmt_led_strip_encoder_t));
-	led_encoder->base.encode = rmt_encode_led_strip;
-	led_encoder->base.del = rmt_del_led_strip_encoder;
-	led_encoder->base.reset = rmt_led_strip_encoder_reset;
-
-	// different led strip might have its own timing requirements, following parameter is for WS2812
-	rmt_bytes_encoder_config_t bytes_encoder_config = {
-			.bit0 = {
-					.level0 = 1,
-					.duration0 = 0.3 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T0H=0.3us
-					.level1 = 0,
-					.duration1 = 0.9 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T0L=0.9us
-			},
-			.bit1 = {
-					.level0 = 1,
-					.duration0 = 0.9 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T1H=0.9us
-					.level1 = 0,
-					.duration1 = 0.3 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T1L=0.3us
-			},
-			.flags.msb_first = 1 // WS2812 transfer bit order: G7...G0R7...R0B7...B0
-	};
-
-	rmt_new_bytes_encoder(&bytes_encoder_config, &led_encoder->bytes_encoder);
-	rmt_copy_encoder_config_t copy_encoder_config = {};
-	rmt_new_copy_encoder(&copy_encoder_config, &led_encoder->copy_encoder);
-
-	uint32_t reset_ticks = RMT_LED_STRIP_RESOLUTION_HZ / 1000000 * 50 / 2; // reset code duration defaults to 50us
-	led_encoder->reset_code = (rmt_symbol_word_t) {
-		.level0 = 0,
-				.duration0 = reset_ticks,
-				.level1 = 0,
-				.duration1 = reset_ticks,
-	};
-
-	*ret_encoder = &led_encoder->base;
-	return ESP_OK;
-}
-
-static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-
-	if (led_pixels != NULL) {
-		free(led_pixels);
-		led_pixels = NULL;
-	}
-
-	if (led_chan != NULL) {
-		rmt_disable(led_chan);
-		rmt_del_channel(led_chan);
-		led_chan = NULL;
-	}
-
-	if (led_encoder != NULL) {
-		rmt_del_encoder(led_encoder);
-		led_encoder = NULL;
-	}
-
-	led_num = -1;
-
-	return ENC_SYM_TRUE;
-}
-
-static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_NUMBER_ALL();
-
-	if (argn != 2 && argn != 3) {
-		lbm_set_error_reason((char*)lbm_error_str_num_args);
-		return ENC_SYM_TERROR;
-	}
-
-	int pin = lbm_dec_as_i32(args[0]);
-	if (!gpio_is_valid(pin)) {
-		lbm_set_error_reason(pin_invalid_msg);
-		return ENC_SYM_TERROR;
-	}
-
-	int num_leds = lbm_dec_as_u32(args[1]);
-
-	if (num_leds == 0) {
-		lbm_set_error_reason("At least one led must be used");
-		return ENC_SYM_TERROR;
-	}
-
-	unsigned int type_led = 0;
-	if (argn >= 3) {
-		type_led = lbm_dec_as_u32(args[2]);
-		if (type_led >= 4) {
-			lbm_set_error_reason("Invalid LED type");
-			return ENC_SYM_TERROR;
-		}
-	}
-
-	if (type_led >= 2) {
-		led_colors = 4;
-	} else {
-		led_colors = 3;
-	}
-
-	ext_rgbled_deinit(0, 0);
-
-	led_pixels = calloc(num_leds * led_colors, sizeof(led_pixels));
-
-	if (!led_pixels) {
-		lbm_set_error_reason("Not enough memory");
-		return ENC_SYM_EERROR;
-	}
-
-	led_type = type_led;
-	led_num = num_leds;
-
-	rmt_tx_channel_config_t tx_chan_config = {
-			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
-			.gpio_num = pin,
-			.mem_block_symbols = 64, // increase the block size can make the LED less flickering
-			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
-			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
-	};
-	rmt_new_tx_channel(&tx_chan_config, &led_chan);
-
-	rmt_new_led_strip_encoder(&led_encoder);
-	rmt_enable(led_chan);
-
-	return ENC_SYM_TRUE;
-}
-
-static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(2);
-
-	if (led_encoder == NULL || led_chan == NULL || led_pixels == NULL) {
-		lbm_set_error_reason("Please run (rgbled-init pin num-leds) first");
-		if (led_encoder == NULL) {
-			commands_printf_lisp("led_encoder null");
-		}
-
-		if (led_chan == NULL) {
-			commands_printf_lisp("led_chan null");
-		}
-		return ENC_SYM_EERROR;
-	}
-
-	int led = lbm_dec_as_u32(args[0]);
-
-	if (led >= led_num) {
-		lbm_set_error_reason("Invalid LED number");
-		return ENC_SYM_TERROR;
-	}
-
-	uint32_t color = lbm_dec_as_u32(args[1]);
-
-	uint8_t w = (color >> 24) & 0xFF;
-	uint8_t r = (color >> 16) & 0xFF;
-	uint8_t g = (color >> 8) & 0xFF;
-	uint8_t b = color & 0xFF;
-
-	switch (led_type) {
-	case 0: // GRB
-		led_pixels[led * 3 + 0] = g;
-		led_pixels[led * 3 + 1] = r;
-		led_pixels[led * 3 + 2] = b;
-		break;
-
-	case 1: // RGB
-		led_pixels[led * 3 + 0] = r;
-		led_pixels[led * 3 + 1] = g;
-		led_pixels[led * 3 + 2] = b;
-		break;
-
-	case 2: // GRBW
-		led_pixels[led * 4 + 0] = g;
-		led_pixels[led * 4 + 1] = r;
-		led_pixels[led * 4 + 2] = b;
-		led_pixels[led * 4 + 3] = w;
-		break;
-
-	case 3: // RGBW
-		led_pixels[led * 4 + 0] = r;
-		led_pixels[led * 4 + 1] = g;
-		led_pixels[led * 4 + 2] = b;
-		led_pixels[led * 4 + 3] = w;
-		break;
-
-	default:
-		break;
-	}
-
-	rmt_transmit(led_chan, led_encoder, led_pixels, led_num * led_colors, &tx_config);
-
-	return ENC_SYM_TRUE;
 }
 
 // Logging
@@ -3417,8 +3187,8 @@ static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
 		pin_tx = lbm_dec_as_i32(args[3]);
 	}
 
-	if (!gpio_is_valid(pin_rx) || !gpio_is_valid(pin_tx)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(pin_rx) || !utils_gpio_is_valid(pin_tx)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
@@ -3453,8 +3223,8 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	int pin = lbm_dec_as_i32(args[0]);
 	int mode = lbm_dec_as_i32(args[1]);
 
-	if (!gpio_is_valid(pin) || !esp_sleep_is_valid_wakeup_gpio(pin)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(pin) || !esp_sleep_is_valid_wakeup_gpio(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
@@ -3600,6 +3370,45 @@ static FILE* file_from_arg(lbm_value arg) {
 	}
 
 	return f;
+}
+
+// (f-connect pin-mosi pin-miso pin-sck pin-cs optSpiSpeed) -> t or nil
+static lbm_value ext_f_connect(lbm_value *args, lbm_uint argn) {
+	if (argn != 4 && argn != 5) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	int pin_mosi = lbm_dec_as_u32(args[0]);
+	int pin_miso = lbm_dec_as_u32(args[1]);
+	int pin_sck = lbm_dec_as_u32(args[2]);
+	int pin_cs = lbm_dec_as_u32(args[3]);
+
+	int spi_speed = SDMMC_FREQ_DEFAULT;
+	if (argn >= 5) {
+		spi_speed = lbm_dec_as_u32(args[4]);
+	}
+
+	if (!utils_gpio_is_valid(pin_mosi) ||
+			!utils_gpio_is_valid(pin_miso) ||
+			!utils_gpio_is_valid(pin_sck) ||
+			!utils_gpio_is_valid(pin_cs)) {
+		lbm_set_error_reason((char*)string_pin_invalid);
+		return ENC_SYM_TERROR;
+	}
+
+	bool res = log_mount_card(pin_mosi, pin_miso, pin_sck, pin_cs, spi_speed);
+
+	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+// (f-disconnect) -> t
+static lbm_value ext_f_disconnect(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	log_unmount_card();
+	return ENC_SYM_TRUE;
 }
 
 // (f-open path mode) -> file
@@ -4261,16 +4070,16 @@ static lbm_value ext_as504x_init(lbm_value *args, lbm_uint argn) {
 	int sck = lbm_dec_as_i32(args[1]);
 	int nss = lbm_dec_as_i32(args[2]);
 
-	if (!gpio_is_valid(miso) || !gpio_is_valid(sck) || !gpio_is_valid(nss)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(miso) || !utils_gpio_is_valid(sck) || !utils_gpio_is_valid(nss)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
 	int mosi = -1;
 	if (argn == 4) {
 		mosi = lbm_dec_as_i32(args[3]);
-		if (!gpio_is_valid(mosi)) {
-			lbm_set_error_reason(pin_invalid_msg);
+		if (!utils_gpio_is_valid(mosi)) {
+			lbm_set_error_reason(string_pin_invalid);
 			return ENC_SYM_EERROR;
 		}
 	}
@@ -4438,19 +4247,13 @@ static lbm_value ext_get_imu_gyro_derot(lbm_value *args, lbm_uint argn) {
 }
 
 // UART
-static SemaphoreHandle_t uart_mutex;
+static SemaphoreHandle_t m_uart_mutex;
 static bool uart_mutex_init_done = false;
-static int uart_number = -1;
+static volatile int m_uart_number = -1;
 
 // (uart-start uart-num rx-pin tx-pin baud)
 static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
-	if ((argn != 4) ||
-			!lbm_is_number(args[0]) ||
-			!lbm_is_number(args[1]) ||
-			!lbm_is_number(args[2]) ||
-			!lbm_is_number(args[3])) {
-			return ENC_SYM_EERROR;
-	}
+	LBM_CHECK_ARGN_NUMBER(4);
 
 	int uart_num = lbm_dec_as_i32(args[0]);
 	int rx_pin = lbm_dec_as_i32(args[1]);
@@ -4461,8 +4264,8 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (!gpio_is_valid(rx_pin) && !gpio_is_valid(tx_pin)) {
-		lbm_set_error_reason(pin_invalid_msg);
+	if (!utils_gpio_is_valid(rx_pin) && !utils_gpio_is_valid(tx_pin)) {
+		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
 
@@ -4471,11 +4274,14 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	xSemaphoreTake(uart_mutex, portMAX_DELAY);
+	ublox_stop(uart_num);
+	comm_uart_stop(uart_num);
+
+	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	if (uart_is_driver_installed(uart_num)) {
 		uart_driver_delete(uart_num);
 	}
-	xSemaphoreGive(uart_mutex);
+	xSemaphoreGive(m_uart_mutex);
 
 	uart_config_t uart_config = {
 			.baud_rate = baud,
@@ -4499,20 +4305,25 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_NIL;
 	}
 
-	uart_number = uart_num;
+	m_uart_number = uart_num;
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_uart_stop(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	if (uart_number >= 0) {
-		xSemaphoreTake(uart_mutex, portMAX_DELAY);
-		if (uart_is_driver_installed(uart_number)) {
-			uart_driver_delete(uart_number);
+	if (m_uart_number >= 0) {
+		ublox_stop(m_uart_number);
+		comm_uart_stop(m_uart_number);
+
+		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
+		if (uart_is_driver_installed(m_uart_number)) {
+			uart_driver_delete(m_uart_number);
 		}
-		xSemaphoreGive(uart_mutex);
+		xSemaphoreGive(m_uart_mutex);
 	}
+
+	m_uart_number = -1;
 
 	return ENC_SYM_TRUE;
 }
@@ -4522,7 +4333,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (uart_number < 0) {
+	if (m_uart_number < 0) {
 		return ENC_SYM_NIL;
 	}
 
@@ -4554,7 +4365,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		}
 	}
 	// This may take a while for large buffer, while lbm is blocked.
-	uart_write_bytes(uart_number,to_send_ptr, ind);
+	uart_write_bytes(m_uart_number,to_send_ptr, ind);
 	return ENC_SYM_TRUE;
 }
 
@@ -4573,19 +4384,19 @@ static void uart_rx_task(void *arg) {
 	uart_rx_args *a = (uart_rx_args*)arg;
 	int restart_cnt = lispif_get_restart_cnt();
 
-	xSemaphoreTake(uart_mutex, portMAX_DELAY);
+	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	unsigned int count = 0;
 	uint8_t c;
-	int res = uart_read_bytes(uart_number, &c, 1, a->timeout);
+	int res = uart_read_bytes(m_uart_number, &c, 1, a->timeout);
 	while (res == 1) {
 		a->data[a->offset + count] = c;
 		count++;
 		if (c == a->stop_at || count >= a->num) {
 			break;
 		}
-		res = uart_read_bytes(uart_number, &c, 1, a->timeout);
+		res = uart_read_bytes(m_uart_number, &c, 1, a->timeout);
 	}
-	xSemaphoreGive(uart_mutex);
+	xSemaphoreGive(m_uart_mutex);
 
 	a->res = count;
 
@@ -4609,7 +4420,7 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (num == 0 || (uart_number < 0)) {
+	if (num == 0 || (m_uart_number < 0)) {
 		return lbm_enc_i(0);
 	}
 
@@ -4659,6 +4470,180 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+// UARTCOMM
+
+// (uartcomm-start uart-num rx-pin tx-pin baud)
+static lbm_value ext_uartcomm_start(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(4);
+
+	int uart_num = lbm_dec_as_i32(args[0]);
+	int rx_pin = lbm_dec_as_i32(args[1]);
+	int tx_pin = lbm_dec_as_i32(args[2]);
+	int baud = lbm_dec_as_i32(args[3]);
+
+	if (baud < 10 || baud > 10000000) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!utils_gpio_is_valid(rx_pin) && !utils_gpio_is_valid(tx_pin)) {
+		lbm_set_error_reason(string_pin_invalid);
+		return ENC_SYM_EERROR;
+	}
+
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
+	if (m_uart_number == uart_num) {
+		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
+		m_uart_number = -1;
+		xSemaphoreGive(m_uart_mutex);
+	}
+
+	ublox_stop(uart_num);
+	bool res = comm_uart_init(tx_pin, rx_pin, uart_num, baud);
+
+	return res ? ENC_SYM_TRUE : ENC_SYM_EERROR;
+}
+
+// (uartcomm-stop uart-num)
+static lbm_value ext_uartcomm_stop(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int uart_num = lbm_dec_as_i32(args[0]);
+
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
+	if (m_uart_number == uart_num) {
+		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
+		m_uart_number = -1;
+		xSemaphoreGive(m_uart_mutex);
+	}
+
+	ublox_stop(uart_num);
+	comm_uart_stop(uart_num);
+
+	return ENC_SYM_TRUE;
+}
+
+// PWM
+
+static int pwm_max[LEDC_TIMER_MAX];
+static char *err_invalid_chan = "Invalid channel";
+
+// (pwm-start freq duty channel pin optBits)
+static lbm_value ext_pwm_start(lbm_value *args, lbm_uint argn) {
+	if (argn != 4 && argn != 5) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	uint32_t freq = lbm_dec_as_u32(args[0]);
+
+	float duty = lbm_dec_as_float(args[1]);
+	utils_truncate_number(&duty, 0.0, 1.0);
+
+	uint32_t chan = lbm_dec_as_u32(args[2]);
+	if (chan >= LEDC_TIMER_MAX) {
+		lbm_set_error_reason(err_invalid_chan);
+		return ENC_SYM_TERROR;
+	}
+
+	int pin = lbm_dec_as_i32(args[3]);
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
+		return ENC_SYM_TERROR;
+	}
+
+	int bits = 10;
+	if (argn >= 5) {
+		bits = lbm_dec_as_u32(args[4]);
+		if (bits < 2 || bits > 14) {
+			lbm_set_error_reason("Invalid number of bits");
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	pwm_max[chan] = (1 << bits);
+
+	int duty_i = (int)(duty * (float)pwm_max[chan]);
+
+	ledc_timer_config_t ledc_timer = {
+			.speed_mode       = LEDC_LOW_SPEED_MODE,
+			.timer_num        = chan,
+			.duty_resolution  = bits,
+			.freq_hz          = freq,
+			.clk_cfg          = LEDC_AUTO_CLK
+	};
+
+	if (ledc_timer_config(&ledc_timer) != ESP_OK) {
+		lbm_set_error_reason("Invalid bit and frequency combination");
+		return ENC_SYM_EERROR;
+	}
+
+	ledc_channel_config_t ledc_channel = {
+			.speed_mode     = LEDC_LOW_SPEED_MODE,
+			.channel        = chan,
+			.timer_sel      = chan,
+			.intr_type      = LEDC_INTR_DISABLE,
+			.gpio_num       = pin,
+			.duty           = duty_i,
+			.hpoint         = 0
+	};
+
+	if (ledc_channel_config(&ledc_channel) != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_i(ledc_get_freq(LEDC_LOW_SPEED_MODE, chan));
+}
+
+// (pwm-stop channel)
+static lbm_value ext_pwm_stop(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint32_t chan = lbm_dec_as_u32(args[0]);
+	if (chan >= LEDC_TIMER_MAX) {
+		lbm_set_error_reason(err_invalid_chan);
+		return ENC_SYM_TERROR;
+	}
+
+	ledc_stop(LEDC_LOW_SPEED_MODE, chan, 0);
+	return ENC_SYM_TRUE;
+}
+
+// (pwm-set-duty duty channel)
+static lbm_value ext_pwm_set_duty(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	uint32_t chan = lbm_dec_as_u32(args[1]);
+	if (chan >= LEDC_TIMER_MAX) {
+		lbm_set_error_reason(err_invalid_chan);
+		return ENC_SYM_TERROR;
+	}
+
+	float duty = lbm_dec_as_float(args[0]);
+	utils_truncate_number(&duty, 0.0, 1.0);
+
+	int duty_i = (int)(duty * (float)pwm_max[chan]);
+
+	if (ledc_set_duty(LEDC_LOW_SPEED_MODE, chan, duty_i) != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (ledc_update_duty(LEDC_LOW_SPEED_MODE, chan) != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	return lbm_enc_float((float)duty_i / (float)pwm_max[chan]);
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -4666,9 +4651,10 @@ void lispif_load_vesc_extensions(void) {
 	}
 
 	if (!uart_mutex_init_done) {
-		uart_mutex = xSemaphoreCreateMutex();
+		m_uart_mutex = xSemaphoreCreateMutex();
 		uart_mutex_init_done = true;
 	}
+
 
 	if (!event_task_running) {
 		rmsg_mutex = xSemaphoreCreateMutex();
@@ -4821,11 +4807,6 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("wifi-get-bw", ext_wifi_get_bw);
 	lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
 
-	// RGBLED
-	lbm_add_extension("rgbled-init", ext_rgbled_init);
-	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
-	lbm_add_extension("rgbled-color", ext_rgbled_color);
-
 	// Logging
 	lbm_add_extension("log-start", ext_log_start);
 	lbm_add_extension("log-stop", ext_log_stop);
@@ -4846,13 +4827,11 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("sleep-deep", ext_sleep_deep);
 	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
 
-	// Disp extensions
+	// Extension libraries
 	lispif_load_disp_extensions();
-	
-	// WIFI extensions
 	lispif_load_wifi_extensions();
+	lispif_load_rgbled_extensions();
 	
-	// BLE extensions
 	if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
 		lispif_load_ble_extensions();
 	}
@@ -4862,6 +4841,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("canmsg-send", ext_canmsg_send);
 
 	// File System
+	lbm_add_extension("f-connect", ext_f_connect);
+	lbm_add_extension("f-disconnect", ext_f_disconnect);
 	lbm_add_extension("f-open", ext_f_open);
 	lbm_add_extension("f-close", ext_f_close);
 	lbm_add_extension("f-read", ext_f_read);
@@ -4909,10 +4890,20 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("uart-write", ext_uart_write)	;
 	lbm_add_extension("uart-read", ext_uart_read);
 
+	// UARTCOMM
+	lbm_add_extension("uartcomm-start", ext_uartcomm_start);
+	lbm_add_extension("uartcomm-stop", ext_uartcomm_stop);
+
+	// PWM
+	lbm_add_extension("pwm-start", ext_pwm_start);
+	lbm_add_extension("pwm-stop", ext_pwm_stop);
+	lbm_add_extension("pwm-set-duty", ext_pwm_set_duty);
+
 	// Extension libraries
 	lbm_array_extensions_init();
 	lbm_string_extensions_init();
 	lbm_math_extensions_init();
+	lbm_color_extensions_init();
 }
 
 void lispif_disable_all_events(void) {

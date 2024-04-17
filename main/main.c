@@ -21,6 +21,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "driver/uart.h"
 
 #include "conf_general.h"
 #include "comm_ble.h"
@@ -117,6 +118,8 @@ void app_main(void) {
 		nvs_close(my_handle);
 	}
 
+	adc_init();
+
 #ifdef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
 	lispif_init();
@@ -153,9 +156,8 @@ void app_main(void) {
 
 	nmea_init();
 	log_init();
-
-#ifdef HW_HAS_ADC
-	adc_init();
+#ifdef SD_PIN_MOSI
+	log_mount_card(SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK, SD_PIN_CS, SDMMC_FREQ_DEFAULT);
 #endif
 
 #ifndef HW_EARLY_LBM_INIT
@@ -165,7 +167,7 @@ void app_main(void) {
 
 #ifndef HW_NO_UART
 #ifdef HW_UART_COMM
-	comm_uart_init();
+	comm_uart_init(UART_TX, UART_RX, UART_NUM, UART_BAUDRATE);
 #else
 	ublox_init(false, 500, UART_NUM, UART_RX, UART_TX);
 #endif

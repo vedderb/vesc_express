@@ -436,6 +436,7 @@ typedef struct {
 
 // Functions
 bool ublox_init(bool print, uint16_t rate_ms, int num_uart, int pin_rx, int pin_tx);
+void ublox_stop(int num_uart);
 bool ublox_init_ok(void);
 void ublox_send(unsigned char *data, unsigned int len);
 void ublox_set_rx_callback_nav_sol(void(*func)(ubx_nav_sol *sol));

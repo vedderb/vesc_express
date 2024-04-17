@@ -33,6 +33,7 @@ set(COMPONENT_SRCS
 "lbm_vesc_utils.c"
 "lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
+"lbm_color_extensions.c"
 "lispBM/src/env.c"
 "lispBM/src/fundamental.c"
 "lispBM/src/heap.c"
@@ -59,6 +60,8 @@ set(COMPONENT_SRCS
 
 "ble/custom_ble.c"
 "ble/lispif_ble_extensions.c"
+
+"rgbled/lispif_rgbled_extensions.c"
 
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
@@ -89,6 +92,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/trampa/bms_rb"
 "hwconf/rescue"
 "hwconf/avaspark"
+"hwconf/vesc"
+"hwconf/vesc/vbms32"
 
 "lispBM"
 "lispBM/include"
@@ -96,6 +101,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "display"
 "wifi"
 "ble"
+"rgbled"
 "drivers"
 "drivers/bme280"
 "drivers/imu"

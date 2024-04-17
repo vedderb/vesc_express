@@ -23,6 +23,11 @@
 #include <dirent.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include "extensions/array_extensions.h"
+#include "extensions/string_extensions.h"
+#include "extensions/math_extensions.h"
+#include "extensions/runtime_extensions.h"
+#include "extensions/set_extensions.h"
 
 // Macro expanders
 
@@ -457,8 +462,40 @@ static lbm_value ext_fwrite_str(lbm_value *args, lbm_uint argn) {
     }
   }
   return res;
-
 }
+
+static lbm_value ext_fwrite_value(lbm_value *args, lbm_uint argn) {
+  lbm_value res = ENC_SYM_TERROR;
+  if (argn == 2 &&
+      is_file_handle(args[0])) {
+    res = ENC_SYM_NIL;
+    lbm_file_handle_t *h = (lbm_file_handle_t*)lbm_get_custom_value(args[0]);
+
+    lbm_set_max_flatten_depth(10000);
+    int32_t fv_size = flatten_value_size(args[1], 0);
+    if (fv_size > 0) {
+      lbm_flat_value_t fv;
+      fv.buf = malloc((uint32_t)fv_size);
+      if (fv.buf) {
+        fv.buf_size = (uint32_t)fv_size;
+        fv.buf_pos = 0;
+        if (flatten_value_c(&fv, args[1]) == FLATTEN_VALUE_OK) {
+          fwrite(fv.buf, 1, (size_t)fv_size, h->fp);
+          fflush(h->fp);
+          res = ENC_SYM_TRUE;
+        } else {
+          printf("ALERT: Unable to flatten result value\n");
+        }
+      } else {
+        printf("ALERT: Out of memory to allocate result buffer\n");
+      }
+    } else {
+      printf("ALERT: Incorrect FV size: %d \n", fv_size);
+    }
+  }
+  return res;
+}
+
 
 static bool all_arrays(lbm_value *args, lbm_uint argn) {
   bool r = true;
@@ -524,12 +561,16 @@ int init_exts(void) {
   if (!lbm_runtime_extensions_init(false)) {
     return 0;
   }
+  if (!lbm_set_extensions_init()) {
+    return 0;
+  }
 
   lbm_add_extension("unsafe-call-system", ext_unsafe_call_system);
   lbm_add_extension("exec", ext_exec);
   lbm_add_extension("fopen", ext_fopen);
   lbm_add_extension("fwrite", ext_fwrite);
   lbm_add_extension("fwrite-str", ext_fwrite_str);
+  lbm_add_extension("fwrite-value", ext_fwrite_value);
   lbm_add_extension("print", ext_print);
   lbm_add_extension("systime", ext_systime);
   lbm_add_extension("secs-since", ext_secs_since);

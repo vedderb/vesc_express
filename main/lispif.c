@@ -35,7 +35,9 @@
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
-#define EXTENSION_STORAGE_SIZE	290
+#ifndef EXTENSION_STORAGE_SIZE
+#define EXTENSION_STORAGE_SIZE	300
+#endif
 #define PROF_DATA_NUM			30
 #define EXT_LOAD_CALLBACK_LEN	10
 
@@ -356,6 +358,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Size: %u Bytes\n", const_heap.size);
 				commands_printf_lisp("Used cells: %d\n", const_heap.next);
 				commands_printf_lisp("Free cells: %d\n", const_heap.size / 4 - const_heap.next);
+				commands_printf_lisp("Write Erase Cnt: %d\n", flash_helper_write_erase_cnt());
 			} else if (strncmp(str, ":prof start", 11) == 0) {
 				if (prof_running) {
 					lbm_prof_init(prof_data, PROF_DATA_NUM);
@@ -443,6 +446,11 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				lbm_set_verbose(verbose_now);
 				commands_printf_lisp("Verbose errors %s", verbose_now ? "Enabled" : "Disabled");
 			} else {
+				if (repl_buffer) {
+					lispif_unlock_lbm();
+					break;
+				}
+
 				bool ok = true;
 				int timeout_cnt = 1000;
 				lbm_pause_eval_with_gc(30);
