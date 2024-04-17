@@ -20,19 +20,12 @@
 #ifndef MAIN_HWCONF_AVASPARK_HW_RGB_H_
 #define MAIN_HWCONF_AVASPARK_HW_RGB_H_
 
-#include "driver/gpio.h"
-
 #define HW_NAME						"Avaspark RGB"
 #define HW_TARGET                   "esp32"
 #define HW_NO_UART
 
 #define HW_INIT_HOOK()				hw_init()
 
-// LEDs
-#define LED_RED_PIN					16
-
-#define LED_RED_ON()				gpio_set_level(LED_RED_PIN, 1)
-#define LED_RED_OFF()				gpio_set_level(LED_RED_PIN, 0)
 
 // CAN
 #define CAN_TX_GPIO_NUM				33
