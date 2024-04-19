@@ -51,7 +51,7 @@ static uint32_t *bitmap_array;
 static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE];
 
 static lbm_const_heap_t const_heap;
-static lbm_uint *const_heap_ptr = 0;
+static volatile lbm_uint *const_heap_ptr = 0;
 
 static lbm_string_channel_state_t string_tok_state;
 static lbm_char_channel_t string_tok;
@@ -762,7 +762,7 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 		const_heap_ptr = (lbm_uint*)(code_data + code_len + 16);
 		const_heap_ptr = (lbm_uint*)((uint32_t)const_heap_ptr & 0xFFFFFFF4);
 		uint32_t const_heap_len = ((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP)) - (uint32_t)const_heap_ptr;
-		lbm_const_heap_init(const_heap_write, &const_heap, const_heap_ptr, const_heap_len);
+		lbm_const_heap_init(const_heap_write, &const_heap, (lbm_uint*)const_heap_ptr, const_heap_len);
 
 		if (load_code) {
 			if (print) {
