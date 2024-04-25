@@ -66,6 +66,11 @@
 #include "esp_vfs.h"
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
+#include "esp_sleep.h"
+#include "soc/rtc.h"
+#include "esp_bt.h"
+#include "esp_bt_main.h"
+#include "esp_wifi.h"
 
 // Settings
 #define PRINT_BUFFER_SIZE	400
@@ -303,8 +308,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_REBOOT: {
 		comm_wifi_disconnect();
-		vTaskDelay(50 / portTICK_PERIOD_MS);
-		esp_restart();
+
+		esp_bluedroid_disable();
+		esp_bt_controller_disable();
+		esp_wifi_stop();
+
+		esp_sleep_enable_timer_wakeup(1000000);
+		esp_deep_sleep_start();
 	} break;
 
 	case COMM_FORWARD_CAN:
