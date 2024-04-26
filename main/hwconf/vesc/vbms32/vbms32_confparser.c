@@ -37,9 +37,9 @@ int32_t vbms32_confparser_serialize_main_config_t(uint8_t *buffer, const main_co
 	buffer_append_uint32(buffer, conf->ble_pin, &ind);
 	buffer_append_uint32(buffer, conf->ble_service_capacity, &ind);
 	buffer_append_uint32(buffer, conf->ble_chr_descr_capacity, &ind);
-	buffer[ind++] = (uint8_t)conf->cell_first;
-	buffer[ind++] = (uint8_t)conf->cell_num;
 	buffer_append_int16(buffer, conf->max_bal_ch, &ind);
+	buffer[ind++] = (uint8_t)conf->cells_ic1;
+	buffer[ind++] = (uint8_t)conf->cells_ic2;
 	buffer[ind++] = conf->dist_bal;
 	buffer[ind++] = conf->balance_mode;
 	buffer_append_float32_auto(buffer, conf->vc_balance_start, &ind);
@@ -100,9 +100,9 @@ bool vbms32_confparser_deserialize_main_config_t(const uint8_t *buffer, main_con
 	conf->ble_pin = buffer_get_uint32(buffer, &ind);
 	conf->ble_service_capacity = buffer_get_uint32(buffer, &ind);
 	conf->ble_chr_descr_capacity = buffer_get_uint32(buffer, &ind);
-	conf->cell_first = buffer[ind++];
-	conf->cell_num = buffer[ind++];
 	conf->max_bal_ch = buffer_get_int16(buffer, &ind);
+	conf->cells_ic1 = buffer[ind++];
+	conf->cells_ic2 = buffer[ind++];
 	conf->dist_bal = buffer[ind++];
 	conf->balance_mode = buffer[ind++];
 	conf->vc_balance_start = buffer_get_float32_auto(buffer, &ind);
@@ -148,9 +148,9 @@ void vbms32_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->ble_pin = CONF_BLE_PIN;
 	conf->ble_service_capacity = CONF_BLE_SERVICE_CAPACITY;
 	conf->ble_chr_descr_capacity = CONF_BLE_CHR_DESCR_CAPACITY;
-	conf->cell_first = CONF_CELL_FIRST;
-	conf->cell_num = CONF_CELL_NUM;
 	conf->max_bal_ch = CONF_MAX_BAL_CH;
+	conf->cells_ic1 = CONF_CELLS_IC1;
+	conf->cells_ic2 = CONF_CELLS_IC2;
 	conf->dist_bal = CONF_DIST_BAL;
 	conf->balance_mode = CONF_BALANCE_MODE;
 	conf->vc_balance_start = CONF_BALANCE_START;

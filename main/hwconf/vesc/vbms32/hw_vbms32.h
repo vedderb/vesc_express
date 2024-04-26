@@ -84,11 +84,11 @@ typedef struct {
 	uint32_t ble_service_capacity;
 	uint32_t ble_chr_descr_capacity;
 
-	// First cell index
-	int cell_first;
+	// Cells on first balance IC
+	int cells_ic1;
 
-	// Number of cells
-	int cell_num;
+	// Cells on second balance IC
+	int cells_ic2;
 
 	// Cell balancing mode
 	BMS_BALANCE_MODE balance_mode;
