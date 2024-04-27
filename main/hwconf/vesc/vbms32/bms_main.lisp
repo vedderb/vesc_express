@@ -92,6 +92,8 @@
 ;  - Go to sleep when key is left on
 ;  - Disable wifi after sleep and enable when
 ;    staying on to save power
+;  - Shorter charge check when waking up so that sleep
+;    can be entered faster.
 ; = Charge control =
 ;  - Max current
 ;  - T min is disabled now. Figure out when temp
@@ -389,8 +391,17 @@
                 (var ch-cnt 0)
 
                 (loopforeach c cells-sorted {
-                        (if (> (- (second c) c-min) (bms-get-param 'vc_balance_start)) {
-                                (setix bal-chs (first c) 1)
+                        (var n-cell (first c))
+                        (var v-cell (second c))
+
+                        (if (and
+                                (> (- v-cell c-min) (bms-get-param 'vc_balance_start))
+                                ; Do not balance adjacent cells
+                                (or (eq n-cell 0) (= (ix bal-chs (- n-cell 1)) 0))
+                                (or (eq n-cell (- cell-num 1)) (= (ix bal-chs (+ n-cell 1)) 0))
+                            )
+                            {
+                                (setix bal-chs n-cell 1)
                                 (setq ch-cnt (+ ch-cnt 1))
                         })
 
