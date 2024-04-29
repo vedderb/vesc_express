@@ -51,9 +51,19 @@ typedef struct _terminal_callback_struct {
 	void(*cbf)(int argc, const char **argv);
 } terminal_callback_struct;
 
+typedef struct {
+	UBaseType_t task_num;
+	unsigned long task_run_time;
+} taskinfo_struct;
+
+
 // Private variables
 static terminal_callback_struct callbacks[CALLBACK_LEN];
 static int callback_write = 0;
+
+static taskinfo_struct *prev_taskinfo = NULL;
+static size_t prev_taskinfo_n = 0;
+static uint32_t prev_time = 0;
 
 const char* utils_hw_type_to_string(HW_TYPE hw) {
 	switch (hw) {
@@ -102,15 +112,46 @@ void terminal_process_string(char *str) {
 
 		const char *state_names[] = {"Running", "Ready", "Blocked", "Suspended", "Deleted", "Invalid"};
 
-		commands_printf("   stack prio     state           name stackmin time    ");
-		commands_printf("--------------------------------------------------------");
+		commands_printf("task num    stack prio     state           name stackmin    cpu      ticks   dcpu     dticks");
+		commands_printf("--------------------------------------------------------------------------------------------");
+
+		taskinfo_struct *new_task_info = malloc(num_tasks * sizeof(taskinfo_struct));
 
 		for (int i = 0; i < num_tasks;i++) {
-			double percent = (100.0 * (double)tasks[i].ulRunTimeCounter) / (double)time_total;
-			commands_printf("%.8lx %4lu %9s %14s %8d %lu (%.1f %%)",
+			uint32_t total_run_time = tasks[i].ulRunTimeCounter;
+			double total_run_time_percent = (100.0 * total_run_time) / (double)time_total;
+
+			char delta_str[30];
+			strcpy(delta_str, "     -          -");
+
+			if (prev_taskinfo != NULL){
+				for (int j = 0; j < prev_taskinfo_n; j++){
+					if (tasks[i].xTaskNumber == prev_taskinfo[j].task_num){
+						uint32_t run_time = tasks[i].ulRunTimeCounter - prev_taskinfo[j].task_run_time;
+						double run_time_percent = (100.0 * run_time) / (double)(time_total - prev_time);
+						snprintf(delta_str, 30, "%5.1f%% %10lu", run_time_percent, run_time);
+						break;
+					}
+				}
+			}
+
+			commands_printf("%8d %.8lx %4lu %9s %14s %8d %5.1f%% %10lu %s",
+					tasks[i].xTaskNumber,
 					tasks[i].pxStackBase, tasks[i].uxBasePriority, state_names[tasks[i].eCurrentState],
-					tasks[i].pcTaskName, tasks[i].usStackHighWaterMark, tasks[i].ulRunTimeCounter, percent);
+					tasks[i].pcTaskName, tasks[i].usStackHighWaterMark,  total_run_time_percent, total_run_time, delta_str);
+			// Update task info
+			new_task_info[i].task_num = tasks[i].xTaskNumber;
+			new_task_info[i].task_run_time = tasks[i].ulRunTimeCounter;
+
 		}
+		if (prev_taskinfo != NULL){
+			free(prev_taskinfo);
+			prev_taskinfo = NULL;
+		}
+
+		prev_taskinfo = new_task_info;
+		prev_taskinfo_n = num_tasks;
+		prev_time = time_total;
 
 		free(tasks);
 		commands_printf(" ");
