@@ -77,6 +77,7 @@ static void log_task(void *arg) {
 	int gga_cnt_last = 0;
 	int rmc_cnt_last = 0;
 	int64_t ms_last = utils_ms_tot();
+	TickType_t tick_last_fsync = xTaskGetTickCount();
 
 	for (;;) {
 		if (!m_card) {
@@ -240,6 +241,11 @@ static void log_task(void *arg) {
 				} else {
 					fprintf(f_log, ";");
 				}
+			}
+
+			if (UTILS_AGE_S(tick_last_fsync) > 2.0) {
+				tick_last_fsync = xTaskGetTickCount();
+				fsync(fileno(f_log));
 			}
 		}
 
