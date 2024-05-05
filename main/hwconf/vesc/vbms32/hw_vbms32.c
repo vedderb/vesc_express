@@ -60,12 +60,12 @@ static esp_err_t i2c_tx_rx(uint8_t addr,
 	esp_err_t res;
 	if (read_size > 0 && read_buffer != NULL) {
 		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 1000);
+			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 500);
 		} else {
-			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 1000);
+			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 500);
 		}
 	} else {
-		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 1000);
+		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 500);
 	}
 	xSemaphoreGive(i2c_mutex);
 
@@ -468,13 +468,10 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 
 	vTaskDelay(50);
 
-	// If reading from the updated address works
-	// init must have been run already
-	if (command_read(BQ_ADDR_1, Cell2Voltage) >= 0) {
-		command_subcommands(BQ_ADDR_1, BQ769x2_RESET);
-		command_subcommands(BQ_ADDR_1, SWAP_COMM_MODE);
-		vTaskDelay(60);
-	}
+	// Reset the address of the first BQ just in case
+	command_subcommands(BQ_ADDR_1, BQ769x2_RESET);
+	vTaskDelay(60);
+	command_subcommands(BQ_ADDR_1, SWAP_COMM_MODE);
 
 	bq_init(BQ_ADDR_2);
 	command_subcommands(BQ_ADDR_2, SET_CFGUPDATE);
@@ -728,6 +725,28 @@ static lbm_value ext_get_bal(lbm_value *args, lbm_uint argn) {
 	}
 
 	return lbm_enc_i(res);
+}
+
+static lbm_value ext_direct_cmd(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	uint8_t addr = BQ_ADDR_1;
+	if (lbm_dec_as_i32(args[0]) == 2) {
+		addr = BQ_ADDR_2;
+	}
+
+	return lbm_enc_i(command_read(addr, lbm_dec_as_u32(args[1])));
+}
+
+static lbm_value ext_subcmd_cmdonly(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	uint8_t addr = BQ_ADDR_1;
+	if (lbm_dec_as_i32(args[0]) == 2) {
+		addr = BQ_ADDR_2;
+	}
+
+	return lbm_enc_i(command_subcommands(addr, lbm_dec_as_u32(args[1])));
 }
 
 typedef struct {
@@ -995,6 +1014,10 @@ static void load_extensions(void) {
 	// Set and get balancing state for cell
 	lbm_add_extension("bms-set-bal", ext_set_bal);
 	lbm_add_extension("bms-get-bal", ext_get_bal);
+
+	// HW-specific commands
+	lbm_add_extension("bms-direct-cmd", ext_direct_cmd);
+	lbm_add_extension("bms-subcmd-cmdonly", ext_subcmd_cmdonly);
 
 	// Configuration
 	lbm_add_extension("bms-get-param", ext_bms_get_param);

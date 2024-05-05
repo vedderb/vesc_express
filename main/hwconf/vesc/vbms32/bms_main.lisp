@@ -4,6 +4,7 @@
 (def charge-at-boot false)
 (def bal-ok false)
 (def is-balancing false)
+(def charge-ok false)
 
 {
     (var do-sleep true)
@@ -41,7 +42,7 @@
     (var t-min (ix t-sorted 0))
     (var t-max (ix t-sorted -1))
 
-    (var charge-ok (and
+    (setq charge-ok (and
             (< c-max (bms-get-param 'vc_charge_end))
             (> c-min (bms-get-param 'vc_charge_min))
             (< t-max (bms-get-param 't_charge_max))
@@ -49,7 +50,7 @@
     ))
 
     (var ichg 0.0)
-    (if (and (> vchg 53.0) charge-ok) {
+    (if (and (> vchg (bms-get-param 'vc_charge_end)) charge-ok) {
             (bms-set-chg 1)
             (sleep 0.5)
             (setq ichg (- (bms-get-current)))
@@ -98,6 +99,7 @@
 ;  - Max current
 ;  - T min is disabled now. Figure out when temp
 ;    sensors are missing.
+;  - Charge voltage detection.
 ; = Balancing =
 ;  - Balance modes
 ;  - Limit channel number when getting warm
@@ -359,7 +361,7 @@
 
         ;;; Charge control
 
-        (var charge-ok (and
+        (setq charge-ok (and
                 (< c-max (bms-get-param 'vc_charge_end))
                 (> c-min (bms-get-param 'vc_charge_min))
                 (< t-max (bms-get-param 't_charge_max))
