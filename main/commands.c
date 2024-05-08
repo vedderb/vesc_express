@@ -254,7 +254,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				if (esp_ota_set_boot_partition(update_partition) == ESP_OK) {
 					comm_wifi_disconnect();
 					vTaskDelay(50 / portTICK_PERIOD_MS);
-					esp_restart();
+
+					esp_bluedroid_disable();
+					esp_bt_controller_disable();
+					esp_wifi_stop();
+
+					esp_sleep_enable_timer_wakeup(1000000);
+					esp_deep_sleep_start();
 				}
 			}
 		}
@@ -286,8 +292,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int32_t ind = 0;
 		uint32_t new_app_offset = buffer_get_uint32(data, &ind);
 
-		if (new_app_offset == 0) {
-			ind += 6; // Skip size and crc
+		if (new_app_offset < 6) {
+			ind += (6 - new_app_offset); // Skip size and crc
+			new_app_offset = 0;
 		} else {
 			new_app_offset -= 6;
 		}

@@ -1,5 +1,5 @@
 /*
-	Copyright 2023 Benjamin Vedder       benjamin@vedder.se
+	Copyright 2023, 2024 Benjamin Vedder benjamin@vedder.se
 	Copyright 2022, 2024 Joel Svensson   svenssonjoel@yahoo.se
 	Copyright 2023 Rasmus Söderhielm     rasmus.soderhielm@gmail.com
 
@@ -67,6 +67,8 @@
 #include "soc/rtc.h"
 #include "esp_bt.h"
 #include "esp_bt_main.h"
+#include "esp_partition.h"
+#include "esp_ota_ops.h"
 
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
@@ -3862,6 +3864,7 @@ static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID
 	lbm_value res = ENC_SYM_EERROR;
 	if (array) {
 		if (array->size > 500) {
+			lbm_set_error_reason("At most 500 bytes can be written at a time.");
 			return ENC_SYM_TERROR;
 		}
 
@@ -3992,6 +3995,49 @@ static lbm_value ext_lbm_write(lbm_value *args, lbm_uint argn) {
 // (qml-write offset data optCanId) -> t, nil
 static lbm_value ext_qml_write(lbm_value *args, lbm_uint argn) {
 	return fw_lbm_qml_write(args, argn, COMM_QMLUI_WRITE);
+}
+
+static const esp_partition_t *update_partition = NULL;
+static const void *update_partition_data = NULL;
+static esp_partition_mmap_handle_t update_partition_handle = 0;
+
+// (fw-data optOffset, optLen)
+static lbm_value ext_fw_data(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_NUMBER_ALL();
+
+	if (!update_partition) {
+		update_partition = esp_ota_get_next_update_partition(NULL);
+
+		esp_err_t res = esp_partition_mmap(update_partition, 0, update_partition->size,
+				ESP_PARTITION_MMAP_DATA, &update_partition_data, &update_partition_handle);
+
+		if (res != ESP_OK) {
+			update_partition = NULL;
+			return ENC_SYM_EERROR;
+		}
+	}
+
+	uint32_t offset = 0;
+	if (argn >= 1) {
+		offset = lbm_dec_as_u32(args[0]);
+	}
+
+	uint32_t len = update_partition->size - offset;
+	if (argn >= 2) {
+		len = lbm_dec_as_u32(args[1]);
+	}
+
+	if (offset >= update_partition->size) {
+		return ENC_SYM_EERROR;
+	}
+
+	if ((offset + len) > update_partition->size) {
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value val;
+	lbm_lift_array(&val, (char*)update_partition_data + offset, len);
+	return val;
 }
 
 static void lbm_run_task(void *arg) {
@@ -4857,6 +4903,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("fw-erase", ext_fw_erase);
 	lbm_add_extension("fw-write", ext_fw_write);
 	lbm_add_extension("fw-reboot", ext_fw_reboot);
+	lbm_add_extension("fw-data", ext_fw_data);
 
 	// Lbm and script update
 	lbm_add_extension("lbm-erase", ext_lbm_erase);
