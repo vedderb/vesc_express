@@ -73,6 +73,7 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs.h"
+#include "lowzip.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -3746,6 +3747,47 @@ static lbm_value ext_f_size(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i32(sz);
 }
 
+// (f-rename oldname newname)
+static lbm_value ext_f_rename(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	char *old_name = dec_str_check(args[0]);
+	if (!old_name) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	char *new_name = dec_str_check(args[1]);
+	if (!new_name) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	char *old_full = lbm_malloc(strlen(old_name) + strlen("/sdcard/") + 1);
+	if (!old_full) {
+		return ENC_SYM_MERROR;
+	}
+
+	char *new_full = lbm_malloc(strlen(new_name) + strlen("/sdcard/") + 1);
+	if (!new_full) {
+		lbm_free(old_full);
+		return ENC_SYM_MERROR;
+	}
+
+	strcpy(old_full, "/sdcard/");
+	strcat(old_full, old_name);
+
+	strcpy(new_full, "/sdcard/");
+	strcat(new_full, new_name);
+
+	lbm_value res = rename(old_full, new_full) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
+
+	lbm_free(old_full);
+	lbm_free(new_full);
+
+	return res;
+}
+
 // (f-fatinfo) -> (MB-free MB-total)
 static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
@@ -4687,6 +4729,380 @@ static lbm_value ext_pwm_set_duty(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float((float)duty_i / (float)pwm_max[chan]);
 }
 
+// Compression
+
+typedef struct {
+	FILE *input;
+	unsigned int input_length;
+	unsigned char input_chunk[256];
+	unsigned int input_chunk_start;
+	unsigned int input_chunk_end;
+} read_file_state;
+
+typedef struct {
+	unsigned char *data;
+	unsigned int len;
+} read_buf_state;
+
+static unsigned int my_lz_read_file(void *udata, unsigned int offset) {
+	read_file_state *st = (read_file_state *) udata;
+
+	// Most reads should be cached here with no file I/O.
+	if (offset >= st->input_chunk_start && offset < st->input_chunk_end) {
+		return (unsigned int) st->input_chunk[offset - st->input_chunk_start];
+	}
+
+	// Out-of-bounds read, no file I/O.
+	if (offset >= st->input_length) {
+		commands_printf_lisp("OOB read (offset %ld)\n", (long)offset);
+		return 0x100U;
+	}
+
+	/* Load in new chunk so that desired offset is in the middle.
+	 * This makes backwards and forwards scanning reasonably
+	 * efficient.
+	 */
+	int chunk_start = offset - sizeof(st->input_chunk) / 2;
+	if (chunk_start < 0) {
+		chunk_start = 0;
+	}
+	if (fseek(st->input, (size_t) chunk_start, SEEK_SET) != 0) {
+		return 0x100U;
+	}
+
+	size_t got = fread((void *) st->input_chunk, 1, sizeof(st->input_chunk), st->input);
+	st->input_chunk_start = chunk_start;
+	st->input_chunk_end = chunk_start + got;
+
+	// Recheck original request
+	if (offset >= st->input_chunk_start && offset < st->input_chunk_end) {
+		return (unsigned int) st->input_chunk[offset - st->input_chunk_start];
+	}
+	return 0x100U;
+}
+
+static unsigned int my_lz_read_buf(void *udata, unsigned int offset) {
+	read_buf_state *st = (read_buf_state*)udata;
+	if (offset < st->len) {
+		return st->data[offset];
+	}
+
+	return 0x100;
+}
+
+typedef struct {
+	unsigned int offset;
+	unsigned int buf_offset;
+	unsigned char buffer[256];
+} write_file_state;
+
+static void my_lz_write(void *udata, int byte) {
+	write_file_state *st = (write_file_state *)udata;
+
+	// If byte is negative it means that it is an index in the past of the output
+	// from where data should be copied to the front of the output.
+	if (byte < 0) {
+		byte = -byte;
+
+		if (byte <= st->buf_offset) {
+			byte = st->buffer[st->buf_offset - byte];
+		} else {
+			byte = ((unsigned char*)update_partition_data)[st->offset - (byte - st->buf_offset)];
+		}
+	}
+
+	st->buffer[st->buf_offset++] = byte;
+
+	if (st->buf_offset == sizeof(st->buffer)) {
+		esp_partition_write(update_partition, st->offset, st->buffer, st->buf_offset);
+		st->offset += st->buf_offset;
+		st->buf_offset = 0;
+	}
+}
+
+static void my_lz_write_sync(void *udata) {
+	write_file_state *st = (write_file_state *)udata;
+
+	if (st->buf_offset > 0) {
+		esp_partition_write(update_partition, st->offset, st->buffer, st->buf_offset);
+		st->offset += st->buf_offset;
+		st->buf_offset = 0;
+	}
+}
+
+// (unzip input fileInZip optOutputFile)
+static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 && argn != 3) {
+		return ENC_SYM_TERROR;
+	}
+
+	FILE *f_in = NULL;
+	lbm_array_header_t *arr_in = NULL;
+	if (lbm_is_number(args[0])) {
+		f_in = file_from_arg(args[0]);
+		if (!f_in) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+	} else if (lbm_is_array_r(args[0])) {
+		arr_in = (lbm_array_header_t *)lbm_car(args[0]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	int ind_in_zip = 0;
+	char *name_in_zip = NULL;
+	if (lbm_is_number(args[1])) {
+		ind_in_zip = lbm_dec_as_i32(args[1]);
+		if (ind_in_zip < 0) {
+			return ENC_SYM_TERROR;
+		}
+	} else {
+		name_in_zip = lbm_dec_str(args[1]);
+		if (!name_in_zip) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	FILE *f_out = NULL;
+	if (argn == 3) {
+		f_out = file_from_arg(args[2]);
+		if (!f_out) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+	}
+
+	lowzip_state *st = NULL;
+	st = (lowzip_state *) lbm_malloc(sizeof(lowzip_state));
+	if (!st) {
+		return ENC_SYM_MERROR;
+	}
+
+	memset((void *) st, 0, sizeof(lowzip_state));
+
+	read_file_state *st_file = NULL;
+	read_buf_state st_buf;
+
+	if (f_in) {
+		st_file = (read_file_state *) lbm_malloc(sizeof(read_file_state));
+		if (!st_file) {
+			lbm_free(st);
+			return ENC_SYM_MERROR;
+		}
+
+		memset((void *)st_file, 0, sizeof(read_file_state));
+		fseek(f_in, 0, SEEK_END);
+
+		st_file->input = f_in;
+		st_file->input_length = ftell(f_in);
+
+		st->udata = (void *)st_file;
+		st->read_callback = my_lz_read_file;
+		st->zip_length = st_file->input_length;
+	} else {
+		st_buf.data = (unsigned char*)arr_in->data;
+		st_buf.len = arr_in->size;
+
+		st->udata = (void *)&st_buf;
+		st->read_callback = my_lz_read_buf;
+		st->zip_length = st_buf.len;
+	}
+
+	lowzip_init_archive(st);
+
+	if (st->have_error) {
+		lbm_set_error_reason("Invalid zip archive");
+		lbm_free(st);
+		lbm_free(st_file);
+		return ENC_SYM_EERROR;
+	}
+
+	lowzip_file *fileinfo = lowzip_locate_file(st, ind_in_zip, name_in_zip);
+	if (!fileinfo) {
+		lbm_set_error_reason("Invalid file in zip");
+		lbm_free(st);
+		lbm_free(st_file);
+		return ENC_SYM_EERROR;
+	}
+
+	if (f_out) {
+		write_file_state *st_write = lbm_malloc(sizeof(write_file_state));
+		if (!st_write) {
+			lbm_free(st);
+			lbm_free(st_file);
+			return ENC_SYM_MERROR;
+		}
+
+		memset((void *)st_write, 0, sizeof(write_file_state));
+
+		if (!update_partition) {
+			update_partition = esp_ota_get_next_update_partition(NULL);
+
+			esp_err_t res = esp_partition_mmap(update_partition, 0, update_partition->size,
+					ESP_PARTITION_MMAP_DATA, &update_partition_data, &update_partition_handle);
+
+			if (res != ESP_OK) {
+				update_partition = NULL;
+				lbm_free(st);
+				lbm_free(st_file);
+				lbm_free(st_write);
+				return ENC_SYM_EERROR;
+			}
+		}
+
+		unsigned int buflen = fileinfo->uncompressed_size;
+
+		if (buflen > update_partition->size) {
+			update_partition = NULL;
+			lbm_free(st);
+			lbm_free(st_file);
+			lbm_free(st_write);
+			lbm_set_error_reason("Too large file");
+			return ENC_SYM_EERROR;
+		}
+
+		for (uint32_t i = 0; i < buflen; i += update_partition->erase_size) {
+			esp_partition_erase_range(update_partition, i, update_partition->erase_size);
+		}
+
+		st->output_start = (unsigned char *)update_partition_data;
+		st->output_end = st->output_start + buflen;
+		st->output_next = st->output_start;
+
+		st->write_callback = my_lz_write;
+		st->write_sync_callback = my_lz_write_sync;
+		st->udata_write = st_write;
+
+		lowzip_get_data(st);
+
+		lbm_value res = ENC_SYM_NIL;
+		if (!st->have_error) {
+			unsigned int count = fwrite(update_partition_data, 1, buflen, f_out);
+			res = count == buflen ? ENC_SYM_TRUE : ENC_SYM_NIL;
+		}
+
+		lbm_free(st);
+		lbm_free(st_file);
+		lbm_free(st_write);
+		return res;
+	} else {
+		lbm_value res = ENC_SYM_MERROR;
+		if (lbm_create_array(&res, fileinfo->uncompressed_size)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+
+			st->output_start = (unsigned char *)arr->data;
+			st->output_end = st->output_start + fileinfo->uncompressed_size;
+			st->output_next = st->output_start;
+
+			lowzip_get_data(st);
+
+			if (st->have_error) {
+				res = ENC_SYM_NIL;
+			}
+		}
+
+		lbm_free(st);
+		lbm_free(st_file);
+		return res;
+	}
+}
+
+// (zip-ls input)
+static lbm_value ext_zip_ls(lbm_value *args, lbm_uint argn) {
+	if (argn != 1) {
+		return ENC_SYM_TERROR;
+	}
+
+	FILE *f_in = NULL;
+	lbm_array_header_t *arr_in = NULL;
+	if (lbm_is_number(args[0])) {
+		f_in = file_from_arg(args[0]);
+		if (!f_in) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+	} else if (lbm_is_array_r(args[0])) {
+		arr_in = (lbm_array_header_t *)lbm_car(args[0]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	lowzip_state *st = NULL;
+	st = (lowzip_state *) lbm_malloc(sizeof(lowzip_state));
+	if (!st) {
+		return ENC_SYM_MERROR;
+	}
+
+	memset((void *) st, 0, sizeof(lowzip_state));
+
+	read_file_state *st_file = NULL;
+	read_buf_state st_buf;
+
+	if (f_in) {
+		st_file = (read_file_state *) lbm_malloc(sizeof(read_file_state));
+		if (!st_file) {
+			lbm_free(st);
+			return ENC_SYM_MERROR;
+		}
+
+		memset((void *)st_file, 0, sizeof(read_file_state));
+		fseek(f_in, 0, SEEK_END);
+
+		st_file->input = f_in;
+		st_file->input_length = ftell(f_in);
+
+		st->udata = (void *)st_file;
+		st->read_callback = my_lz_read_file;
+		st->zip_length = st_file->input_length;
+	} else {
+		st_buf.data = (unsigned char*)arr_in->data;
+		st_buf.len = arr_in->size;
+
+		st->udata = (void *)&st_buf;
+		st->read_callback = my_lz_read_buf;
+		st->zip_length = st_buf.len;
+	}
+
+	lowzip_init_archive(st);
+
+	if (st->have_error) {
+		lbm_set_error_reason("Invalid zip archive");
+		lbm_free(st);
+		lbm_free(st_file);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value r = ENC_SYM_NIL;
+
+	for (int i = 0; ; i++) {
+		lowzip_file *fileinfo = lowzip_locate_file(st, i, NULL);
+		if (!fileinfo) {
+			break;
+		}
+
+		lbm_value current = ENC_SYM_NIL;
+		current = lbm_cons(lbm_enc_i(fileinfo->uncompressed_size), current);
+
+		lbm_value filename;
+		if(lbm_create_array(&filename, (lbm_uint)strlen(fileinfo->filename) + 1)){
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(filename);
+			strcpy((char*)arr->data, fileinfo->filename);
+			current = lbm_cons(filename, current);
+		} else {
+			lbm_free(st);
+			lbm_free(st_file);
+			return ENC_SYM_MERROR;
+		}
+
+		r = lbm_cons(current, r);
+	}
+
+	lbm_free(st);
+	lbm_free(st_file);
+	return r;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -4897,6 +5313,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("f-rm", ext_f_rm);
 	lbm_add_extension("f-ls", ext_f_ls);
 	lbm_add_extension("f-size", ext_f_size);
+	lbm_add_extension("f-rename", ext_f_rename);
 	lbm_add_extension("f-fatinfo", ext_f_fatinfo);
 
 	// Firmware update
@@ -4942,6 +5359,10 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("pwm-start", ext_pwm_start);
 	lbm_add_extension("pwm-stop", ext_pwm_stop);
 	lbm_add_extension("pwm-set-duty", ext_pwm_set_duty);
+
+	// Compression
+	lbm_add_extension("unzip", ext_unzip);
+	lbm_add_extension("zip-ls", ext_zip_ls);
 
 	// Extension libraries
 	lbm_array_extensions_init();

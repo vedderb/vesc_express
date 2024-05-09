@@ -1,0 +1,15 @@
+*.pyc
+*.o
+/test_lowzip
+/sf-city-lots-json
+/cantrbry.zip
+/cantrbry
+/artificl.zip
+/artificl
+/large.zip
+/large
+/misc.zip
+/misc
+/calgary.zip
+/calgary
+/scriptorium
