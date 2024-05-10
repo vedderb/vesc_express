@@ -4043,9 +4043,10 @@ static const esp_partition_t *update_partition = NULL;
 static const void *update_partition_data = NULL;
 static esp_partition_mmap_handle_t update_partition_handle = 0;
 
-// (fw-data optOffset, optLen)
-static lbm_value ext_fw_data(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_NUMBER_ALL();
+static bool fw_map_buffer(void) {
+	if (update_partition) {
+		return true;
+	}
 
 	if (!update_partition) {
 		update_partition = esp_ota_get_next_update_partition(NULL);
@@ -4055,8 +4056,20 @@ static lbm_value ext_fw_data(lbm_value *args, lbm_uint argn) {
 
 		if (res != ESP_OK) {
 			update_partition = NULL;
-			return ENC_SYM_EERROR;
+			lbm_set_error_reason("FW buffer mmap failed");
+			return false;
 		}
+	}
+
+	return true;
+}
+
+// (fw-data optOffset, optLen)
+static lbm_value ext_fw_data(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_NUMBER_ALL();
+
+	if (!fw_map_buffer()) {
+		return ENC_SYM_EERROR;
 	}
 
 	uint32_t offset = 0;
@@ -4080,6 +4093,38 @@ static lbm_value ext_fw_data(lbm_value *args, lbm_uint argn) {
 	lbm_value val;
 	lbm_lift_array(&val, (char*)update_partition_data + offset, len);
 	return val;
+}
+
+// (fw-write-raw offset data)
+static lbm_value ext_fw_write_raw(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	if (!lbm_is_number(args[0])) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	uint32_t offset = lbm_dec_as_u32(args[0]);
+
+	lbm_array_header_t *arr_in = NULL;
+	if (lbm_is_array_r(args[1])) {
+		arr_in = (lbm_array_header_t *)lbm_car(args[1]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	if (!fw_map_buffer()) {
+		return ENC_SYM_EERROR;
+	}
+
+	if ((offset + arr_in->size) > update_partition->size) {
+		lbm_set_error_reason("Trying to write outside of buffer");
+		return ENC_SYM_EERROR;
+	}
+
+	esp_err_t res = esp_partition_write(update_partition, offset, arr_in->data, arr_in->size);
+
+	return res == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static void lbm_run_task(void *arg) {
@@ -4993,20 +5038,12 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 
 		memset((void *)st_write, 0, sizeof(write_file_state));
 
-		if (!update_partition) {
-			update_partition = esp_ota_get_next_update_partition(NULL);
-
-			esp_err_t res = esp_partition_mmap(update_partition, 0, update_partition->size,
-					ESP_PARTITION_MMAP_DATA, &update_partition_data, &update_partition_handle);
-
-			if (res != ESP_OK) {
-				update_partition = NULL;
-				lbm_free(st);
-				lbm_free(st_file);
-				lbm_free(st_buf);
-				lbm_free(st_write);
-				return ENC_SYM_EERROR;
-			}
+		if (!fw_map_buffer()) {
+			lbm_free(st);
+			lbm_free(st_file);
+			lbm_free(st_buf);
+			lbm_free(st_write);
+			return ENC_SYM_EERROR;
 		}
 
 		unsigned int buflen = fileinfo->uncompressed_size;
@@ -5388,6 +5425,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("fw-write", ext_fw_write);
 	lbm_add_extension("fw-reboot", ext_fw_reboot);
 	lbm_add_extension("fw-data", ext_fw_data);
+	lbm_add_extension("fw-write-raw", ext_fw_write_raw);
 
 	// Lbm and script update
 	lbm_add_extension("lbm-erase", ext_lbm_erase);
