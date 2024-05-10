@@ -896,7 +896,11 @@ void lowzip_init_archive(lowzip_state *st) {
 		if (lowzip_read4(st, offset) != 0x06054b50UL) {
 			continue;
 		}
-		if (offset + LOWZIP_MIN_EOCDIR_LENGTH + lowzip_read2(st, offset + 20) != st->zip_length) {
+
+		unsigned int size = offset + LOWZIP_MIN_EOCDIR_LENGTH + lowzip_read2(st, offset + 20);
+
+		// zip_length - 1 is a hack to make this work with imports from VESC Tool
+		if (size != st->zip_length && size != (st->zip_length - 1)) {
 			continue;
 		}
 
