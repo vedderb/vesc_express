@@ -4830,6 +4830,53 @@ static void my_lz_write_sync(void *udata) {
 	}
 }
 
+typedef struct {
+	lbm_cid id;
+	lowzip_state *st;
+	read_file_state *st_file;
+	read_buf_state *st_buf;
+	write_file_state *st_write;
+	FILE *f_out;
+	unsigned int buflen;
+} unzip_args;
+
+static void unzip_task(void *arg) {
+	unzip_args *a = (unzip_args*)arg;
+
+	// Use restart counter to tell if LBM has been restarted while this thread
+	// was running.
+	int restart_cnt = lispif_get_restart_cnt();
+
+	uint32_t erase_len = (a->buflen / update_partition->erase_size) * update_partition->erase_size;
+	if ((a->buflen % update_partition->erase_size) != 0) {
+		erase_len += update_partition->erase_size;
+	}
+
+	esp_partition_erase_range(update_partition, 0, erase_len);
+
+	if (restart_cnt == lispif_get_restart_cnt()) {
+		lowzip_get_data(a->st);
+	}
+
+	if (restart_cnt == lispif_get_restart_cnt()) {
+		lbm_value res = ENC_SYM_NIL;
+		if (!a->st->have_error) {
+			unsigned int count = fwrite(update_partition_data, 1, a->buflen, a->f_out);
+			res = count == a->buflen ? ENC_SYM_TRUE : ENC_SYM_NIL;
+		}
+
+		lbm_free(a->st);
+		lbm_free(a->st_file);
+		lbm_free(a->st_buf);
+		lbm_free(a->st_write);
+		lbm_free(a);
+
+		lbm_unblock_ctx_unboxed(a->id, res);
+	}
+
+	vTaskDelete(NULL);
+}
+
 // (unzip input fileInZip optOutputFile)
 static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 	if (argn != 2 && argn != 3) {
@@ -4882,16 +4929,16 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 	memset((void *) st, 0, sizeof(lowzip_state));
 
 	read_file_state *st_file = NULL;
-	read_buf_state st_buf;
+	read_buf_state *st_buf = NULL;
 
 	if (f_in) {
-		st_file = (read_file_state *) lbm_malloc(sizeof(read_file_state));
+		st_file = (read_file_state*)lbm_malloc(sizeof(read_file_state));
 		if (!st_file) {
 			lbm_free(st);
 			return ENC_SYM_MERROR;
 		}
-
 		memset((void *)st_file, 0, sizeof(read_file_state));
+
 		fseek(f_in, 0, SEEK_END);
 
 		st_file->input = f_in;
@@ -4901,12 +4948,19 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 		st->read_callback = my_lz_read_file;
 		st->zip_length = st_file->input_length;
 	} else {
-		st_buf.data = (unsigned char*)arr_in->data;
-		st_buf.len = arr_in->size;
+		st_buf = (read_buf_state*)lbm_malloc(sizeof(read_buf_state));
+		if (!st_buf) {
+			lbm_free(st);
+			return ENC_SYM_MERROR;
+		}
+		memset((void *)st_buf, 0, sizeof(read_buf_state));
 
-		st->udata = (void *)&st_buf;
+		st_buf->data = (unsigned char*)arr_in->data;
+		st_buf->len = arr_in->size;
+
+		st->udata = st_buf;
 		st->read_callback = my_lz_read_buf;
-		st->zip_length = st_buf.len;
+		st->zip_length = st_buf->len;
 	}
 
 	lowzip_init_archive(st);
@@ -4915,6 +4969,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 		lbm_set_error_reason("Invalid zip archive");
 		lbm_free(st);
 		lbm_free(st_file);
+		lbm_free(st_buf);
 		return ENC_SYM_EERROR;
 	}
 
@@ -4923,6 +4978,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 		lbm_set_error_reason("Invalid file in zip");
 		lbm_free(st);
 		lbm_free(st_file);
+		lbm_free(st_buf);
 		return ENC_SYM_EERROR;
 	}
 
@@ -4931,6 +4987,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 		if (!st_write) {
 			lbm_free(st);
 			lbm_free(st_file);
+			lbm_free(st_buf);
 			return ENC_SYM_MERROR;
 		}
 
@@ -4946,6 +5003,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 				update_partition = NULL;
 				lbm_free(st);
 				lbm_free(st_file);
+				lbm_free(st_buf);
 				lbm_free(st_write);
 				return ENC_SYM_EERROR;
 			}
@@ -4957,13 +5015,10 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 			update_partition = NULL;
 			lbm_free(st);
 			lbm_free(st_file);
+			lbm_free(st_buf);
 			lbm_free(st_write);
 			lbm_set_error_reason("Too large file");
 			return ENC_SYM_EERROR;
-		}
-
-		for (uint32_t i = 0; i < buflen; i += update_partition->erase_size) {
-			esp_partition_erase_range(update_partition, i, update_partition->erase_size);
 		}
 
 		st->output_start = (unsigned char *)update_partition_data;
@@ -4974,18 +5029,29 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 		st->write_sync_callback = my_lz_write_sync;
 		st->udata_write = st_write;
 
-		lowzip_get_data(st);
+		unzip_args *a;
+		a = (unzip_args*)lbm_malloc(sizeof(unzip_args));
 
-		lbm_value res = ENC_SYM_NIL;
-		if (!st->have_error) {
-			unsigned int count = fwrite(update_partition_data, 1, buflen, f_out);
-			res = count == buflen ? ENC_SYM_TRUE : ENC_SYM_NIL;
+		if (!a) {
+			lbm_free(st);
+			lbm_free(st_file);
+			lbm_free(st_buf);
+			lbm_free(st_write);
+			return ENC_SYM_MERROR;
 		}
 
-		lbm_free(st);
-		lbm_free(st_file);
-		lbm_free(st_write);
-		return res;
+		a->id = lbm_get_current_cid();
+		a->st = st;
+		a->st_file = st_file;
+		a->st_buf = st_buf;
+		a->st_write = st_write;
+		a->f_out = f_out;
+		a->buflen = buflen;
+
+		xTaskCreatePinnedToCore(unzip_task, "Unzip", 2048, a, 5, NULL, tskNO_AFFINITY);
+
+		lbm_block_ctx_from_extension();
+		return ENC_SYM_TRUE;
 	} else {
 		lbm_value res = ENC_SYM_MERROR;
 		if (lbm_create_array(&res, fileinfo->uncompressed_size)) {
@@ -5004,6 +5070,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 
 		lbm_free(st);
 		lbm_free(st_file);
+		lbm_free(st_buf);
 		return res;
 	}
 }
