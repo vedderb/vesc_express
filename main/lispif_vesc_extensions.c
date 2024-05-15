@@ -463,10 +463,14 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 	} else if (compare_symbol(name, &syms_vesc.wh_cnt)) {
 		res = get_or_set_float(set, &val->wh_cnt, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.cell_num)) {
+		if (set && set_arg >= BMS_MAX_CELLS) {
+			return ENC_SYM_EERROR;
+		}
+
 		res = get_or_set_i(set, &val->cell_num, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.v_cell)) {
 		if (argn != 2 || !lbm_is_number(args[1])) {
-			return ENC_SYM_EERROR;
+			return ENC_SYM_TERROR;
 		}
 
 		int c = lbm_dec_as_i32(args[1]);
@@ -477,7 +481,7 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &val->v_cell[c], &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.bal_state)) {
 		if (argn != 2 || !lbm_is_number(args[1])) {
-			return ENC_SYM_EERROR;
+			return ENC_SYM_TERROR;
 		}
 
 		int c = lbm_dec_as_i32(args[1]);
@@ -487,6 +491,10 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 
 		res = get_or_set_bool(set, &val->bal_state[c], &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temp_adc_num)) {
+		if (set && set_arg >= BMS_MAX_TEMPS) {
+			return ENC_SYM_EERROR;
+		}
+
 		res = get_or_set_i(set, &val->temp_adc_num, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temps_adc)) {
 		if (argn != 2 || !lbm_is_number(args[1])) {

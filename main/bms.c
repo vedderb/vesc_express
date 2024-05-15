@@ -399,8 +399,8 @@ void bms_send_status_can(void) {
 
 	int cell_now = 0;
 	int cell_max = m_values.cell_num;
-	if (cell_max > 32) {
-		cell_max = 32;
+	if (cell_max > BMS_MAX_CELLS) {
+		cell_max = BMS_MAX_CELLS;
 	}
 
 	while (cell_now < cell_max) {
@@ -436,11 +436,11 @@ void bms_send_status_can(void) {
 
 	int temp_now = 0;
 	int temp_max = m_values.temp_adc_num;
-	if (temp_max > 50) {
-		temp_max = 50;
+	if (temp_max > BMS_MAX_TEMPS) {
+		temp_max = BMS_MAX_TEMPS;
 	}
 
-	while (temp_now < m_values.temp_adc_num) {
+	while (temp_now < temp_max) {
 		send_index = 0;
 		buffer[send_index++] = temp_now;
 		buffer[send_index++] = temp_max;
