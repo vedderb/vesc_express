@@ -4915,6 +4915,7 @@ static void unzip_task(void *arg) {
 		lbm_value res = ENC_SYM_NIL;
 		if (!a->st->have_error) {
 			unsigned int count = fwrite(update_partition_data, 1, a->buflen, a->f_out);
+			fsync(fileno(a->f_out));
 			res = count == a->buflen ? ENC_SYM_TRUE : ENC_SYM_NIL;
 		}
 
