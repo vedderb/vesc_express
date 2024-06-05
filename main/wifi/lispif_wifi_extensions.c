@@ -872,11 +872,16 @@ typedef struct {
 static void recv_task(void *arg) {
 	recv_task_state *s = (recv_task_state*)arg;
 	lbm_array_header_t *buffer = (lbm_array_header_t*)lbm_car(s->buffer);
+	lbm_uint recv_size = buffer->size;
+	if (s->as_str) {
+		recv_size--;
+	}
 
 	int start = xTaskGetTickCount();
 
+
 	for (;;) {
-		ssize_t len = recv(s->socket, (char*)(buffer->data), buffer->size - 1, MSG_DONTWAIT);
+		ssize_t len = recv(s->socket, (char*)(buffer->data), recv_size, MSG_DONTWAIT);
 
 		if (len < 0) {
 			switch (errno) {
@@ -932,11 +937,15 @@ static void recv_to_char_task(void *arg) {
 
 	size_t total_len = 0;
 	size_t result_size = 0;
+	lbm_uint recv_size = buffer->size;
+	if (s->as_str) {
+		recv_size--;
+	}
 
 	int start = xTaskGetTickCount();
 
 	while (true) {
-		if (buffer->size <= 1) {
+		if (recv_size == 0) {
 			break;
 		}
 
@@ -977,7 +986,7 @@ static void recv_to_char_task(void *arg) {
 			((char*)buffer->data)[total_len] = byte;
 			total_len++;
 
-			if (byte == s->terminator || total_len >= (buffer->size - 1)) {
+			if (byte == s->terminator || total_len >= recv_size) {
 				break;
 			}
 		}
@@ -1132,11 +1141,6 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			// can ignore that case.)
 			return ENC_SYM(symbol_disconnected);
 		} else {
-			size_t size = len;
-			if (as_str) {
-				size++;
-				buffer[len] = '\0';
-			}
 			lbm_array_shrink(result, size);
 		}
 
