@@ -3506,7 +3506,7 @@ static lbm_value ext_f_read(lbm_value *args, lbm_uint argn) {
 			res = ENC_SYM_EERROR;
 		} else {
 			if (rd < sz) {
-				lbm_memory_shrink(arr->data, rd);
+				lbm_memory_shrink_bytes(arr->data, rd);
 				arr->size = rd;
 			}
 		}

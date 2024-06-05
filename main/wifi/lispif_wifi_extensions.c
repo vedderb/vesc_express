@@ -862,7 +862,7 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 typedef struct {
 	lbm_cid return_cid;
 	int socket;
-	int max_len;
+	lbm_value buffer;
 	bool as_str;
 	bool return_on_disconnect;
 	char terminator;
@@ -871,19 +871,12 @@ typedef struct {
 
 static void recv_task(void *arg) {
 	recv_task_state *s = (recv_task_state*)arg;
-
-	uint8_t *buffer = malloc(s->max_len + 1);
-
-	if (!buffer) {
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
-		lbm_set_error_reason(error_esp_no_memory);
-		goto recv_cleanup;
-	}
+	lbm_array_header_t *buffer = (lbm_array_header_t*)lbm_car(s->buffer);
 
 	int start = xTaskGetTickCount();
 
 	for (;;) {
-		ssize_t len = recv(s->socket, buffer, s->max_len, MSG_DONTWAIT);
+		ssize_t len = recv(s->socket, (char*)(buffer->data), buffer->size - 1, MSG_DONTWAIT);
 
 		if (len < 0) {
 			switch (errno) {
@@ -910,17 +903,11 @@ static void recv_task(void *arg) {
 			size_t result_size = len;
 			if (s->as_str) {
 				result_size++;
-				buffer[len] = '\0';
+				((char*)buffer->data)[len] = '\0';
 			}
 
-			lbm_flat_value_t value;
-			if (!f_pack_array(&value, buffer, result_size)) {
-				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
-			}
-
-			if (!lbm_unblock_ctx(s->return_cid, &value)) {
-				lbm_free(value.buf);
-			}
+			lbm_array_shrink(s->buffer, result_size);
+			lbm_unblock_ctx_r(s->return_cid);
 
 			goto recv_cleanup;
 		}
@@ -934,32 +921,22 @@ static void recv_task(void *arg) {
 
 	recv_cleanup:
 
-	if (buffer) {
-		free(buffer);
-	}
-
-	free(s);
+	lbm_free(s);
 	vTaskDelete(NULL);
 }
 
 // Maybe this can be merged with recv_task?
 static void recv_to_char_task(void *arg) {
 	recv_task_state *s = (recv_task_state *)arg;
-
-	uint8_t *buffer = malloc(s->max_len + 1);
-
-	if (!buffer) {
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
-		lbm_set_error_reason(error_esp_no_memory);
-		goto recv_cleanup;
-	}
+	lbm_array_header_t *buffer = (lbm_array_header_t*)lbm_car(s->buffer);
 
 	size_t total_len = 0;
+	size_t result_size = 0;
 
 	int start = xTaskGetTickCount();
 
 	while (true) {
-		if (s->max_len == 0) {
+		if (buffer->size <= 1) {
 			break;
 		}
 
@@ -992,17 +969,15 @@ static void recv_to_char_task(void *arg) {
 			}
 		} else if (len == 0) {
 			if (total_len == 0 || !s->return_on_disconnect) {
-				lbm_unblock_ctx_unboxed(
-					s->return_cid, ENC_SYM(symbol_disconnected)
-				);
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
 				goto recv_cleanup;
 			}
 			break;
 		} else {
-			buffer[total_len] = byte;
-			total_len        += 1;
+			((char*)buffer->data)[total_len] = byte;
+			total_len++;
 
-			if (byte == s->terminator || total_len >= s->max_len) {
+			if (byte == s->terminator || total_len >= (buffer->size - 1)) {
 				break;
 			}
 		}
@@ -1022,35 +997,18 @@ static void recv_to_char_task(void *arg) {
 
 return_buffer:
 
-	if (total_len > s->max_len) {
-		STORED_LOGF("recv buffer overflow: %u >= %u", total_len, s->max_len);
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
-		goto recv_cleanup;
-	}
-
-	size_t result_size = total_len;
+	result_size = total_len;
 	if (s->as_str) {
 		result_size++;
-		buffer[total_len] = '\0';
+		((char*)buffer->data)[total_len] = '\0';
 	}
 
-	lbm_flat_value_t value;
-	if (!f_pack_array(&value, buffer, result_size)) {
-		STORED_LOGF("lbm_start_flatten failed");
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
-	}
-
-	if (!lbm_unblock_ctx(s->return_cid, &value)) {
-		lbm_free(value.buf);
-	}
+	lbm_array_shrink(s->buffer, result_size);
+	lbm_unblock_ctx_r(s->return_cid);
 
 recv_cleanup:
 
-	if (buffer) {
-		free(buffer);
-	}
-
-	free(s);
+	lbm_free(s);
 	vTaskDelete(NULL);
 }
 
@@ -1116,14 +1074,23 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 		as_str = lbm_dec_bool(args[3]);
 	}
 
+	lbm_value result;
+	size_t size = max_len;
+	if (as_str) {
+		size++;
+	}
+	if (!lbm_create_array(&result, size)) {
+		return ENC_SYM_MERROR;
+	}
+
 	if (should_wait) {
-		recv_task_state *s = malloc(sizeof(recv_task_state));
+		recv_task_state *s = lbm_malloc(sizeof(recv_task_state));
 
 		if (s) {
 			lbm_block_ctx_from_extension();
 
 			s->return_cid = lbm_get_current_cid();
-			s->max_len = max_len;
+			s->buffer = result;
 			s->timeout = timeout_secs;
 			s->socket = sock;
 			s->as_str = as_str;
@@ -1132,28 +1099,14 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 				recv_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
 			);
 
-			return ENC_SYM_NIL;
+			return result;
 		} else {
-			lbm_set_error_reason(error_esp_no_memory);
-			return ENC_SYM_FATAL_ERROR;
-		}
-	} else {
-		lbm_value result;
-		size_t size = max_len;
-		if (as_str) {
-			size++;
-		}
-		if (!lbm_create_array(&result, size)) {
 			return ENC_SYM_MERROR;
 		}
-
+	} else {
 		char *buffer = lbm_dec_array_data(result);
-		if (!buffer) {
-			// impossible
-			return ENC_SYM_FATAL_ERROR;
-		}
-
 		ssize_t len = recv(sock, buffer, max_len, MSG_DONTWAIT);
+
 		if (len == -1) {
 			switch (errno) {
 				case EWOULDBLOCK: {
@@ -1266,13 +1219,22 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 		return_on_disconnect = lbm_dec_bool(args[5]);
 	}
 	
-	recv_task_state *s = malloc(sizeof(recv_task_state));
+	lbm_value result;
+	size_t size = max_len;
+	if (as_str) {
+		size++;
+	}
+	if (!lbm_create_array(&result, size)) {
+		return ENC_SYM_MERROR;
+	}
+
+	recv_task_state *s = lbm_malloc(sizeof(recv_task_state));
 	
 	if (s) {
 		lbm_block_ctx_from_extension();
 
 		s->return_cid = lbm_get_current_cid();
-		s->max_len = max_len;
+		s->buffer = result;
 		s->timeout = timeout_secs;
 		s->socket = sock;
 		s->as_str = as_str;
@@ -1283,10 +1245,9 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 			recv_to_char_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
 		);
 
-		return ENC_SYM_NIL;
+		return result;
 	} else {
-		lbm_set_error_reason(error_esp_no_memory);
-		return ENC_SYM_FATAL_ERROR;
+		return ENC_SYM_MERROR;
 	}
 }
 
