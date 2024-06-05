@@ -1141,6 +1141,12 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			// can ignore that case.)
 			return ENC_SYM(symbol_disconnected);
 		} else {
+			size = len;
+			if (as_str) {
+				size++;
+				buffer[len] = '\0';
+			}
+
 			lbm_array_shrink(result, size);
 		}
 
