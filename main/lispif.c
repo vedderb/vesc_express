@@ -38,6 +38,9 @@
 #ifndef EXTENSION_STORAGE_SIZE
 #define EXTENSION_STORAGE_SIZE	310
 #endif
+#ifndef USER_EXTENSION_STORAGE_SIZE
+#define USER_EXTENSION_STORAGE_SIZE 0
+#endif
 #define PROF_DATA_NUM			30
 #define EXT_LOAD_CALLBACK_LEN	10
 
@@ -48,7 +51,7 @@ static size_t bitmap_size = 0;
 static lbm_cons_t *heap;
 static uint32_t *memory_array;
 static uint32_t *bitmap_array;
-static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE];
+static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE];
 
 static lbm_const_heap_t const_heap;
 static volatile lbm_uint *const_heap_ptr = 0;

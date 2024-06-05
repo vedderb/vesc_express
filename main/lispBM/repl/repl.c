@@ -50,13 +50,12 @@
 #define GC_STACK_SIZE 256
 #define PRINT_STACK_SIZE 256
 #define EXTENSION_STORAGE_SIZE 1024
-#define USER_EXTENSION_STORAGE_SIZE 0 // Override this to allocate extra space for user-defined extensions
 #define WAIT_TIMEOUT 2500
 #define STR_SIZE 1024
 #define CONSTANT_MEMORY_SIZE 32*1024
 #define PROF_DATA_NUM 100
 
-lbm_extension_t extensions[EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE];
+lbm_extension_t extensions[EXTENSION_STORAGE_SIZE];
 lbm_uint constants_memory[CONSTANT_MEMORY_SIZE];
 lbm_prof_t prof_data[100];
 
