@@ -4917,6 +4917,12 @@ static void unzip_task(void *arg) {
 			unsigned int count = fwrite(update_partition_data, 1, a->buflen, a->f_out);
 			fsync(fileno(a->f_out));
 			res = count == a->buflen ? ENC_SYM_TRUE : ENC_SYM_NIL;
+
+			if (!res) {
+				commands_printf_lisp("Could not write all data to output file");
+			}
+		} else {
+			commands_printf_lisp("get_data error in extension");
 		}
 
 		lbm_free(a->st);
@@ -5110,6 +5116,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 			lowzip_get_data(st);
 
 			if (st->have_error) {
+				commands_printf_lisp("get_data error in extension");
 				res = ENC_SYM_NIL;
 			}
 		}
