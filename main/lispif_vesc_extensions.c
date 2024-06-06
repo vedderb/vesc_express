@@ -4807,7 +4807,7 @@ static unsigned int my_lz_read_file(void *udata, unsigned int offset) {
 
 	// Out-of-bounds read, no file I/O.
 	if (offset >= st->input_length) {
-		commands_printf_lisp("OOB read (offset %ld)\n", (long)offset);
+		commands_printf_lisp("Unzip: OOB read (offset %ld)\n", (long)offset);
 		return 0x100U;
 	}
 
@@ -4820,6 +4820,7 @@ static unsigned int my_lz_read_file(void *udata, unsigned int offset) {
 		chunk_start = 0;
 	}
 	if (fseek(st->input, (size_t) chunk_start, SEEK_SET) != 0) {
+		commands_printf_lisp("Unzip: fseek failed");
 		return 0x100U;
 	}
 
@@ -4831,6 +4832,8 @@ static unsigned int my_lz_read_file(void *udata, unsigned int offset) {
 	if (offset >= st->input_chunk_start && offset < st->input_chunk_end) {
 		return (unsigned int) st->input_chunk[offset - st->input_chunk_start];
 	}
+
+	commands_printf_lisp("Unzip: file read error");
 	return 0x100U;
 }
 
@@ -4919,10 +4922,10 @@ static void unzip_task(void *arg) {
 			res = count == a->buflen ? ENC_SYM_TRUE : ENC_SYM_NIL;
 
 			if (!res) {
-				commands_printf_lisp("Could not write all data to output file");
+				commands_printf_lisp("Unzip: could not write all data to output file");
 			}
 		} else {
-			commands_printf_lisp("get_data error in extension");
+			commands_printf_lisp("Unzip: get_data error in extension");
 		}
 
 		lbm_free(a->st);
@@ -5116,7 +5119,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 			lowzip_get_data(st);
 
 			if (st->have_error) {
-				commands_printf_lisp("get_data error in extension");
+				commands_printf_lisp("Unzip: get_data error in extension");
 				res = ENC_SYM_NIL;
 			}
 		}
