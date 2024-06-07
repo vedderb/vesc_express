@@ -5103,7 +5103,7 @@ static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
 		a->f_out = f_out;
 		a->buflen = buflen;
 
-		xTaskCreatePinnedToCore(unzip_task, "Unzip", 2048, a, 5, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(unzip_task, "Unzip", 3072, a, 5, NULL, tskNO_AFFINITY);
 
 		lbm_block_ctx_from_extension();
 		return ENC_SYM_TRUE;
