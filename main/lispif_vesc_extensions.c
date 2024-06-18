@@ -79,6 +79,12 @@
 #include <ctype.h>
 #include <stdarg.h>
 
+#if defined(SD_PIN_MOSI)
+const char *base_path = "/sdcard/";
+#elif defined(NAND_PIN_MOSI)
+const char *base_path = "/nandflash/";
+#endif
+
 typedef struct {
 	// BMS
 	lbm_uint v_tot;
@@ -3435,8 +3441,8 @@ static lbm_value ext_f_open(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(base_path) + 1];
+	strcpy(path_full, base_path);
 	strcat(path_full, path);
 
 	FILE *f = fopen(path_full, mode);
@@ -3618,8 +3624,8 @@ static lbm_value ext_f_mkdir(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(base_path) + 1];
+	strcpy(path_full, base_path);
 	strcat(path_full, path);
 
 	return mkdir(path_full, 0775) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -3635,8 +3641,8 @@ static lbm_value ext_f_rm(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(base_path) + 1];
+	strcpy(path_full, base_path);
 	strcat(path_full, path);
 
 	return utils_rmtree(path_full) ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -3652,8 +3658,8 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(base_path) + 1];
+	strcpy(path_full, base_path);
 	strcat(path_full, path);
 
 	lbm_value res = ENC_SYM_NIL;
@@ -3740,8 +3746,8 @@ static lbm_value ext_f_size(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_TERROR;
 		}
 
-		char path_full[strlen(path) + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[strlen(path) + strlen(base_path) + 1];
+		strcpy(path_full, base_path);
 		strcat(path_full, path);
 
 		FILE *f = fopen(path_full, "r");
@@ -3771,21 +3777,21 @@ static lbm_value ext_f_rename(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char *old_full = lbm_malloc(strlen(old_name) + strlen("/sdcard/") + 1);
+	char *old_full = lbm_malloc(strlen(old_name) + strlen(base_path) + 1);
 	if (!old_full) {
 		return ENC_SYM_MERROR;
 	}
 
-	char *new_full = lbm_malloc(strlen(new_name) + strlen("/sdcard/") + 1);
+	char *new_full = lbm_malloc(strlen(new_name) + strlen(base_path) + 1);
 	if (!new_full) {
 		lbm_free(old_full);
 		return ENC_SYM_MERROR;
 	}
 
-	strcpy(old_full, "/sdcard/");
+	strcpy(old_full, base_path);
 	strcat(old_full, old_name);
 
-	strcpy(new_full, "/sdcard/");
+	strcpy(new_full, base_path);
 	strcat(new_full, new_name);
 
 	lbm_value res = rename(old_full, new_full) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -3802,7 +3808,7 @@ static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 
 	uint64_t total = 0;
 	uint64_t free = 0;
-	esp_vfs_fat_info("/sdcard", &total, &free);
+	esp_vfs_fat_info(base_path, &total, &free);
 	total /= 1024;
 	total /= 1024;
 	free /= 1024;
