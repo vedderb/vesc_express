@@ -349,11 +349,11 @@ static void bq_init(uint8_t dev_addr) {
 	// Disabled
 	bq_set_reg(dev_addr, CFETOFFPinConfig, 0x00, 1);
 	bq_set_reg(dev_addr, DFETOFFPinConfig, 0x00, 1);
-	bq_set_reg(dev_addr, ALERTPinConfig, 0x00, 1);
 
 	// ADC inputs with 18k pull-up
 	bq_set_reg(dev_addr, TS1Config, 0b00111011, 1);
 	bq_set_reg(dev_addr, TS3Config, 0b00111011, 1);
+	bq_set_reg(dev_addr, ALERTPinConfig, 0b00111011, 1);
 
 	// Disabled
 	bq_set_reg(dev_addr, HDQPinConfig, 0x00, 1);
@@ -583,12 +583,14 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 
 	float v1 = (float)command_read(BQ_ADDR_1, TS1Temperature) * counts_to_volts;
 	float v2 = (float)command_read(BQ_ADDR_1, TS3Temperature) * counts_to_volts;
+	float v3 = (float)command_read(BQ_ADDR_1, ALERTTemperature) * counts_to_volts;
 
 	// TODO: Use config
 	float ntc_beta = 3380.0;
 
 	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v1), ntc_beta)), ts_list);
 	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v2), ntc_beta)), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v3), ntc_beta)), ts_list);
 
 	if (m_cells_ic2 != 0) {
 		ts_list = lbm_cons(lbm_enc_float(
@@ -612,8 +614,11 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_get_current(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	// Note: The current sensor is inverted compared to the datasheet
+#if PCB_VERSION == 2
+	return lbm_enc_float(((float)command_read(BQ_ADDR_1, CC2Current) / 100.0));
+#else
 	return lbm_enc_float(-((float)command_read(BQ_ADDR_1, CC2Current) / 100.0));
+#endif
 }
 
 static lbm_value ext_get_vout(lbm_value *args, lbm_uint argn) {

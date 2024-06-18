@@ -2198,12 +2198,28 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 		wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 		esp_wifi_init(&cfg);
 		esp_wifi_set_storage(WIFI_STORAGE_RAM);
-		esp_wifi_set_mode(WIFI_MODE_AP);
+		esp_wifi_set_mode(WIFI_MODE_APSTA);
 
-		// Disable power save mode. Does not work with bluetooth.
 		if (backup.config.ble_mode == BLE_MODE_DISABLED) {
 			esp_wifi_set_ps(WIFI_PS_NONE);
 		}
+
+		// The event handler allows some of the wifi-extensions
+		// to work.
+		esp_event_handler_instance_t instance_any_id;
+		esp_event_handler_instance_register(
+				WIFI_EVENT,
+				ESP_EVENT_ANY_ID,
+				&comm_wifi_event_handler,
+				NULL,
+				&instance_any_id);
+
+		// Enable FTM responder
+		wifi_config_t wifi_config;
+		memset(&wifi_config, 0, sizeof(wifi_config));
+		esp_wifi_get_config(WIFI_IF_AP, &wifi_config);
+		wifi_config.ap.ftm_responder = true;
+		esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
 
 		esp_wifi_start();
 	}

@@ -21,14 +21,20 @@
 #define MAIN_HWCONF_VESC_VBMS32_H_
 
 /*
- * TODO HW:
- * * Fix precharge supply. 12V boost from 5V is an option. E.g. MT3608.
- * * Connect temp-pin properly so that bq can exit sleep mode (not needed?)
- * * RST_SHUT should have pull-down when not used
- * * 10k pull-up on i2c
- * * SRP and SRN to Cell0 when not used
- * * SRP should be positive when charging
- * * How to deal with I2C when only having the lower BQ connected?
+ * TODO V1:
+ * * [OK] Fix precharge supply. 12V boost from 5V is an option. E.g. MT3608.
+ * * [OK] Connect temp-pin properly so that bq can exit sleep mode (not needed?)
+ * * [OK] RST_SHUT should have pull-down when not used
+ * * [OK] 10k pull-up on i2c
+ * * [OK] SRP and SRN to Cell0 when not used
+ * * SRP should be positive when charging (Was OK, wrong now...)
+ * * [OK] How to deal with I2C when only having the lower BQ connected?
+ */
+
+/*
+ * TODO V2:
+ * Swap SRP and SRN again
+ * Temperature sensor under MOSFETs
  */
 
 #include "adc.h"
@@ -36,6 +42,15 @@
 #include "datatypes.h"
 
 #define HW_NAME						"VBMS32"
+
+/*
+ * PCB-versions
+ *
+ * 1: First prototype, PCB says 1.0
+ * 2: Second prototype, PCB says 1.1
+ *
+ */
+#define PCB_VERSION					2
 
 #define HW_NO_UART
 

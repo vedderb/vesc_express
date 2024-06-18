@@ -187,9 +187,8 @@ void app_main(void) {
 
 	init_done = true;
 
-	for (;;) {
-		vTaskDelay(5000 / portTICK_PERIOD_MS);
-	}
+	// Exit main to free up heap-space
+	vTaskDelete(NULL);
 }
 
 uint32_t main_calc_hw_crc(void) {

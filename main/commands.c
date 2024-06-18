@@ -518,8 +518,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		static int32_t f_last_size = 0;
 		uint8_t *wifi_buffer = 0;
 
-		uint8_t *send_buffer_global = mempools_get_packet_buffer();
-		uint8_t *send_buffer = send_buffer_global;
+		uint8_t *send_buffer = 0;
 		size_t send_size = 400;
 
 		void(*reply_func_raw)(unsigned char *data, unsigned int len) = 0;
@@ -537,7 +536,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				send_size = wifi_buffer_size - 100;
 			} else {
 				reply_func_raw = 0;
+				send_buffer = mempools_get_packet_buffer();
 			}
+		} else {
+			send_buffer = mempools_get_packet_buffer();
 		}
 
 		int32_t ind = 0;
@@ -573,6 +575,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			int32_t rd = read(fileno(f_last), send_buffer + ind, send_size);
 			ind += rd;
 			f_last_offset += rd;
+
 			if (f_last_offset == f_last_size) {
 				fclose(f_last);
 				f_last = 0;
@@ -606,9 +609,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			free(wifi_buffer);
 		} else {
 			reply_func(send_buffer, ind);
+			mempools_free_packet_buffer(send_buffer);
 		}
-
-		mempools_free_packet_buffer(send_buffer_global);
 	} break;
 
 	case COMM_FILE_WRITE: {
