@@ -389,6 +389,8 @@ static void bq_init(uint8_t dev_addr) {
 static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
+	gpio_set_level(PIN_PSW_EN, 1);
+
 	m_bal_state_ic1 = 0;
 	m_bal_state_ic2 = 0;
 

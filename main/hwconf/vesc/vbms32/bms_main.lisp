@@ -2,7 +2,6 @@
 (def bal-ok false)
 (def is-balancing false)
 (def charge-ok false)
-(def charge-ts (systime))
 
 (def cell-num (+ (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2)))
 
@@ -43,6 +42,10 @@
     (loopwhile (not (main-init-done)) (sleep 0.1))
     (loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
 
+    ; For some reason a second init is sometimes needed to get the BQs started reliably. We
+    ; should try to figure out what is going on here...
+    (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))
+
     (var soc -2.0)
     (var v-cells nil)
     (var tries 0)
@@ -74,9 +77,9 @@
     (var ichg 0.0)
     (if (and (test-chg 10) charge-ok) {
             (bms-set-chg 1)
-            (sleep 0.5)
+            (sleep 2.0)
             (setq ichg (- (bms-get-current)))
-            (if (> ichg 0.3) {
+            (if (> ichg (bms-get-param 'min_charge_current)) {
                     (setq do-sleep false)
                     (setq charge-at-boot true)
             })
@@ -100,7 +103,7 @@
                     ; almost empty
                     (bms-sleep)
                     (bms-set-btn-wakeup-state -1)
-                    (sleep-deep 100.0)
+                    (sleep-deep 200.0)
                 }
                 {
                     (bms-sleep)
@@ -291,6 +294,20 @@
 (set-bms-val 'bms-can-id (can-local-id))
 
 (def t-last (systime))
+(def charge-ts (systime))
+
+(defun set-chg (chg) {
+        (if chg
+            {
+                (bms-set-chg 1)
+            }
+            {
+                (bms-set-chg 0)
+                (setq charge-ts (systime))
+            }
+        )
+})
+
 (loopwhile-thd 200 t {
         (var v-cells (bms-get-vcells))
 
@@ -380,18 +397,14 @@
         ))
 
         (if charge-ok
-            (if (test-chg 1)
-                {
+            (if (test-chg 1) {
                     (if (< (secs-since charge-ts) 2.0)
-                        (bms-set-chg 1)
-                        (bms-set-chg (if (> (- iout) (bms-get-param 'min_charge_current)) 1 0))
+                        (set-chg 1)
+                        (set-chg (> (- iout) (bms-get-param 'min_charge_current)))
                     )
-                }
-                {
-                    (setq charge-ts (systime))
-                }
-            )
-            (bms-set-chg 0)
+            })
+
+            (set-chg nil)
         )
 
         ;;; Sleep
