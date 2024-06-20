@@ -725,7 +725,7 @@ static lbm_value ext_wifi_ftm_measure(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_NIL;
 }
 
-#define CUSTOM_SOCKET_COUNT 10
+#define CUSTOM_SOCKET_COUNT 5
 static int custom_sockets[CUSTOM_SOCKET_COUNT];
 static int custom_socket_now = 0;
 

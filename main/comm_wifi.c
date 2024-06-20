@@ -403,17 +403,27 @@ void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len) {
 	packet_send_packet(data, len, comm_hub.packet);
 }
 
+#define SEND_RAW_MAX_RETRIES 100
+
 void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len) {
 	if (comm_local.socket < 0) {
 		return;
 	}
 
+	int error_cnt = 0;
+
 	int to_write = len;
 	while (to_write > 0) {
 		int written = send(comm_local.socket, buffer + (len - to_write), to_write, 0);
 		if (written < 0) {
-			// Error
-			return;
+			error_cnt++;
+
+			if (error_cnt > SEND_RAW_MAX_RETRIES) {
+				return;
+			}
+
+			vTaskDelay(1);
+			continue;
 		}
 
 		to_write -= written;
@@ -425,12 +435,20 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len) {
 		return;
 	}
 
+	int error_cnt = 0;
+
 	int to_write = len;
 	while (to_write > 0) {
 		int written = send(comm_hub.socket, buffer + (len - to_write), to_write, 0);
 		if (written < 0) {
-			// Error
-			return;
+			error_cnt++;
+
+			if (error_cnt > SEND_RAW_MAX_RETRIES) {
+				return;
+			}
+
+			vTaskDelay(1);
+			continue;
 		}
 
 		to_write -= written;
