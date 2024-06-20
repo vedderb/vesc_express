@@ -4,7 +4,7 @@
 (def charge-ok false)
 (def charge-ts (systime))
 
-(def cells-tot (+ (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2)))
+(def cell-num (+ (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2)))
 
 (defun test-chg (samples) {
         ; Many chargers "pulse" before starting, try to catch a pulse
@@ -15,7 +15,7 @@
                 (if (> v vchg) (setq vchg v))
         })
 
-        (> vchg (* (bms-get-param 'vc_charge_min) cells-tot))
+        (> vchg (* (bms-get-param 'vc_charge_min) cell-num))
 })
 
 (defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble)))
@@ -131,15 +131,12 @@
 (def psw-state false)
 (def psw-error false)
 (def is-bal false)
-(def cell-num (length (bms-get-vcells)))
 (def temp-num (length (bms-get-temps)))
 (def vtot 0.0)
 (def vout 0.0)
 (def vchg 0.0)
 (def iout 0.0)
 (def soc -1.0)
-(def c-min 0.0)
-(def c-max 0.0)
 (def i-zero-time 0.0)
 (def chg-allowed true)
 
@@ -226,7 +223,6 @@
 (defun psw-on () {
         (var res false)
         (var v-tot (apply + (bms-get-vcells)))
-        ;(var v-tot 61.0)
 
         (bms-set-pchg 0)
         (bms-set-out 0)
@@ -302,6 +298,10 @@
         (var t-min (ix t-sorted 0))
         (var t-max (ix t-sorted -1))
 
+        (var c-sorted (sort < v-cells))
+        (var c-min (ix c-sorted 0))
+        (var c-max (ix c-sorted -1))
+
         (setq vtot (apply + v-cells))
         (setq vout (bms-get-vout))
         (setq vchg (bms-get-vchg))
@@ -315,12 +315,6 @@
         (looprange i 0 temp-num {
                 (set-bms-val 'bms-temps-adc i (ix (bms-get-temps) i))
         })
-
-        (var cells-sorted (sort (fn (x y) (> (ix x 1) (ix y 1)))
-            (map (fn (x) (list x (ix v-cells x))) (range cell-num)))
-        )
-        (setq c-min (second (ix cells-sorted -1)))
-        (setq c-max (second (ix cells-sorted 0)))
 
         (if (>= soc 0.0)
             (setq soc (lpf soc (/ (- c-min 3.1) 1.1) (* 100.0 (bms-get-param 'soc_filter_const))))
@@ -400,7 +394,57 @@
             (bms-set-chg 0)
         )
 
-        ;;; Balancing
+        ;;; Sleep
+
+        ; Measure time without current
+        (if (> (abs iout) (bms-get-param 'min_current_sleep))
+            (setq i-zero-time 0.0)
+            (setq i-zero-time (+ i-zero-time dt))
+        )
+
+        ; Go to sleep when button is off, not balancing and not connected
+        (if (and (= (bms-get-btn) 0) (> i-zero-time 1.0) (not is-balancing) (not (is-connected))) {
+                (sleep 0.1)
+                (if (= (bms-get-btn) 0) {
+                        (save-settings)
+                        (bms-sleep)
+                        (bms-set-btn-wakeup-state 1)
+                        (sleep-deep 10)
+                })
+        })
+
+        ; Always go to sleep when SOC is too low
+        (if (and (< soc 0.02) (> i-zero-time 1.0)) {
+                ; Sleep longer and do not use the key to wake up when
+                ; almost empty
+                (save-settings)
+                (bms-sleep)
+                (bms-set-btn-wakeup-state -1)
+                (sleep-deep 100.0)
+        })
+
+        (sleep 0.1)
+})
+
+;;; Balancing
+(loopwhile-thd 200 t {
+        ; Disable balancing and wait for a bit to get clean
+        ; measurements
+        (looprange i 0 cell-num (bms-set-bal i 0))
+        (sleep 2.0)
+
+        (var v-cells (bms-get-vcells))
+
+        (var cells-sorted (sort (fn (x y) (> (ix x 1) (ix y 1)))
+            (map (fn (x) (list x (ix v-cells x))) (range cell-num)))
+        )
+
+        (var c-min (second (ix cells-sorted -1)))
+        (var c-max (second (ix cells-sorted 0)))
+
+        (var t-sorted (sort < (bms-get-temps)))
+        (var t-min (ix t-sorted 0))
+        (var t-max (ix t-sorted -1))
 
         (if charge-at-boot (setq bal-ok true))
 
@@ -450,34 +494,9 @@
                 (setq is-balancing false)
         })
 
-        ;;; Sleep
-
-        ; Measure time without current
-        (if (> (abs iout) (bms-get-param 'min_current_sleep))
-            (setq i-zero-time 0.0)
-            (setq i-zero-time (+ i-zero-time dt))
-        )
-
-        ; Go to sleep when button is off, not balancing and not connected
-        (if (and (= (bms-get-btn) 0) (> i-zero-time 1.0) (not is-balancing) (not (is-connected))) {
-                (sleep 0.1)
-                (if (= (bms-get-btn) 0) {
-                        (save-settings)
-                        (bms-sleep)
-                        (bms-set-btn-wakeup-state 1)
-                        (sleep-deep 10)
-                })
+        (var bal-ok-before bal-ok)
+        (looprange i 0 15 {
+                (if (not (eq bal-ok-before bal-ok)) (break))
+                (sleep 1.0)
         })
-
-        ; Always go to sleep when SOC is too low
-        (if (and (< soc 0.02) (> i-zero-time 1.0)) {
-                ; Sleep longer and do not use the key to wake up when
-                ; almost empty
-                (save-settings)
-                (bms-sleep)
-                (bms-set-btn-wakeup-state -1)
-                (sleep-deep 100.0)
-        })
-
-        (sleep 0.1)
 })
