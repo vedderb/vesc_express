@@ -1,10 +1,24 @@
-(loopwhile (not (main-init-done)) (sleep 0.1))
-(loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
-
 (def charge-at-boot false)
 (def bal-ok false)
 (def is-balancing false)
 (def charge-ok false)
+(def charge-ts (systime))
+
+(def cells-tot (+ (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2)))
+
+(defun test-chg (samples) {
+        ; Many chargers "pulse" before starting, try to catch a pulse
+        (var vchg 0.0)
+        (looprange i 0 samples {
+                (if (> i 0) (sleep 0.02))
+                (var v (bms-get-vchg))
+                (if (> v vchg) (setq vchg v))
+        })
+
+        (> vchg (* (bms-get-param 'vc_charge_min) cells-tot))
+})
+
+(defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble)))
 
 {
     (var do-sleep true)
@@ -12,6 +26,22 @@
     (if (= (bms-get-btn) 1) {
             (setq do-sleep false)
     })
+
+    (if (test-chg 10) {
+            (setq do-sleep false)
+    })
+
+    (if (is-connected) {
+            (setq do-sleep false)
+    })
+
+    (if do-sleep {
+            (bms-set-btn-wakeup-state 1)
+            (sleep-deep 10.0)
+    })
+
+    (loopwhile (not (main-init-done)) (sleep 0.1))
+    (loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
 
     (var soc -2.0)
     (var v-cells nil)
@@ -30,14 +60,6 @@
             (sleep 0.1)
     })
 
-    ; The charger "pulses" before starting, try to catch a pulse
-    (var vchg 0.0)
-    (looprange i 0 10 {
-            (var v (bms-get-vchg))
-            (if (> v vchg) (setq vchg v))
-            (sleep 0.02)
-    })
-
     (var t-sorted (sort < (bms-get-temps)))
     (var t-min (ix t-sorted 0))
     (var t-max (ix t-sorted -1))
@@ -50,7 +72,7 @@
     ))
 
     (var ichg 0.0)
-    (if (and (> vchg (bms-get-param 'vc_charge_end)) charge-ok) {
+    (if (and (test-chg 10) charge-ok) {
             (bms-set-chg 1)
             (sleep 0.5)
             (setq ichg (- (bms-get-current)))
@@ -76,12 +98,14 @@
                 {
                     ; Sleep longer and do not use the key to wake up when
                     ; almost empty
+                    (bms-sleep)
                     (bms-set-btn-wakeup-state -1)
-                    (sleep-deep 60.0)
+                    (sleep-deep 100.0)
                 }
                 {
+                    (bms-sleep)
                     (bms-set-btn-wakeup-state 1)
-                    (sleep-deep 6.0)
+                    (sleep-deep 10.0)
                 }
             )
     })
@@ -93,7 +117,7 @@
 ;  - Go to sleep when key is left on
 ;  - Disable wifi after sleep and enable when
 ;    staying on to save power
-;  - Shorter charge check when waking up so that sleep
+;  - [OK] Shorter charge check when waking up so that sleep
 ;    can be entered faster.
 ; = Charge control =
 ;  - Max current
@@ -103,7 +127,6 @@
 ; = Balancing =
 ;  - Balance modes
 ;  - Limit channel number when getting warm
-; PSW error when voltage rises too fast
 
 (def psw-state false)
 (def psw-error false)
@@ -187,13 +210,6 @@
 (def wh-chg-tot (read-setting 'wh-chg-tot))
 (def ah-dis-tot (read-setting 'ah-dis-tot))
 (def wh-dis-tot (read-setting 'wh-dis-tot))
-
-(defun go-to-sleep () {
-        (save-settings)
-        (bms-sleep)
-        (bms-set-btn-wakeup-state 1)
-        (sleep-deep 6)
-})
 
 (defun lpf (val sample tc)
     (- val (* tc (- val sample)))
@@ -368,7 +384,21 @@
                 ;(> t-min (bms-get-param 't_charge_min))
                 chg-allowed
         ))
-        (bms-set-chg (if charge-ok 1 0))
+
+        (if charge-ok
+            (if (test-chg 1)
+                {
+                    (if (< (secs-since charge-ts) 2.0)
+                        (bms-set-chg 1)
+                        (bms-set-chg (if (> (- iout) (bms-get-param 'min_charge_current)) 1 0))
+                    )
+                }
+                {
+                    (setq charge-ts (systime))
+                }
+            )
+            (bms-set-chg 0)
+        )
 
         ;;; Balancing
 
@@ -428,15 +458,25 @@
             (setq i-zero-time (+ i-zero-time dt))
         )
 
-        ; Go to sleep when button is off and not balancing
-        (if (and (= (bms-get-btn) 0) (> i-zero-time 1.0) (not is-balancing)) {
+        ; Go to sleep when button is off, not balancing and not connected
+        (if (and (= (bms-get-btn) 0) (> i-zero-time 1.0) (not is-balancing) (not (is-connected))) {
                 (sleep 0.1)
-                (if (= (bms-get-btn) 0) (go-to-sleep))
+                (if (= (bms-get-btn) 0) {
+                        (save-settings)
+                        (bms-sleep)
+                        (bms-set-btn-wakeup-state 1)
+                        (sleep-deep 10)
+                })
         })
 
-        ; Go to sleep when SOC is too low
+        ; Always go to sleep when SOC is too low
         (if (and (< soc 0.02) (> i-zero-time 1.0)) {
-                (go-to-sleep)
+                ; Sleep longer and do not use the key to wake up when
+                ; almost empty
+                (save-settings)
+                (bms-sleep)
+                (bms-set-btn-wakeup-state -1)
+                (sleep-deep 100.0)
         })
 
         (sleep 0.1)
