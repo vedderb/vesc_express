@@ -410,40 +410,9 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 
 	xSemaphoreTake(bq_mutex, portMAX_DELAY);
 
-	gpio_config_t gpconf = {0};
-
-	// Outputs
-
-	gpio_set_level(PIN_OUT_EN, 0);
-	gpio_set_level(PIN_CHG_EN, 0);
-	gpio_set_level(PIN_PCHG_EN, 0);
-	gpio_set_level(PIN_PSW_EN, 0);
-
-	gpconf.pin_bit_mask = BIT(PIN_OUT_EN) | BIT(PIN_CHG_EN) | BIT(PIN_PCHG_EN) |
-			BIT(PIN_COM_EN) | BIT(PIN_PSW_EN);
-	gpconf.intr_type =  GPIO_FLOATING;
-	gpconf.mode = GPIO_MODE_INPUT_OUTPUT;
-	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
-	gpio_config(&gpconf);
-
-	gpio_set_level(PIN_OUT_EN, 0);
-	gpio_set_level(PIN_CHG_EN, 0);
-	gpio_set_level(PIN_PCHG_EN, 0);
-	gpio_set_level(PIN_PSW_EN, 1);
-
 	// Disable COMM unil the i2c-address of the first BQ
 	// is changed.
 	gpio_set_level(PIN_COM_EN, 1);
-
-	// Inputs
-
-	gpconf.pin_bit_mask = BIT(PIN_ENABLE);
-	gpconf.intr_type =  GPIO_FLOATING;
-	gpconf.mode = GPIO_MODE_INPUT;
-	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
-	gpio_config(&gpconf);
 
 	// Restart i2c
 
@@ -1033,6 +1002,33 @@ static void load_extensions(void) {
 void hw_init(void) {
 	i2c_mutex = xSemaphoreCreateMutex();
 	bq_mutex = xSemaphoreCreateMutex();
+
+	gpio_config_t gpconf = {0};
+
+	gpio_set_level(PIN_OUT_EN, 0);
+	gpio_set_level(PIN_CHG_EN, 0);
+	gpio_set_level(PIN_PCHG_EN, 0);
+	gpio_set_level(PIN_PSW_EN, 0);
+
+	gpconf.pin_bit_mask = BIT(PIN_OUT_EN) | BIT(PIN_CHG_EN) | BIT(PIN_PCHG_EN) |
+			BIT(PIN_COM_EN) | BIT(PIN_PSW_EN);
+	gpconf.intr_type =  GPIO_FLOATING;
+	gpconf.mode = GPIO_MODE_INPUT_OUTPUT;
+	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpio_config(&gpconf);
+
+	gpio_set_level(PIN_OUT_EN, 0);
+	gpio_set_level(PIN_CHG_EN, 0);
+	gpio_set_level(PIN_PCHG_EN, 0);
+	gpio_set_level(PIN_PSW_EN, 1);
+
+	gpconf.pin_bit_mask = BIT(PIN_ENABLE);
+	gpconf.intr_type =  GPIO_FLOATING;
+	gpconf.mode = GPIO_MODE_INPUT;
+	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpio_config(&gpconf);
 
 	i2c_config_t conf = {
 			.mode = I2C_MODE_MASTER,
