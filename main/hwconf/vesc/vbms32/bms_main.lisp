@@ -1,4 +1,4 @@
-(def charge-at-boot false)
+(def trigger-bal-after-charge false)
 (def bal-ok false)
 (def is-balancing false)
 (def charge-ok false)
@@ -81,11 +81,11 @@
             (setq ichg (- (bms-get-current)))
             (if (> ichg (bms-get-param 'min_charge_current)) {
                     (setq do-sleep false)
-                    (setq charge-at-boot true)
+                    (setq trigger-bal-after-charge true)
             })
     })
 
-    (if (and (< soc 0.05) (not charge-at-boot)) (setq do-sleep true))
+    (if (and (< soc 0.05) (not trigger-bal-after-charge)) (setq do-sleep true))
 
     ;    (sleep 5)
     ;    (print v-cells)
@@ -303,6 +303,10 @@
             }
             {
                 (bms-set-chg 0)
+                (if (> (secs-since charge-ts) 10.0) {
+                        (setq trigger-bal-after-charge true)
+                })
+
                 (setq charge-ts (systime))
             }
         )
@@ -396,15 +400,16 @@
                 chg-allowed
         ))
 
-        (if charge-ok
-            (if (test-chg 1) {
-                    (if (< (secs-since charge-ts) 2.0)
-                        (set-chg 1)
-                        (set-chg (> (- iout) (bms-get-param 'min_charge_current)))
-                    )
-            })
-
-            (set-chg nil)
+        (if (and charge-ok (test-chg 1))
+            {
+                (if (< (secs-since charge-ts) 2.0)
+                    (set-chg true)
+                    (set-chg (> (- iout) (bms-get-param 'min_charge_current)))
+                )
+            }
+            {
+                (set-chg nil)
+            }
         )
 
         ;;; Sleep
@@ -459,7 +464,7 @@
         (var t-min (ix t-sorted 0))
         (var t-max (ix t-sorted -1))
 
-        (if charge-at-boot (setq bal-ok true))
+        (if trigger-bal-after-charge (setq bal-ok true))
 
         (if (> (* (abs iout) (if is-balancing 0.8 1.0)) (bms-get-param 'balance_max_current)) {
                 (setq bal-ok false)
@@ -473,7 +478,7 @@
                 (setq bal-ok false)
         })
 
-        (if bal-ok (setq charge-at-boot false))
+        (if bal-ok (setq trigger-bal-after-charge false))
 
         (if bal-ok {
                 (var bal-chs (map (fn (x) 0) (range cell-num)))
