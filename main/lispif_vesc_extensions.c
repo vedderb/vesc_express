@@ -62,6 +62,7 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "driver/usb_serial_jtag.h"
 #include "nvs_flash.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
@@ -5242,6 +5243,23 @@ static lbm_value ext_zip_ls(lbm_value *args, lbm_uint argn) {
 	return r;
 }
 
+// Connection checks
+
+static lbm_value ext_connected_wifi(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return comm_wifi_is_client_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_connected_ble(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return comm_ble_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_connected_usb(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -5503,6 +5521,11 @@ void lispif_load_vesc_extensions(void) {
 	// Compression
 	lbm_add_extension("unzip", ext_unzip);
 	lbm_add_extension("zip-ls", ext_zip_ls);
+
+	// Connection checks
+	lbm_add_extension("connected-wifi", ext_connected_wifi);
+	lbm_add_extension("connected-ble", ext_connected_ble);
+	lbm_add_extension("connected-usb", ext_connected_usb);
 
 	// Extension libraries
 	lbm_array_extensions_init();
