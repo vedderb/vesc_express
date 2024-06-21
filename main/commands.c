@@ -259,8 +259,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 					esp_bt_controller_disable();
 					esp_wifi_stop();
 
-					esp_sleep_enable_timer_wakeup(1000000);
-					esp_deep_sleep_start();
+					// Here we must use esp_restart even though that does not play nicely
+					// with USB. That is because we skip image validation in the bootloader
+					// after deep sleep to get a faster boot time, allowing less power draw
+					// in applications that need to wake up from deep sleep occasionally.
+					esp_restart();
+//					esp_sleep_enable_timer_wakeup(1000000);
+//					esp_deep_sleep_start();
 				}
 			}
 		}
@@ -320,6 +325,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		esp_bt_controller_disable();
 		esp_wifi_stop();
 
+		// Deep sleep to reboot as that disconnects USB properly
+//		esp_restart();
 		esp_sleep_enable_timer_wakeup(1000000);
 		esp_deep_sleep_start();
 	} break;

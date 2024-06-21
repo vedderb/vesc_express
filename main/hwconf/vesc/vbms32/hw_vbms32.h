@@ -52,7 +52,10 @@
  */
 #define PCB_VERSION					2
 
+#define HW_EARLY_LBM_INIT
 #define HW_NO_UART
+#define HW_INIT_HOOK()				hw_init()
+//#define HW_POST_LISPIF_HOOK()		vTaskDelay(200);
 
 // Configuration overrides
 #define OVR_CONF_PARSER_C			"vbms32_confparser.c"
@@ -174,8 +177,6 @@ typedef struct {
 	// Enable temperature monitoring during charging
 	bool t_charge_mon_en;
 } main_config_t;
-
-#define HW_INIT_HOOK()				hw_init()
 
 // CAN
 #define CAN_TX_GPIO_NUM				7

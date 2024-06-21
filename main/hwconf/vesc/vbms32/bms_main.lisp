@@ -9,7 +9,7 @@
         ; Many chargers "pulse" before starting, try to catch a pulse
         (var vchg 0.0)
         (looprange i 0 samples {
-                (if (> i 0) (sleep 0.02))
+                (if (> i 0) (sleep 0.01))
                 (var v (bms-get-vchg))
                 (if (> v vchg) (setq vchg v))
         })
@@ -26,7 +26,7 @@
             (setq do-sleep false)
     })
 
-    (if (test-chg 10) {
+    (if (test-chg 5) {
             (setq do-sleep false)
     })
 
@@ -234,7 +234,7 @@
         (var v-start (bms-get-vout))
         (bms-set-pchg 1)
 
-        (loopwhile (< (secs-since t-start) 1.0) {
+        (loopwhile (< (secs-since t-start) 2.0) {
                 (if (< (- v-tot (bms-get-vout)) 10.0) {
                         (setq res t)
                         (print (str-from-n (* (secs-since t-start) 1000.0) "PCHG T: %.1f ms"))
