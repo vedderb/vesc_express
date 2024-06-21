@@ -250,7 +250,7 @@
                 (var cap-est (/ (* (secs-since t-start) 0.9) diff))
                 (print (list "Cap est: " (* cap-est 1000.0) "mF"))
             }
-            (print "Timed out, make sure that there is no short on the output!")
+            (print "Timed out, make sure that there is a load on the output and no short!")
         )
 
         (bms-set-pchg 0)
