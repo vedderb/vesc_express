@@ -3263,6 +3263,19 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+RTC_DATA_ATTR char rtc_data[4096];
+
+static lbm_value ext_rtc_data(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	lbm_value result;
+	if (!lbm_lift_array(&result, rtc_data, (sizeof(rtc_data)))) {
+		return ENC_SYM_MERROR;
+	}
+
+	return result;
+}
+
 static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 	(void)args;(void)argn;
 	return ENC_SYM_TRUE;
@@ -5442,6 +5455,7 @@ void lispif_load_vesc_extensions(void) {
 	// Sleep
 	lbm_add_extension("sleep-deep", ext_sleep_deep);
 	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
+	lbm_add_extension("rtc-data", ext_rtc_data);
 
 	// Extension libraries
 	lispif_load_disp_extensions();
