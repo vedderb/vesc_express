@@ -389,8 +389,6 @@ static void bq_init(uint8_t dev_addr) {
 static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
-	gpio_set_level(PIN_PSW_EN, 1);
-
 	m_bal_state_ic1 = 0;
 	m_bal_state_ic2 = 0;
 
@@ -629,18 +627,21 @@ static lbm_value ext_set_btn_wakeup_state(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_set_pchg(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
+	gpio_set_level(PIN_PSW_EN, 1);
 	gpio_set_level(PIN_PCHG_EN, lbm_dec_as_i32(args[0]));
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_set_out(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
+	gpio_set_level(PIN_PSW_EN, 1);
 	gpio_set_level(PIN_OUT_EN, lbm_dec_as_i32(args[0]));
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_set_chg(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
+	gpio_set_level(PIN_PSW_EN, 1);
 	gpio_set_level(PIN_CHG_EN, lbm_dec_as_i32(args[0]));
 	return ENC_SYM_TRUE;
 }
@@ -1011,6 +1012,7 @@ void hw_init(void) {
 	gpio_set_level(PIN_CHG_EN, 0);
 	gpio_set_level(PIN_PCHG_EN, 0);
 	gpio_set_level(PIN_PSW_EN, 0);
+	gpio_set_level(PIN_COM_EN, 1);
 
 	gpconf.pin_bit_mask = BIT(PIN_OUT_EN) | BIT(PIN_CHG_EN) | BIT(PIN_PCHG_EN) |
 			BIT(PIN_COM_EN) | BIT(PIN_PSW_EN);
@@ -1023,7 +1025,8 @@ void hw_init(void) {
 	gpio_set_level(PIN_OUT_EN, 0);
 	gpio_set_level(PIN_CHG_EN, 0);
 	gpio_set_level(PIN_PCHG_EN, 0);
-	gpio_set_level(PIN_PSW_EN, 1);
+	gpio_set_level(PIN_PSW_EN, 0);
+	gpio_set_level(PIN_COM_EN, 1);
 
 	gpconf.pin_bit_mask = BIT(PIN_ENABLE);
 	gpconf.intr_type =  GPIO_FLOATING;
