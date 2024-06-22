@@ -74,7 +74,7 @@
             )
     })
 
-    (loopwhile (not (main-init-done)) (sleep 0.5))
+    (loopwhile (not (main-init-done)) (sleep 0.1))
     (loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
 
     ; For some reason a second init is sometimes needed to get the BQs started reliably. We
@@ -471,7 +471,7 @@
         })
 
         ; Always go to sleep when SOC is too low
-        (if (and (< soc 0.02) (> i-zero-time 1.0)) {
+        (if (and (< soc 0.05) (> i-zero-time 1.0)) {
                 ; Sleep longer and do not use the key to wake up when
                 ; almost empty
                 (save-rtc-val)
