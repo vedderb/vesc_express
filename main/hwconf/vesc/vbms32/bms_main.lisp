@@ -5,6 +5,24 @@
 
 (def cell-num (+ (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2)))
 
+(def rtc-val '(
+        (wakeup-cnt . 0)
+        (c-min . 3.5)
+        (soc . 0.5)
+))
+
+(if (= (bufget-u8 (rtc-data) 900) 112) { ; Magic number 112 on byte 900
+      (var tmp (unflatten (rtc-data)))
+      (if tmp (setq rtc-val tmp))
+})
+
+(defun save-rtc-val () {
+        (setassoc rtc-val 'wakeup-cnt (+ (assoc rtc-val 'wakeup-cnt) 1))
+        (var tmp (flatten rtc-val))
+        (bufcpy (rtc-data) 0 tmp 0 (buflen tmp))
+        (bufset-u8 (rtc-data) 900 112)
+})
+
 (defun test-chg (samples) {
         ; Many chargers "pulse" before starting, try to catch a pulse
         (var vchg 0.0)
@@ -21,6 +39,7 @@
 
 {
     (var do-sleep true)
+    (var sleep-early true)
 
     (if (= (bms-get-btn) 1) {
             (setq do-sleep false)
@@ -34,12 +53,28 @@
             (setq do-sleep false)
     })
 
-    (if do-sleep {
-            (bms-set-btn-wakeup-state 1)
-            (sleep-deep 10.0)
+    ; Every 1000 startupts we do some additional checks. That allows
+    ; adjusting the sleep time based on the SoC.
+    (if (= (mod (assoc rtc-val 'wakeup-cnt) 1000) 0) {
+            (setq sleep-early false)
     })
 
-    (loopwhile (not (main-init-done)) (sleep 0.1))
+    (if (and do-sleep sleep-early) {
+            (save-rtc-val)
+
+            (if (< (assoc rtc-val 'soc) 0.05)
+                {
+                    (bms-set-btn-wakeup-state -1)
+                    (sleep-deep 100.0)
+                }
+                {
+                    (bms-set-btn-wakeup-state 1)
+                    (sleep-deep 10.0)
+                }
+            )
+    })
+
+    (loopwhile (not (main-init-done)) (sleep 0.5))
     (loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
 
     ; For some reason a second init is sometimes needed to get the BQs started reliably. We
@@ -62,6 +97,9 @@
             (setq tries (+ tries 1))
             (sleep 0.1)
     })
+
+    (setassoc rtc-val 'c-min c-min)
+    (setassoc rtc-val 'soc soc)
 
     (var t-sorted (sort < (bms-get-temps)))
     (var t-min (ix t-sorted 0))
@@ -96,17 +134,14 @@
 
     (if do-sleep {
             (bms-sleep)
+            (save-rtc-val)
 
-            (if (< soc 0.05)
+            (if (< (assoc rtc-val 'soc) 0.05)
                 {
-                    ; Sleep longer and do not use the key to wake up when
-                    ; almost empty
-                    (bms-sleep)
                     (bms-set-btn-wakeup-state -1)
-                    (sleep-deep 200.0)
+                    (sleep-deep 100.0)
                 }
                 {
-                    (bms-sleep)
                     (bms-set-btn-wakeup-state 1)
                     (sleep-deep 10.0)
                 }
@@ -118,7 +153,7 @@
 ;
 ; = Sleep =
 ;  - Go to sleep when key is left on
-;  - Disable wifi after sleep and enable when
+;  - [OK] ]Disable wifi after sleep and enable when
 ;    staying on to save power
 ;  - [OK] Shorter charge check when waking up so that sleep
 ;    can be entered faster.
@@ -414,6 +449,9 @@
 
         ;;; Sleep
 
+        (setassoc rtc-val 'c-min c-min)
+        (setassoc rtc-val 'soc soc)
+
         ; Measure time without current
         (if (> (abs iout) (bms-get-param 'min_current_sleep))
             (setq i-zero-time 0.0)
@@ -424,6 +462,7 @@
         (if (and (= (bms-get-btn) 0) (> i-zero-time 1.0) (not is-balancing) (not (is-connected))) {
                 (sleep 0.1)
                 (if (= (bms-get-btn) 0) {
+                        (save-rtc-val)
                         (save-settings)
                         (bms-sleep)
                         (bms-set-btn-wakeup-state 1)
@@ -435,6 +474,7 @@
         (if (and (< soc 0.02) (> i-zero-time 1.0)) {
                 ; Sleep longer and do not use the key to wake up when
                 ; almost empty
+                (save-rtc-val)
                 (save-settings)
                 (bms-sleep)
                 (bms-set-btn-wakeup-state -1)
