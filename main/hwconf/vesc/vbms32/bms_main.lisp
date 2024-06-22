@@ -529,7 +529,11 @@
                         (var v-cell (second c))
 
                         (if (and
-                                (> (- v-cell c-min) (bms-get-param 'vc_balance_start))
+                                (> (- v-cell c-min)
+                                    (if is-balancing
+                                        (bms-get-param 'vc_balance_end)
+                                        (bms-get-param 'vc_balance_start)
+                                ))
                                 ; Do not balance adjacent cells
                                 (or (eq n-cell 0) (= (ix bal-chs (- n-cell 1)) 0))
                                 (or (eq n-cell (- cell-num 1)) (= (ix bal-chs (+ n-cell 1)) 0))
