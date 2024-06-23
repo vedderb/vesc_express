@@ -160,10 +160,10 @@
 ;  - [OK] Shorter charge check when waking up so that sleep
 ;    can be entered faster.
 ; = Charge control =
-;  - Max current
+;  - Max current and latch fault so that charger needs to be unplugged before retrying
 ;  - T min is disabled now. Figure out when temp
 ;    sensors are missing.
-;  - Charge voltage detection.
+;  - [OK] Charge voltage detection.
 ; = Balancing =
 ;  - Balance modes
 ;  - Limit channel number when getting warm
