@@ -1,6 +1,7 @@
 (def trigger-bal-after-charge false)
 (def bal-ok false)
 (def is-balancing false)
+(def is-charging false)
 (def charge-ok false)
 
 (def cell-num (+ (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2)))
@@ -115,6 +116,7 @@
     (var ichg 0.0)
     (if (and (test-chg 10) charge-ok) {
             (bms-set-chg 1)
+            (setq is-charging true)
             (sleep 2.0)
             (setq ichg (- (bms-get-current)))
             (if (> ichg (bms-get-param 'min_charge_current)) {
@@ -269,7 +271,7 @@
         (var v-start (bms-get-vout))
         (bms-set-pchg 1)
 
-        (loopwhile (< (secs-since t-start) 2.0) {
+        (loopwhile (< (secs-since t-start) 3.0) {
                 (if (< (- v-tot (bms-get-vout)) 10.0) {
                         (setq res t)
                         (print (str-from-n (* (secs-since t-start) 1000.0) "PCHG T: %.1f ms"))
@@ -335,9 +337,14 @@
         (if chg
             {
                 (bms-set-chg 1)
+                (setq is-charging true)
             }
             {
                 (bms-set-chg 0)
+                (setq is-charging false)
+
+                ; Trigger balancing when charging ends and the charge
+                ; has been ongoing for at least 10 seconds.
                 (if (> (secs-since charge-ts) 10.0) {
                         (setq trigger-bal-after-charge true)
                 })
@@ -345,6 +352,17 @@
                 (setq charge-ts (systime))
             }
         )
+})
+
+; Power switch
+(loopwhile-thd 100 t {
+        (if (and (= (bms-get-btn) 0) psw-state) {
+                (psw-off)
+                (setq psw-error false)
+        })
+        (if (and (= (bms-get-btn) 1) (not psw-state) (not psw-error)) {
+                (setq psw-error (not (psw-on)))
+        })
 })
 
 (loopwhile-thd 200 t {
@@ -416,19 +434,13 @@
 
         (send-bms-can)
 
-        ; Power switch
-        (if (and (= (bms-get-btn) 0) psw-state) {
-                (psw-off)
-                (setq psw-error false)
-        })
-        (if (and (= (bms-get-btn) 1) (not psw-state) (not psw-error)) {
-                (setq psw-error (not (psw-on)))
-        })
-
         ;;; Charge control
 
         (setq charge-ok (and
-                (< c-max (bms-get-param 'vc_charge_end))
+                (< c-max (if is-charging
+                        (bms-get-param 'vc_charge_end)
+                        (bms-get-param 'vc_charge_start)
+                ))
                 (> c-min (bms-get-param 'vc_charge_min))
                 (< t-max (bms-get-param 't_charge_max))
                 ;(> t-min (bms-get-param 't_charge_min))
