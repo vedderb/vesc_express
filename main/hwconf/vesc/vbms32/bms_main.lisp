@@ -360,9 +360,12 @@
                 (psw-off)
                 (setq psw-error false)
         })
+
         (if (and (= (bms-get-btn) 1) (not psw-state) (not psw-error)) {
                 (setq psw-error (not (psw-on)))
         })
+
+        (sleep 0.2)
 })
 
 (loopwhile-thd 200 t {
