@@ -218,7 +218,7 @@ Note that the other device must support ftm-responder for this command to work. 
 Example:
 
 ```clj
-(print (ftm-measure '(104 103 37 9 39 189) 1))
+(print (wifi-ftm-measure '(104 103 37 9 39 189) 1))
 > 150
 ; Here the result 150 means that the device with the mac-address (104 103 37 9 39 189) is 150 cm away.
 ```
