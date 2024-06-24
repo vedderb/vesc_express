@@ -3,16 +3,20 @@
 (def is-balancing false)
 (def is-charging false)
 (def charge-ok false)
+(def charge-dis-ts (systime))
 
 (def cell-num (+ (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2)))
+
+(def rtc-val-magic 113)
 
 (def rtc-val '(
         (wakeup-cnt . 0)
         (c-min . 3.5)
         (soc . 0.5)
+        (charge-fault . false)
 ))
 
-(if (= (bufget-u8 (rtc-data) 900) 112) { ; Magic number 112 on byte 900
+(if (= (bufget-u8 (rtc-data) 900) rtc-val-magic) {
       (var tmp (unflatten (rtc-data)))
       (if tmp (setq rtc-val tmp))
 })
@@ -21,7 +25,7 @@
         (setassoc rtc-val 'wakeup-cnt (+ (assoc rtc-val 'wakeup-cnt) 1))
         (var tmp (flatten rtc-val))
         (bufcpy (rtc-data) 0 tmp 0 (buflen tmp))
-        (bufset-u8 (rtc-data) 900 112)
+        (bufset-u8 (rtc-data) 900 rtc-val-magic)
 })
 
 (defun test-chg (samples) {
@@ -33,7 +37,11 @@
                 (if (> v vchg) (setq vchg v))
         })
 
-        (> vchg (* (bms-get-param 'vc_charge_min) cell-num))
+        (var res (> vchg (* (bms-get-param 'vc_charge_min) cell-num)))
+
+        (if res (setq charge-dis-ts (systime)))
+
+        res
 })
 
 (defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble)))
@@ -46,9 +54,14 @@
             (setq do-sleep false)
     })
 
-    (if (test-chg 5) {
-            (setq do-sleep false)
-    })
+    (if (test-chg 5)
+        (if (not (assoc rtc-val 'charge-fault)) {
+                (setq do-sleep false)
+        })
+
+        ; Reset charge fault when the charger is not connected at boot
+        (setassoc rtc-val 'charge-fault false)
+    )
 
     (if (is-connected) {
             (setq do-sleep false)
@@ -110,6 +123,7 @@
             (< c-max (bms-get-param 'vc_charge_end))
             (> c-min (bms-get-param 'vc_charge_min))
             (< t-max (bms-get-param 't_charge_max))
+            (not (assoc rtc-val 'charge-fault))
             ;(> t-min (bms-get-param 't_charge_min))
     ))
 
@@ -117,11 +131,16 @@
     (if (and (test-chg 10) charge-ok) {
             (bms-set-chg 1)
             (setq is-charging true)
-            (sleep 2.0)
-            (setq ichg (- (bms-get-current)))
-            (if (> ichg (bms-get-param 'min_charge_current)) {
-                    (setq do-sleep false)
-                    (setq trigger-bal-after-charge true)
+
+            ; Wait at most 3 seconds for charging current
+            (looprange i 0 30 {
+                    (sleep 0.1)
+                    (setq ichg (- (bms-get-current)))
+                    (if (> ichg (bms-get-param 'min_charge_current)) {
+                            (setq do-sleep false)
+                            (setq trigger-bal-after-charge true)
+                            (break)
+                    })
             })
     })
 
@@ -160,7 +179,7 @@
 ;  - [OK] Shorter charge check when waking up so that sleep
 ;    can be entered faster.
 ; = Charge control =
-;  - Max current and latch fault so that charger needs to be unplugged before retrying
+;  - [OK] Max current and latch fault so that charger needs to be unplugged before retrying
 ;  - T min is disabled now. Figure out when temp
 ;    sensors are missing.
 ;  - [OK] Charge voltage detection.
@@ -448,9 +467,21 @@
                 (< t-max (bms-get-param 't_charge_max))
                 ;(> t-min (bms-get-param 't_charge_min))
                 chg-allowed
+                (not (assoc rtc-val 'charge-fault))
         ))
 
-        (if (and charge-ok (test-chg 1))
+        ; If charging is enabled and maximum charge current is exceeded a charge fault is latched
+        (if (and is-charging (> (- iout) (bms-get-param 'max_charge_current))) {
+                (setq charge-ok false)
+                (setassoc rtc-val 'charge-fault true)
+        })
+
+        ; Reset latched charge fault after disconnecting charger for 5s
+        (if (and (assoc rtc-val 'charge-fault) (> (secs-since charge-dis-ts) 5.0)) {
+                (setassoc rtc-val 'charge-fault false)
+        })
+
+        (if (and (test-chg 1) charge-ok)
             {
                 (if (< (secs-since charge-ts) 2.0)
                     (set-chg true)
