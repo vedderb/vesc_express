@@ -205,7 +205,7 @@ void lsm6ds3_init(void) {
 
 	should_terminate = false;
 	thd_running = true;
-	xTaskCreatePinnedToCore(lsm_task, "LSM6DSx", 1024, NULL, 6, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(lsm_task, "LSM6DSx", 1536, NULL, 6, NULL, tskNO_AFFINITY);
 }
 
 void lsm6ds3_stop(void) {
