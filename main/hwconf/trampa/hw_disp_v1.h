@@ -23,6 +23,11 @@
 #include "driver/gpio.h"
 #include "adc.h"
 
+#define DISP_V1_2 0
+#define DISP_V1_3 1
+
+#define DISP_HW_VERSION DISP_V1_3
+
 #define HW_NAME						"VDisp"
 
 #define HW_NO_UART
@@ -34,9 +39,18 @@
 #define CAN_RX_GPIO_NUM				0
 
 // ADC
+#if DISP_HW_VERSION == DISP_V1_3
+#define HW_OVERRIDE_UART
+#define I2C_SDA                     5
+#define I2C_SCL                     3
+#define I2C_ADDR_GPIO_EXP           0x20
+#define HW_ADC_CH0					ADC1_CHANNEL_2 // Button
+#define HW_ADC_CH1					ADC1_CHANNEL_4 // External Button
+#else
 #define HW_ADC_CH0					ADC1_CHANNEL_3 // Button
 #define HW_ADC_CH1					ADC1_CHANNEL_4 // External Button
 #define HW_ADC_CH3					ADC1_CHANNEL_2 // Button on proto
+#endif
 
 // Functions
 void hw_init(void);
