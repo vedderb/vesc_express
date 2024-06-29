@@ -38,22 +38,32 @@
 #include "commands.h"
 #include "utils.h"
 
-// Set to 1 for prototype hardware pin mapping
-#define HW_IS_PROTO		0
-
 static float v_ext = 0.0;
 static float v_btn = 0.0;
 
-// Pins
-static int pin_bl = 5;
-static int pin_3v3 = 21;
-static int pin_psw = 2;
-static int pin_btn = 3;
+#if DISP_HW_VERSION == DISP_V1_3
+	static int pin_3v3 = 4;
+	static int pin_btn = 2;
+#elif DISP_HW_VERSION == DISP_V1_2
+	static int pin_bl = 5;
+	static int pin_3v3 = 21;
+	static int pin_psw = 2;
+	static int pin_btn = 3;
+#elif DISP_HW_VERSION == DISP_V0
+	static int pin_bl = 3;
+	static int pin_3v3 = 21;
+	static int pin_psw = -1;
+	static int pin_btn = 2;
+#else
+	#error "Incompatible DISP_HW_VERSION"
+#endif
+
+
 
 static void hw_task(void *arg) {
 	for(;;) {
 		UTILS_LP_FAST(v_ext, adc_get_voltage(HW_ADC_CH1), 0.1);
-#if HW_IS_PROTO
+#if DISP_HW_VERSION == DISP_V0
 		UTILS_LP_FAST(v_btn, adc_get_voltage(HW_ADC_CH3), 0.1);
 #else
 		UTILS_LP_FAST(v_btn, adc_get_voltage(HW_ADC_CH0), 0.1);
@@ -70,63 +80,6 @@ static lbm_value ext_v_ext(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_v_btn(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	return lbm_enc_float(v_btn);
-}
-
-static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-
-	gpio_reset_pin(pin_bl);
-	gpio_set_direction(pin_bl, GPIO_MODE_OUTPUT);
-	gpio_set_level(pin_bl, 0);
-
-	gpio_reset_pin(pin_3v3);
-	gpio_set_direction(pin_3v3, GPIO_MODE_OUTPUT);
-	gpio_set_level(pin_3v3, 1);
-
-	if (pin_psw >= 0) {
-		gpio_reset_pin(pin_psw);
-		gpio_set_direction(pin_psw, GPIO_MODE_OUTPUT);
-		gpio_set_level(pin_psw, 1);
-	}
-
-	disp_st7789_init(7, 6, 10, 20, 8, 40);
-
-	lispif_disp_set_callbacks(
-			disp_st7789_render_image,
-			disp_st7789_clear,
-			disp_st7789_reset
-	);
-
-	disp_st7789_reset();
-	disp_st7789_clear(0x00);
-
-	// Orientation
-	uint8_t arg = 0xA0;
-	disp_st7789_command(0x36, &arg, 1);
-
-	gpio_set_level(pin_bl, 1);
-
-	return ENC_SYM_TRUE;
-}
-
-static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-
-	esp_bluedroid_disable();
-	esp_bt_controller_disable();
-	esp_wifi_stop();
-
-	gpio_set_level(pin_bl, 0);
-	while (v_btn < 2.0) {
-		vTaskDelay(5);
-	}
-
-	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_LOW);
-
-	esp_deep_sleep_start();
-
-	return ENC_SYM_TRUE;
 }
 
 #if DISP_HW_VERSION == DISP_V1_3
@@ -238,6 +191,79 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	}
 #endif
 
+static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+#if DISP_HW_VERSION != DISP_V1_3
+	gpio_reset_pin(pin_bl);
+	gpio_set_direction(pin_bl, GPIO_MODE_OUTPUT);
+	gpio_set_level(pin_bl, 0);
+
+	if (pin_psw >= 0) {
+		gpio_reset_pin(pin_psw);
+		gpio_set_direction(pin_psw, GPIO_MODE_OUTPUT);
+		gpio_set_level(pin_psw, 1);
+	}
+#endif
+
+	gpio_reset_pin(pin_3v3);
+	gpio_set_direction(pin_3v3, GPIO_MODE_OUTPUT);
+	gpio_set_level(pin_3v3, 1);
+
+	disp_st7789_init(7, 6, 10, 20, 8, 40);
+
+	lispif_disp_set_callbacks(
+			disp_st7789_render_image,
+			disp_st7789_clear,
+			disp_st7789_reset
+	);
+
+	disp_st7789_reset();
+	disp_st7789_clear(0x00);
+
+	// Orientation
+	uint8_t arg = 0xA0;
+	disp_st7789_command(0x36, &arg, 1);
+
+#if DISP_HW_VERSION == DISP_V1_3
+	i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x18); // Port 3, 4 (DISP_LED) (PWR SW) Output Enable
+#else
+	gpio_set_level(pin_bl, 1);
+#endif
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	esp_bluedroid_disable();
+	esp_bt_controller_disable();
+	esp_wifi_stop();
+
+#if DISP_HW_VERSION == DISP_V1_3
+	i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x00); // All Output Disable
+	while (v_btn > 2.0) {
+		vTaskDelay(5);
+	}
+
+	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
+	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_HIGH);
+#else
+	gpio_set_level(pin_bl, 0);
+	while (v_btn < 2.0) {
+		vTaskDelay(5);
+	}
+
+	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
+	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_LOW);
+#endif
+
+	esp_deep_sleep_start();
+
+	return ENC_SYM_TRUE;
+}
+
 static void load_extensions(void) {
 	lbm_add_extension("v-ext", ext_v_ext);
 	lbm_add_extension("v-btn", ext_v_btn);
@@ -250,12 +276,6 @@ static void load_extensions(void) {
 }
 
 void hw_init(void) {
-#if HW_IS_PROTO
-	pin_bl = 3;
-	pin_3v3 = 21;
-	pin_psw = -1;
-	pin_btn = 2;
-#endif
 
 #if DISP_HW_VERSION == DISP_V1_3
 	i2c_init();
