@@ -144,7 +144,7 @@ static lbm_value ext_v_btn(lbm_value *args, lbm_uint argn) {
 
 	void init_gpio_expander(void) {
 		i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_CONFIG_REG, 0x07); // Ports 0-2 Input
-		i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x10); // Port 4 (PWR SW) Output Enable
+		i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x00); // All Output Disable
 	}
 
 	static lbm_value ext_set_io(lbm_value *args, lbm_uint argn) {
@@ -226,7 +226,7 @@ static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
 	disp_st7789_command(0x36, &arg, 1);
 
 #if DISP_HW_VERSION == DISP_V1_3
-	i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x18); // Port 3, 4 (DISP_LED) (PWR SW) Output Enable
+	i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x08); // Port 3 (DISP_LED) Output Enable
 #else
 	gpio_set_level(pin_bl, 1);
 #endif
@@ -242,7 +242,7 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	esp_wifi_stop();
 
 #if DISP_HW_VERSION == DISP_V1_3
-	i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x00); // All Output Disable
+	i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x10); // Port 4 (PWR SW) Output Enable
 	while (v_btn > 2.0) {
 		vTaskDelay(5);
 	}
