@@ -93,7 +93,7 @@
 
     ; For some reason a second init is sometimes needed to get the BQs started reliably. We
     ; should try to figure out what is going on here...
-    (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))
+    (loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
 
     (var soc -2.0)
     (var v-cells nil)
