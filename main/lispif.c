@@ -824,7 +824,7 @@ static bool const_heap_write(lbm_uint ix, lbm_uint w) {
 	}
 
 	uint32_t offset = (uint32_t)const_heap_ptr - (uint32_t)flash_helper_code_data_raw(CODE_IND_LISP) + sizeof(lbm_uint) * ix;
-	flash_helper_write_code(CODE_IND_LISP, offset, (uint8_t*)&w, sizeof(lbm_uint), const_heap_max_ind - ix);
+	flash_helper_write_code(CODE_IND_LISP, offset, (uint8_t*)&w, sizeof(lbm_uint), (const_heap_max_ind - ix) * sizeof(lbm_uint));
 
 	if (const_heap_ptr[ix] != w) {
 		return false;
