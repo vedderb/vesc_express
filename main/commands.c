@@ -821,7 +821,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		uint32_t qmlui_offset = buffer_get_uint32(data, &ind);
 
 		bool flash_res = flash_helper_write_code(packet_id == COMM_QMLUI_WRITE ? CODE_IND_QML : CODE_IND_LISP,
-				qmlui_offset, data + ind, len - ind);
+				qmlui_offset, data + ind, len - ind, 0);
 
 		ind = 0;
 		uint8_t send_buffer[50];

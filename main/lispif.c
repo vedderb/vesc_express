@@ -55,6 +55,7 @@ static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE + USER_EXTENSION
 
 static lbm_const_heap_t const_heap;
 static volatile lbm_uint *const_heap_ptr = 0;
+static int const_heap_max_ind = 0;
 
 static lbm_string_channel_state_t string_tok_state;
 static lbm_char_channel_t string_tok;
@@ -763,6 +764,7 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 			code_data = (char*)flash_helper_code_data_raw(CODE_IND_LISP);
 		}
 
+		const_heap_max_ind = 0;
 		const_heap_ptr = (lbm_uint*)(code_data + code_len + 16);
 		const_heap_ptr = (lbm_uint*)((uint32_t)const_heap_ptr & 0xFFFFFFF4);
 		uint32_t const_heap_len = ((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP)) - (uint32_t)const_heap_ptr;
@@ -813,12 +815,16 @@ static void sleep_callback(uint32_t us) {
 }
 
 static bool const_heap_write(lbm_uint ix, lbm_uint w) {
+	if (ix > const_heap_max_ind) {
+		const_heap_max_ind = ix;
+	}
+
 	if (const_heap_ptr[ix] == w) {
 		return true;
 	}
 
 	uint32_t offset = (uint32_t)const_heap_ptr - (uint32_t)flash_helper_code_data_raw(CODE_IND_LISP) + sizeof(lbm_uint) * ix;
-	flash_helper_write_code(CODE_IND_LISP, offset, (uint8_t*)&w, sizeof(lbm_uint));
+	flash_helper_write_code(CODE_IND_LISP, offset, (uint8_t*)&w, sizeof(lbm_uint), const_heap_max_ind - ix);
 
 	if (const_heap_ptr[ix] != w) {
 		return false;
