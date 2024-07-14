@@ -34,8 +34,8 @@ typedef struct {
 	esp_partition_mmap_handle_t handle;
 } _code_checks;
 
-static _code_checks code_checks[2] = {0};
-static unsigned int write_erase_cnt = 0;
+static _code_checks m_code_checks[2] = {0};
+static flast_stats m_stats = {0};
 
 static const esp_partition_t* get_partition(int ind) {
 	return esp_partition_find_first(
@@ -45,7 +45,7 @@ static const esp_partition_t* get_partition(int ind) {
 }
 
 static bool perform_mmap(int ind) {
-	if (code_checks[ind].mmap_done)  {
+	if (m_code_checks[ind].mmap_done)  {
 		return true;
 	}
 
@@ -56,14 +56,14 @@ static bool perform_mmap(int ind) {
 	}
 
 	esp_err_t res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA,
-			&code_checks[ind].addr, &code_checks[ind].handle);
+			&m_code_checks[ind].addr, &m_code_checks[ind].handle);
 
-	code_checks[ind].mmap_done = res == ESP_OK;
-	return code_checks[ind].mmap_done;
+	m_code_checks[ind].mmap_done = res == ESP_OK;
+	return m_code_checks[ind].mmap_done;
 }
 
 static void code_check(int ind) {
-	if (code_checks[ind].check_done) {
+	if (m_code_checks[ind].check_done) {
 		return;
 	}
 
@@ -77,27 +77,27 @@ static void code_check(int ind) {
 		return;
 	}
 
-	uint8_t *base = (uint8_t*)code_checks[ind].addr;
+	uint8_t *base = (uint8_t*)m_code_checks[ind].addr;
 	int32_t index = 0;
 	uint32_t code_len = buffer_get_uint32(base, &index);
 	uint16_t code_crc = buffer_get_uint16(base, &index);
 
 	if (code_len <= (part->size - 8)) {
 		uint16_t crc_calc = crc16(base + index, code_len + 2); // CRC includes the 2 byte flags
-		code_checks[ind].ok = crc_calc == code_crc;
+		m_code_checks[ind].ok = crc_calc == code_crc;
 	} else {
-		code_checks[ind].ok = false;
+		m_code_checks[ind].ok = false;
 	}
 
-	if (code_checks[ind].ok) {
-		code_checks[ind].size = code_len;
-		code_checks[ind].flags = buffer_get_uint16(base, &index);
+	if (m_code_checks[ind].ok) {
+		m_code_checks[ind].size = code_len;
+		m_code_checks[ind].flags = buffer_get_uint16(base, &index);
 	} else {
-		code_checks[ind].size = 0;
-		code_checks[ind].flags = 0;
+		m_code_checks[ind].size = 0;
+		m_code_checks[ind].flags = 0;
 	}
 
-	code_checks[ind].check_done = true;
+	m_code_checks[ind].check_done = true;
 }
 
 bool flash_helper_erase_code(int ind, int size) {
@@ -109,9 +109,9 @@ bool flash_helper_erase_code(int ind, int size) {
 		return false;
 	}
 
-	code_checks[ind].size = 0;
-	code_checks[ind].check_done = false;
-	code_checks[ind].ok = false;
+	m_code_checks[ind].size = 0;
+	m_code_checks[ind].check_done = false;
+	m_code_checks[ind].ok = false;
 
 	if (!perform_mmap(ind)) {
 		return false;
@@ -129,7 +129,7 @@ bool flash_helper_erase_code(int ind, int size) {
 	esp_partition_read(part, 0, erased_data, part->erase_size);
 
 	for (uint32_t i = part->erase_size; i < part->size; i += part->erase_size) {
-		if (memcmp(code_checks[ind].addr + i, erased_data, part->erase_size) != 0) {
+		if (memcmp(m_code_checks[ind].addr + i, erased_data, part->erase_size) != 0) {
 			esp_partition_erase_range(part, i, part->erase_size);
 		}
 	}
@@ -139,10 +139,10 @@ bool flash_helper_erase_code(int ind, int size) {
 }
 
 bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len, uint32_t save_after) {
-	if (offset < (code_checks[ind].size + 8)) {
-		code_checks[ind].size = 0;
-		code_checks[ind].check_done = false;
-		code_checks[ind].ok = false;
+	if (offset < (m_code_checks[ind].size + 8)) {
+		m_code_checks[ind].size = 0;
+		m_code_checks[ind].check_done = false;
+		m_code_checks[ind].ok = false;
 	}
 
 	const esp_partition_t *part = get_partition(ind);
@@ -185,7 +185,17 @@ bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t l
 		bool write_ok = esp_partition_write(part, sector_start, buf, buf_len) == ESP_OK;
 		free(buf);
 
-		write_erase_cnt++;
+		if (m_stats.sector_last != sector_start) {
+			m_stats.sector_last = sector_start;
+			if (m_stats.erase_cnt_now > m_stats.erase_cnt_max) {
+				m_stats.erase_cnt_max = m_stats.erase_cnt_now;
+			}
+			m_stats.erase_cnt_now = 0;
+			m_stats.erased_sector_num++;
+		}
+
+		m_stats.erase_cnt_tot++;
+		m_stats.erase_cnt_now++;
 
 		return erase_ok && write_ok;
 	} else {
@@ -196,7 +206,7 @@ bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t l
 bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t len) {
 	code_check(ind);
 
-	if (!code_checks[ind].ok) {
+	if (!m_code_checks[ind].ok) {
 		return false;
 	}
 
@@ -212,16 +222,16 @@ bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t le
 const uint8_t *flash_helper_code_data_ptr(int ind) {
 	code_check(ind);
 
-	if (!code_checks[ind].ok) {
+	if (!m_code_checks[ind].ok) {
 		return NULL;
 	}
 
-	return (uint8_t*)code_checks[ind].addr + 8;
+	return (uint8_t*)m_code_checks[ind].addr + 8;
 }
 
 uint8_t* flash_helper_code_data_raw(int ind) {
 	perform_mmap(ind);
-	return (uint8_t*)code_checks[ind].addr;
+	return (uint8_t*)m_code_checks[ind].addr;
 }
 
 int flash_helper_code_size_raw(int ind) {
@@ -236,14 +246,14 @@ int flash_helper_code_size_raw(int ind) {
 
 uint32_t flash_helper_code_size(int ind) {
 	code_check(ind);
-	return code_checks[ind].size;
+	return m_code_checks[ind].size;
 }
 
 uint16_t flash_helper_code_flags(int ind) {
 	code_check(ind);
-	return code_checks[ind].flags;
+	return m_code_checks[ind].flags;
 }
 
-unsigned int flash_helper_write_erase_cnt(void) {
-	return write_erase_cnt;
+flast_stats flash_helper_stats(void) {
+	return m_stats;
 }

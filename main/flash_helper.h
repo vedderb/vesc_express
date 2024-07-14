@@ -26,6 +26,14 @@
 #define CODE_IND_QML	0
 #define CODE_IND_LISP	1
 
+typedef struct {
+	unsigned int erase_cnt_tot; // Total erase operations
+	unsigned int sector_last; // Last sector that was erased
+	unsigned int erased_sector_num; // Increases every time a different sector is erased
+	unsigned int erase_cnt_now; // Erase counter current sector
+	unsigned int erase_cnt_max; // Largest erase counter for a given sector
+} flast_stats;
+
 bool flash_helper_erase_code(int ind, int size);
 bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len, uint32_t save_after);
 bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t len);
@@ -34,6 +42,6 @@ uint8_t* flash_helper_code_data_raw(int ind);
 int flash_helper_code_size_raw(int ind);
 uint32_t flash_helper_code_size(int ind);
 uint16_t flash_helper_code_flags(int ind);
-unsigned int flash_helper_write_erase_cnt(void);
+flast_stats flash_helper_stats(void);
 
 #endif /* FLASH_HELPER_H_ */

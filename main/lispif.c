@@ -363,7 +363,10 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Size: %u Bytes\n", const_heap.size);
 				commands_printf_lisp("Used cells: %d\n", const_heap.next);
 				commands_printf_lisp("Free cells: %d\n", const_heap.size / 4 - const_heap.next);
-				commands_printf_lisp("Write Erase Cnt: %d\n", flash_helper_write_erase_cnt());
+				flast_stats stats = flash_helper_stats();
+				commands_printf_lisp("Erase Cnt Tot: %d\n", stats.erase_cnt_tot);
+				commands_printf_lisp("Erase Cnt Max Sector: %d\n", stats.erase_cnt_max);
+				commands_printf_lisp("Num sectors erased: %d\n", stats.erased_sector_num);
 			} else if (strncmp(str, ":prof start", 11) == 0) {
 				if (prof_running) {
 					lbm_prof_init(prof_data, PROF_DATA_NUM);
