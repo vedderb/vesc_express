@@ -159,152 +159,142 @@ typedef struct {
 
 static vesc_syms syms_vesc = {0};
 
-static bool get_add_symbol(char *name, lbm_uint* id) {
-	if (!lbm_get_symbol_by_name(name, id)) {
-		if (!lbm_add_symbol_const(name, id)) {
-			return false;
-		}
-	}
-
-	return true;
-}
-
 static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 	if (*comp == 0) {
 		if (comp == &syms_vesc.v_tot) {
-			get_add_symbol("bms-v-tot", comp);
+			lbm_add_symbol_const("bms-v-tot", comp);
 		} else if (comp == &syms_vesc.v_charge) {
-			get_add_symbol("bms-v-charge", comp);
+			lbm_add_symbol_const("bms-v-charge", comp);
 		} else if (comp == &syms_vesc.i_in) {
-			get_add_symbol("bms-i-in", comp);
+			lbm_add_symbol_const("bms-i-in", comp);
 		} else if (comp == &syms_vesc.i_in_ic) {
-			get_add_symbol("bms-i-in-ic", comp);
+			lbm_add_symbol_const("bms-i-in-ic", comp);
 		} else if (comp == &syms_vesc.ah_cnt) {
-			get_add_symbol("bms-ah-cnt", comp);
+			lbm_add_symbol_const("bms-ah-cnt", comp);
 		} else if (comp == &syms_vesc.wh_cnt) {
-			get_add_symbol("bms-wh-cnt", comp);
+			lbm_add_symbol_const("bms-wh-cnt", comp);
 		} else if (comp == &syms_vesc.cell_num) {
-			get_add_symbol("bms-cell-num", comp);
+			lbm_add_symbol_const("bms-cell-num", comp);
 		} else if (comp == &syms_vesc.v_cell) {
-			get_add_symbol("bms-v-cell", comp);
+			lbm_add_symbol_const("bms-v-cell", comp);
 		} else if (comp == &syms_vesc.bal_state) {
-			get_add_symbol("bms-bal-state", comp);
+			lbm_add_symbol_const("bms-bal-state", comp);
 		} else if (comp == &syms_vesc.temp_adc_num) {
-			get_add_symbol("bms-temp-adc-num", comp);
+			lbm_add_symbol_const("bms-temp-adc-num", comp);
 		} else if (comp == &syms_vesc.temps_adc) {
-			get_add_symbol("bms-temps-adc", comp);
+			lbm_add_symbol_const("bms-temps-adc", comp);
 		} else if (comp == &syms_vesc.temp_ic) {
-			get_add_symbol("bms-temp-ic", comp);
+			lbm_add_symbol_const("bms-temp-ic", comp);
 		} else if (comp == &syms_vesc.temp_hum) {
-			get_add_symbol("bms-temp-hum", comp);
+			lbm_add_symbol_const("bms-temp-hum", comp);
 		} else if (comp == &syms_vesc.hum) {
-			get_add_symbol("bms-hum", comp);
+			lbm_add_symbol_const("bms-hum", comp);
 		} else if (comp == &syms_vesc.pres) {
-			get_add_symbol("bms-pres", comp);
+			lbm_add_symbol_const("bms-pres", comp);
 		} else if (comp == &syms_vesc.temp_max_cell) {
-			get_add_symbol("bms-temp-cell-max", comp);
+			lbm_add_symbol_const("bms-temp-cell-max", comp);
 		} else if (comp == &syms_vesc.soc) {
-			get_add_symbol("bms-soc", comp);
+			lbm_add_symbol_const("bms-soc", comp);
 		} else if (comp == &syms_vesc.soh) {
-			get_add_symbol("bms-soh", comp);
+			lbm_add_symbol_const("bms-soh", comp);
 		} else if (comp == &syms_vesc.can_id) {
-			get_add_symbol("bms-can-id", comp);
+			lbm_add_symbol_const("bms-can-id", comp);
 		} else if (comp == &syms_vesc.ah_cnt_chg_total) {
-			get_add_symbol("bms-ah-cnt-chg-total", comp);
+			lbm_add_symbol_const("bms-ah-cnt-chg-total", comp);
 		} else if (comp == &syms_vesc.wh_cnt_chg_total) {
-			get_add_symbol("bms-wh-cnt-chg-total", comp);
+			lbm_add_symbol_const("bms-wh-cnt-chg-total", comp);
 		} else if (comp == &syms_vesc.ah_cnt_dis_total) {
-			get_add_symbol("bms-ah-cnt-dis-total", comp);
+			lbm_add_symbol_const("bms-ah-cnt-dis-total", comp);
 		} else if (comp == &syms_vesc.wh_cnt_dis_total) {
-			get_add_symbol("bms-wh-cnt-dis-total", comp);
+			lbm_add_symbol_const("bms-wh-cnt-dis-total", comp);
 		} else if (comp == &syms_vesc.msg_age) {
-			get_add_symbol("bms-msg-age", comp);
+			lbm_add_symbol_const("bms-msg-age", comp);
 		} else if (comp == &syms_vesc.chg_allowed) {
-			get_add_symbol("bms-chg-allowed", comp);
+			lbm_add_symbol_const("bms-chg-allowed", comp);
 		}
 
 		else if (comp == &syms_vesc.pin_mode_out) {
-			get_add_symbol("pin-mode-out", comp);
+			lbm_add_symbol_const("pin-mode-out", comp);
 		} else if (comp == &syms_vesc.pin_mode_od) {
-			get_add_symbol("pin-mode-od", comp);
+			lbm_add_symbol_const("pin-mode-od", comp);
 		} else if (comp == &syms_vesc.pin_mode_od_pu) {
-			get_add_symbol("pin-mode-od-pu", comp);
+			lbm_add_symbol_const("pin-mode-od-pu", comp);
 		} else if (comp == &syms_vesc.pin_mode_od_pd) {
-			get_add_symbol("pin-mode-od-pd", comp);
+			lbm_add_symbol_const("pin-mode-od-pd", comp);
 		} else if (comp == &syms_vesc.pin_mode_in) {
-			get_add_symbol("pin-mode-in", comp);
+			lbm_add_symbol_const("pin-mode-in", comp);
 		} else if (comp == &syms_vesc.pin_mode_in_pu) {
-			get_add_symbol("pin-mode-in-pu", comp);
+			lbm_add_symbol_const("pin-mode-in-pu", comp);
 		} else if (comp == &syms_vesc.pin_mode_in_pd) {
-			get_add_symbol("pin-mode-in-pd", comp);
+			lbm_add_symbol_const("pin-mode-in-pd", comp);
 		} else if (comp == &syms_vesc.pin_mode_analog) {
-			get_add_symbol("pin-mode-analog", comp);
+			lbm_add_symbol_const("pin-mode-analog", comp);
 		}
 
 		else if (comp == &syms_vesc.hw_name) {
-			get_add_symbol("hw-name", comp);
+			lbm_add_symbol_const("hw-name", comp);
 		} else if (comp == &syms_vesc.fw_ver) {
-			get_add_symbol("fw-ver", comp);
+			lbm_add_symbol_const("fw-ver", comp);
 		} else if (comp == &syms_vesc.uuid) {
-			get_add_symbol("uuid", comp);
+			lbm_add_symbol_const("uuid", comp);
 		} else if (comp == &syms_vesc.hw_type) {
-			get_add_symbol("hw-type", comp);
+			lbm_add_symbol_const("hw-type", comp);
 		}
 
 		else if (comp == &syms_vesc.rate_100k) {
-			get_add_symbol("rate-100k", comp);
+			lbm_add_symbol_const("rate-100k", comp);
 		} else if (comp == &syms_vesc.rate_200k) {
-			get_add_symbol("rate-200k", comp);
+			lbm_add_symbol_const("rate-200k", comp);
 		} else if (comp == &syms_vesc.rate_400k) {
-			get_add_symbol("rate-400k", comp);
+			lbm_add_symbol_const("rate-400k", comp);
 		} else if (comp == &syms_vesc.rate_700k) {
-			get_add_symbol("rate-700k", comp);
+			lbm_add_symbol_const("rate-700k", comp);
 		}
 
 		else if (comp == &syms_vesc.controller_id) {
-			get_add_symbol("controller-id", comp);
+			lbm_add_symbol_const("controller-id", comp);
 		} else if (comp == &syms_vesc.can_baud_rate) {
-			get_add_symbol("can-baud-rate", comp);
+			lbm_add_symbol_const("can-baud-rate", comp);
 		} else if (comp == &syms_vesc.can_status_rate_hz) {
-			get_add_symbol("can-status-rate-hz", comp);
+			lbm_add_symbol_const("can-status-rate-hz", comp);
 		} else if (comp == &syms_vesc.wifi_mode) {
-			get_add_symbol("wifi-mode", comp);
+			lbm_add_symbol_const("wifi-mode", comp);
 		} else if (comp == &syms_vesc.wifi_sta_ssid) {
-			get_add_symbol("wifi-sta-ssid", comp);
+			lbm_add_symbol_const("wifi-sta-ssid", comp);
 		} else if (comp == &syms_vesc.wifi_sta_key) {
-			get_add_symbol("wifi-sta-key", comp);
+			lbm_add_symbol_const("wifi-sta-key", comp);
 		} else if (comp == &syms_vesc.wifi_ap_ssid) {
-			get_add_symbol("wifi-ap-ssid", comp);
+			lbm_add_symbol_const("wifi-ap-ssid", comp);
 		} else if (comp == &syms_vesc.wifi_ap_key) {
-			get_add_symbol("wifi-ap-key", comp);
+			lbm_add_symbol_const("wifi-ap-key", comp);
 		} else if (comp == &syms_vesc.use_tcp_local) {
-			get_add_symbol("use-tcp-local", comp);
+			lbm_add_symbol_const("use-tcp-local", comp);
 		} else if (comp == &syms_vesc.use_tcp_hub) {
-			get_add_symbol("use-tcp-hub", comp);
+			lbm_add_symbol_const("use-tcp-hub", comp);
 		} else if (comp == &syms_vesc.tcp_hub_url) {
-			get_add_symbol("tcp-hub-url", comp);
+			lbm_add_symbol_const("tcp-hub-url", comp);
 		} else if (comp == &syms_vesc.tcp_hub_port) {
-			get_add_symbol("tcp-hub-port", comp);
+			lbm_add_symbol_const("tcp-hub-port", comp);
 		} else if (comp == &syms_vesc.tcp_hub_id) {
-			get_add_symbol("tcp-hub-id", comp);
+			lbm_add_symbol_const("tcp-hub-id", comp);
 		} else if (comp == &syms_vesc.tcp_hub_pass) {
-			get_add_symbol("tcp-hub-pass", comp);
+			lbm_add_symbol_const("tcp-hub-pass", comp);
 		} else if (comp == &syms_vesc.ble_mode) {
-			get_add_symbol("ble-mode", comp);
+			lbm_add_symbol_const("ble-mode", comp);
 		} else if (comp == &syms_vesc.ble_name) {
-			get_add_symbol("ble-name", comp);
+			lbm_add_symbol_const("ble-name", comp);
 		} else if (comp == &syms_vesc.ble_pin) {
-			get_add_symbol("ble-pin", comp);
+			lbm_add_symbol_const("ble-pin", comp);
 		}
 
 		else if (comp == &syms_vesc.copy) {
-			get_add_symbol("copy", comp);
+			lbm_add_symbol_const("copy", comp);
 		} else if (comp == &syms_vesc.mut) {
-			get_add_symbol("mut", comp);
+			lbm_add_symbol_const("mut", comp);
 		}
 		
 		else if (comp == &syms_vesc.half_duplex) {
-			get_add_symbol("half-duplex", comp);
+			lbm_add_symbol_const("half-duplex", comp);
 		}
 	}
 

@@ -80,21 +80,15 @@ static volatile bool init_done = false;
 static bool register_symbols(void) {
 	bool res = true;
 
-	res = res
-		&& lbm_add_symbol_const_if_new(
-			  "wrong-password", &symbol_wrong_password
-		);
-	res = res
-		&& lbm_add_symbol_const_if_new("unknown-host", &symbol_unknown_host);
-	res = res && lbm_add_symbol_const_if_new("no-data", &symbol_no_data);
-	res = res && lbm_add_symbol_const_if_new("connected", &symbol_connected);
-	res = res && lbm_add_symbol_const_if_new("connecting", &symbol_connecting);
-	res = res
-		&& lbm_add_symbol_const_if_new("disconnected", &symbol_disconnected);
-	res = res
-		&& lbm_add_symbol_const_if_new("socket-error", &symbol_socket_error);
-	res = res
-		&& lbm_add_symbol_const_if_new("connect-error", &symbol_connect_error);
+	res = res && lbm_add_symbol_const("wrong-password", &symbol_wrong_password);
+	res = res && lbm_add_symbol_const("unknown-host", &symbol_unknown_host);
+	res = res && lbm_add_symbol_const("no-data", &symbol_no_data);
+	res = res && lbm_add_symbol_const("connected", &symbol_connected);
+	res = res && lbm_add_symbol_const("connecting", &symbol_connecting);
+	res = res && lbm_add_symbol_const("disconnected", &symbol_disconnected);
+	res = res && lbm_add_symbol_const("socket-error", &symbol_socket_error);
+	res = res && lbm_add_symbol_const("connect-error", &symbol_connect_error);
+
 	return res;
 }
 
