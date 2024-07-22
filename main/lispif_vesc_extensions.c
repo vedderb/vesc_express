@@ -577,6 +577,16 @@ static lbm_value ext_bms_force_balance(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_bms_zero_offset(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	uint8_t data[1];
+	data[0] = COMM_BMS_ZERO_CURRENT_OFFSET;
+	bms_process_cmd(data, 1, 0);
+
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_TERROR;
 
@@ -5295,6 +5305,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("send-bms-can", ext_send_bms_can);
 	lbm_add_extension("set-bms-chg-allowed", ext_set_bms_chg_allowed);
 	lbm_add_extension("bms-force-balance", ext_bms_force_balance);
+	lbm_add_extension("bms-zero-offset", ext_bms_zero_offset);
 	lbm_add_extension("get-adc", ext_get_adc);
 	lbm_add_extension("systime", ext_systime);
 	lbm_add_extension("secs-since", ext_secs_since);
