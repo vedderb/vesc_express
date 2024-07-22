@@ -5577,6 +5577,26 @@ void lispif_disable_all_events(void) {
 	}
 }
 
+// pull in from eval_cps
+void lbm_request_gc(void);
+
+static bool start_flatten_with_gc(lbm_flat_value_t *v, size_t buffer_size) {
+	if (lbm_start_flatten(v, buffer_size)) {
+		return true;
+	}
+
+	int timeout = 3;
+	uint32_t gc_last = lbm_heap_state.gc_num;
+	lbm_request_gc();
+
+	while (lbm_heap_state.gc_num <= gc_last && timeout > 0) {
+		vTaskDelay(1);
+		timeout--;
+	}
+
+	return lbm_start_flatten(v, buffer_size);
+}
+
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 	if (is_ext) {
 		if (can_recv_eid_cid < 0 && !event_can_eid_en)  {
@@ -5589,7 +5609,7 @@ void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 	}
 
 	lbm_flat_value_t v;
-	if (lbm_start_flatten(&v, 50 + len)) {
+	if (start_flatten_with_gc(&v, 50 + len)) {
 		f_cons(&v);
 
 		if ((can_recv_sid_cid < 0 && !is_ext) || (can_recv_eid_cid < 0 && is_ext)) {
@@ -5630,7 +5650,7 @@ void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
 	}
 
 	lbm_flat_value_t v;
-	if (lbm_start_flatten(&v, 30 + len)) {
+	if (start_flatten_with_gc(&v, 30 + len)) {
 		if (recv_data_cid < 0) {
 			f_cons(&v);
 			f_sym(&v, sym_event_data_rx);
@@ -5664,7 +5684,7 @@ void lispif_process_rmsg(int slot, unsigned char *data, unsigned int len) {
 	}
 
 	lbm_flat_value_t v;
-	if (lbm_start_flatten(&v, 10 + len)) {
+	if (start_flatten_with_gc(&v, 10 + len)) {
 		f_lbm_array(&v, len, data);
 		lbm_finish_flatten(&v);
 
