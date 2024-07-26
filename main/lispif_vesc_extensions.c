@@ -5650,9 +5650,6 @@ void lispif_disable_all_events(void) {
 	}
 }
 
-// pull in from eval_cps
-void lbm_request_gc(void);
-
 static bool start_flatten_with_gc(lbm_flat_value_t *v, size_t buffer_size) {
 	if (lbm_start_flatten(v, buffer_size)) {
 		return true;
