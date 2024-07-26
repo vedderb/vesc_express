@@ -2748,8 +2748,8 @@ static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static lbm_value ext_gpio_configure_hold(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN(2);
+static lbm_value ext_gpio_hold(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
 
 	int pin = lbm_dec_as_i32(args[0]);
 	int state = lbm_dec_as_i32(args[1]);
@@ -2758,12 +2758,24 @@ static lbm_value ext_gpio_configure_hold(lbm_value *args, lbm_uint argn) {
 		lbm_set_error_reason(string_pin_invalid);
 		return ENC_SYM_EERROR;
 	}
-	if(state) {
+
+	if (state) {
 		gpio_hold_en(pin);
-		gpio_deep_sleep_hold_en();
-	}
-	if(!state) {
+	} else {
 		gpio_hold_dis(pin);
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_gpio_hold_deepsleep(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int state = lbm_dec_as_i32(args[0]);
+
+	if (state) {
+		gpio_deep_sleep_hold_en();
+	} else {
 		gpio_deep_sleep_hold_dis();
 	}
 
@@ -5432,7 +5444,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("gpio-configure", ext_gpio_configure);
 	lbm_add_extension("gpio-write", ext_gpio_write);
 	lbm_add_extension("gpio-read", ext_gpio_read);
-	lbm_add_extension("gpio-configure-hold", ext_gpio_configure_hold);
+	lbm_add_extension("gpio-hold", ext_gpio_hold);
+	lbm_add_extension("gpio-hold-deepsleep", ext_gpio_hold_deepsleep);
 
 	// Math
 	lbm_add_extension("throttle-curve", ext_throttle_curve);

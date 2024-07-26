@@ -160,9 +160,6 @@ void app_main(void) {
 #ifdef SD_PIN_MOSI
 	log_mount_card(SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK, SD_PIN_CS, SDMMC_FREQ_DEFAULT);
 #endif
-#ifdef NAND_PIN_MOSI
-	log_mount_nand_flash(NAND_PIN_MOSI, NAND_PIN_MISO, NAND_PIN_SCK, NAND_PIN_CS, FLASH_FREQ_KHZ);
-#endif
 
 #ifndef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
