@@ -2427,6 +2427,18 @@ static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(bwt == WIFI_BW_HT20 ? 20 : 40);
 }
 
+static lbm_value ext_wifi_start(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	esp_wifi_start();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_wifi_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	esp_wifi_stop();
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	if (!esp_now_initialized) {
 		lbm_set_error_reason(esp_init_msg);
@@ -2732,6 +2744,28 @@ static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 
 	gpio_reset_pin(pin);
 	gpio_config(&gpconf);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_gpio_configure_hold(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	int pin = lbm_dec_as_i32(args[0]);
+	int state = lbm_dec_as_i32(args[1]);
+
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
+		return ENC_SYM_EERROR;
+	}
+	if(state) {
+		gpio_hold_en(pin);
+		gpio_deep_sleep_hold_en();
+	}
+	if(!state) {
+		gpio_hold_dis(pin);
+		gpio_deep_sleep_hold_dis();
+	}
 
 	return ENC_SYM_TRUE;
 }
@@ -3226,6 +3260,23 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	}
 
 	esp_deep_sleep_start();
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	esp_bluedroid_disable();
+	esp_bt_controller_disable();
+	esp_wifi_stop();
+
+	float sleep_time = lbm_dec_as_float(args[0]);
+	if (sleep_time > 0) {
+		esp_sleep_enable_timer_wakeup((uint32_t)(sleep_time * 1.0e6));
+	}
+
+	esp_light_sleep_start();
 
 	return ENC_SYM_TRUE;
 }
@@ -5376,6 +5427,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("gpio-configure", ext_gpio_configure);
 	lbm_add_extension("gpio-write", ext_gpio_write);
 	lbm_add_extension("gpio-read", ext_gpio_read);
+	lbm_add_extension("gpio-configure-hold", ext_gpio_configure_hold);
 
 	// Math
 	lbm_add_extension("throttle-curve", ext_throttle_curve);
@@ -5421,6 +5473,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("wifi-set-chan", ext_wifi_set_chan);
 	lbm_add_extension("wifi-get-bw", ext_wifi_get_bw);
 	lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
+	lbm_add_extension("wifi-start", ext_wifi_start);
+	lbm_add_extension("wifi-stop", ext_wifi_stop);
 
 	// Logging
 	lbm_add_extension("log-start", ext_log_start);
@@ -5440,6 +5494,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// Sleep
 	lbm_add_extension("sleep-deep", ext_sleep_deep);
+	lbm_add_extension("sleep-light", ext_sleep_light);
 	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
 	lbm_add_extension("rtc-data", ext_rtc_data);
 
