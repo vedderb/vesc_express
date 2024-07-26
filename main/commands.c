@@ -460,8 +460,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		struct dirent *dir;
 		bool from_found = strlen(from) == 0;
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		d = opendir(path_full);
@@ -555,8 +555,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		ind += path_len + 1;
 		int32_t offset = buffer_get_int32(data, &ind);
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		ind = 0;
@@ -631,8 +631,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int32_t offset = buffer_get_int32(data, &ind);
 		int32_t size = buffer_get_int32(data, &ind);
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		bool ok = false;
@@ -682,8 +682,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int path_len = strlen(path);
 		ind += path_len + 1;
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		ind = 0;
@@ -699,8 +699,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int path_len = strlen(path);
 		ind += path_len + 1;
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		ind = 0;
