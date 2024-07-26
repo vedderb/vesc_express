@@ -94,6 +94,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/trampa/bms_rb"
 "hwconf/vesc"
 "hwconf/vesc/vbms32"
+"hwconf/vesc/vdisp_dual"
 
 "lispBM"
 "lispBM/include"
