@@ -50,6 +50,9 @@
 //#define HW_HEADER					"hw_vdisp_dual.h"
 //#define HW_SOURCE					"hw_vdisp_dual.c"
 
+//#define HW_HEADER					"hw_lifan.h"
+//#define HW_SOURCE					"hw_lifan.c"
+
 //#define HW_HEADER					"hw_lb_if.h"
 //#define HW_SOURCE					"hw_lb_if.c"
 
