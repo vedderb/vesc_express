@@ -26,6 +26,7 @@
 #include "esp_vfs.h"
 #include "buffer.h"
 #include "utils.h"
+#include "esp_vfs_fat_nand.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -51,6 +52,7 @@ char *file_basepath = "/sdcard/";
 // Private variables
 static sdmmc_host_t m_host = SDSPI_HOST_DEFAULT();
 static sdmmc_card_t *m_card = 0;
+static spi_nand_flash_device_t *nand_flash_device_handle = 0;
 
 static volatile log_header m_headers[LOG_MAX_FIELDS];
 
@@ -313,6 +315,61 @@ void log_unmount_card(void) {
 	}
 
 	spi_bus_free(m_host.slot);
+}
+
+bool log_mount_nand_flash(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq) {
+	esp_err_t ret;
+
+	const spi_bus_config_t bus_config = {
+			.mosi_io_num = pin_mosi,
+			.miso_io_num = pin_miso,
+			.sclk_io_num = pin_sck,
+			.quadwp_io_num = -1,
+			.quadhd_io_num = -1,
+			.max_transfer_sz = 32,
+	};
+
+	spi_bus_initialize(SPI2_HOST, &bus_config, SPI_DMA_CH_AUTO);
+
+	spi_device_interface_config_t devcfg = {
+			.clock_speed_hz = freq * 1000,
+			.mode = 0,
+			.spics_io_num = pin_cs,
+			.queue_size = 10,
+			.flags = SPI_DEVICE_HALFDUPLEX,
+	};
+
+	spi_device_handle_t spi;
+	spi_bus_add_device(SPI2_HOST, &devcfg, &spi);
+
+	spi_nand_flash_config_t nand_flash_config = {
+			.device_handle = spi,
+	};
+
+	spi_nand_flash_init_device(&nand_flash_config, &nand_flash_device_handle);
+
+	esp_vfs_fat_mount_config_t config = {
+			.max_files = 4,
+			.format_if_mount_failed = true,
+			.allocation_unit_size = 16 * 1024
+	};
+
+	file_basepath = "/nandflash/";
+	ret = esp_vfs_fat_nand_mount("/nandflash", nand_flash_device_handle, &config);
+
+	if (ret != ESP_OK) {
+		return false;
+	}
+
+	return true;
+}
+
+void log_unmount_nand_flash (void) {
+	if (nand_flash_device_handle) {
+		esp_vfs_fat_nand_unmount("/nandflash", nand_flash_device_handle);
+		spi_nand_flash_deinit_device(nand_flash_device_handle);
+		nand_flash_device_handle = 0;
+	}
 }
 
 bool log_init(void) {
