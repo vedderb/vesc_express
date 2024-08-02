@@ -25,7 +25,9 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include "esp_log.h"
-#include "hal/usb_serial_jtag_ll.h"
+#if !CONFIG_IDF_TARGET_ESP32
+	#include "hal/usb_serial_jtag_ll.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/ringbuf.h"

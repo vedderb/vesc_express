@@ -5359,7 +5359,11 @@ static lbm_value ext_connected_ble(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_connected_usb(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
-	return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	#if !CONFIG_IDF_TARGET_ESP32
+		return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	#else
+		return false;
+	#endif
 }
 
 void lispif_load_vesc_extensions(void) {
