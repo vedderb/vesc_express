@@ -119,35 +119,35 @@ static bool register_symbols(void) {
 	bool res = true;
 
 	// clang-format off
-	res = res && lbm_add_symbol_const_if_new("uuid", &symbol_uuid);
-	res = res && lbm_add_symbol_const_if_new("prop", &symbol_prop);
-	res = res && lbm_add_symbol_const_if_new("max-len", &symbol_max_len);
-	res = res && lbm_add_symbol_const_if_new("default-value", &symbol_default_value);
-	res = res && lbm_add_symbol_const_if_new("descr", &symbol_descr);
+	res = res && lbm_add_symbol_const("uuid", &symbol_uuid);
+	res = res && lbm_add_symbol_const("prop", &symbol_prop);
+	res = res && lbm_add_symbol_const("max-len", &symbol_max_len);
+	res = res && lbm_add_symbol_const("default-value", &symbol_default_value);
+	res = res && lbm_add_symbol_const("descr", &symbol_descr);
 
-	res = res && lbm_add_symbol_const_if_new("prop-read", &symbol_prop_read);
-	res = res && lbm_add_symbol_const_if_new("prop-write", &symbol_prop_write);
-	res = res && lbm_add_symbol_const_if_new("prop-write-nr", &symbol_prop_write_nr);
-	res = res && lbm_add_symbol_const_if_new("prop-indicate", &symbol_prop_indicate);
-	res = res && lbm_add_symbol_const_if_new("prop-notify", &symbol_prop_notify);
+	res = res && lbm_add_symbol_const("prop-read", &symbol_prop_read);
+	res = res && lbm_add_symbol_const("prop-write", &symbol_prop_write);
+	res = res && lbm_add_symbol_const("prop-write-nr", &symbol_prop_write_nr);
+	res = res && lbm_add_symbol_const("prop-indicate", &symbol_prop_indicate);
+	res = res && lbm_add_symbol_const("prop-notify", &symbol_prop_notify);
 
-	res = res && lbm_add_symbol_const_if_new("flags", &symbol_flags);
-	res = res && lbm_add_symbol_const_if_new("incomplete-uuid-16", &symbol_incomplete_uuid_16);
-	res = res && lbm_add_symbol_const_if_new("complete-uuid-16", &symbol_complete_uuid_16);
-	res = res && lbm_add_symbol_const_if_new("incomplete-uuid-32", &symbol_incomplete_uuid_32);
-	res = res && lbm_add_symbol_const_if_new("complete-uuid-32", &symbol_complete_uuid_32);
-	res = res && lbm_add_symbol_const_if_new("incomplete-uuid-128", &symbol_incomplete_uuid_128);
-	res = res && lbm_add_symbol_const_if_new("complete-uuid-128", &symbol_complete_uuid_128);
-	res = res && lbm_add_symbol_const_if_new("name-short", &symbol_name_short);
-	res = res && lbm_add_symbol_const_if_new("name-complete", &symbol_name_complete);
-	res = res && lbm_add_symbol_const_if_new("tx-power-level", &symbol_tx_power_level);
-	res = res && lbm_add_symbol_const_if_new("device-id", &symbol_device_id);
-	res = res && lbm_add_symbol_const_if_new("conn-interval-range", &symbol_conn_interval_range);
-	res = res && lbm_add_symbol_const_if_new("service-data-16", &symbol_service_data_16);
-	res = res && lbm_add_symbol_const_if_new("service-data-32", &symbol_service_data_32);
-	res = res && lbm_add_symbol_const_if_new("service-data-128", &symbol_service_data_128);
-	res = res && lbm_add_symbol_const_if_new("appearance", &symbol_appearance);
-	res = res && lbm_add_symbol_const_if_new("manufacturer-data", &symbol_manufacturer_data);
+	res = res && lbm_add_symbol_const("flags", &symbol_flags);
+	res = res && lbm_add_symbol_const("incomplete-uuid-16", &symbol_incomplete_uuid_16);
+	res = res && lbm_add_symbol_const("complete-uuid-16", &symbol_complete_uuid_16);
+	res = res && lbm_add_symbol_const("incomplete-uuid-32", &symbol_incomplete_uuid_32);
+	res = res && lbm_add_symbol_const("complete-uuid-32", &symbol_complete_uuid_32);
+	res = res && lbm_add_symbol_const("incomplete-uuid-128", &symbol_incomplete_uuid_128);
+	res = res && lbm_add_symbol_const("complete-uuid-128", &symbol_complete_uuid_128);
+	res = res && lbm_add_symbol_const("name-short", &symbol_name_short);
+	res = res && lbm_add_symbol_const("name-complete", &symbol_name_complete);
+	res = res && lbm_add_symbol_const("tx-power-level", &symbol_tx_power_level);
+	res = res && lbm_add_symbol_const("device-id", &symbol_device_id);
+	res = res && lbm_add_symbol_const("conn-interval-range", &symbol_conn_interval_range);
+	res = res && lbm_add_symbol_const("service-data-16", &symbol_service_data_16);
+	res = res && lbm_add_symbol_const("service-data-32", &symbol_service_data_32);
+	res = res && lbm_add_symbol_const("service-data-128", &symbol_service_data_128);
+	res = res && lbm_add_symbol_const("appearance", &symbol_appearance);
+	res = res && lbm_add_symbol_const("manufacturer-data", &symbol_manufacturer_data);
 	// clang-format on
 
 	return res;

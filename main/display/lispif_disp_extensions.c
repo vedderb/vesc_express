@@ -145,7 +145,7 @@ static color_format_t sym_to_color_format(lbm_value v) {
 
 static bool image_buffer_destructor(lbm_uint value) {
 	image_buffer_t *img = (image_buffer_t*)value;
-	lbm_free((void*)img->data);
+	lbm_free((void*)img->mem_base);
 	lbm_free((void*)img);
 	return true;
 }
@@ -191,8 +191,8 @@ static lbm_value image_buffer_lift(uint8_t *buf, uint8_t buf_offset, color_forma
 		return ENC_SYM_MERROR;
 	}
 
-	img->data_offset = buf_offset;
-	img->data = buf;
+	img->mem_base = buf;
+	img->data = buf + buf_offset;
 	img->fmt = fmt;
 	img->width = width;
 	img->height = height;
@@ -421,7 +421,7 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 		int extra = img_size & 0x7;
 		int bytes = (img_size >> 3) + (extra ? 1 : 0);
 		uint8_t c8 = (cc & 1) ? 0xFFFF : 0x0;
-		memset(img->data+img->data_offset, c8, bytes);
+		memset(img->data, c8, bytes);
 	}
 	break;
 	case indexed4: {
@@ -429,7 +429,7 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 		int extra = img_size & 0x3;
 		int bytes = (img_size >> 2) + (extra ? 1 : 0);
 		uint8_t ix = (cc & 0x3);
-		memset(img->data+img->data_offset, index4_table[ix], bytes);
+		memset(img->data, index4_table[ix], bytes);
 	}
 	break;
 	case indexed16: {
@@ -437,16 +437,16 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 		int bytes = (img_size >> 1) + (extra ? 1 : 0);
 		uint8_t ix = (cc & 0xF);
 		uint8_t color = (ix | ix << 4);  // create a color based on duplication of index
-		memset(img->data+img->data_offset, color, bytes);
+		memset(img->data, color, bytes);
 	}
 	break;
 	case rgb332: {
-		memset(img->data+img->data_offset, rgb888to332(cc), img_size);
+		memset(img->data, rgb888to332(cc), img_size);
 	}
 	break;
 	case rgb565: {
 		uint16_t c = rgb888to565(cc);
-		uint8_t *dp = (uint8_t*)img->data+img->data_offset;
+		uint8_t *dp = (uint8_t*)img->data;
 		for (int i = 0; i < img_size/2; i +=2) {
 			dp[i] = (uint8_t)c >> 8;
 			dp[i+1] = (uint8_t)c;
@@ -454,7 +454,7 @@ static void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
 	}
 	break;
 	case rgb888: {
-		uint8_t *dp = (uint8_t*)img->data+img->data_offset;
+		uint8_t *dp = (uint8_t*)img->data;
 		for (int i = 0; i < img_size * 3; i+= 3) {
 			dp[i]   = (uint8_t)cc >> 16;
 			dp[i+1] = (uint8_t)cc >> 8;
@@ -477,7 +477,7 @@ static void putpixel(image_buffer_t* img, uint16_t x, uint16_t y, uint32_t c) {
 	uint16_t w = img->width;
 	uint16_t h = img->height;
 	if (x < w && y < h) {
-		uint8_t *data = img->data+img->data_offset;
+		uint8_t *data = img->data;
 		switch(img->fmt) {
 		case indexed2: {
 			uint32_t pos = y * w + x;
@@ -533,7 +533,7 @@ static uint32_t getpixel(image_buffer_t* img, uint16_t x, uint16_t y) {
 	uint16_t w = img->width;
 	uint16_t h = img->height;
 	if (x < w && y < h) {
-		uint8_t *data = img->data+img->data_offset;
+		uint8_t *data = img->data;
 		switch(img->fmt) {
 		case indexed2: {
 			uint32_t pos = y * w + x;

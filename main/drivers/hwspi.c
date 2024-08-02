@@ -148,13 +148,7 @@ void hwspi_data_stream_start(void) {
 }
 
 void hwspi_data_stream_finish(void) {
-	static spi_transaction_t *tmp_ptr = 0;
-	spi_device_get_trans_result(m_spi, &tmp_ptr, 0);
-//	spi_device_get_trans_result(m_spi, &tmp_ptr, 1);
-
-//	if (m_active_buffer->pos != 0) {
-		hwspi_send_data(m_active_buffer->data, m_active_buffer->pos);
-//	}
+	hwspi_send_data(m_active_buffer->data, m_active_buffer->pos);
 }
 
 void hwspi_send_data(const uint8_t *data, int len) {

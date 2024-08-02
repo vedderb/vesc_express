@@ -1,6 +1,6 @@
 /*
-    Copyright 2023 Joel Svensson    svenssonjoel@yahoo.se
-              2023 Benjamin Vedder
+    Copyright 2023, 2024 Joel Svensson    svenssonjoel@yahoo.se
+              2023       Benjamin Vedder
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -98,6 +98,14 @@ bool f_cons(lbm_flat_value_t *v) {
   return false;
 }
 
+bool f_lisp_array(lbm_flat_value_t *v, uint32_t size) {
+  // arrays are smaller than 2^32 elements long
+  bool res = true;
+  res = res && write_byte(v, S_LBM_LISP_ARRAY);
+  res = res && write_word(v, size); // number of elements.
+  return res;
+}
+
 bool f_sym(lbm_flat_value_t *v, lbm_uint sym_id) {
   bool res = true;
   res = res && write_byte(v,S_SYM_VALUE);
@@ -124,6 +132,8 @@ bool f_sym_string(lbm_flat_value_t *v, char *str) {
   return false;
 }
 
+// Potentially a difference between 32/64 bit version.
+// strlen returns size_t which is different on 32/64 bit platforms.
 int f_sym_string_bytes(lbm_value sym) {
   char *sym_str;
   if (lbm_is_symbol(sym)) {
@@ -131,7 +141,7 @@ int f_sym_string_bytes(lbm_value sym) {
     sym_str = (char*)lbm_get_name_by_symbol(s);
     if (sym_str) {
       lbm_uint sym_bytes = strlen(sym_str) + 1;
-      return (lbm_int)sym_bytes;
+      return (int)sym_bytes;
     }
   }
   return FLATTEN_VALUE_ERROR_FATAL;
@@ -214,6 +224,7 @@ bool f_u64(lbm_flat_value_t *v, uint64_t w) {
   return res;
 }
 
+// num_bytes is specifically an uint32_t
 bool f_lbm_array(lbm_flat_value_t *v, uint32_t num_bytes, uint8_t *data) {
   bool res = true;
   res = res && write_byte(v, S_LBM_ARRAY);
@@ -227,7 +238,6 @@ bool f_lbm_array(lbm_flat_value_t *v, uint32_t num_bytes, uint8_t *data) {
   return res;
 }
 
-static int flatten_value_result = FLATTEN_VALUE_OK;
 static int flatten_maximum_depth = FLATTEN_VALUE_MAXIMUM_DEPTH;
 
 void lbm_set_max_flatten_depth(int depth) {
@@ -243,9 +253,14 @@ int flatten_value_size_internal(jmp_buf jb, lbm_value v, int depth) {
     flatten_error(jb, FLATTEN_VALUE_ERROR_MAXIMUM_DEPTH);
   }
 
-  switch (lbm_type_of(v)) {
-  case LBM_TYPE_CONS: /* fall through */
-  case LBM_TYPE_CONS_CONST: {
+  lbm_uint t = lbm_type_of(v);
+  if (t >= LBM_POINTER_TYPE_FIRST && t < LBM_POINTER_TYPE_LAST) {
+    //  Clear constant bit, it is irrelevant to flattening
+    t = t & ~(LBM_PTR_TO_CONSTANT_BIT);
+  }
+
+  switch (t) {
+  case LBM_TYPE_CONS: {
     int s2 = 0;
     int s1 = flatten_value_size_internal(jb,lbm_car(v), depth + 1);
     if (s1 > 0) {
@@ -255,6 +270,16 @@ int flatten_value_size_internal(jmp_buf jb, lbm_value v, int depth) {
       }
     }
     return 0; // already terminated with error
+  }
+  case LBM_TYPE_LISPARRAY: {
+    int sum = 4 + 1; // sizeof(uint32_t) + 1;
+    lbm_array_header_t *header = (lbm_array_header_t*)lbm_car(v);
+    lbm_value *arrdata = (lbm_value*)header->data;
+    lbm_uint size = header->size / sizeof(lbm_value);
+    for (lbm_uint i = 0; i < size; i ++ ) {
+      sum += flatten_value_size_internal(jb, arrdata[i], depth + 1);
+    }
+    return sum;
   }
   case LBM_TYPE_BYTE:
     return 1 + 1;
@@ -276,13 +301,15 @@ int flatten_value_size_internal(jmp_buf jb, lbm_value v, int depth) {
   case LBM_TYPE_SYMBOL: {
     int s = f_sym_string_bytes(v);
     if (s > 0) return 1 + s;
-    flatten_error(jb, s);
+    flatten_error(jb, (int)s);
   } return 0; // already terminated with error
   case LBM_TYPE_ARRAY: {
+    // Platform dependent size.
+    // TODO: Something needs to be done to these inconsistencies.
     lbm_int s = lbm_heap_array_get_size(v);
     if (s > 0)
-      return 1 + 4 + s;
-    flatten_error(jb, s);
+      return 1 + 4 + (int)s;
+    flatten_error(jb, (int)s);
   } return 0; // already terminated with error
   default:
     return FLATTEN_VALUE_ERROR_CANNOT_BE_FLATTENED;
@@ -299,9 +326,15 @@ int flatten_value_size(lbm_value v, int depth) {
 }
 
 int flatten_value_c(lbm_flat_value_t *fv, lbm_value v) {
-  switch (lbm_type_of(v)) {
-  case LBM_TYPE_CONS: /* fall through */
-  case LBM_TYPE_CONS_CONST: {
+
+  lbm_uint t = lbm_type_of(v);
+  if (t >= LBM_POINTER_TYPE_FIRST && t < LBM_POINTER_TYPE_LAST) {
+    //  Clear constant bit, it is irrelevant to flattening
+    t = t & ~(LBM_PTR_TO_CONSTANT_BIT);
+  }
+
+  switch (t) {
+  case LBM_TYPE_CONS: {
     bool res = true;
     res = res && f_cons(fv);
     if (res) {
@@ -312,6 +345,20 @@ int flatten_value_c(lbm_flat_value_t *fv, lbm_value v) {
       return fv_r;
     }
   }break;
+  case LBM_TYPE_LISPARRAY: {
+    lbm_array_header_t *header = (lbm_array_header_t*)lbm_car(v);
+    lbm_value *arrdata = (lbm_value*)header->data;
+    lbm_uint size = header->size / sizeof(lbm_value);
+    if (!f_lisp_array(fv, size)) return FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY;
+    int fv_r;
+    for (lbm_uint i = 0; i < size; i ++ ) {
+      fv_r =  flatten_value_c(fv, arrdata[i]);
+      if (fv_r != FLATTEN_VALUE_OK) {
+        return fv_r;
+      }
+    }
+    return FLATTEN_VALUE_OK;
+  } break;
   case LBM_TYPE_BYTE:
     if (f_b(fv, (uint8_t)lbm_dec_as_char(v))) {
       return FLATTEN_VALUE_OK;
@@ -367,7 +414,7 @@ int flatten_value_c(lbm_flat_value_t *fv, lbm_value v) {
     lbm_int s = lbm_heap_array_get_size(v);
     const uint8_t *d = lbm_heap_array_get_data_ro(v);
     if (s > 0 && d != NULL) {
-      if (f_lbm_array(fv, (lbm_uint)s, (uint8_t*)d)) {
+      if (f_lbm_array(fv, (uint32_t)s, (uint8_t*)d)) {
         return FLATTEN_VALUE_OK;
       }
     } else {
@@ -398,37 +445,34 @@ lbm_value handle_flatten_error(int err_val) {
 
 lbm_value flatten_value(lbm_value v) {
 
-  jmp_buf jb;
-
   lbm_value array_cell = lbm_heap_allocate_cell(LBM_TYPE_CONS, ENC_SYM_NIL, ENC_SYM_ARRAY_TYPE);
   if (lbm_type_of(array_cell) == LBM_TYPE_SYMBOL) {
-    lbm_set_car_and_cdr(array_cell, ENC_SYM_NIL, ENC_SYM_NIL);
     return ENC_SYM_MERROR;
   }
 
   lbm_flat_value_t fv;
-  if (setjmp(jb) > 0) {
-    lbm_set_car_and_cdr(array_cell, ENC_SYM_NIL, ENC_SYM_NIL);
-    return handle_flatten_error(flatten_value_result);
-  }
 
   lbm_array_header_t *array = NULL;
   int required_mem = flatten_value_size(v, 0);
   if (required_mem > 0) {
     array = (lbm_array_header_t *)lbm_malloc(sizeof(lbm_array_header_t));
     if (array == NULL) {
-      flatten_error(jb, FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY);
+      lbm_set_car_and_cdr(array_cell, ENC_SYM_NIL, ENC_SYM_NIL);
+      return ENC_SYM_MERROR;
     }
 
     bool r = lbm_start_flatten(&fv, (lbm_uint)required_mem);
     if (!r) {
       lbm_free(array);
-      flatten_error(jb, FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY);
+      lbm_set_car_and_cdr(array_cell, ENC_SYM_NIL, ENC_SYM_NIL);
+      return ENC_SYM_MERROR;
     }
 
     if (flatten_value_c(&fv, v) == FLATTEN_VALUE_OK) {
       // it would be wasteful to run finish_flatten here.
       r = true;
+    } else {
+      r = false;
     }
 
     if (r)  {
@@ -438,13 +482,9 @@ lbm_value flatten_value(lbm_value v) {
       lbm_set_car(array_cell, (lbm_uint)array);
       array_cell = lbm_set_ptr_type(array_cell, LBM_TYPE_ARRAY);
       return array_cell;
-    } else {
-      flatten_error(jb, FLATTEN_VALUE_ERROR_FATAL);
-    }
+    } 
   }
-
   lbm_set_car_and_cdr(array_cell, ENC_SYM_NIL, ENC_SYM_NIL);
-  lbm_free(array);
   return handle_flatten_error(required_mem);
 }
 
@@ -511,6 +551,29 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     }
     return r;
   }
+  case S_LBM_LISP_ARRAY: {
+    uint32_t size;
+    bool b = extract_word(v, &size);
+    int r = UNFLATTEN_MALFORMED;
+    if (b) {
+      lbm_value array;
+      lbm_heap_allocate_lisp_array(&array, size);
+      lbm_array_header_t *header = (lbm_array_header_t*)lbm_car(array);
+      lbm_value *arrdata = (lbm_value*)header->data;
+      if (lbm_is_symbol_merror(array)) return UNFLATTEN_GC_RETRY;
+      lbm_value a;
+      for (uint32_t i = 0; i < size; i ++) {
+        r = lbm_unflatten_value_internal(v, &a);
+        if (r == UNFLATTEN_OK) {
+          arrdata[i] = a;
+        } else {
+          break;
+        }
+      }
+      *res = array;
+    }
+    return r;
+  }
   case S_SYM_VALUE: {
     lbm_uint tmp;
     bool b;
@@ -535,7 +598,7 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     return UNFLATTEN_MALFORMED;
   }
   case S_I28_VALUE: {
-    lbm_uint tmp;
+    uint32_t tmp;
     bool b;
     b = extract_word(v, &tmp);
     if (b) {
@@ -545,7 +608,7 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     return UNFLATTEN_MALFORMED;
   }
   case S_U28_VALUE: {
-    lbm_uint tmp;
+    uint32_t tmp;
     bool b;
     b = extract_word(v, &tmp);
     if (b) {
@@ -562,7 +625,7 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
 #ifndef LBM64
       *res = lbm_enc_i64((int64_t)tmp);
 #else
-      *res = lbm_enc_i(tmp);
+      *res = lbm_enc_i((int64_t)tmp);
 #endif
       return UNFLATTEN_OK;
     }
@@ -583,7 +646,7 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     return UNFLATTEN_MALFORMED;
   }
   case S_FLOAT_VALUE: {
-    lbm_uint tmp;
+    uint32_t tmp;
     bool b;
     b = extract_word(v, &tmp);
     if (b) {
@@ -681,7 +744,7 @@ static int lbm_unflatten_value_internal(lbm_flat_value_t *v, lbm_value *res) {
     lbm_uint sym_id;
     int r = lbm_get_symbol_by_name((char *)(v->buf + v->buf_pos), &sym_id);
     if (!r) {
-      r = lbm_add_symbol((char *)(v->buf + v->buf_pos), &sym_id);
+      r = lbm_add_symbol_base((char *)(v->buf + v->buf_pos), &sym_id,false); //ram
     }
     if (r) {
       lbm_uint num_bytes = strlen((char*)(v->buf + v->buf_pos)) + 1;

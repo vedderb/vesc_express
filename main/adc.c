@@ -32,23 +32,23 @@ void adc_init(void) {
 	adc1_config_width(ADC_WIDTH_BIT_DEFAULT);
 
 #ifdef HW_ADC_CH0
-	adc1_config_channel_atten(HW_ADC_CH0, ADC_ATTEN_DB_11);
+	adc1_config_channel_atten(HW_ADC_CH0, ADC_ATTEN_DB_12);
 #endif
 #ifdef HW_ADC_CH1
-	adc1_config_channel_atten(HW_ADC_CH1, ADC_ATTEN_DB_11);
+	adc1_config_channel_atten(HW_ADC_CH1, ADC_ATTEN_DB_12);
 #endif
 #ifdef HW_ADC_CH2
-	adc1_config_channel_atten(HW_ADC_CH2, ADC_ATTEN_DB_11);
+	adc1_config_channel_atten(HW_ADC_CH2, ADC_ATTEN_DB_12);
 #endif
 #ifdef HW_ADC_CH3
-	adc1_config_channel_atten(HW_ADC_CH3, ADC_ATTEN_DB_11);
+	adc1_config_channel_atten(HW_ADC_CH3, ADC_ATTEN_DB_12);
 #endif
 #ifdef HW_ADC_CH4
-	adc1_config_channel_atten(HW_ADC_CH4, ADC_ATTEN_DB_11);
+	adc1_config_channel_atten(HW_ADC_CH4, ADC_ATTEN_DB_12);
 #endif
 
 	if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
-		esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_DEFAULT, 0, &adc1_chars);
+		esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_DEFAULT, 0, &adc1_chars);
 		cal_ok = true;
 	}
 }

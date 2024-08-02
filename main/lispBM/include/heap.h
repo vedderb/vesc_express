@@ -249,6 +249,12 @@ typedef struct {
   lbm_uint *data;           /// pointer to lbm_memory array or C array.
 } lbm_array_header_t;
 
+typedef struct {
+  lbm_uint size;
+  lbm_uint *data;
+  uint32_t index;         // Limits arrays to max 2^32-1 elements.
+} lbm_array_header_extended_t;
+  
 /** Lock GC mutex
  *  Locks a mutex during GC marking when using the pointer reversal algorithm.
  *  Does nothing when using stack based GC mark.
@@ -383,6 +389,20 @@ int64_t lbm_dec_as_i64(lbm_value val);
  * \return The value encoded in val casted to a float. Returns 0 if val does not encode a number.
  */
 double lbm_dec_as_double(lbm_value val);
+
+/** Decode a numerical value into the architecture defined unsigned integer type.
+ *
+ * \param val Value to decode
+ * \return The value encoded in val casted to an unsigned int. Returns 0 if val does not encode a number.
+ */
+lbm_uint lbm_dec_as_uint(lbm_value val);
+
+/** Decode a numerical value into the architecture defined signed integer type.
+ *
+ * \param val Value to decode
+ * \return The value encoded in val casted to a signed int. Returns 0 if val does not encode a number.
+ */
+lbm_int lbm_dec_as_int(lbm_value val);
 
 lbm_uint lbm_dec_raw(lbm_value v);
 /** Allocates an lbm_cons_t cell from the heap and populates it.
@@ -569,14 +589,20 @@ void lbm_gc_mark_roots(lbm_uint *roots, lbm_uint num_roots);
 int lbm_gc_sweep_phase(void);
 
 // Array functionality
+/** Allocate an bytearray in symbols and arrays memory (lispbm_memory.h)
+ * and create a heap cell that refers to this bytearray.
+ * \param res The resulting lbm_value is returned through this argument.
+ * \param size Array size in number of 32 bit words.
+ * \return 1 for success of 0 for failure.
+ */
+int lbm_heap_allocate_array(lbm_value *res, lbm_uint size);
 /** Allocate an array in symbols and arrays memory (lispbm_memory.h)
  * and create a heap cell that refers to this array.
  * \param res The resulting lbm_value is returned through this argument.
  * \param size Array size in number of 32 bit words.
- * \param type The type information to encode onto the heap cell.
  * \return 1 for success of 0 for failure.
  */
-int lbm_heap_allocate_array(lbm_value *res, lbm_uint size);
+int lbm_heap_allocate_lisp_array(lbm_value *res, lbm_uint size);
 /** Convert a C array into an lbm array. If the C array is allocated in LBM MEMORY
  *  the lifetime of the array will be managed by GC.
  * \param res lbm_value result pointer for storage of the result array.
@@ -619,8 +645,10 @@ int lbm_const_heap_init(const_heap_write_fun w_fun,
 
 lbm_flash_status lbm_allocate_const_cell(lbm_value *res);
 lbm_flash_status lbm_write_const_raw(lbm_uint *data, lbm_uint n, lbm_uint *res);
+lbm_flash_status lbm_allocate_const_raw(lbm_uint nwords, lbm_uint *res);
 lbm_flash_status write_const_cdr(lbm_value cell, lbm_value val);
 lbm_flash_status write_const_car(lbm_value cell, lbm_value val);
+lbm_flash_status lbm_const_write(lbm_uint *tgt, lbm_uint val);
 lbm_uint lbm_flash_memory_usage(void);
 
 /** Query the type information of a value.
@@ -629,12 +657,12 @@ lbm_uint lbm_flash_memory_usage(void);
  * \return The type information.
  */
 static inline lbm_type lbm_type_of(lbm_value x) {
-  return (x & LBM_PTR_MASK) ? (x & LBM_PTR_TYPE_MASK) : (x & LBM_VAL_TYPE_MASK);
+  return (x & LBM_PTR_BIT) ? (x & LBM_PTR_TYPE_MASK) : (x & LBM_VAL_TYPE_MASK);
 }
 
 // type-of check that is safe in functional code
 static inline lbm_type lbm_type_of_functional(lbm_value x) {
-  return (x & LBM_PTR_MASK) ?
+  return (x & LBM_PTR_BIT) ?
     (x & (LBM_PTR_TO_CONSTANT_MASK & LBM_PTR_TYPE_MASK)) :
      (x & LBM_VAL_TYPE_MASK);
 }
@@ -778,7 +806,7 @@ extern int64_t lbm_dec_i64(lbm_value x);
  * \return true if x is a pointer to a heap cell, false otherwise.
  */
 static inline bool lbm_is_ptr(lbm_value x) {
-  return (x & LBM_PTR_MASK);
+  return (x & LBM_PTR_BIT);
 }
 
 /**
@@ -823,10 +851,20 @@ static inline bool lbm_is_array_rw(lbm_value x) {
   return( (lbm_type_of(x) == LBM_TYPE_ARRAY) && !(x & LBM_PTR_TO_CONSTANT_BIT));
 }
 
+static inline bool lbm_is_lisp_array_r(lbm_value x) {
+  lbm_type t = lbm_type_of(x);
+  return ((t & LBM_PTR_TO_CONSTANT_MASK) == LBM_TYPE_LISPARRAY);
+}
+
+static inline bool lbm_is_lisp_array_rw(lbm_value x) {
+  return( (lbm_type_of(x) == LBM_TYPE_LISPARRAY) && !(x & LBM_PTR_TO_CONSTANT_BIT));
+}
+
+
 static inline bool lbm_is_channel(lbm_value x) {
   return (lbm_type_of(x) == LBM_TYPE_CHANNEL &&
           lbm_type_of(lbm_cdr(x)) == LBM_TYPE_SYMBOL &&
-          lbm_dec_sym(lbm_cdr(x)) == SYM_CHANNEL_TYPE);
+          lbm_cdr(x) == ENC_SYM_CHANNEL_TYPE);
 }
 static inline bool lbm_is_char(lbm_value x) {
   return (lbm_type_of(x) == LBM_TYPE_CHAR);
@@ -840,32 +878,32 @@ static inline bool lbm_is_special(lbm_value symrep) {
 static inline bool lbm_is_closure(lbm_value exp) {
   return ((lbm_is_cons(exp)) &&
           (lbm_type_of(lbm_car(exp)) == LBM_TYPE_SYMBOL) &&
-          (lbm_dec_sym(lbm_car(exp)) == SYM_CLOSURE));
+          (lbm_car(exp) == ENC_SYM_CLOSURE));
 }
 
 static inline bool lbm_is_continuation(lbm_value exp) {
   return ((lbm_type_of(exp) == LBM_TYPE_CONS) &&
           (lbm_type_of(lbm_car(exp)) == LBM_TYPE_SYMBOL) &&
-          (lbm_dec_sym(lbm_car(exp)) == SYM_CONT));
+          (lbm_car(exp) == ENC_SYM_CONT));
 }
 
 static inline bool lbm_is_macro(lbm_value exp) {
   return ((lbm_type_of(exp) == LBM_TYPE_CONS) &&
           (lbm_type_of(lbm_car(exp)) == LBM_TYPE_SYMBOL) &&
-          (lbm_dec_sym(lbm_car(exp)) == SYM_MACRO));
+          (lbm_car(exp) == ENC_SYM_MACRO));
 }
 
 static inline bool lbm_is_match_binder(lbm_value exp) {
   return (lbm_is_cons(exp) &&
           (lbm_type_of(lbm_car(exp)) == LBM_TYPE_SYMBOL) &&
-          ((lbm_dec_sym(lbm_car(exp)) == SYM_MATCH_ANY)));
+          (lbm_car(exp) == ENC_SYM_MATCH_ANY));
 }
 
 static inline bool lbm_is_comma_qualified_symbol(lbm_value exp) {
   return (lbm_is_cons(exp) &&
           (lbm_type_of(lbm_car(exp)) == LBM_TYPE_SYMBOL) &&
-          (lbm_dec_sym(lbm_car(exp)) == SYM_COMMA) &&
-          (lbm_type_of(lbm_car(lbm_cdr(exp))) == LBM_TYPE_SYMBOL));
+          (lbm_car(exp) == ENC_SYM_COMMA) &&
+          (lbm_type_of(lbm_cadr(exp)) == LBM_TYPE_SYMBOL));
 }
 
 static inline bool lbm_is_symbol(lbm_value exp) {
@@ -873,15 +911,15 @@ static inline bool lbm_is_symbol(lbm_value exp) {
 }
 
 static inline bool lbm_is_symbol_nil(lbm_value exp) {
-  return exp == ENC_SYM_NIL;
+  return !exp;
 }
 
 static inline bool lbm_is_symbol_true(lbm_value exp) {
-  return (lbm_is_symbol(exp) && lbm_dec_sym(exp) == SYM_TRUE);
+  return (lbm_is_symbol(exp) && exp == ENC_SYM_TRUE);
 }
 
 static inline bool lbm_is_symbol_eval(lbm_value exp) {
-  return (lbm_is_symbol(exp) && lbm_dec_sym(exp) == SYM_EVAL);
+  return (lbm_is_symbol(exp) && exp == ENC_SYM_EVAL);
 }
 
 static inline bool lbm_is_symbol_merror(lbm_value exp) {
@@ -899,9 +937,9 @@ static inline bool lbm_is_list_rw(lbm_value x) {
 static inline bool lbm_is_quoted_list(lbm_value x) {
   return (lbm_is_cons(x) &&
           lbm_is_symbol(lbm_car(x)) &&
-          (lbm_dec_sym(lbm_car(x)) == SYM_QUOTE) &&
+          (lbm_car(x) == ENC_SYM_QUOTE) &&
           lbm_is_cons(lbm_cdr(x)) &&
-          lbm_is_cons(lbm_car(lbm_cdr(x))));
+          lbm_is_cons(lbm_cadr(x)));
 }
 
 #ifndef LBM64

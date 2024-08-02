@@ -35,15 +35,16 @@
 #define I2C_SPEED				100000
 
 // Macros
-#define NTC_TEMP(res)			(1.0 / ((logf((res) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15)
+#define M_CELLS					(m_cells_ic1 + m_cells_ic2)
 
 // Variables
 static SemaphoreHandle_t i2c_mutex;
 static SemaphoreHandle_t bq_mutex;
-static bool m_bal_cells[15] = {false};
 static volatile bool m_bq_active = false;
-
-static int m_cells = 13;
+static unsigned int m_cells_ic1 = 16;
+static unsigned int m_cells_ic2 = 16;
+static uint16_t m_bal_state_ic1 = 0;
+static uint16_t m_bal_state_ic2 = 0;
 
 static esp_err_t i2c_tx_rx(uint8_t addr,
 		const uint8_t* write_buffer, size_t write_size,
@@ -57,9 +58,12 @@ static esp_err_t i2c_tx_rx(uint8_t addr,
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
 
 	esp_err_t res;
-
-	if (read_buffer != NULL) {
-		res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 500);
+	if (read_size > 0 && read_buffer != NULL) {
+		if (write_size > 0 && write_buffer != NULL) {
+			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 500);
+		} else {
+			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 500);
+		}
 	} else {
 		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 500);
 	}
@@ -205,21 +209,6 @@ static bool bq_set_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t reg_data, u
 	return res;
 }
 
-static bool command_subcommands(uint8_t dev_addr, uint16_t command) {
-	// For DEEPSLEEP/SHUTDOWN subcommand you will need to
-	// call this function twice consecutively
-
-	uint8_t TX_Reg[2] = {0x00, 0x00};
-
-	//TX_Reg in little endian format
-	TX_Reg[0] = command & 0xff;
-	TX_Reg[1] = (command >> 8) & 0xff;
-
-	bool res = bq_write_block(dev_addr, 0x3E, TX_Reg, 2);
-	vTaskDelay(2);
-	return res;
-}
-
 static int16_t command_read(uint8_t dev_addr, uint8_t command) {
 	uint8_t RX_data[2] = {0, 0};
 	if (bq_read_block(dev_addr, command, RX_data, 2)) {
@@ -229,11 +218,77 @@ static int16_t command_read(uint8_t dev_addr, uint8_t command) {
 	}
 }
 
-static bool command_write(uint8_t dev_addr, uint8_t command, uint16_t data) {
-	uint8_t TX_data[2] = {0x00, 0x00};
-	TX_data[0] = data & 0xff;
-	TX_data[1] = (data >> 8) & 0xff;
-	return bq_write_block(dev_addr, command,TX_data,2);
+static bool command_subcommands(uint8_t dev_addr, uint16_t command) {
+	// For DEEPSLEEP/SHUTDOWN subcommand you will need to
+	// call this function twice consecutively
+
+	uint8_t TX_Reg[2] = {0x00, 0x00};
+
+	// TX_Reg in little endian format
+	TX_Reg[0] = command & 0xff;
+	TX_Reg[1] = (command >> 8) & 0xff;
+
+	bool res = bq_write_block(dev_addr, 0x3E, TX_Reg, 2);
+	vTaskDelay(2);
+	return res;
+}
+
+static bool subcommands_read16(uint8_t dev_addr, uint16_t command, uint16_t *result) {
+	uint8_t TX_Reg[2] = {0x00, 0x00};
+
+	// TX_Reg in little endian format
+	TX_Reg[0] = command & 0xff;
+	TX_Reg[1] = (command >> 8) & 0xff;
+
+	bool res = bq_write_block(dev_addr, 0x3E, TX_Reg, 2);
+
+	if (!res) {
+		return false;
+	}
+
+	vTaskDelay(2);
+
+	uint8_t RX_data[2] = {0, 0};
+	res = bq_read_block(dev_addr, 0x40, RX_data, 2);
+
+	if (!res) {
+		return false;
+	}
+
+	*result = (int16_t)(((uint16_t)RX_data[1] << 8) | (uint16_t)RX_data[0]);
+
+	return true;
+}
+
+static bool subcommands_write16(uint8_t dev_addr, uint16_t command, uint16_t data) {
+	uint8_t TX_Reg[4] = {0x00, 0x00, 0x00, 0x00};
+
+	// TX_Reg in little endian format
+	TX_Reg[0] = command & 0xff;
+	TX_Reg[1] = (command >> 8) & 0xff;
+	TX_Reg[2] = data & 0xff;
+	TX_Reg[3] = (data >> 8) & 0xff;
+
+	bool res = bq_write_block(dev_addr, 0x3E, TX_Reg, 4);
+
+	if (!res) {
+		return false;
+	}
+
+	vTaskDelay(1);
+
+	TX_Reg[0] = checksum(TX_Reg, 4);
+	TX_Reg[1] = 0x06;
+
+	res = bq_write_block(dev_addr, 0x60, TX_Reg, 2);
+
+	if (!res) {
+		return false;
+	}
+
+	vTaskDelay(1);
+
+	return true;
 }
 
 static uint32_t float_to_u(float number) {
@@ -262,8 +317,12 @@ static uint32_t float_to_u(float number) {
 }
 
 static void bq_init(uint8_t dev_addr) {
+	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
+	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
+	vTaskDelay(500);
+
 	command_subcommands(dev_addr, BQ769x2_RESET);
-	vTaskDelay(100);
+	vTaskDelay(60);
 
 	command_subcommands(dev_addr, SET_CFGUPDATE);
 
@@ -271,14 +330,14 @@ static void bq_init(uint8_t dev_addr) {
 	// SHUT_TS2: 0
 	// DPSLP_PD: 0
 	// DPSLP_LDO: 1
-	// DPSLP_LFO: 0
+	// DPSLP_LFO: 1
 	// SLEEP: 0
 	// OTSD: 1
 	// FASTADC: 0
 	// CB_LOOP_SLOW: 0
 	// LOOP_SLOW: 0
 	// WK_SPD: 0
-	bq_set_reg(dev_addr, PowerConfig, 0b0010010010000000, 2);
+	bq_set_reg(dev_addr, PowerConfig, 0b0010011010000000, 2);
 
 	// REG0_EN: 1
 	bq_set_reg(dev_addr, REG0Config, 0x01, 1);
@@ -290,12 +349,11 @@ static void bq_init(uint8_t dev_addr) {
 	// Disabled
 	bq_set_reg(dev_addr, CFETOFFPinConfig, 0x00, 1);
 	bq_set_reg(dev_addr, DFETOFFPinConfig, 0x00, 1);
-	bq_set_reg(dev_addr, ALERTPinConfig, 0x00, 1);
 
 	// ADC inputs with 18k pull-up
-	bq_set_reg(dev_addr, TS1Config, 0b00110011, 1);
-	bq_set_reg(dev_addr, TS2Config, 0b00110011, 1);
-	bq_set_reg(dev_addr, TS3Config, 0b00110011, 1);
+	bq_set_reg(dev_addr, TS1Config, 0b00111011, 1);
+	bq_set_reg(dev_addr, TS3Config, 0b00111011, 1);
+	bq_set_reg(dev_addr, ALERTPinConfig, 0b00111011, 1);
 
 	// Disabled
 	bq_set_reg(dev_addr, HDQPinConfig, 0x00, 1);
@@ -329,44 +387,32 @@ static void bq_init(uint8_t dev_addr) {
 
 // Extensions
 static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	LBM_CHECK_NUMBER_ALL();
+
+	m_bal_state_ic1 = 0;
+	m_bal_state_ic2 = 0;
+
+	unsigned int cells_ic1 = 16;
+	if (argn >= 1) {
+		cells_ic1 = lbm_dec_as_u32(args[0]);
+	}
+
+	unsigned int cells_ic2 = 16;
+	if (argn >= 2) {
+		cells_ic2 = lbm_dec_as_u32(args[1]);
+	}
+
+	if (cells_ic1 < 3 || cells_ic1 > 16 ||
+			cells_ic2 > 16 || cells_ic2 == 1 || cells_ic2 == 2) {
+		lbm_set_error_reason("Invalid cell combination");
+		return ENC_SYM_TERROR;
+	}
 
 	xSemaphoreTake(bq_mutex, portMAX_DELAY);
-
-	gpio_config_t gpconf = {0};
-
-	// Outputs
-
-	gpio_set_level(PIN_OUT_EN, 0);
-	gpio_set_level(PIN_CHG_EN, 0);
-	gpio_set_level(PIN_PCHG_EN, 0);
-	gpio_set_level(PIN_PSW_EN, 0);
-
-	gpconf.pin_bit_mask = BIT(PIN_OUT_EN) | BIT(PIN_CHG_EN) | BIT(PIN_PCHG_EN) |
-			BIT(PIN_COM_EN) | BIT(PIN_PSW_EN);
-	gpconf.intr_type =  GPIO_FLOATING;
-	gpconf.mode = GPIO_MODE_INPUT_OUTPUT;
-	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
-	gpio_config(&gpconf);
-
-	gpio_set_level(PIN_OUT_EN, 0);
-	gpio_set_level(PIN_CHG_EN, 0);
-	gpio_set_level(PIN_PCHG_EN, 0);
-	gpio_set_level(PIN_PSW_EN, 1);
 
 	// Disable COMM unil the i2c-address of the first BQ
 	// is changed.
 	gpio_set_level(PIN_COM_EN, 1);
-
-	// Inputs
-
-	gpconf.pin_bit_mask = BIT(PIN_ENABLE);
-	gpconf.intr_type =  GPIO_FLOATING;
-	gpconf.mode = GPIO_MODE_INPUT;
-	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
-	gpio_config(&gpconf);
 
 	// Restart i2c
 
@@ -391,12 +437,10 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 
 	vTaskDelay(50);
 
-	// If reading from the updated address works
-	// init must have been run already
-	if (command_read(BQ_ADDR_1, Cell1Voltage) >= 0) {
-		command_subcommands(BQ_ADDR_1, BQ769x2_RESET);
-		vTaskDelay(100);
-	}
+	// Reset the address of the first BQ just in case
+	command_subcommands(BQ_ADDR_1, BQ769x2_RESET);
+	vTaskDelay(60);
+	command_subcommands(BQ_ADDR_1, SWAP_COMM_MODE);
 
 	bq_init(BQ_ADDR_2);
 	command_subcommands(BQ_ADDR_2, SET_CFGUPDATE);
@@ -408,12 +452,23 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 
 	// Enable the other i2c now that the first address is updated
 	gpio_set_level(PIN_COM_EN, 0);
-	vTaskDelay(10);
+	vTaskDelay(50);
 
-	bq_init(BQ_ADDR_2);
+	if (cells_ic2 != 0) {
+		bq_init(BQ_ADDR_2);
+	}
+
+	m_cells_ic1 = cells_ic1;
+	m_cells_ic2 = cells_ic2;
+
+	bool res = command_read(BQ_ADDR_1, Cell2Voltage) >= 0;
+	if (m_cells_ic2 > 0) {
+		res = res && command_read(BQ_ADDR_2, Cell2Voltage) >= 0;
+	}
 
 	xSemaphoreGive(bq_mutex);
-	return ENC_SYM_TRUE;
+
+	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
@@ -430,11 +485,32 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	// Put CAN-bus in standby mode
 	gpio_set_level(PIN_COM_EN, 1);
 
-	// TODO
 	// Stop balancing
-	// Clear BQ76940 status
-	// Put BQ76940 in ship mode
+	m_bal_state_ic1 = 0;
+	m_bal_state_ic2 = 0;
 
+	subcommands_write16(BQ_ADDR_1, CB_ACTIVE_CELLS, m_bal_state_ic1);
+
+	if (m_cells_ic2 != 0) {
+		subcommands_write16(BQ_ADDR_2, CB_ACTIVE_CELLS, m_bal_state_ic2);
+	}
+
+	// Disable temperature measurement pull-ups
+	bq_set_reg(BQ_ADDR_1, TS1Config, 0x00, 1);
+	bq_set_reg(BQ_ADDR_1, TS3Config, 0x00, 1);
+
+	if (m_cells_ic2 != 0) {
+		bq_set_reg(BQ_ADDR_2, TS1Config, 0x00, 1);
+		bq_set_reg(BQ_ADDR_2, TS3Config, 0x00, 1);
+	}
+
+	command_subcommands(BQ_ADDR_1, DEEPSLEEP);
+	command_subcommands(BQ_ADDR_1, DEEPSLEEP);
+
+	if (m_cells_ic2 != 0) {
+		command_subcommands(BQ_ADDR_2, DEEPSLEEP);
+		command_subcommands(BQ_ADDR_2, DEEPSLEEP);
+	}
 
 	m_bq_active = false;
 
@@ -448,12 +524,12 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 
 	lbm_value vc_list = ENC_SYM_NIL;
 
-	for (int i = 0;i < 16; i++) {
+	for (int i = 0;i < m_cells_ic1; i++) {
 		int res = command_read(BQ_ADDR_1, Cell1Voltage + i * 2);
 		vc_list = lbm_cons(lbm_enc_float((float)res / 1000.0), vc_list);
 	}
 
-	for (int i = 0;i < 16; i++) {
+	for (int i = 0;i < m_cells_ic2; i++) {
 		int res = command_read(BQ_ADDR_2, Cell1Voltage + i * 2);
 		vc_list = lbm_cons(lbm_enc_float((float)res / 1000.0), vc_list);
 	}
@@ -461,14 +537,45 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 	return lbm_list_destructive_reverse(vc_list);
 }
 
+#define NTC_TEMP(res, beta)			(1.0 / ((logf((res) / 10000.0) / beta) + (1.0 / 298.15)) - 273.15)
+#define NTC_RES(volts)				(18.0e3 / (1.8 / volts - 1.0) - 500.0)
+
 static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
 	lbm_value ts_list = ENC_SYM_NIL;
 	ts_list = lbm_cons(lbm_enc_float(
 			(float)command_read(BQ_ADDR_1, IntTemperature) * 0.1 - 273.15), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(
-			(float)command_read(BQ_ADDR_2, IntTemperature) * 0.1 - 273.15), ts_list);
+
+	// Multiply by 256 as only 16 of the 24 bits are used
+	const float counts_to_volts = 0.358e-6 * 256.0;
+
+	float v1 = (float)command_read(BQ_ADDR_1, TS1Temperature) * counts_to_volts;
+	float v2 = (float)command_read(BQ_ADDR_1, TS3Temperature) * counts_to_volts;
+	float v3 = (float)command_read(BQ_ADDR_1, ALERTTemperature) * counts_to_volts;
+
+	// TODO: Use config
+	float ntc_beta = 3380.0;
+
+	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v1), ntc_beta)), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v2), ntc_beta)), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v3), ntc_beta)), ts_list);
+
+	if (m_cells_ic2 != 0) {
+		ts_list = lbm_cons(lbm_enc_float(
+				(float)command_read(BQ_ADDR_2, IntTemperature) * 0.1 - 273.15), ts_list);
+		v1 = (float)command_read(BQ_ADDR_2, TS1Temperature) * counts_to_volts;
+		v2 = (float)command_read(BQ_ADDR_2, TS3Temperature) * counts_to_volts;
+
+		ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v1), ntc_beta)), ts_list);
+
+//		ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v2), ntc_beta)), ts_list);
+		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list); // v2 reads 0 on IC2 for some reason I can't figure out
+	} else {
+		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
+		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
+		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
+	}
 
 	return lbm_list_destructive_reverse(ts_list);
 }
@@ -476,17 +583,11 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_get_current(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	return lbm_enc_float((float)command_read(BQ_ADDR_1, CC2Current) / 100.0);
-}
-
-static lbm_value ext_read_reg(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
-	return ENC_SYM_NIL;
-}
-
-static lbm_value ext_write_reg(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(2);
-	return ENC_SYM_NIL;
+#if PCB_VERSION == 2
+	return lbm_enc_float(((float)command_read(BQ_ADDR_1, CC2Current) / 100.0));
+#else
+	return lbm_enc_float(-((float)command_read(BQ_ADDR_1, CC2Current) / 100.0));
+#endif
 }
 
 static lbm_value ext_get_vout(lbm_value *args, lbm_uint argn) {
@@ -501,7 +602,7 @@ static lbm_value ext_get_vchg(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_get_btn(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
-	return lbm_enc_i(gpio_get_level(PIN_ENABLE) == 1 ? 0 : 1);
+	return lbm_enc_i(gpio_get_level(PIN_ENABLE) == 0 ? 0 : 1);
 }
 
 static lbm_value ext_set_btn_wakeup_state(lbm_value *args, lbm_uint argn) {
@@ -526,18 +627,21 @@ static lbm_value ext_set_btn_wakeup_state(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_set_pchg(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
+	gpio_set_level(PIN_PSW_EN, 1);
 	gpio_set_level(PIN_PCHG_EN, lbm_dec_as_i32(args[0]));
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_set_out(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
+	gpio_set_level(PIN_PSW_EN, 1);
 	gpio_set_level(PIN_OUT_EN, lbm_dec_as_i32(args[0]));
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_set_chg(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
+	gpio_set_level(PIN_PSW_EN, 1);
 	gpio_set_level(PIN_CHG_EN, lbm_dec_as_i32(args[0]));
 	return ENC_SYM_TRUE;
 }
@@ -545,46 +649,86 @@ static lbm_value ext_set_chg(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_set_bal(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 
-	int ch = lbm_dec_as_i32(args[0]);
+	unsigned int ch = lbm_dec_as_u32(args[0]);
 	int state = lbm_dec_as_i32(args[1]);
+	bool res = false;
 
-	if (ch >= m_cells || !m_bq_active) {
-		return ENC_SYM_NIL;
-	} else {
-		m_bal_cells[ch] = state;
-		return ENC_SYM_TRUE;
+	if (ch < m_cells_ic1) {
+		if (state) {
+			m_bal_state_ic1 |= (1 << ch);
+		} else {
+			m_bal_state_ic1 &= ~(1 << ch);
+		}
+
+		res = subcommands_write16(BQ_ADDR_1, CB_ACTIVE_CELLS, m_bal_state_ic1);
+	} else if ((ch - m_cells_ic1) < m_cells_ic2) {
+		if (state) {
+			m_bal_state_ic2 |= (1 << (ch - m_cells_ic1));
+		} else {
+			m_bal_state_ic2 &= ~(1 << (ch - m_cells_ic1));
+		}
+
+		res = subcommands_write16(BQ_ADDR_2, CB_ACTIVE_CELLS, m_bal_state_ic2);
 	}
+
+	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_get_bal(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	int ch = lbm_dec_as_i32(args[0]);
+	unsigned int ch = lbm_dec_as_u32(args[0]);
+	int res = -1;
 
-	if (ch >= m_cells) {
-		return ENC_SYM_NIL;
-	} else {
-		return lbm_enc_i(m_bal_cells[ch] ? 1 : 0);
+	// Read from IC
+//	if (ch < m_cells_ic1) {
+//		uint16_t state;
+//		if (subcommands_read16(BQ_ADDR_1, CB_ACTIVE_CELLS, &state)) {
+//			res = (state >> ch) & 0x01;
+//		}
+//	} else if ((ch - m_cells_ic1) < m_cells_ic2) {
+//		uint16_t state;
+//		if (subcommands_read16(BQ_ADDR_2, CB_ACTIVE_CELLS, &state)) {
+//			res = (state >> (ch - m_cells_ic1)) & 0x01;
+//		}
+//	}
+
+	(void)subcommands_read16;
+
+	if (ch < m_cells_ic1) {
+		res = (m_bal_state_ic1 >> ch) & 0x01;
+	} else if ((ch - m_cells_ic1) < m_cells_ic2) {
+		res = (m_bal_state_ic2 >> (ch - m_cells_ic1)) & 0x01;
 	}
+
+	return lbm_enc_i(res);
 }
 
-static lbm_value ext_set_cells(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
+static lbm_value ext_direct_cmd(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
 
-	int cells = lbm_dec_as_i32(args[0]);
-
-	if (cells == 12 || cells == 13 || cells == 14 || cells == 15) {
-		m_cells = cells;
-		return ENC_SYM_TRUE;
+	uint8_t addr = BQ_ADDR_1;
+	if (lbm_dec_as_i32(args[0]) == 2) {
+		addr = BQ_ADDR_2;
 	}
 
-	lbm_set_error_reason("Invalid cell count");
-	return ENC_SYM_TERROR;
+	return lbm_enc_i(command_read(addr, lbm_dec_as_u32(args[1])));
+}
+
+static lbm_value ext_subcmd_cmdonly(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	uint8_t addr = BQ_ADDR_1;
+	if (lbm_dec_as_i32(args[0]) == 2) {
+		addr = BQ_ADDR_2;
+	}
+
+	return lbm_enc_i(command_subcommands(addr, lbm_dec_as_u32(args[1])));
 }
 
 typedef struct {
-	lbm_uint cell_first;
-	lbm_uint cell_num;
+	lbm_uint cells_ic1;
+	lbm_uint cells_ic2;
 	lbm_uint balance_mode;
 	lbm_uint max_bal_ch;
 	lbm_uint dist_bal;
@@ -624,10 +768,10 @@ static bool get_add_symbol(char *name, lbm_uint* id) {
 
 static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 	if (*comp == 0) {
-		if (comp == &syms_vesc.cell_num) {
-			get_add_symbol("cell_num", comp);
-		} else if (comp == &syms_vesc.cell_first) {
-			get_add_symbol("cell_first", comp);
+		if (comp == &syms_vesc.cells_ic1) {
+			get_add_symbol("cells_ic1", comp);
+		} else if (comp == &syms_vesc.cells_ic2) {
+			get_add_symbol("cells_ic2", comp);
 		} else if (comp == &syms_vesc.balance_mode) {
 			get_add_symbol("balance_mode", comp);
 		} else if (comp == &syms_vesc.max_bal_ch) {
@@ -732,10 +876,10 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 	lbm_uint name = lbm_dec_sym(args[0]);
 	main_config_t *cfg = (main_config_t*)&backup.config;
 
-	if (compare_symbol(name, &syms_vesc.cell_first)) {
-		res = get_or_set_i(set, &cfg->cell_first, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.cell_num)) {
-		res = get_or_set_i(set, &cfg->cell_num, &set_arg);
+	if (compare_symbol(name, &syms_vesc.cells_ic1)) {
+		res = get_or_set_i(set, &cfg->cells_ic1, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.cells_ic2)) {
+		res = get_or_set_i(set, &cfg->cells_ic2, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.balance_mode)) {
 		int tmp = cfg->balance_mode;
 		res = get_or_set_i(set, &tmp, &set_arg);
@@ -823,10 +967,6 @@ static void load_extensions(void) {
 	// Get current in/out. Negative numbers mean charging
 	lbm_add_extension("bms-get-current", ext_get_current);
 
-	// Read and write balance IC registers
-	lbm_add_extension("bms-read-reg", ext_read_reg);
-	lbm_add_extension("bms-write-reg", ext_write_reg);
-
 	// Get output voltage after power switch
 	lbm_add_extension("bms-get-vout", ext_get_vout);
 
@@ -852,7 +992,9 @@ static void load_extensions(void) {
 	lbm_add_extension("bms-set-bal", ext_set_bal);
 	lbm_add_extension("bms-get-bal", ext_get_bal);
 
-	lbm_add_extension("bms-set-cells", ext_set_cells);
+	// HW-specific commands
+	lbm_add_extension("bms-direct-cmd", ext_direct_cmd);
+	lbm_add_extension("bms-subcmd-cmdonly", ext_subcmd_cmdonly);
 
 	// Configuration
 	lbm_add_extension("bms-get-param", ext_bms_get_param);
@@ -863,6 +1005,35 @@ static void load_extensions(void) {
 void hw_init(void) {
 	i2c_mutex = xSemaphoreCreateMutex();
 	bq_mutex = xSemaphoreCreateMutex();
+
+	gpio_config_t gpconf = {0};
+
+	gpio_set_level(PIN_OUT_EN, 0);
+	gpio_set_level(PIN_CHG_EN, 0);
+	gpio_set_level(PIN_PCHG_EN, 0);
+	gpio_set_level(PIN_PSW_EN, 0);
+	gpio_set_level(PIN_COM_EN, 1);
+
+	gpconf.pin_bit_mask = BIT(PIN_OUT_EN) | BIT(PIN_CHG_EN) | BIT(PIN_PCHG_EN) |
+			BIT(PIN_COM_EN) | BIT(PIN_PSW_EN);
+	gpconf.intr_type =  GPIO_FLOATING;
+	gpconf.mode = GPIO_MODE_INPUT_OUTPUT;
+	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpio_config(&gpconf);
+
+	gpio_set_level(PIN_OUT_EN, 0);
+	gpio_set_level(PIN_CHG_EN, 0);
+	gpio_set_level(PIN_PCHG_EN, 0);
+	gpio_set_level(PIN_PSW_EN, 0);
+	gpio_set_level(PIN_COM_EN, 1);
+
+	gpconf.pin_bit_mask = BIT(PIN_ENABLE);
+	gpconf.intr_type =  GPIO_FLOATING;
+	gpconf.mode = GPIO_MODE_INPUT;
+	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpio_config(&gpconf);
 
 	i2c_config_t conf = {
 			.mode = I2C_MODE_MASTER,

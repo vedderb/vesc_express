@@ -50,9 +50,9 @@ static EventGroupHandle_t s_wifi_event_group;
 static esp_ip4_addr_t ip = {0};
 static bool is_connecting = false;
 static bool is_connected = false;
-static bool wifi_disabled = false;
+static bool wifi_reconnect_disabled = true;
 static bool wifi_auto_reconnect = true;
-static WIFI_MODE wifi_mode;
+static WIFI_MODE wifi_mode = WIFI_MODE_DISABLED;
 static volatile bool wifi_config_changed = false;
 static wifi_config_t wifi_config = {0};
 
@@ -295,10 +295,54 @@ static void tcp_task_hub(void *arg) {
 	vTaskDelete(NULL);
 }
 
-static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+/**
+ * Broadcast name, IP and port so that VESC Tool can find this device.
+ */
+static void broadcast_task(void *arg) {
+	int sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
+
+	int bc = 1;
+	setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bc, sizeof(bc));
+
+	struct sockaddr_in sDestAddr;
+	memset(&sDestAddr, 0, sizeof(sDestAddr));
+	sDestAddr.sin_family = AF_INET;
+	sDestAddr.sin_len = sizeof(sDestAddr);
+	sDestAddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+	sDestAddr.sin_port = htons(65109);
+
+	for (;;) {
+		char sendbuf[50];
+		size_t ind = 0;
+		if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
+			ind += sprintf(sendbuf, "%s::192.168.4.1::65102", backup.config.ble_name) + 1;
+		} else {
+			ind += sprintf(sendbuf, "%s::" IPSTR "::65102", backup.config.ble_name, IP2STR(&ip)) + 1;
+		}
+
+		if (backup.config.use_tcp_local) {
+			sendto(sock, sendbuf, ind, 0, (struct sockaddr *)&sDestAddr, sizeof(sDestAddr));
+		}
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
+	}
+
+	vTaskDelete(NULL);
+}
+
+static void process_packet_local(unsigned char *data, unsigned int len) {
+	commands_process_packet(data, len, comm_wifi_send_packet_local);
+}
+
+static void process_packet_hub(unsigned char *data, unsigned int len) {
+	commands_process_packet(data, len, comm_wifi_send_packet_hub);
+}
+
+void comm_wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
 	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-		is_connecting = true;
-		esp_wifi_connect();
+		if (!wifi_reconnect_disabled) {
+			is_connecting = true;
+			esp_wifi_connect();
+		}
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 		wifi_event_sta_disconnected_t *data =
 			(wifi_event_sta_disconnected_t *)event_data;
@@ -306,7 +350,7 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 		bool is_expected_reason = data->reason == WIFI_REASON_ASSOC_LEAVE
 			|| data->reason == WIFI_REASON_AUTH_EXPIRE;
 			
-		bool will_reconnect = !wifi_disabled && (wifi_auto_reconnect || is_expected_reason);
+		bool will_reconnect = !wifi_reconnect_disabled && (wifi_auto_reconnect || is_expected_reason);
 
 		STORED_LOGF(
 			"disconnected, ssid_len: %u, ssid: '%s', reason: '%s' (%u), rssi: "
@@ -351,48 +395,6 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 	}
 }
 
-/**
- * Broadcast name, IP and port so that VESC Tool can find this device.
- */
-static void broadcast_task(void *arg) {
-	int sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
-
-	int bc = 1;
-	setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bc, sizeof(bc));
-
-	struct sockaddr_in sDestAddr;
-	memset(&sDestAddr, 0, sizeof(sDestAddr));
-	sDestAddr.sin_family = AF_INET;
-	sDestAddr.sin_len = sizeof(sDestAddr);
-	sDestAddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-	sDestAddr.sin_port = htons(65109);
-
-	for (;;) {
-		char sendbuf[50];
-		size_t ind = 0;
-		if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
-			ind += sprintf(sendbuf, "%s::192.168.4.1::65102", backup.config.ble_name) + 1;
-		} else {
-			ind += sprintf(sendbuf, "%s::" IPSTR "::65102", backup.config.ble_name, IP2STR(&ip)) + 1;
-		}
-
-		if (backup.config.use_tcp_local) {
-			sendto(sock, sendbuf, ind, 0, (struct sockaddr *)&sDestAddr, sizeof(sDestAddr));
-		}
-		vTaskDelay(1000 / portTICK_PERIOD_MS);
-	}
-
-	vTaskDelete(NULL);
-}
-
-static void process_packet_local(unsigned char *data, unsigned int len) {
-	commands_process_packet(data, len, comm_wifi_send_packet_local);
-}
-
-static void process_packet_hub(unsigned char *data, unsigned int len) {
-	commands_process_packet(data, len, comm_wifi_send_packet_hub);
-}
-
 void comm_wifi_send_packet_local(unsigned char *data, unsigned int len) {
 	packet_send_packet(data, len, comm_local.packet);
 }
@@ -401,17 +403,27 @@ void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len) {
 	packet_send_packet(data, len, comm_hub.packet);
 }
 
+#define SEND_RAW_MAX_RETRIES 100
+
 void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len) {
 	if (comm_local.socket < 0) {
 		return;
 	}
 
+	int error_cnt = 0;
+
 	int to_write = len;
 	while (to_write > 0) {
 		int written = send(comm_local.socket, buffer + (len - to_write), to_write, 0);
 		if (written < 0) {
-			// Error
-			return;
+			error_cnt++;
+
+			if (error_cnt > SEND_RAW_MAX_RETRIES) {
+				return;
+			}
+
+			vTaskDelay(1);
+			continue;
 		}
 
 		to_write -= written;
@@ -423,12 +435,20 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len) {
 		return;
 	}
 
+	int error_cnt = 0;
+
 	int to_write = len;
 	while (to_write > 0) {
 		int written = send(comm_hub.socket, buffer + (len - to_write), to_write, 0);
 		if (written < 0) {
-			// Error
-			return;
+			error_cnt++;
+
+			if (error_cnt > SEND_RAW_MAX_RETRIES) {
+				return;
+			}
+
+			vTaskDelay(1);
+			continue;
 		}
 
 		to_write -= written;
@@ -453,7 +473,6 @@ void comm_wifi_init(void) {
 
 	esp_wifi_set_storage(WIFI_STORAGE_RAM);
 
-	// Disable power save mode. Does not work with bluetooth.
 	if (backup.config.ble_mode == BLE_MODE_DISABLED) {
 		esp_wifi_set_ps(WIFI_PS_NONE);
 	}
@@ -464,22 +483,18 @@ void comm_wifi_init(void) {
 	esp_event_handler_instance_register(
 			WIFI_EVENT,
 			ESP_EVENT_ANY_ID,
-			&event_handler,
+			&comm_wifi_event_handler,
 			NULL,
 			&instance_any_id);
 
 	esp_event_handler_instance_register(
 			IP_EVENT,
 			IP_EVENT_STA_GOT_IP,
-			&event_handler,
+			&comm_wifi_event_handler,
 			NULL,
 			&instance_got_ip);
 
-	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
-		esp_wifi_set_mode(WIFI_MODE_AP);
-	} else {
-		esp_wifi_set_mode(WIFI_MODE_APSTA);
-	}
+	esp_wifi_set_mode(WIFI_MODE_APSTA);
 
 	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
 		wifi_config = (wifi_config_t){
@@ -493,6 +508,7 @@ void comm_wifi_init(void) {
 				.pmf_cfg = {
 					.required = false,
 				},
+				.ftm_responder = true,
 			},
 		};
 
@@ -513,7 +529,13 @@ void comm_wifi_init(void) {
 		strcpy((char*)wifi_config.sta.password, (char*)backup.config.wifi_sta_key);
 
 		esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-		is_connecting = true;
+
+		// Enable FTM responder
+		esp_wifi_get_config(WIFI_IF_AP, &wifi_config);
+		wifi_config.ap.ftm_responder = true;
+		esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
+
+		wifi_reconnect_disabled = false;
 	}
 
 	esp_wifi_start();
@@ -595,7 +617,7 @@ bool comm_wifi_change_network(const char *ssid, const char *password) {
 	wifi_config.sta.password[password_len] = '\0';
 
 	wifi_config_changed = true;
-	wifi_disabled       = false;
+	wifi_reconnect_disabled       = false;
 
 	{
 		esp_err_t result = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
@@ -648,7 +670,7 @@ bool comm_wifi_disconnect_network() {
 		return false;
 	}
 
-	wifi_disabled = true;
+	wifi_reconnect_disabled = true;
 	is_connecting = false;
 
 	comm_wifi_disconnect();

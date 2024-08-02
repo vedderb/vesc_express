@@ -134,6 +134,7 @@ bool comm_wifi_get_auto_reconnect();
  * to disable the existing event listener.
 */
 void comm_wifi_set_event_listener(comm_wifi_event_cb_t handler);
+void comm_wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 
 void comm_wifi_send_packet_local(unsigned char *data, unsigned int len);
 void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len);

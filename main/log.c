@@ -26,6 +26,7 @@
 #include "esp_vfs.h"
 #include "buffer.h"
 #include "utils.h"
+#include "esp_vfs_fat_nand.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -46,9 +47,12 @@ typedef struct {
 
 #define LOG_MAX_FIELDS		120
 
+char *file_basepath = "/sdcard/";
+
 // Private variables
 static sdmmc_host_t m_host = SDSPI_HOST_DEFAULT();
 static sdmmc_card_t *m_card = 0;
+static spi_nand_flash_device_t *nand_flash_device_handle = 0;
 
 static volatile log_header m_headers[LOG_MAX_FIELDS];
 
@@ -77,6 +81,7 @@ static void log_task(void *arg) {
 	int gga_cnt_last = 0;
 	int rmc_cnt_last = 0;
 	int64_t ms_last = utils_ms_tot();
+	TickType_t tick_last_fsync = xTaskGetTickCount();
 
 	for (;;) {
 		if (!m_card) {
@@ -113,13 +118,13 @@ static void log_task(void *arg) {
 			if (date_valid) {
 				char path[200];
 				sprintf(path,
-						"/sdcard/log_can/date/%02d-%02d-%02d %02d-%02d-%02d.csv",
+						"%slog_can/date/%02d-%02d-%02d %02d-%02d-%02d.csv", file_basepath,
 						s->rmc.yy, s->rmc.mo, s->rmc.dd, s->rmc.hh, s->rmc.mm, s->rmc.ss);
 				f_log = fopen(path, "w");
 			} else {
 				char path[200];
 				for (int i = 0;i < 999;i++) {
-					sprintf(path, "/sdcard/log_can/no_date/log_%03d.csv", i);
+					sprintf(path, "%slog_can/no_date/log_%03d.csv", file_basepath, i);
 					if (access(path, F_OK) != 0) {
 						f_log = fopen(path, "w");
 						break;
@@ -241,6 +246,11 @@ static void log_task(void *arg) {
 					fprintf(f_log, ";");
 				}
 			}
+
+			if (UTILS_AGE_S(tick_last_fsync) > 2.0) {
+				tick_last_fsync = xTaskGetTickCount();
+				fsync(fileno(f_log));
+			}
 		}
 
 		if (m_rate_hz < 0.1) {
@@ -288,6 +298,7 @@ bool log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int fre
 	slot_config.gpio_cs = pin_cs;
 	slot_config.host_id = m_host.slot;
 
+	file_basepath = "/sdcard/";
 	ret = esp_vfs_fat_sdspi_mount("/sdcard", &m_host, &slot_config, &mount_config, &m_card);
 
 	if (ret != ESP_OK) {
@@ -304,6 +315,61 @@ void log_unmount_card(void) {
 	}
 
 	spi_bus_free(m_host.slot);
+}
+
+bool log_mount_nand_flash(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq) {
+	esp_err_t ret;
+
+	const spi_bus_config_t bus_config = {
+			.mosi_io_num = pin_mosi,
+			.miso_io_num = pin_miso,
+			.sclk_io_num = pin_sck,
+			.quadwp_io_num = -1,
+			.quadhd_io_num = -1,
+			.max_transfer_sz = 32,
+	};
+
+	spi_bus_initialize(SPI2_HOST, &bus_config, SPI_DMA_CH_AUTO);
+
+	spi_device_interface_config_t devcfg = {
+			.clock_speed_hz = freq * 1000,
+			.mode = 0,
+			.spics_io_num = pin_cs,
+			.queue_size = 10,
+			.flags = SPI_DEVICE_HALFDUPLEX,
+	};
+
+	spi_device_handle_t spi;
+	spi_bus_add_device(SPI2_HOST, &devcfg, &spi);
+
+	spi_nand_flash_config_t nand_flash_config = {
+			.device_handle = spi,
+	};
+
+	spi_nand_flash_init_device(&nand_flash_config, &nand_flash_device_handle);
+
+	esp_vfs_fat_mount_config_t config = {
+			.max_files = 4,
+			.format_if_mount_failed = true,
+			.allocation_unit_size = 16 * 1024
+	};
+
+	file_basepath = "/nandflash/";
+	ret = esp_vfs_fat_nand_mount("/nandflash", nand_flash_device_handle, &config);
+
+	if (ret != ESP_OK) {
+		return false;
+	}
+
+	return true;
+}
+
+void log_unmount_nand_flash (void) {
+	if (nand_flash_device_handle) {
+		esp_vfs_fat_nand_unmount("/nandflash", nand_flash_device_handle);
+		spi_nand_flash_deinit_device(nand_flash_device_handle);
+		nand_flash_device_handle = 0;
+	}
 }
 
 bool log_init(void) {
@@ -398,9 +464,13 @@ void log_process_packet(unsigned char *data, unsigned int len) {
 			break;
 		}
 
-		mkdir("/sdcard/log_can", 0775);
-		mkdir("/sdcard/log_can/date", 0775);
-		mkdir("/sdcard/log_can/no_date", 0775);
+		char path[30];
+		sprintf(path, "%slog_can", file_basepath);
+		mkdir(path, 0775);
+		sprintf(path, "%slog_can/date", file_basepath);
+		mkdir(path, 0775);
+		sprintf(path, "%slog_can/no_date", file_basepath);
+		mkdir(path, 0775);
 
 		int32_t ind = 0;
 		m_field_num = buffer_get_int16(data, &ind);

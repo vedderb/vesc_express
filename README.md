@@ -8,23 +8,22 @@ Instructions for how to set up the toolchain can be found here:
 [https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html)
 
 **Note**  
-ESP-IDF version 5.0 or later is required for building this project.
+ESP-IDF version 5.2 or later is required for building this project.
 
-### Get Release 5.0.2
+### Get Release 5.2.2
 
 The instructions linked above will install the master branch of ESP-IDF. To install the stable release you can navigate to the installation directory and use the following commands:
 
 ```bash
-git clone -b v5.0.2 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.0.2
-cd esp-idf-v5.0.2/
+git clone -b v5.2.2 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.2.2
+cd esp-idf-v5.2.2/
 ./install.sh esp32c3 esp32 esp32s3
-source export.sh
 ```
 
-At the moment development is done using the stable 5.0.2-release.
+At the moment development is done using the stable 5.2.2-release.
 
 Additionally you may want to add export.sh to your .bashrc file.
-```echo "source /path/to/esp-idf-v5.0.2/export.sh" >> ~/.bashrc```
+```echo "source /path/to/esp-idf-v5.2.2/export.sh" >> ~/.bashrc```
 
 ## Compiling
 

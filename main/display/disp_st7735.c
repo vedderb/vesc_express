@@ -240,13 +240,13 @@ bool disp_st7735_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color
 		blast_indexed16(img, colors);
 		break;
 	case rgb332:
-		blast_rgb332(img->data + img->data_offset, num_pix);
+		blast_rgb332(img->data, num_pix);
 		break;
 	case rgb565:
-		blast_rgb565(img->data + img->data_offset, num_pix);
+		blast_rgb565(img->data, num_pix);
 		break;
 	case rgb888:
-		blast_rgb888(img->data + img->data_offset, num_pix);
+		blast_rgb888(img->data, num_pix);
 		break;
 	default:
 		break;

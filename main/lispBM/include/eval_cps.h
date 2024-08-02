@@ -35,11 +35,14 @@ extern "C" {
 
 #define EVAL_CPS_DEFAULT_MAILBOX_SIZE 10
 
-#define EVAL_CPS_CONTEXT_FLAG_NOTHING               (uint32_t)0x0
-#define EVAL_CPS_CONTEXT_FLAG_TRAP                  (uint32_t)0x1
-#define EVAL_CPS_CONTEXT_FLAG_CONST                 (uint32_t)0x2
-#define EVAL_CPS_CONTEXT_FLAG_CONST_SYMBOL_STRINGS  (uint32_t)0x4
-#define EVAL_CPS_CONTEXT_FLAG_INCREMENTAL_READ      (uint32_t)0x8
+// Make sure the flags fit in an u28. (do not go beyond 27 flags)
+#define EVAL_CPS_CONTEXT_FLAG_NOTHING               (uint32_t)0x00
+#define EVAL_CPS_CONTEXT_FLAG_TRAP                  (uint32_t)0x01
+#define EVAL_CPS_CONTEXT_FLAG_CONST                 (uint32_t)0x02
+#define EVAL_CPS_CONTEXT_FLAG_CONST_SYMBOL_STRINGS  (uint32_t)0x04
+#define EVAL_CPS_CONTEXT_FLAG_INCREMENTAL_READ      (uint32_t)0x08
+#define EVAL_CPS_CONTEXT_FLAG_TRAP_UNROLL_RETURN    (uint32_t)0x10
+#define EVAL_CPS_CONTEXT_READER_FLAGS_MASK          (EVAL_CPS_CONTEXT_FLAG_CONST | EVAL_CPS_CONTEXT_FLAG_CONST_SYMBOL_STRINGS | EVAL_CPS_CONTEXT_FLAG_INCREMENTAL_READ)
 
 /** The eval_context_t struct represents a lispbm process.
  *
@@ -267,9 +270,15 @@ void lbm_undo_block_ctx_from_extension(void);
  */
 bool lbm_unblock_ctx(lbm_cid cid, lbm_flat_value_t *fv);
 /** Unblock a context bypassing the event-queue.
+ * The return value is unchanged from when the context was blocked.
+ * \param cid Lisp process to unblock.
+ * \return True on successfully unblocking. False otherwise.
+ */
+bool lbm_unblock_ctx_r(lbm_cid cid);
+/** Unblock a context bypassing the event-queue.
  *  Since the context will be unblocked in a separate tread it cannot
  *  take a composite return value. Only unboxed lbm_values are allowed.
- * \param cid Lisp process to inblock.
+ * \param cid Lisp process to unblock.
  * \param unboxed An unboxed lbm_value: char, i, u or symbol type.
  * \return True on successfully unblocking. False otherwise.
  */
@@ -362,7 +371,10 @@ lbm_value lbm_find_receiver_and_send(lbm_cid cid, lbm_value msg);
  * \return 1 on success
  */
 int lbm_perform_gc(void);
-
+/** Request that the runtime system performs a garbage collection on its earliers convenience.
+ *  Can be called from any thread and does NOT require that the evaluator is paused.
+ */
+void lbm_request_gc(void);
 #ifdef __cplusplus
 }
 #endif

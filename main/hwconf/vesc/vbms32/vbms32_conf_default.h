@@ -98,19 +98,19 @@
 #define CONF_BLE_CHR_DESCR_CAPACITY 0
 #endif
 
-// First Cell Index
-#ifndef CONF_CELL_FIRST
-#define CONF_CELL_FIRST 0
-#endif
-
-// Number of Cells
-#ifndef CONF_CELL_NUM
-#define CONF_CELL_NUM 32
-#endif
-
 // Max Balance Channels
 #ifndef CONF_MAX_BAL_CH
 #define CONF_MAX_BAL_CH 5
+#endif
+
+// Cells IC1
+#ifndef CONF_CELLS_IC1
+#define CONF_CELLS_IC1 16
+#endif
+
+// Cells IC2
+#ifndef CONF_CELLS_IC2
+#define CONF_CELLS_IC2 16
 #endif
 
 // Distributed Balancing

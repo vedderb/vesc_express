@@ -1,6 +1,6 @@
 /*
 	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
-	Copyright 2023 Benjamin Vedder      benjamin@vedder.se
+	Copyright 2023 - 2024 Benjamin Vedder      benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -18,7 +18,12 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	*/
 
+#include <stdint.h>
 #include <stdbool.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
 
 #include "esp_err.h"
 #include "esp_wifi.h"
@@ -43,6 +48,7 @@
 #include "datatypes.h"
 #include "commands.h"
 #include "comm_wifi.h"
+#include "lispif.h"
 
 #define SSID_SIZE SIZEOF_MEMBER(wifi_ap_record_t, ssid)
 
@@ -52,7 +58,7 @@
  * Error reasons
  */
 
-static char *error_mode_invalid = "WIFI not in Station mode.";
+static char *error_mode_invalid = "Invalid WIFI mode for this command";
 static char *error_thread_waiting =
 	"Another thread is currently executing WIFI commands.";
 static char *error_wifi_connecting       = "Currently connecting to network.";
@@ -74,21 +80,15 @@ static volatile bool init_done = false;
 static bool register_symbols(void) {
 	bool res = true;
 
-	res = res
-		&& lbm_add_symbol_const_if_new(
-			  "wrong-password", &symbol_wrong_password
-		);
-	res = res
-		&& lbm_add_symbol_const_if_new("unknown-host", &symbol_unknown_host);
-	res = res && lbm_add_symbol_const_if_new("no-data", &symbol_no_data);
-	res = res && lbm_add_symbol_const_if_new("connected", &symbol_connected);
-	res = res && lbm_add_symbol_const_if_new("connecting", &symbol_connecting);
-	res = res
-		&& lbm_add_symbol_const_if_new("disconnected", &symbol_disconnected);
-	res = res
-		&& lbm_add_symbol_const_if_new("socket-error", &symbol_socket_error);
-	res = res
-		&& lbm_add_symbol_const_if_new("connect-error", &symbol_connect_error);
+	res = res && lbm_add_symbol_const("wrong-password", &symbol_wrong_password);
+	res = res && lbm_add_symbol_const("unknown-host", &symbol_unknown_host);
+	res = res && lbm_add_symbol_const("no-data", &symbol_no_data);
+	res = res && lbm_add_symbol_const("connected", &symbol_connected);
+	res = res && lbm_add_symbol_const("connecting", &symbol_connecting);
+	res = res && lbm_add_symbol_const("disconnected", &symbol_disconnected);
+	res = res && lbm_add_symbol_const("socket-error", &symbol_socket_error);
+	res = res && lbm_add_symbol_const("connect-error", &symbol_connect_error);
+
 	return res;
 }
 
@@ -102,6 +102,10 @@ static volatile bool is_waiting;
 static volatile waiting_op_t waiting_op;
 static volatile lbm_cid waiting_cid;
 
+static EventGroupHandle_t s_ftm_event_group;
+static const int FTM_REPORT_BIT = BIT0;
+static wifi_event_ftm_report_t ftm_report;
+
 /**
  * Checks that the correct WIFI was configured in the custom config, and sets
  * the error reason if it wasn't.
@@ -109,15 +113,24 @@ static volatile lbm_cid waiting_cid;
  * Also checks that no other lbm thread is currently executing parts of the WIFI
  * API.
  */
-static bool check_mode() {
+static bool check_mode(bool station_only) {
 	if (is_waiting) {
 		lbm_set_error_reason(error_thread_waiting);
 		return false;
 	}
-	if (comm_wifi_get_mode() != WIFI_MODE_STATION) {
-		lbm_set_error_reason(error_mode_invalid);
-		return false;
+
+	if (station_only) {
+		if (comm_wifi_get_mode() != WIFI_MODE_STATION) {
+			lbm_set_error_reason(error_mode_invalid);
+			return false;
+		}
+	} else {
+		if (comm_wifi_get_mode() == WIFI_MODE_DISABLED) {
+			lbm_set_error_reason(error_mode_invalid);
+			return false;
+		}
 	}
+
 	return true;
 }
 
@@ -132,8 +145,8 @@ static bool check_mode() {
  * wifi_event_sta_disconnected_t struct.
  */
 static void handle_wifi_disconnect_event(uint8_t reason, bool from_extension) {
-	if (!event_wifi_disconnect_en
-		|| comm_wifi_get_mode() != WIFI_MODE_STATION) {
+	if (!event_wifi_disconnect_en ||
+			comm_wifi_get_mode() != WIFI_MODE_STATION) {
 		return;
 	}
 
@@ -238,7 +251,7 @@ static void event_listener(
 					lbm_flat_value_t value;
 					{
 						// +10: to be safe
-						size_t size = 9 + 10 + 28 * len;
+						size_t size = 9 + 10 + 80 * len;
 						for (size_t i = 0; i < len; i++) {
 							size += strlen((char *)records[i].ssid);
 						}
@@ -250,10 +263,10 @@ static void event_listener(
 					}
 					/* produces:
 					(
-						..(ssid rssi channel)
+						..(ssid rssi channel ftm-responder (mac-addr))
 					) */
 					for (size_t i = 0; i < len; i++) {
-						// 28
+						// 80
 						// this one belongs to the outer SYM_NIL.
 						f_cons(&value); // +1
 
@@ -267,6 +280,24 @@ static void event_listener(
 
 						f_cons(&value);                  // +1
 						f_i(&value, records[i].primary); // +5
+
+						f_cons(&value);                  // +1
+						f_i(&value, records[i].ftm_responder + 2 * records[i].ftm_initiator); // +5
+
+						f_cons(&value);                   // +1
+						f_cons(&value);                   // +1
+						f_i(&value, records[i].bssid[0]); // +5
+						f_cons(&value);                   // +1
+						f_i(&value, records[i].bssid[1]); // +5
+						f_cons(&value);                   // +1
+						f_i(&value, records[i].bssid[2]); // +5
+						f_cons(&value);                   // +1
+						f_i(&value, records[i].bssid[3]); // +5
+						f_cons(&value);                   // +1
+						f_i(&value, records[i].bssid[4]); // +5
+						f_cons(&value);                   // +1
+						f_i(&value, records[i].bssid[5]); // +5
+						f_sym(&value, SYM_NIL); // +9
 
 						f_sym(&value, SYM_NIL); // +9
 					}
@@ -336,6 +367,13 @@ static void event_listener(
 			}
 		}
 	}
+
+	if (event_id == WIFI_EVENT_FTM_REPORT) {
+		wifi_event_ftm_report_t *event = (wifi_event_ftm_report_t *) event_data;
+
+		memcpy(&ftm_report, event, sizeof(ftm_report));
+		xEventGroupSetBits(s_ftm_event_group, FTM_REPORT_BIT);
+	}
 }
 
 /**
@@ -363,18 +401,16 @@ static void event_listener(
  * networks.
  */
 static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
-		return ENC_SYM_EERROR;
-	}
-
 	uint32_t scan_time = 120;
 	if (argn >= 1) {
 		scan_time = (uint32_t)(lbm_dec_as_float(args[0]) * 1000);
 	}
+
 	uint8_t channel = 0;
 	if (argn >= 2) {
 		channel = lbm_dec_as_u32(args[1]);
 	}
+
 	bool show_hidden = false;
 	if (argn >= 3) {
 		show_hidden = lbm_dec_bool(args[2]);
@@ -398,7 +434,7 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 		}
 		case ESP_ERR_WIFI_NOT_STARTED: {
 			// Should not be possible.
-			return ENC_SYM_FATAL_ERROR;
+			return ENC_SYM_EERROR;
 		}
 		case ESP_ERR_WIFI_STATE: {
 			lbm_set_error_reason(error_wifi_connecting);
@@ -437,7 +473,7 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
  * the VESC Express config or if the ssid or password are too long.
  */
 static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(true)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -488,7 +524,7 @@ static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
  * Disconnect from any currently connected WIFI networks.
  */
 static lbm_value ext_wifi_disconnect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(true)) {
 		return ENC_SYM_EERROR;
 	}
 	comm_wifi_disconnect_network();
@@ -504,7 +540,7 @@ static lbm_value ext_wifi_disconnect(lbm_value *args, lbm_uint argn) {
  * Check the current WIFI connection status.
  */
 static lbm_value ext_wifi_status(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(true)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -537,7 +573,7 @@ static lbm_value ext_wifi_status(lbm_value *args, lbm_uint argn) {
  * passed.
  */
 static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(true)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -559,7 +595,131 @@ static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_bool(current_value);
 }
 
-#define CUSTOM_SOCKET_COUNT 10
+typedef struct {
+	lbm_cid id;
+	wifi_ftm_initiator_cfg_t cfg;
+	bool print;
+} ftm_args;
+
+static void ftm_task(void *arg) {
+	ftm_args *a = (ftm_args*)arg;
+	int restart_cnt = lispif_get_restart_cnt();
+
+	lbm_value res = ENC_SYM_NIL;
+
+	if (esp_wifi_ftm_initiate_session(&a->cfg) != ESP_OK) {
+		if (a->print) {
+			commands_printf_lisp("Failed to start FTM session");
+		}
+		goto end;
+	}
+
+	uint32_t wait_time_ms = 500;
+
+	EventBits_t bits = xEventGroupWaitBits(s_ftm_event_group, FTM_REPORT_BIT,
+			pdTRUE, pdFALSE, wait_time_ms / portTICK_PERIOD_MS);
+
+	if (bits & FTM_REPORT_BIT) {
+		esp_wifi_ftm_get_report(NULL, 0);
+
+		if (ftm_report.status == FTM_STATUS_SUCCESS) {
+			res =  lbm_enc_i(ftm_report.dist_est);
+		} else if (ftm_report.status == FTM_STATUS_UNSUPPORTED) {
+			if (a->print) {
+				commands_printf_lisp("FTM not supported by peer");
+			}
+		} else if (ftm_report.status == FTM_STATUS_CONF_REJECTED) {
+			if (a->print) {
+				commands_printf_lisp("FTM configuration rejected by peer");
+			}
+		} else if (ftm_report.status == FTM_STATUS_NO_RESPONSE) {
+			if (a->print) {
+				commands_printf_lisp("FTM no response");
+			}
+		} else {
+			if (a->print) {
+				commands_printf_lisp("FTM failed");
+			}
+		}
+	} else {
+		esp_wifi_ftm_end_session();
+		if (a->print) {
+			commands_printf_lisp("FTM timed out");
+		}
+	}
+
+	end:
+
+	if (restart_cnt == lispif_get_restart_cnt()) {
+		vTaskDelay(1);
+		lbm_unblock_ctx_unboxed(a->id, res);
+	}
+
+	lbm_free(a);
+
+	vTaskDelete(NULL);
+}
+
+static lbm_value ext_wifi_ftm_measure(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 && argn != 3) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	if (!lbm_is_number(args[1])) {
+		lbm_set_error_reason((char*)lbm_error_str_no_number);
+		return ENC_SYM_TERROR;
+	}
+
+	ftm_args *a = lbm_malloc(sizeof(ftm_args));
+
+	if (!a) {
+		return ENC_SYM_MERROR;
+	}
+
+	memset(a, 0, sizeof(ftm_args));
+
+	if (argn >= 3) {
+		if (!lbm_is_symbol_nil(args[2])) {
+			a->print = true;
+		}
+	}
+
+	int ind = 0;
+
+	lbm_value curr = args[0];
+	while (lbm_is_cons(curr)) {
+		lbm_value  arg = lbm_car(curr);
+
+		if (lbm_is_number(arg)) {
+			a->cfg.resp_mac[ind++] = lbm_dec_as_u32(arg);
+		} else {
+			lbm_free(a);
+			return ENC_SYM_TERROR;
+		}
+
+		if (ind == sizeof(a->cfg.resp_mac)) {
+			break;
+		}
+
+		curr = lbm_cdr(curr);
+	}
+
+
+	a->id = lbm_get_current_cid();
+	a->cfg.use_get_report_api = true;
+	a->cfg.channel = lbm_dec_as_i32(args[1]);
+	a->cfg.frm_count = 8;
+	a->cfg.burst_period = 2;
+
+	lbm_block_ctx_from_extension();
+
+	xTaskCreatePinnedToCore(ftm_task, "FTM Measure", 2048, a, 7, NULL, tskNO_AFFINITY);
+
+	return ENC_SYM_NIL;
+}
+
+#define CUSTOM_SOCKET_COUNT 5
 static int custom_sockets[CUSTOM_SOCKET_COUNT];
 static int custom_socket_now = 0;
 
@@ -593,7 +753,7 @@ static bool custom_socket_valid(int socket) {
  * @return todo
  */
 static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(false)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -696,7 +856,7 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
  * (@todo: be more precise).
  */
 static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(false)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -754,7 +914,7 @@ static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
  * internal process, that shouldn't happen).
  */
 static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(false)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -814,7 +974,7 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
  * @todo: Document this
  */
 static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(false)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -862,7 +1022,7 @@ static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
 typedef struct {
 	lbm_cid return_cid;
 	int socket;
-	int max_len;
+	lbm_value buffer;
 	bool as_str;
 	bool return_on_disconnect;
 	char terminator;
@@ -871,19 +1031,17 @@ typedef struct {
 
 static void recv_task(void *arg) {
 	recv_task_state *s = (recv_task_state*)arg;
-
-	uint8_t *buffer = malloc(s->max_len + 1);
-
-	if (!buffer) {
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
-		lbm_set_error_reason(error_esp_no_memory);
-		goto recv_cleanup;
+	lbm_array_header_t *buffer = (lbm_array_header_t*)lbm_car(s->buffer);
+	lbm_uint recv_size = buffer->size;
+	if (s->as_str) {
+		recv_size--;
 	}
 
 	int start = xTaskGetTickCount();
 
+
 	for (;;) {
-		ssize_t len = recv(s->socket, buffer, s->max_len, MSG_DONTWAIT);
+		ssize_t len = recv(s->socket, (char*)(buffer->data), recv_size, MSG_DONTWAIT);
 
 		if (len < 0) {
 			switch (errno) {
@@ -910,17 +1068,11 @@ static void recv_task(void *arg) {
 			size_t result_size = len;
 			if (s->as_str) {
 				result_size++;
-				buffer[len] = '\0';
+				((char*)buffer->data)[len] = '\0';
 			}
 
-			lbm_flat_value_t value;
-			if (!f_pack_array(&value, buffer, result_size)) {
-				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
-			}
-
-			if (!lbm_unblock_ctx(s->return_cid, &value)) {
-				lbm_free(value.buf);
-			}
+			lbm_array_shrink(s->buffer, result_size);
+			lbm_unblock_ctx_r(s->return_cid);
 
 			goto recv_cleanup;
 		}
@@ -934,32 +1086,26 @@ static void recv_task(void *arg) {
 
 	recv_cleanup:
 
-	if (buffer) {
-		free(buffer);
-	}
-
-	free(s);
+	lbm_free(s);
 	vTaskDelete(NULL);
 }
 
 // Maybe this can be merged with recv_task?
 static void recv_to_char_task(void *arg) {
 	recv_task_state *s = (recv_task_state *)arg;
-
-	uint8_t *buffer = malloc(s->max_len + 1);
-
-	if (!buffer) {
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
-		lbm_set_error_reason(error_esp_no_memory);
-		goto recv_cleanup;
-	}
+	lbm_array_header_t *buffer = (lbm_array_header_t*)lbm_car(s->buffer);
 
 	size_t total_len = 0;
+	size_t result_size = 0;
+	lbm_uint recv_size = buffer->size;
+	if (s->as_str) {
+		recv_size--;
+	}
 
 	int start = xTaskGetTickCount();
 
 	while (true) {
-		if (s->max_len == 0) {
+		if (recv_size == 0) {
 			break;
 		}
 
@@ -992,17 +1138,15 @@ static void recv_to_char_task(void *arg) {
 			}
 		} else if (len == 0) {
 			if (total_len == 0 || !s->return_on_disconnect) {
-				lbm_unblock_ctx_unboxed(
-					s->return_cid, ENC_SYM(symbol_disconnected)
-				);
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_disconnected));
 				goto recv_cleanup;
 			}
 			break;
 		} else {
-			buffer[total_len] = byte;
-			total_len        += 1;
+			((char*)buffer->data)[total_len] = byte;
+			total_len++;
 
-			if (byte == s->terminator || total_len >= s->max_len) {
+			if (byte == s->terminator || total_len >= recv_size) {
 				break;
 			}
 		}
@@ -1022,35 +1166,18 @@ static void recv_to_char_task(void *arg) {
 
 return_buffer:
 
-	if (total_len > s->max_len) {
-		STORED_LOGF("recv buffer overflow: %u >= %u", total_len, s->max_len);
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_FATAL_ERROR);
-		goto recv_cleanup;
-	}
-
-	size_t result_size = total_len;
+	result_size = total_len;
 	if (s->as_str) {
 		result_size++;
-		buffer[total_len] = '\0';
+		((char*)buffer->data)[total_len] = '\0';
 	}
 
-	lbm_flat_value_t value;
-	if (!f_pack_array(&value, buffer, result_size)) {
-		STORED_LOGF("lbm_start_flatten failed");
-		lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_EERROR);
-	}
-
-	if (!lbm_unblock_ctx(s->return_cid, &value)) {
-		lbm_free(value.buf);
-	}
+	lbm_array_shrink(s->buffer, result_size);
+	lbm_unblock_ctx_r(s->return_cid);
 
 recv_cleanup:
 
-	if (buffer) {
-		free(buffer);
-	}
-
-	free(s);
+	lbm_free(s);
 	vTaskDelete(NULL);
 }
 
@@ -1080,7 +1207,7 @@ recv_cleanup:
  * writing this) network error occurred.
  */
 static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(false)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1116,14 +1243,23 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 		as_str = lbm_dec_bool(args[3]);
 	}
 
+	lbm_value result;
+	size_t size = max_len;
+	if (as_str) {
+		size++;
+	}
+	if (!lbm_create_array(&result, size)) {
+		return ENC_SYM_MERROR;
+	}
+
 	if (should_wait) {
-		recv_task_state *s = malloc(sizeof(recv_task_state));
+		recv_task_state *s = lbm_malloc(sizeof(recv_task_state));
 
 		if (s) {
 			lbm_block_ctx_from_extension();
 
 			s->return_cid = lbm_get_current_cid();
-			s->max_len = max_len;
+			s->buffer = result;
 			s->timeout = timeout_secs;
 			s->socket = sock;
 			s->as_str = as_str;
@@ -1132,28 +1268,14 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 				recv_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
 			);
 
-			return ENC_SYM_NIL;
+			return result;
 		} else {
-			lbm_set_error_reason(error_esp_no_memory);
-			return ENC_SYM_FATAL_ERROR;
-		}
-	} else {
-		lbm_value result;
-		size_t size = max_len;
-		if (as_str) {
-			size++;
-		}
-		if (!lbm_create_array(&result, size)) {
 			return ENC_SYM_MERROR;
 		}
-
+	} else {
 		char *buffer = lbm_dec_array_data(result);
-		if (!buffer) {
-			// impossible
-			return ENC_SYM_FATAL_ERROR;
-		}
-
 		ssize_t len = recv(sock, buffer, max_len, MSG_DONTWAIT);
+
 		if (len == -1) {
 			switch (errno) {
 				case EWOULDBLOCK: {
@@ -1179,11 +1301,12 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			// can ignore that case.)
 			return ENC_SYM(symbol_disconnected);
 		} else {
-			size_t size = len;
+			size = len;
 			if (as_str) {
 				size++;
 				buffer[len] = '\0';
 			}
+
 			lbm_array_shrink(result, size);
 		}
 
@@ -1225,7 +1348,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
  * this) network error occurred.
  */
 static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
-	if (!check_mode()) {
+	if (!check_mode(false)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1266,13 +1389,22 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 		return_on_disconnect = lbm_dec_bool(args[5]);
 	}
 	
-	recv_task_state *s = malloc(sizeof(recv_task_state));
+	lbm_value result;
+	size_t size = max_len;
+	if (as_str) {
+		size++;
+	}
+	if (!lbm_create_array(&result, size)) {
+		return ENC_SYM_MERROR;
+	}
+
+	recv_task_state *s = lbm_malloc(sizeof(recv_task_state));
 	
 	if (s) {
 		lbm_block_ctx_from_extension();
 
 		s->return_cid = lbm_get_current_cid();
-		s->max_len = max_len;
+		s->buffer = result;
 		s->timeout = timeout_secs;
 		s->socket = sock;
 		s->as_str = as_str;
@@ -1283,16 +1415,16 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 			recv_to_char_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
 		);
 
-		return ENC_SYM_NIL;
+		return result;
 	} else {
-		lbm_set_error_reason(error_esp_no_memory);
-		return ENC_SYM_FATAL_ERROR;
+		return ENC_SYM_MERROR;
 	}
 }
 
 void lispif_load_wifi_extensions(void) {
 	if (!init_done) {
 		comm_wifi_set_event_listener(event_listener);
+		s_ftm_event_group = xEventGroupCreate();
 
 		for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
 			custom_sockets[i] = -1;
@@ -1319,6 +1451,7 @@ void lispif_load_wifi_extensions(void) {
 	lbm_add_extension("wifi-disconnect", ext_wifi_disconnect);
 	lbm_add_extension("wifi-status", ext_wifi_status);
 	lbm_add_extension("wifi-auto-reconnect", ext_wifi_auto_reconnect);
+	lbm_add_extension("wifi-ftm-measure", ext_wifi_ftm_measure);
 	lbm_add_extension("tcp-connect", ext_tcp_connect);
 	lbm_add_extension("tcp-close", ext_tcp_close);
 	lbm_add_extension("tcp-status", ext_tcp_status);

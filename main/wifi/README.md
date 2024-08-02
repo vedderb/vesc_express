@@ -71,15 +71,17 @@ optional.
   free to ignore this option.) **Default: `false`**
 
 The found list of networks is returned as a list of network tuples, each of the
-form `(ssid rssi channel)`.
+form `(ssid rssi channel ftm-responder (mac-addr))`.
 
 The same network SSID might appear multiple times for reasons I'm not entirely
 sure of at the moment. Just make sure you're aware of it!
 
 Example that scans the available network on all WiFi channels:
 ```clj
-(wifi-scan-networks 0.12 0)
-> (("Network 1" -64 6u) ("Network 2" -64 11u) ("Network 1" -75 1u) ("Network 3 2.4Gh" -86 1u) ("Network 1" -87 6u))
+(loopforeach i (wifi-scan-networks) (print i))
+> ("ESP_0927BD" -28 7 1 (104 103 37 9 39 189))
+> ("vescnet" -55 7 0 (8 191 184 96 152 48))
+> ("ESP_89D4D9" -85 7 0 (128 101 153 137 212 217))
 ```
 (The SSIDs are of course fictional)
 
@@ -203,6 +205,26 @@ value).
 > t
 ```
 
+### `wifi-ftm-measure`
+
+```clj
+(wifi-ftm-measure peer channel [debug-print])
+```
+
+Fine Time Measurement (FTM) can be used to calculate the distance to another WiFi-device by calculating the round trip time (RTT). The argument peer is a list with the mac-address of the other device, the argument channel is the primary WIFI-channel of the other device and the optional argument debug-print can be set to true to print debug information in the REPL if this function fails. On success the distance to the other device is returned in centimeters and on failure nil is returned.
+
+Note that the other device must support ftm-responder for this command to work. VESC Express-devices with the latest firmware should support that when WiFi or ESP-NOW is running.
+
+Example:
+
+```clj
+(print (wifi-ftm-measure '(104 103 37 9 39 189) 1))
+> 150
+; Here the result 150 means that the device with the mac-address (104 103 37 9 39 189) is 150 cm away.
+```
+
+ ---
+ 
 ## The TCP Library
 
 ### `tcp-connect`

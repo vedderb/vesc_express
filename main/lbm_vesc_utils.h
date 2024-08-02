@@ -30,11 +30,6 @@
 */
 #define LBM_WORD_SIZE 4
 
-/**
- * Add symbol to the symbol table if it doesn't already exist.
- */
-bool lbm_add_symbol_const_if_new(char *name, lbm_uint *id);
-
 static inline bool lbm_is_bool(lbm_value value) {
 	return (
 		lbm_is_symbol(value)

@@ -123,6 +123,7 @@ void app_main(void) {
 #ifdef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
 	lispif_init();
+	HW_POST_LISPIF_HOOK();
 #endif
 
 	mempools_init();
@@ -159,10 +160,14 @@ void app_main(void) {
 #ifdef SD_PIN_MOSI
 	log_mount_card(SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK, SD_PIN_CS, SDMMC_FREQ_DEFAULT);
 #endif
+#ifdef NAND_PIN_MOSI
+	log_mount_nand_flash(NAND_PIN_MOSI, NAND_PIN_MISO, NAND_PIN_SCK, NAND_PIN_CS, FLASH_FREQ_KHZ);
+#endif
 
 #ifndef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
 	lispif_init();
+	HW_POST_LISPIF_HOOK();
 #endif
 
 #ifndef HW_NO_UART
@@ -187,9 +192,8 @@ void app_main(void) {
 
 	init_done = true;
 
-	for (;;) {
-		vTaskDelay(5000 / portTICK_PERIOD_MS);
-	}
+	// Exit main to free up heap-space
+	vTaskDelete(NULL);
 }
 
 uint32_t main_calc_hw_crc(void) {

@@ -48,13 +48,13 @@ void bme280_if_init(int pin_sda, int pin_scl) {
 	i2c_param_config(0, &conf);
 	i2c_driver_install(0, conf.mode, 0, 0, 0);
 
-	xTaskCreatePinnedToCore(bme_task, "BME280", 1024, NULL, 6, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(bme_task, "BME280", 1536, NULL, 6, NULL, tskNO_AFFINITY);
 }
 
 void bme280_if_init_with_mutex(SemaphoreHandle_t mutex) {
 	mutex_init = true;
 	i2c_mutex = mutex;
-	xTaskCreatePinnedToCore(bme_task, "BME280", 1024, NULL, 6, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(bme_task, "BME280", 1536, NULL, 6, NULL, tskNO_AFFINITY);
 }
 
 float bme280_if_get_hum(void) {

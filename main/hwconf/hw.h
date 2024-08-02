@@ -47,6 +47,10 @@
 #define HW_INIT_HOOK()
 #endif
 
+#ifndef HW_POST_LISPIF_HOOK
+#define HW_POST_LISPIF_HOOK()
+#endif
+
 #ifndef LOGS_ENABLED
 // Should contain 0 or 1
 #define LOGS_ENABLED 0

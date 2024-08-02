@@ -82,6 +82,8 @@ set(COMPONENT_SRCS
 "drivers/imu/imu.c"
 "drivers/imu/lsm6ds3.c"
 "drivers/imu/ahrs.c"
+
+"lowzip/lowzip.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS
@@ -94,6 +96,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/avaspark"
 "hwconf/vesc"
 "hwconf/vesc/vbms32"
+"hwconf/vesc/vdisp_dual"
 
 "lispBM"
 "lispBM/include"
@@ -105,6 +108,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "drivers"
 "drivers/bme280"
 "drivers/imu"
+"lowzip"
 )
 
 register_component()

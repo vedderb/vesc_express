@@ -24,6 +24,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define BMS_MAX_CELLS	50
+#define BMS_MAX_TEMPS	50
+
 typedef struct {
 	float v_tot;
 	float v_charge;
@@ -32,10 +35,10 @@ typedef struct {
 	float ah_cnt;
 	float wh_cnt;
 	int cell_num;
-	float v_cell[32];
-	bool bal_state[32];
+	float v_cell[BMS_MAX_CELLS];
+	bool bal_state[BMS_MAX_CELLS];
 	int temp_adc_num;
-	float temps_adc[50];
+	float temps_adc[BMS_MAX_TEMPS];
 	float temp_ic;
 	float temp_hum;
 	float hum;

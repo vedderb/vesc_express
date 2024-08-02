@@ -66,6 +66,11 @@
 #include "esp_vfs.h"
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
+#include "esp_sleep.h"
+#include "soc/rtc.h"
+#include "esp_bt.h"
+#include "esp_bt_main.h"
+#include "esp_wifi.h"
 
 // Settings
 #define PRINT_BUFFER_SIZE	400
@@ -249,7 +254,18 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				if (esp_ota_set_boot_partition(update_partition) == ESP_OK) {
 					comm_wifi_disconnect();
 					vTaskDelay(50 / portTICK_PERIOD_MS);
+
+					esp_bluedroid_disable();
+					esp_bt_controller_disable();
+					esp_wifi_stop();
+
+					// Here we must use esp_restart even though that does not play nicely
+					// with USB. That is because we skip image validation in the bootloader
+					// after deep sleep to get a faster boot time, allowing less power draw
+					// in applications that need to wake up from deep sleep occasionally.
 					esp_restart();
+//					esp_sleep_enable_timer_wakeup(1000000);
+//					esp_deep_sleep_start();
 				}
 			}
 		}
@@ -281,8 +297,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int32_t ind = 0;
 		uint32_t new_app_offset = buffer_get_uint32(data, &ind);
 
-		if (new_app_offset == 0) {
-			ind += 6; // Skip size and crc
+		if (new_app_offset < 6) {
+			ind += (6 - new_app_offset); // Skip size and crc
+			new_app_offset = 0;
 		} else {
 			new_app_offset -= 6;
 		}
@@ -303,8 +320,15 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_REBOOT: {
 		comm_wifi_disconnect();
-		vTaskDelay(50 / portTICK_PERIOD_MS);
-		esp_restart();
+
+		esp_bluedroid_disable();
+		esp_bt_controller_disable();
+		esp_wifi_stop();
+
+		// Deep sleep to reboot as that disconnects USB properly
+//		esp_restart();
+		esp_sleep_enable_timer_wakeup(1000000);
+		esp_deep_sleep_start();
 	} break;
 
 	case COMM_FORWARD_CAN:
@@ -436,8 +460,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		struct dirent *dir;
 		bool from_found = strlen(from) == 0;
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		d = opendir(path_full);
@@ -501,8 +525,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		static int32_t f_last_size = 0;
 		uint8_t *wifi_buffer = 0;
 
-		uint8_t *send_buffer_global = mempools_get_packet_buffer();
-		uint8_t *send_buffer = send_buffer_global;
+		uint8_t *send_buffer = 0;
 		size_t send_size = 400;
 
 		void(*reply_func_raw)(unsigned char *data, unsigned int len) = 0;
@@ -520,7 +543,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				send_size = wifi_buffer_size - 100;
 			} else {
 				reply_func_raw = 0;
+				send_buffer = mempools_get_packet_buffer();
 			}
+		} else {
+			send_buffer = mempools_get_packet_buffer();
 		}
 
 		int32_t ind = 0;
@@ -529,8 +555,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		ind += path_len + 1;
 		int32_t offset = buffer_get_int32(data, &ind);
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		ind = 0;
@@ -556,6 +582,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			int32_t rd = read(fileno(f_last), send_buffer + ind, send_size);
 			ind += rd;
 			f_last_offset += rd;
+
 			if (f_last_offset == f_last_size) {
 				fclose(f_last);
 				f_last = 0;
@@ -589,9 +616,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			free(wifi_buffer);
 		} else {
 			reply_func(send_buffer, ind);
+			mempools_free_packet_buffer(send_buffer);
 		}
-
-		mempools_free_packet_buffer(send_buffer_global);
 	} break;
 
 	case COMM_FILE_WRITE: {
@@ -605,8 +631,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int32_t offset = buffer_get_int32(data, &ind);
 		int32_t size = buffer_get_int32(data, &ind);
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		bool ok = false;
@@ -656,8 +682,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int path_len = strlen(path);
 		ind += path_len + 1;
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		ind = 0;
@@ -673,8 +699,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		int path_len = strlen(path);
 		ind += path_len + 1;
 
-		char path_full[path_len + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[path_len + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		ind = 0;
@@ -795,7 +821,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		uint32_t qmlui_offset = buffer_get_uint32(data, &ind);
 
 		bool flash_res = flash_helper_write_code(packet_id == COMM_QMLUI_WRITE ? CODE_IND_QML : CODE_IND_LISP,
-				qmlui_offset, data + ind, len - ind);
+				qmlui_offset, data + ind, len - ind, 0);
 
 		ind = 0;
 		uint8_t send_buffer[50];

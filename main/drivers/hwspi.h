@@ -49,10 +49,10 @@ void hwspi_send_data(const uint8_t *data, int len);
 
 void hwspi_data_stream_start(void);
 static inline void hwspi_data_stream_write(uint8_t byte) {
-	hwspi_buffer_pointer[(*hwspi_buffer_pos)++] = byte;
 	if (*hwspi_buffer_pos == HWSPI_DATA_BUFFER_SIZE) {
 		hwspi_swap_buffer();
 	}
+	hwspi_buffer_pointer[(*hwspi_buffer_pos)++] = byte;
 }
 void hwspi_data_stream_finish(void);
 

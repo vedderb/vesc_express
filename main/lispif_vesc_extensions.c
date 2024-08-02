@@ -1,5 +1,5 @@
 /*
-	Copyright 2023 Benjamin Vedder       benjamin@vedder.se
+	Copyright 2023, 2024 Benjamin Vedder benjamin@vedder.se
 	Copyright 2022, 2024 Joel Svensson   svenssonjoel@yahoo.se
 	Copyright 2023 Rasmus Söderhielm     rasmus.soderhielm@gmail.com
 
@@ -62,15 +62,19 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "driver/usb_serial_jtag.h"
 #include "nvs_flash.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
 #include "esp_bt.h"
 #include "esp_bt_main.h"
+#include "esp_partition.h"
+#include "esp_ota_ops.h"
 
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs.h"
+#include "lowzip.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -155,152 +159,142 @@ typedef struct {
 
 static vesc_syms syms_vesc = {0};
 
-static bool get_add_symbol(char *name, lbm_uint* id) {
-	if (!lbm_get_symbol_by_name(name, id)) {
-		if (!lbm_add_symbol_const(name, id)) {
-			return false;
-		}
-	}
-
-	return true;
-}
-
 static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 	if (*comp == 0) {
 		if (comp == &syms_vesc.v_tot) {
-			get_add_symbol("bms-v-tot", comp);
+			lbm_add_symbol_const("bms-v-tot", comp);
 		} else if (comp == &syms_vesc.v_charge) {
-			get_add_symbol("bms-v-charge", comp);
+			lbm_add_symbol_const("bms-v-charge", comp);
 		} else if (comp == &syms_vesc.i_in) {
-			get_add_symbol("bms-i-in", comp);
+			lbm_add_symbol_const("bms-i-in", comp);
 		} else if (comp == &syms_vesc.i_in_ic) {
-			get_add_symbol("bms-i-in-ic", comp);
+			lbm_add_symbol_const("bms-i-in-ic", comp);
 		} else if (comp == &syms_vesc.ah_cnt) {
-			get_add_symbol("bms-ah-cnt", comp);
+			lbm_add_symbol_const("bms-ah-cnt", comp);
 		} else if (comp == &syms_vesc.wh_cnt) {
-			get_add_symbol("bms-wh-cnt", comp);
+			lbm_add_symbol_const("bms-wh-cnt", comp);
 		} else if (comp == &syms_vesc.cell_num) {
-			get_add_symbol("bms-cell-num", comp);
+			lbm_add_symbol_const("bms-cell-num", comp);
 		} else if (comp == &syms_vesc.v_cell) {
-			get_add_symbol("bms-v-cell", comp);
+			lbm_add_symbol_const("bms-v-cell", comp);
 		} else if (comp == &syms_vesc.bal_state) {
-			get_add_symbol("bms-bal-state", comp);
+			lbm_add_symbol_const("bms-bal-state", comp);
 		} else if (comp == &syms_vesc.temp_adc_num) {
-			get_add_symbol("bms-temp-adc-num", comp);
+			lbm_add_symbol_const("bms-temp-adc-num", comp);
 		} else if (comp == &syms_vesc.temps_adc) {
-			get_add_symbol("bms-temps-adc", comp);
+			lbm_add_symbol_const("bms-temps-adc", comp);
 		} else if (comp == &syms_vesc.temp_ic) {
-			get_add_symbol("bms-temp-ic", comp);
+			lbm_add_symbol_const("bms-temp-ic", comp);
 		} else if (comp == &syms_vesc.temp_hum) {
-			get_add_symbol("bms-temp-hum", comp);
+			lbm_add_symbol_const("bms-temp-hum", comp);
 		} else if (comp == &syms_vesc.hum) {
-			get_add_symbol("bms-hum", comp);
+			lbm_add_symbol_const("bms-hum", comp);
 		} else if (comp == &syms_vesc.pres) {
-			get_add_symbol("bms-pres", comp);
+			lbm_add_symbol_const("bms-pres", comp);
 		} else if (comp == &syms_vesc.temp_max_cell) {
-			get_add_symbol("bms-temp-cell-max", comp);
+			lbm_add_symbol_const("bms-temp-cell-max", comp);
 		} else if (comp == &syms_vesc.soc) {
-			get_add_symbol("bms-soc", comp);
+			lbm_add_symbol_const("bms-soc", comp);
 		} else if (comp == &syms_vesc.soh) {
-			get_add_symbol("bms-soh", comp);
+			lbm_add_symbol_const("bms-soh", comp);
 		} else if (comp == &syms_vesc.can_id) {
-			get_add_symbol("bms-can-id", comp);
+			lbm_add_symbol_const("bms-can-id", comp);
 		} else if (comp == &syms_vesc.ah_cnt_chg_total) {
-			get_add_symbol("bms-ah-cnt-chg-total", comp);
+			lbm_add_symbol_const("bms-ah-cnt-chg-total", comp);
 		} else if (comp == &syms_vesc.wh_cnt_chg_total) {
-			get_add_symbol("bms-wh-cnt-chg-total", comp);
+			lbm_add_symbol_const("bms-wh-cnt-chg-total", comp);
 		} else if (comp == &syms_vesc.ah_cnt_dis_total) {
-			get_add_symbol("bms-ah-cnt-dis-total", comp);
+			lbm_add_symbol_const("bms-ah-cnt-dis-total", comp);
 		} else if (comp == &syms_vesc.wh_cnt_dis_total) {
-			get_add_symbol("bms-wh-cnt-dis-total", comp);
+			lbm_add_symbol_const("bms-wh-cnt-dis-total", comp);
 		} else if (comp == &syms_vesc.msg_age) {
-			get_add_symbol("bms-msg-age", comp);
+			lbm_add_symbol_const("bms-msg-age", comp);
 		} else if (comp == &syms_vesc.chg_allowed) {
-			get_add_symbol("bms-chg-allowed", comp);
+			lbm_add_symbol_const("bms-chg-allowed", comp);
 		}
 
 		else if (comp == &syms_vesc.pin_mode_out) {
-			get_add_symbol("pin-mode-out", comp);
+			lbm_add_symbol_const("pin-mode-out", comp);
 		} else if (comp == &syms_vesc.pin_mode_od) {
-			get_add_symbol("pin-mode-od", comp);
+			lbm_add_symbol_const("pin-mode-od", comp);
 		} else if (comp == &syms_vesc.pin_mode_od_pu) {
-			get_add_symbol("pin-mode-od-pu", comp);
+			lbm_add_symbol_const("pin-mode-od-pu", comp);
 		} else if (comp == &syms_vesc.pin_mode_od_pd) {
-			get_add_symbol("pin-mode-od-pd", comp);
+			lbm_add_symbol_const("pin-mode-od-pd", comp);
 		} else if (comp == &syms_vesc.pin_mode_in) {
-			get_add_symbol("pin-mode-in", comp);
+			lbm_add_symbol_const("pin-mode-in", comp);
 		} else if (comp == &syms_vesc.pin_mode_in_pu) {
-			get_add_symbol("pin-mode-in-pu", comp);
+			lbm_add_symbol_const("pin-mode-in-pu", comp);
 		} else if (comp == &syms_vesc.pin_mode_in_pd) {
-			get_add_symbol("pin-mode-in-pd", comp);
+			lbm_add_symbol_const("pin-mode-in-pd", comp);
 		} else if (comp == &syms_vesc.pin_mode_analog) {
-			get_add_symbol("pin-mode-analog", comp);
+			lbm_add_symbol_const("pin-mode-analog", comp);
 		}
 
 		else if (comp == &syms_vesc.hw_name) {
-			get_add_symbol("hw-name", comp);
+			lbm_add_symbol_const("hw-name", comp);
 		} else if (comp == &syms_vesc.fw_ver) {
-			get_add_symbol("fw-ver", comp);
+			lbm_add_symbol_const("fw-ver", comp);
 		} else if (comp == &syms_vesc.uuid) {
-			get_add_symbol("uuid", comp);
+			lbm_add_symbol_const("uuid", comp);
 		} else if (comp == &syms_vesc.hw_type) {
-			get_add_symbol("hw-type", comp);
+			lbm_add_symbol_const("hw-type", comp);
 		}
 
 		else if (comp == &syms_vesc.rate_100k) {
-			get_add_symbol("rate-100k", comp);
+			lbm_add_symbol_const("rate-100k", comp);
 		} else if (comp == &syms_vesc.rate_200k) {
-			get_add_symbol("rate-200k", comp);
+			lbm_add_symbol_const("rate-200k", comp);
 		} else if (comp == &syms_vesc.rate_400k) {
-			get_add_symbol("rate-400k", comp);
+			lbm_add_symbol_const("rate-400k", comp);
 		} else if (comp == &syms_vesc.rate_700k) {
-			get_add_symbol("rate-700k", comp);
+			lbm_add_symbol_const("rate-700k", comp);
 		}
 
 		else if (comp == &syms_vesc.controller_id) {
-			get_add_symbol("controller-id", comp);
+			lbm_add_symbol_const("controller-id", comp);
 		} else if (comp == &syms_vesc.can_baud_rate) {
-			get_add_symbol("can-baud-rate", comp);
+			lbm_add_symbol_const("can-baud-rate", comp);
 		} else if (comp == &syms_vesc.can_status_rate_hz) {
-			get_add_symbol("can-status-rate-hz", comp);
+			lbm_add_symbol_const("can-status-rate-hz", comp);
 		} else if (comp == &syms_vesc.wifi_mode) {
-			get_add_symbol("wifi-mode", comp);
+			lbm_add_symbol_const("wifi-mode", comp);
 		} else if (comp == &syms_vesc.wifi_sta_ssid) {
-			get_add_symbol("wifi-sta-ssid", comp);
+			lbm_add_symbol_const("wifi-sta-ssid", comp);
 		} else if (comp == &syms_vesc.wifi_sta_key) {
-			get_add_symbol("wifi-sta-key", comp);
+			lbm_add_symbol_const("wifi-sta-key", comp);
 		} else if (comp == &syms_vesc.wifi_ap_ssid) {
-			get_add_symbol("wifi-ap-ssid", comp);
+			lbm_add_symbol_const("wifi-ap-ssid", comp);
 		} else if (comp == &syms_vesc.wifi_ap_key) {
-			get_add_symbol("wifi-ap-key", comp);
+			lbm_add_symbol_const("wifi-ap-key", comp);
 		} else if (comp == &syms_vesc.use_tcp_local) {
-			get_add_symbol("use-tcp-local", comp);
+			lbm_add_symbol_const("use-tcp-local", comp);
 		} else if (comp == &syms_vesc.use_tcp_hub) {
-			get_add_symbol("use-tcp-hub", comp);
+			lbm_add_symbol_const("use-tcp-hub", comp);
 		} else if (comp == &syms_vesc.tcp_hub_url) {
-			get_add_symbol("tcp-hub-url", comp);
+			lbm_add_symbol_const("tcp-hub-url", comp);
 		} else if (comp == &syms_vesc.tcp_hub_port) {
-			get_add_symbol("tcp-hub-port", comp);
+			lbm_add_symbol_const("tcp-hub-port", comp);
 		} else if (comp == &syms_vesc.tcp_hub_id) {
-			get_add_symbol("tcp-hub-id", comp);
+			lbm_add_symbol_const("tcp-hub-id", comp);
 		} else if (comp == &syms_vesc.tcp_hub_pass) {
-			get_add_symbol("tcp-hub-pass", comp);
+			lbm_add_symbol_const("tcp-hub-pass", comp);
 		} else if (comp == &syms_vesc.ble_mode) {
-			get_add_symbol("ble-mode", comp);
+			lbm_add_symbol_const("ble-mode", comp);
 		} else if (comp == &syms_vesc.ble_name) {
-			get_add_symbol("ble-name", comp);
+			lbm_add_symbol_const("ble-name", comp);
 		} else if (comp == &syms_vesc.ble_pin) {
-			get_add_symbol("ble-pin", comp);
+			lbm_add_symbol_const("ble-pin", comp);
 		}
 
 		else if (comp == &syms_vesc.copy) {
-			get_add_symbol("copy", comp);
+			lbm_add_symbol_const("copy", comp);
 		} else if (comp == &syms_vesc.mut) {
-			get_add_symbol("mut", comp);
+			lbm_add_symbol_const("mut", comp);
 		}
 		
 		else if (comp == &syms_vesc.half_duplex) {
-			get_add_symbol("half-duplex", comp);
+			lbm_add_symbol_const("half-duplex", comp);
 		}
 	}
 
@@ -460,10 +454,14 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 	} else if (compare_symbol(name, &syms_vesc.wh_cnt)) {
 		res = get_or_set_float(set, &val->wh_cnt, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.cell_num)) {
+		if (set && lbm_dec_as_i32(set_arg) >= BMS_MAX_CELLS) {
+			return ENC_SYM_EERROR;
+		}
+
 		res = get_or_set_i(set, &val->cell_num, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.v_cell)) {
 		if (argn != 2 || !lbm_is_number(args[1])) {
-			return ENC_SYM_EERROR;
+			return ENC_SYM_TERROR;
 		}
 
 		int c = lbm_dec_as_i32(args[1]);
@@ -474,7 +472,7 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &val->v_cell[c], &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.bal_state)) {
 		if (argn != 2 || !lbm_is_number(args[1])) {
-			return ENC_SYM_EERROR;
+			return ENC_SYM_TERROR;
 		}
 
 		int c = lbm_dec_as_i32(args[1]);
@@ -484,6 +482,10 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 
 		res = get_or_set_bool(set, &val->bal_state[c], &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temp_adc_num)) {
+		if (set && lbm_dec_as_i32(set_arg) >= BMS_MAX_TEMPS) {
+			return ENC_SYM_EERROR;
+		}
+
 		res = get_or_set_i(set, &val->temp_adc_num, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temps_adc)) {
 		if (argn != 2 || !lbm_is_number(args[1])) {
@@ -571,6 +573,16 @@ static lbm_value ext_bms_force_balance(lbm_value *args, lbm_uint argn) {
 	data[1] = force;
 
 	bms_process_cmd(data, 2, 0);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_bms_zero_offset(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	uint8_t data[1];
+	data[0] = COMM_BMS_ZERO_CURRENT_OFFSET;
+	bms_process_cmd(data, 1, 0);
 
 	return ENC_SYM_TRUE;
 }
@@ -2187,12 +2199,28 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 		wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 		esp_wifi_init(&cfg);
 		esp_wifi_set_storage(WIFI_STORAGE_RAM);
-		esp_wifi_set_mode(WIFI_MODE_AP);
+		esp_wifi_set_mode(WIFI_MODE_APSTA);
 
-		// Disable power save mode. Does not work with bluetooth.
 		if (backup.config.ble_mode == BLE_MODE_DISABLED) {
 			esp_wifi_set_ps(WIFI_PS_NONE);
 		}
+
+		// The event handler allows some of the wifi-extensions
+		// to work.
+		esp_event_handler_instance_t instance_any_id;
+		esp_event_handler_instance_register(
+				WIFI_EVENT,
+				ESP_EVENT_ANY_ID,
+				&comm_wifi_event_handler,
+				NULL,
+				&instance_any_id);
+
+		// Enable FTM responder
+		wifi_config_t wifi_config;
+		memset(&wifi_config, 0, sizeof(wifi_config));
+		esp_wifi_get_config(WIFI_IF_AP, &wifi_config);
+		wifi_config.ap.ftm_responder = true;
+		esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
 
 		esp_wifi_start();
 	}
@@ -2399,6 +2427,18 @@ static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(bwt == WIFI_BW_HT20 ? 20 : 40);
 }
 
+static lbm_value ext_wifi_start(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	esp_wifi_start();
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_wifi_stop(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	esp_wifi_stop();
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_esp_now_send(lbm_value *args, lbm_uint argn) {
 	if (!esp_now_initialized) {
 		lbm_set_error_reason(esp_init_msg);
@@ -2554,13 +2594,17 @@ static esp_err_t i2c_tx_rx(uint8_t addr,
 	return res;
 }
 
+static char *i2c_not_started_msg = "I2C not started";
+
 static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 	if (argn != 2 && argn != 3) {
-		return ENC_SYM_EERROR;
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
 	}
 
 	if (!i2c_started) {
-		return lbm_enc_i(0);
+		lbm_set_error_reason(i2c_not_started_msg);
+		return ENC_SYM_EERROR;
 	}
 
 	uint16_t addr = 0;
@@ -2568,39 +2612,40 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 	size_t rxlen = 0;
 	uint8_t *txbuf = 0;
 	uint8_t *rxbuf = 0;
-
-	const unsigned int max_len = 20;
-	uint8_t to_send[max_len];
+	bool is_arr = lbm_is_array_r(args[1]);
 
 	if (!lbm_is_number(args[0])) {
-		return ENC_SYM_EERROR;
+		return ENC_SYM_TERROR;
 	}
 	addr = lbm_dec_as_u32(args[0]);
 
-	if (lbm_is_array_r(args[1])) {
+	if (is_arr) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
 		txbuf = (uint8_t*)array->data;
 		txlen = array->size;
 	} else {
-		lbm_value curr = args[1];
-		while (lbm_is_cons(curr)) {
-			lbm_value  arg = lbm_car(curr);
-
-			if (lbm_is_number(arg)) {
-				to_send[txlen++] = lbm_dec_as_u32(arg);
-			} else {
-				return ENC_SYM_EERROR;
-			}
-
-			if (txlen == max_len) {
-				break;
-			}
-
-			curr = lbm_cdr(curr);
-		}
+		txlen = lbm_list_length(args[1]);
 
 		if (txlen > 0) {
-			txbuf = to_send;
+			txbuf = lbm_malloc(txlen);
+			if (!txbuf) {
+				return ENC_SYM_MERROR;
+			}
+
+			lbm_value curr = args[1];
+			int ind = 0;
+			while (lbm_is_cons(curr)) {
+				lbm_value  arg = lbm_car(curr);
+
+				if (lbm_is_number(arg)) {
+					txbuf[ind++] = lbm_dec_as_u32(arg);
+				} else {
+					lbm_free(txbuf);
+					return ENC_SYM_TERROR;
+				}
+
+				curr = lbm_cdr(curr);
+			}
 		}
 	}
 
@@ -2610,7 +2655,34 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 		rxlen = array->size;
 	}
 
-	return lbm_enc_i(i2c_tx_rx(addr, txbuf, txlen, rxbuf, rxlen));
+	esp_err_t res = i2c_tx_rx(addr, txbuf, txlen, rxbuf, rxlen);
+
+	if (!is_arr && txbuf) {
+		lbm_free(txbuf);
+	}
+
+	return lbm_enc_i(res);
+}
+
+static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	if (!i2c_started) {
+		lbm_set_error_reason(i2c_not_started_msg);
+		return ENC_SYM_EERROR;
+	}
+
+	uint8_t address = lbm_dec_as_u32(args[0]);
+	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
+	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
+	i2c_master_stop(cmd);
+	esp_err_t ret = i2c_master_cmd_begin(0, cmd, 50 / portTICK_PERIOD_MS);
+	i2c_cmd_link_delete(cmd);
+	xSemaphoreGive(i2c_mutex);
+
+	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
@@ -2672,6 +2744,40 @@ static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 
 	gpio_reset_pin(pin);
 	gpio_config(&gpconf);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_gpio_hold(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int pin = lbm_dec_as_i32(args[0]);
+	int state = lbm_dec_as_i32(args[1]);
+
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
+		return ENC_SYM_EERROR;
+	}
+
+	if (state) {
+		gpio_hold_en(pin);
+	} else {
+		gpio_hold_dis(pin);
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_gpio_hold_deepsleep(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int state = lbm_dec_as_i32(args[0]);
+
+	if (state) {
+		gpio_deep_sleep_hold_en();
+	} else {
+		gpio_deep_sleep_hold_dis();
+	}
 
 	return ENC_SYM_TRUE;
 }
@@ -2749,53 +2855,6 @@ static lbm_value ext_crc32(lbm_value *args, lbm_uint argn) {
 	}
 
 	return lbm_enc_u32(crc32_with_init((uint8_t*)array->data, len, lbm_dec_as_u32(args[1])));
-}
-
-static lbm_value ext_buf_find(lbm_value *args, lbm_uint argn) {
-	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0]) || !lbm_is_array_r(args[1])) {
-		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
-		return ENC_SYM_TERROR;
-	}
-
-	lbm_array_header_t *buf = (lbm_array_header_t *)lbm_car(args[0]);
-	lbm_array_header_t *seq = (lbm_array_header_t *)lbm_car(args[1]);
-
-	const char* buf_data = (const char*)buf->data;
-	const char* seq_data = (const char*)seq->data;
-
-	int res = -1;
-
-	int occurrence = 0;
-	if (argn == 3) {
-		if (!lbm_is_number(args[2])) {
-			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
-			return ENC_SYM_TERROR;
-		}
-
-		occurrence = lbm_dec_as_i32(args[2]);
-	}
-
-	for (unsigned int i = 0;i < (buf->size - seq->size + 1);i++) {
-		bool same = true;
-
-		for (unsigned int j = 0;j < (seq->size - 1);j++) {
-			if (buf_data[i + j] != seq_data[j]) {
-				same = false;
-				break;
-			}
-		}
-
-		if (same) {
-			if (occurrence == 0) {
-				res = i;
-				break;
-			} else {
-				occurrence--;
-			}
-		}
-	}
-
-	return lbm_enc_i(res);
 }
 
 /**
@@ -3217,6 +3276,23 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	esp_bluedroid_disable();
+	esp_bt_controller_disable();
+	esp_wifi_stop();
+
+	float sleep_time = lbm_dec_as_float(args[0]);
+	if (sleep_time > 0) {
+		esp_sleep_enable_timer_wakeup((uint32_t)(sleep_time * 1.0e6));
+	}
+
+	esp_light_sleep_start();
+
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 
@@ -3236,6 +3312,19 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
 #endif
 	return ENC_SYM_TRUE;
+}
+
+RTC_DATA_ATTR char rtc_data[4096];
+
+static lbm_value ext_rtc_data(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	lbm_value result;
+	if (!lbm_lift_array(&result, rtc_data, (sizeof(rtc_data)))) {
+		return ENC_SYM_MERROR;
+	}
+
+	return result;
 }
 
 static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
@@ -3404,10 +3493,43 @@ static lbm_value ext_f_connect(lbm_value *args, lbm_uint argn) {
 	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
+// (f-connect-nand pin-mosi pin-miso pin-sck pin-cs optSpiSpeed) -> t or nil
+static lbm_value ext_f_connect_nand(lbm_value *args, lbm_uint argn) {
+	if (argn != 4 && argn != 5) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	LBM_CHECK_NUMBER_ALL();
+
+	int pin_mosi = lbm_dec_as_u32(args[0]);
+	int pin_miso = lbm_dec_as_u32(args[1]);
+	int pin_sck = lbm_dec_as_u32(args[2]);
+	int pin_cs = lbm_dec_as_u32(args[3]);
+
+	int spi_speed = SDMMC_FREQ_DEFAULT;
+	if (argn >= 5) {
+		spi_speed = lbm_dec_as_u32(args[4]);
+	}
+
+	if (!utils_gpio_is_valid(pin_mosi) ||
+			!utils_gpio_is_valid(pin_miso) ||
+			!utils_gpio_is_valid(pin_sck) ||
+			!utils_gpio_is_valid(pin_cs)) {
+		lbm_set_error_reason((char*)string_pin_invalid);
+		return ENC_SYM_TERROR;
+	}
+
+	bool res = log_mount_nand_flash(pin_mosi, pin_miso, pin_sck, pin_cs, spi_speed);
+
+	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
 // (f-disconnect) -> t
 static lbm_value ext_f_disconnect(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	log_unmount_card();
+	log_unmount_nand_flash();
 	return ENC_SYM_TRUE;
 }
 
@@ -3427,8 +3549,8 @@ static lbm_value ext_f_open(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(file_basepath) + 1];
+	strcpy(path_full, file_basepath);
 	strcat(path_full, path);
 
 	FILE *f = fopen(path_full, mode);
@@ -3498,7 +3620,7 @@ static lbm_value ext_f_read(lbm_value *args, lbm_uint argn) {
 			res = ENC_SYM_EERROR;
 		} else {
 			if (rd < sz) {
-				lbm_memory_shrink(arr->data, rd);
+				lbm_memory_shrink_bytes(arr->data, rd);
 				arr->size = rd;
 			}
 		}
@@ -3610,8 +3732,8 @@ static lbm_value ext_f_mkdir(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(file_basepath) + 1];
+	strcpy(path_full, file_basepath);
 	strcat(path_full, path);
 
 	return mkdir(path_full, 0775) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -3627,8 +3749,8 @@ static lbm_value ext_f_rm(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(file_basepath) + 1];
+	strcpy(path_full, file_basepath);
 	strcat(path_full, path);
 
 	return utils_rmtree(path_full) ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -3644,8 +3766,8 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	char path_full[strlen(path) + strlen("/sdcard/") + 1];
-	strcpy(path_full, "/sdcard/");
+	char path_full[strlen(path) + strlen(file_basepath) + 1];
+	strcpy(path_full, file_basepath);
 	strcat(path_full, path);
 
 	lbm_value res = ENC_SYM_NIL;
@@ -3732,8 +3854,8 @@ static lbm_value ext_f_size(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_TERROR;
 		}
 
-		char path_full[strlen(path) + strlen("/sdcard/") + 1];
-		strcpy(path_full, "/sdcard/");
+		char path_full[strlen(path) + strlen(file_basepath) + 1];
+		strcpy(path_full, file_basepath);
 		strcat(path_full, path);
 
 		FILE *f = fopen(path_full, "r");
@@ -3747,13 +3869,59 @@ static lbm_value ext_f_size(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i32(sz);
 }
 
+// (f-rename oldname newname)
+static lbm_value ext_f_rename(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	char *old_name = dec_str_check(args[0]);
+	if (!old_name) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	char *new_name = dec_str_check(args[1]);
+	if (!new_name) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	char *old_full = lbm_malloc(strlen(old_name) + strlen(file_basepath) + 1);
+	if (!old_full) {
+		return ENC_SYM_MERROR;
+	}
+
+	char *new_full = lbm_malloc(strlen(new_name) + strlen(file_basepath) + 1);
+	if (!new_full) {
+		lbm_free(old_full);
+		return ENC_SYM_MERROR;
+	}
+
+	strcpy(old_full, file_basepath);
+	strcat(old_full, old_name);
+
+	strcpy(new_full, file_basepath);
+	strcat(new_full, new_name);
+
+	lbm_value res = rename(old_full, new_full) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
+
+	lbm_free(old_full);
+	lbm_free(new_full);
+
+	return res;
+}
+
 // (f-fatinfo) -> (MB-free MB-total)
 static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
+	// Remove last / in name
+	char basepath[strlen(file_basepath)];
+	strcpy(basepath, file_basepath);
+	basepath[strlen(file_basepath) - 1] = '\0';
+
 	uint64_t total = 0;
 	uint64_t free = 0;
-	esp_vfs_fat_info("/sdcard", &total, &free);
+	esp_vfs_fat_info(basepath, &total, &free);
 	total /= 1024;
 	total /= 1024;
 	free /= 1024;
@@ -3865,6 +4033,7 @@ static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID
 	lbm_value res = ENC_SYM_EERROR;
 	if (array) {
 		if (array->size > 500) {
+			lbm_set_error_reason("At most 500 bytes can be written at a time.");
 			return ENC_SYM_TERROR;
 		}
 
@@ -3995,6 +4164,94 @@ static lbm_value ext_lbm_write(lbm_value *args, lbm_uint argn) {
 // (qml-write offset data optCanId) -> t, nil
 static lbm_value ext_qml_write(lbm_value *args, lbm_uint argn) {
 	return fw_lbm_qml_write(args, argn, COMM_QMLUI_WRITE);
+}
+
+static const esp_partition_t *update_partition = NULL;
+static const void *update_partition_data = NULL;
+static esp_partition_mmap_handle_t update_partition_handle = 0;
+
+static bool fw_map_buffer(void) {
+	if (update_partition) {
+		return true;
+	}
+
+	if (!update_partition) {
+		update_partition = esp_ota_get_next_update_partition(NULL);
+
+		esp_err_t res = esp_partition_mmap(update_partition, 0, update_partition->size,
+				ESP_PARTITION_MMAP_DATA, &update_partition_data, &update_partition_handle);
+
+		if (res != ESP_OK) {
+			update_partition = NULL;
+			lbm_set_error_reason("FW buffer mmap failed");
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// (fw-data optOffset, optLen)
+static lbm_value ext_fw_data(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_NUMBER_ALL();
+
+	if (!fw_map_buffer()) {
+		return ENC_SYM_EERROR;
+	}
+
+	uint32_t offset = 0;
+	if (argn >= 1) {
+		offset = lbm_dec_as_u32(args[0]);
+	}
+
+	uint32_t len = update_partition->size - offset;
+	if (argn >= 2) {
+		len = lbm_dec_as_u32(args[1]);
+	}
+
+	if (offset >= update_partition->size) {
+		return ENC_SYM_EERROR;
+	}
+
+	if ((offset + len) > update_partition->size) {
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value val;
+	lbm_lift_array(&val, (char*)update_partition_data + offset, len);
+	return val;
+}
+
+// (fw-write-raw offset data)
+static lbm_value ext_fw_write_raw(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	if (!lbm_is_number(args[0])) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	uint32_t offset = lbm_dec_as_u32(args[0]);
+
+	lbm_array_header_t *arr_in = NULL;
+	if (lbm_is_array_r(args[1])) {
+		arr_in = (lbm_array_header_t *)lbm_car(args[1]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	if (!fw_map_buffer()) {
+		return ENC_SYM_EERROR;
+	}
+
+	if ((offset + arr_in->size) > update_partition->size) {
+		lbm_set_error_reason("Trying to write outside of buffer");
+		return ENC_SYM_EERROR;
+	}
+
+	esp_err_t res = esp_partition_write(update_partition, offset, arr_in->data, arr_in->size);
+
+	return res == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static void lbm_run_task(void *arg) {
@@ -4644,6 +4901,467 @@ static lbm_value ext_pwm_set_duty(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float((float)duty_i / (float)pwm_max[chan]);
 }
 
+// Compression
+
+typedef struct {
+	FILE *input;
+	unsigned int input_length;
+	unsigned char input_chunk[256];
+	unsigned int input_chunk_start;
+	unsigned int input_chunk_end;
+} read_file_state;
+
+typedef struct {
+	unsigned char *data;
+	unsigned int len;
+} read_buf_state;
+
+static unsigned int my_lz_read_file(void *udata, unsigned int offset) {
+	read_file_state *st = (read_file_state *) udata;
+
+	// Most reads should be cached here with no file I/O.
+	if (offset >= st->input_chunk_start && offset < st->input_chunk_end) {
+		return (unsigned int) st->input_chunk[offset - st->input_chunk_start];
+	}
+
+	// Out-of-bounds read, no file I/O.
+	if (offset >= st->input_length) {
+		commands_printf_lisp("Unzip: OOB read (offset %ld)\n", (long)offset);
+		return 0x100U;
+	}
+
+	/* Load in new chunk so that desired offset is in the middle.
+	 * This makes backwards and forwards scanning reasonably
+	 * efficient.
+	 */
+	int chunk_start = offset - sizeof(st->input_chunk) / 2;
+	if (chunk_start < 0) {
+		chunk_start = 0;
+	}
+	if (fseek(st->input, (size_t) chunk_start, SEEK_SET) != 0) {
+		commands_printf_lisp("Unzip: fseek failed");
+		return 0x100U;
+	}
+
+	size_t got = fread((void *) st->input_chunk, 1, sizeof(st->input_chunk), st->input);
+	st->input_chunk_start = chunk_start;
+	st->input_chunk_end = chunk_start + got;
+
+	// Recheck original request
+	if (offset >= st->input_chunk_start && offset < st->input_chunk_end) {
+		return (unsigned int) st->input_chunk[offset - st->input_chunk_start];
+	}
+
+	commands_printf_lisp("Unzip: file read error");
+	return 0x100U;
+}
+
+static unsigned int my_lz_read_buf(void *udata, unsigned int offset) {
+	read_buf_state *st = (read_buf_state*)udata;
+	if (offset < st->len) {
+		return st->data[offset];
+	}
+
+	return 0x100;
+}
+
+typedef struct {
+	unsigned int offset;
+	unsigned int buf_offset;
+	unsigned char buffer[256];
+} write_file_state;
+
+static void my_lz_write(void *udata, int byte) {
+	write_file_state *st = (write_file_state *)udata;
+
+	// If byte is negative it means that it is an index in the past of the output
+	// from where data should be copied to the front of the output.
+	if (byte < 0) {
+		byte = -byte;
+
+		if (byte <= st->buf_offset) {
+			byte = st->buffer[st->buf_offset - byte];
+		} else {
+			byte = ((unsigned char*)update_partition_data)[st->offset - (byte - st->buf_offset)];
+		}
+	}
+
+	st->buffer[st->buf_offset++] = byte;
+
+	if (st->buf_offset == sizeof(st->buffer)) {
+		esp_partition_write(update_partition, st->offset, st->buffer, st->buf_offset);
+		st->offset += st->buf_offset;
+		st->buf_offset = 0;
+	}
+}
+
+static void my_lz_write_sync(void *udata) {
+	write_file_state *st = (write_file_state *)udata;
+
+	if (st->buf_offset > 0) {
+		esp_partition_write(update_partition, st->offset, st->buffer, st->buf_offset);
+		st->offset += st->buf_offset;
+		st->buf_offset = 0;
+	}
+}
+
+typedef struct {
+	lbm_cid id;
+	lowzip_state *st;
+	read_file_state *st_file;
+	read_buf_state *st_buf;
+	write_file_state *st_write;
+	FILE *f_out;
+	unsigned int buflen;
+} unzip_args;
+
+static void unzip_task(void *arg) {
+	unzip_args *a = (unzip_args*)arg;
+
+	// Use restart counter to tell if LBM has been restarted while this thread
+	// was running.
+	int restart_cnt = lispif_get_restart_cnt();
+
+	uint32_t erase_len = (a->buflen / update_partition->erase_size) * update_partition->erase_size;
+	if ((a->buflen % update_partition->erase_size) != 0) {
+		erase_len += update_partition->erase_size;
+	}
+
+	esp_partition_erase_range(update_partition, 0, erase_len);
+
+	if (restart_cnt == lispif_get_restart_cnt()) {
+		lowzip_get_data(a->st);
+	}
+
+	if (restart_cnt == lispif_get_restart_cnt()) {
+		lbm_value res = ENC_SYM_NIL;
+		if (!a->st->have_error) {
+			unsigned int count = fwrite(update_partition_data, 1, a->buflen, a->f_out);
+			fsync(fileno(a->f_out));
+			res = count == a->buflen ? ENC_SYM_TRUE : ENC_SYM_NIL;
+
+			if (!res) {
+				commands_printf_lisp("Unzip: could not write all data to output file");
+			}
+		} else {
+			commands_printf_lisp("Unzip: get_data error in extension");
+		}
+
+		lbm_free(a->st);
+		lbm_free(a->st_file);
+		lbm_free(a->st_buf);
+		lbm_free(a->st_write);
+		lbm_free(a);
+
+		lbm_unblock_ctx_unboxed(a->id, res);
+	}
+
+	vTaskDelete(NULL);
+}
+
+// (unzip input fileInZip optOutputFile)
+static lbm_value ext_unzip(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 && argn != 3) {
+		return ENC_SYM_TERROR;
+	}
+
+	FILE *f_in = NULL;
+	lbm_array_header_t *arr_in = NULL;
+	if (lbm_is_number(args[0])) {
+		f_in = file_from_arg(args[0]);
+		if (!f_in) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+	} else if (lbm_is_array_r(args[0])) {
+		arr_in = (lbm_array_header_t *)lbm_car(args[0]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	int ind_in_zip = 0;
+	char *name_in_zip = NULL;
+	if (lbm_is_number(args[1])) {
+		ind_in_zip = lbm_dec_as_i32(args[1]);
+		if (ind_in_zip < 0) {
+			return ENC_SYM_TERROR;
+		}
+	} else {
+		name_in_zip = lbm_dec_str(args[1]);
+		if (!name_in_zip) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	FILE *f_out = NULL;
+	if (argn == 3) {
+		f_out = file_from_arg(args[2]);
+		if (!f_out) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+	}
+
+	lowzip_state *st = NULL;
+	st = (lowzip_state *) lbm_malloc(sizeof(lowzip_state));
+	if (!st) {
+		return ENC_SYM_MERROR;
+	}
+
+	memset((void *) st, 0, sizeof(lowzip_state));
+
+	read_file_state *st_file = NULL;
+	read_buf_state *st_buf = NULL;
+
+	if (f_in) {
+		st_file = (read_file_state*)lbm_malloc(sizeof(read_file_state));
+		if (!st_file) {
+			lbm_free(st);
+			return ENC_SYM_MERROR;
+		}
+		memset((void *)st_file, 0, sizeof(read_file_state));
+
+		fseek(f_in, 0, SEEK_END);
+
+		st_file->input = f_in;
+		st_file->input_length = ftell(f_in);
+
+		st->udata = (void *)st_file;
+		st->read_callback = my_lz_read_file;
+		st->zip_length = st_file->input_length;
+	} else {
+		st_buf = (read_buf_state*)lbm_malloc(sizeof(read_buf_state));
+		if (!st_buf) {
+			lbm_free(st);
+			return ENC_SYM_MERROR;
+		}
+		memset((void *)st_buf, 0, sizeof(read_buf_state));
+
+		st_buf->data = (unsigned char*)arr_in->data;
+		st_buf->len = arr_in->size;
+
+		st->udata = st_buf;
+		st->read_callback = my_lz_read_buf;
+		st->zip_length = st_buf->len;
+	}
+
+	lowzip_init_archive(st);
+
+	if (st->have_error) {
+		lbm_set_error_reason("Invalid zip archive");
+		lbm_free(st);
+		lbm_free(st_file);
+		lbm_free(st_buf);
+		return ENC_SYM_EERROR;
+	}
+
+	lowzip_file *fileinfo = lowzip_locate_file(st, ind_in_zip, name_in_zip);
+	if (!fileinfo) {
+		lbm_set_error_reason("Invalid file in zip");
+		lbm_free(st);
+		lbm_free(st_file);
+		lbm_free(st_buf);
+		return ENC_SYM_EERROR;
+	}
+
+	if (f_out) {
+		write_file_state *st_write = lbm_malloc(sizeof(write_file_state));
+		if (!st_write) {
+			lbm_free(st);
+			lbm_free(st_file);
+			lbm_free(st_buf);
+			return ENC_SYM_MERROR;
+		}
+
+		memset((void *)st_write, 0, sizeof(write_file_state));
+
+		if (!fw_map_buffer()) {
+			lbm_free(st);
+			lbm_free(st_file);
+			lbm_free(st_buf);
+			lbm_free(st_write);
+			return ENC_SYM_EERROR;
+		}
+
+		unsigned int buflen = fileinfo->uncompressed_size;
+
+		if (buflen > update_partition->size) {
+			update_partition = NULL;
+			lbm_free(st);
+			lbm_free(st_file);
+			lbm_free(st_buf);
+			lbm_free(st_write);
+			lbm_set_error_reason("Too large file");
+			return ENC_SYM_EERROR;
+		}
+
+		st->output_start = (unsigned char *)update_partition_data;
+		st->output_end = st->output_start + buflen;
+		st->output_next = st->output_start;
+
+		st->write_callback = my_lz_write;
+		st->write_sync_callback = my_lz_write_sync;
+		st->udata_write = st_write;
+
+		unzip_args *a;
+		a = (unzip_args*)lbm_malloc(sizeof(unzip_args));
+
+		if (!a) {
+			lbm_free(st);
+			lbm_free(st_file);
+			lbm_free(st_buf);
+			lbm_free(st_write);
+			return ENC_SYM_MERROR;
+		}
+
+		a->id = lbm_get_current_cid();
+		a->st = st;
+		a->st_file = st_file;
+		a->st_buf = st_buf;
+		a->st_write = st_write;
+		a->f_out = f_out;
+		a->buflen = buflen;
+
+		xTaskCreatePinnedToCore(unzip_task, "Unzip", 3072, a, 5, NULL, tskNO_AFFINITY);
+
+		lbm_block_ctx_from_extension();
+		return ENC_SYM_TRUE;
+	} else {
+		lbm_value res = ENC_SYM_MERROR;
+		if (lbm_create_array(&res, fileinfo->uncompressed_size)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+
+			st->output_start = (unsigned char *)arr->data;
+			st->output_end = st->output_start + fileinfo->uncompressed_size;
+			st->output_next = st->output_start;
+
+			lowzip_get_data(st);
+
+			if (st->have_error) {
+				commands_printf_lisp("Unzip: get_data error in extension");
+				res = ENC_SYM_NIL;
+			}
+		}
+
+		lbm_free(st);
+		lbm_free(st_file);
+		lbm_free(st_buf);
+		return res;
+	}
+}
+
+// (zip-ls input)
+static lbm_value ext_zip_ls(lbm_value *args, lbm_uint argn) {
+	if (argn != 1) {
+		return ENC_SYM_TERROR;
+	}
+
+	FILE *f_in = NULL;
+	lbm_array_header_t *arr_in = NULL;
+	if (lbm_is_number(args[0])) {
+		f_in = file_from_arg(args[0]);
+		if (!f_in) {
+			lbm_set_error_reason((char*)str_f_not_open);
+			return ENC_SYM_EERROR;
+		}
+	} else if (lbm_is_array_r(args[0])) {
+		arr_in = (lbm_array_header_t *)lbm_car(args[0]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+
+	lowzip_state *st = NULL;
+	st = (lowzip_state *) lbm_malloc(sizeof(lowzip_state));
+	if (!st) {
+		return ENC_SYM_MERROR;
+	}
+
+	memset((void *) st, 0, sizeof(lowzip_state));
+
+	read_file_state *st_file = NULL;
+	read_buf_state st_buf;
+
+	if (f_in) {
+		st_file = (read_file_state *) lbm_malloc(sizeof(read_file_state));
+		if (!st_file) {
+			lbm_free(st);
+			return ENC_SYM_MERROR;
+		}
+
+		memset((void *)st_file, 0, sizeof(read_file_state));
+		fseek(f_in, 0, SEEK_END);
+
+		st_file->input = f_in;
+		st_file->input_length = ftell(f_in);
+
+		st->udata = (void *)st_file;
+		st->read_callback = my_lz_read_file;
+		st->zip_length = st_file->input_length;
+	} else {
+		st_buf.data = (unsigned char*)arr_in->data;
+		st_buf.len = arr_in->size;
+
+		st->udata = (void *)&st_buf;
+		st->read_callback = my_lz_read_buf;
+		st->zip_length = st_buf.len;
+	}
+
+	lowzip_init_archive(st);
+
+	if (st->have_error) {
+		lbm_set_error_reason("Invalid zip archive");
+		lbm_free(st);
+		lbm_free(st_file);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value r = ENC_SYM_NIL;
+
+	for (int i = 0; ; i++) {
+		lowzip_file *fileinfo = lowzip_locate_file(st, i, NULL);
+		if (!fileinfo) {
+			break;
+		}
+
+		lbm_value current = ENC_SYM_NIL;
+		current = lbm_cons(lbm_enc_i(fileinfo->uncompressed_size), current);
+
+		lbm_value filename;
+		if(lbm_create_array(&filename, (lbm_uint)strlen(fileinfo->filename) + 1)){
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(filename);
+			strcpy((char*)arr->data, fileinfo->filename);
+			current = lbm_cons(filename, current);
+		} else {
+			lbm_free(st);
+			lbm_free(st_file);
+			return ENC_SYM_MERROR;
+		}
+
+		r = lbm_cons(current, r);
+	}
+
+	lbm_free(st);
+	lbm_free(st_file);
+	return r;
+}
+
+// Connection checks
+
+static lbm_value ext_connected_wifi(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return comm_wifi_is_client_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_connected_ble(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return comm_ble_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_connected_usb(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -4691,6 +5409,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("send-bms-can", ext_send_bms_can);
 	lbm_add_extension("set-bms-chg-allowed", ext_set_bms_chg_allowed);
 	lbm_add_extension("bms-force-balance", ext_bms_force_balance);
+	lbm_add_extension("bms-zero-offset", ext_bms_zero_offset);
 	lbm_add_extension("get-adc", ext_get_adc);
 	lbm_add_extension("systime", ext_systime);
 	lbm_add_extension("secs-since", ext_secs_since);
@@ -4702,7 +5421,6 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("main-init-done", ext_main_init_done);
 	lbm_add_extension("crc16", ext_crc16);
 	lbm_add_extension("crc32", ext_crc32);
-	lbm_add_extension("buf-find", ext_buf_find);
 	lbm_add_extension("buf-resize", ext_buf_resize);
 
 	// Configuration
@@ -4756,11 +5474,14 @@ void lispif_load_vesc_extensions(void) {
 	i2c_started = false;
 	lbm_add_extension("i2c-start", ext_i2c_start);
 	lbm_add_extension("i2c-tx-rx", ext_i2c_tx_rx);
+	lbm_add_extension("i2c-detect-addr", ext_i2c_detect_addr);
 
 	// GPIO
 	lbm_add_extension("gpio-configure", ext_gpio_configure);
 	lbm_add_extension("gpio-write", ext_gpio_write);
 	lbm_add_extension("gpio-read", ext_gpio_read);
+	lbm_add_extension("gpio-hold", ext_gpio_hold);
+	lbm_add_extension("gpio-hold-deepsleep", ext_gpio_hold_deepsleep);
 
 	// Math
 	lbm_add_extension("throttle-curve", ext_throttle_curve);
@@ -4806,6 +5527,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("wifi-set-chan", ext_wifi_set_chan);
 	lbm_add_extension("wifi-get-bw", ext_wifi_get_bw);
 	lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
+	lbm_add_extension("wifi-start", ext_wifi_start);
+	lbm_add_extension("wifi-stop", ext_wifi_stop);
 
 	// Logging
 	lbm_add_extension("log-start", ext_log_start);
@@ -4825,7 +5548,9 @@ void lispif_load_vesc_extensions(void) {
 
 	// Sleep
 	lbm_add_extension("sleep-deep", ext_sleep_deep);
+	lbm_add_extension("sleep-light", ext_sleep_light);
 	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
+	lbm_add_extension("rtc-data", ext_rtc_data);
 
 	// Extension libraries
 	lispif_load_disp_extensions();
@@ -4842,6 +5567,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// File System
 	lbm_add_extension("f-connect", ext_f_connect);
+	lbm_add_extension("f-connect-nand", ext_f_connect_nand);
 	lbm_add_extension("f-disconnect", ext_f_disconnect);
 	lbm_add_extension("f-open", ext_f_open);
 	lbm_add_extension("f-close", ext_f_close);
@@ -4854,12 +5580,15 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("f-rm", ext_f_rm);
 	lbm_add_extension("f-ls", ext_f_ls);
 	lbm_add_extension("f-size", ext_f_size);
+	lbm_add_extension("f-rename", ext_f_rename);
 	lbm_add_extension("f-fatinfo", ext_f_fatinfo);
 
 	// Firmware update
 	lbm_add_extension("fw-erase", ext_fw_erase);
 	lbm_add_extension("fw-write", ext_fw_write);
 	lbm_add_extension("fw-reboot", ext_fw_reboot);
+	lbm_add_extension("fw-data", ext_fw_data);
+	lbm_add_extension("fw-write-raw", ext_fw_write_raw);
 
 	// Lbm and script update
 	lbm_add_extension("lbm-erase", ext_lbm_erase);
@@ -4898,6 +5627,15 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("pwm-start", ext_pwm_start);
 	lbm_add_extension("pwm-stop", ext_pwm_stop);
 	lbm_add_extension("pwm-set-duty", ext_pwm_set_duty);
+
+	// Compression
+	lbm_add_extension("unzip", ext_unzip);
+	lbm_add_extension("zip-ls", ext_zip_ls);
+
+	// Connection checks
+	lbm_add_extension("connected-wifi", ext_connected_wifi);
+	lbm_add_extension("connected-ble", ext_connected_ble);
+	lbm_add_extension("connected-usb", ext_connected_usb);
 
 	// Extension libraries
 	lbm_array_extensions_init();
@@ -4949,6 +5687,23 @@ void lispif_disable_all_events(void) {
 	}
 }
 
+static bool start_flatten_with_gc(lbm_flat_value_t *v, size_t buffer_size) {
+	if (lbm_start_flatten(v, buffer_size)) {
+		return true;
+	}
+
+	int timeout = 3;
+	uint32_t gc_last = lbm_heap_state.gc_num;
+	lbm_request_gc();
+
+	while (lbm_heap_state.gc_num <= gc_last && timeout > 0) {
+		vTaskDelay(1);
+		timeout--;
+	}
+
+	return lbm_start_flatten(v, buffer_size);
+}
+
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 	if (is_ext) {
 		if (can_recv_eid_cid < 0 && !event_can_eid_en)  {
@@ -4961,7 +5716,7 @@ void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 	}
 
 	lbm_flat_value_t v;
-	if (lbm_start_flatten(&v, 50 + len)) {
+	if (start_flatten_with_gc(&v, 50 + len)) {
 		f_cons(&v);
 
 		if ((can_recv_sid_cid < 0 && !is_ext) || (can_recv_eid_cid < 0 && is_ext)) {
@@ -5002,7 +5757,7 @@ void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
 	}
 
 	lbm_flat_value_t v;
-	if (lbm_start_flatten(&v, 30 + len)) {
+	if (start_flatten_with_gc(&v, 30 + len)) {
 		if (recv_data_cid < 0) {
 			f_cons(&v);
 			f_sym(&v, sym_event_data_rx);
@@ -5036,7 +5791,7 @@ void lispif_process_rmsg(int slot, unsigned char *data, unsigned int len) {
 	}
 
 	lbm_flat_value_t v;
-	if (lbm_start_flatten(&v, 10 + len)) {
+	if (start_flatten_with_gc(&v, 10 + len)) {
 		f_lbm_array(&v, len, data);
 		lbm_finish_flatten(&v);
 
