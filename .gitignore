@@ -6,3 +6,5 @@ esp_idf_components
 sdkconfig.old
 sdkconfig
 .vscode
+managed_components/
+dependencies.lock
