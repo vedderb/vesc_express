@@ -43,10 +43,11 @@
 #include "main.h"
 
 #if CONFIG_IDF_TARGET_ESP32
-#define GATTS_CHAR_VAL_LEN_MAX 23
+	#define GATTS_CHAR_VAL_LEN_MAX 23
 #else
-#define GATTS_CHAR_VAL_LEN_MAX 255
+	#define GATTS_CHAR_VAL_LEN_MAX 255
 #endif
+#define DEFAULT_BLE_MTU 20 // 23 for default mtu and 3 bytes for ATT headers
 #define BLE_CHAR_COUNT 2
 #define BLE_SERVICE_HANDLE_NUM (1 + (3 * BLE_CHAR_COUNT))
 #define ADV_CFG_FLAG (1 << 0)
@@ -59,7 +60,7 @@
 #endif
 
 static bool is_connected = false;
-static uint16_t ble_current_mtu = 20;
+static uint16_t ble_current_mtu = DEFAULT_BLE_MTU;
 
 static uint16_t notify_conn_id = 0;
 static esp_gatt_if_t notify_gatts_if;
@@ -595,6 +596,7 @@ static void gatts_event_handler(
 			}
 
 			gatts_profile.conn_id = param->connect.conn_id;
+			ble_current_mtu = DEFAULT_BLE_MTU; 
 			is_connected = true;
 			LED_BLUE_ON();
 
