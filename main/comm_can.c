@@ -51,7 +51,7 @@ static io_board_adc_values io_board_adc_5_8[CAN_STATUS_MSGS_TO_STORE];
 static io_board_digial_inputs io_board_digital_in[CAN_STATUS_MSGS_TO_STORE];
 static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 
-#define RX_BUFFER_NUM				2
+#define RX_BUFFER_NUM				3
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
 #define RXBUF_LEN					50
 
@@ -102,7 +102,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 	if (id == 255 || id == backup.config.controller_id) {
 		switch (cmd) {
 		case CAN_PACKET_FILL_RX_BUFFER: {
-			int buf_ind = 0;
+			int buf_ind = -1;
 			int offset = data8[0];
 			data8++;
 			len--;
@@ -114,12 +114,20 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 			}
 
+			if (buf_ind < 0) {
+				if (offset == 0) {
+					buf_ind = 0;
+				} else {
+					break;
+				}
+			}
+
 			memcpy(rx_buffer[buf_ind] + offset, data8, len);
-			rx_buffer_offset[buf_ind] += len;
+			rx_buffer_offset[buf_ind] = offset + len;
 		} break;
 
 		case CAN_PACKET_FILL_RX_BUFFER_LONG: {
-			int buf_ind = 0;
+			int buf_ind = -1;
 			int offset = (int)data8[0] << 8;
 			offset |= data8[1];
 			data8 += 2;
@@ -132,9 +140,17 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 			}
 
+			if (buf_ind < 0) {
+				if (offset == 0) {
+					buf_ind = 0;
+				} else {
+					break;
+				}
+			}
+
 			if ((offset + len) <= RX_BUFFER_SIZE) {
 				memcpy(rx_buffer[buf_ind] + offset, data8, len);
-				rx_buffer_offset[buf_ind] += len;
+				rx_buffer_offset[buf_ind] = offset + len;
 			}
 		} break;
 
