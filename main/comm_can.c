@@ -561,7 +561,15 @@ static void rx_task(void *arg) {
 		res = twai_read_alerts(&alerts, 0);
 		if (res == ESP_OK) {
 			if ((alerts & TWAI_ALERT_BUS_OFF) || (alerts & TWAI_ALERT_ERR_PASS)) {
-				twai_initiate_recovery(); // Needs 128 occurrences of bus free signal
+				twai_initiate_recovery();
+				twai_status_info_t status;
+				twai_get_status_info(&status);
+				while (status.state == TWAI_STATE_BUS_OFF || status.state == TWAI_STATE_RECOVERING) {
+					vTaskDelay(1);
+					twai_get_status_info(&status);
+				}
+
+				twai_start();
 				rx_recovery_cnt++;
 			}
 		}
