@@ -567,6 +567,10 @@ static void rx_task(void *arg) {
 				while (status.state == TWAI_STATE_BUS_OFF || status.state == TWAI_STATE_RECOVERING) {
 					vTaskDelay(1);
 					twai_get_status_info(&status);
+
+					if (stop_threads || stop_rx) {
+						break;
+					}
 				}
 
 				twai_start();
