@@ -746,7 +746,7 @@ static void start_rx_thd(void) {
 
 	stop_rx = false;
 	rx_running = true;
-	xTaskCreatePinnedToCore(rx_task, "can_rx", 640, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
+	xTaskCreatePinnedToCore(rx_task, "can_rx", 1024, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
 }
 
 static void stop_rx_thd(void) {
