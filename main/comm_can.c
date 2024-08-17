@@ -51,7 +51,7 @@ static io_board_adc_values io_board_adc_5_8[CAN_STATUS_MSGS_TO_STORE];
 static io_board_digial_inputs io_board_digital_in[CAN_STATUS_MSGS_TO_STORE];
 static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 
-#define RX_BUFFER_NUM				2
+#define RX_BUFFER_NUM				3
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
 #define RXBUF_LEN					50
 
@@ -102,7 +102,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 	if (id == 255 || id == backup.config.controller_id) {
 		switch (cmd) {
 		case CAN_PACKET_FILL_RX_BUFFER: {
-			int buf_ind = 0;
+			int buf_ind = -1;
 			int offset = data8[0];
 			data8++;
 			len--;
@@ -114,12 +114,20 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 			}
 
+			if (buf_ind < 0) {
+				if (offset == 0) {
+					buf_ind = 0;
+				} else {
+					break;
+				}
+			}
+
 			memcpy(rx_buffer[buf_ind] + offset, data8, len);
-			rx_buffer_offset[buf_ind] += len;
+			rx_buffer_offset[buf_ind] = offset + len;
 		} break;
 
 		case CAN_PACKET_FILL_RX_BUFFER_LONG: {
-			int buf_ind = 0;
+			int buf_ind = -1;
 			int offset = (int)data8[0] << 8;
 			offset |= data8[1];
 			data8 += 2;
@@ -132,9 +140,17 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 			}
 
+			if (buf_ind < 0) {
+				if (offset == 0) {
+					buf_ind = 0;
+				} else {
+					break;
+				}
+			}
+
 			if ((offset + len) <= RX_BUFFER_SIZE) {
 				memcpy(rx_buffer[buf_ind] + offset, data8, len);
-				rx_buffer_offset[buf_ind] += len;
+				rx_buffer_offset[buf_ind] = offset + len;
 			}
 		} break;
 
@@ -526,8 +542,6 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 static void rx_task(void *arg) {
 	twai_message_t rx_message;
 
-	twai_reconfigure_alerts(TWAI_ALERT_ABOVE_ERR_WARN | TWAI_ALERT_ERR_PASS | TWAI_ALERT_BUS_OFF, NULL);
-
 	while (!stop_threads && !stop_rx) {
 		esp_err_t res = twai_receive(&rx_message, 2);
 
@@ -541,13 +555,27 @@ static void rx_task(void *arg) {
 			xSemaphoreGive(proc_sem);
 		}
 
-		uint32_t alerts;
-		res = twai_read_alerts(&alerts, 0);
-		if (res == ESP_OK) {
-			if ((alerts & TWAI_ALERT_BUS_OFF) || (alerts & TWAI_ALERT_ERR_PASS)) {
-				twai_initiate_recovery(); // Needs 128 occurrences of bus free signal
-				rx_recovery_cnt++;
+		twai_status_info_t status;
+		twai_get_status_info(&status);
+		if (status.state == TWAI_STATE_BUS_OFF || status.state == TWAI_STATE_RECOVERING) {
+			twai_initiate_recovery();
+
+			int timeout = 1500;
+			while (status.state == TWAI_STATE_BUS_OFF || status.state == TWAI_STATE_RECOVERING) {
+				vTaskDelay(1);
+				twai_get_status_info(&status);
+				timeout--;
+
+				if (stop_threads || stop_rx || timeout == 0) {
+					break;
+				}
 			}
+
+			if (!stop_threads && !stop_rx) {
+				twai_start();
+			}
+
+			rx_recovery_cnt++;
 		}
 	}
 
@@ -773,9 +801,10 @@ void comm_can_start(int pin_tx, int pin_rx) {
 
 	update_baud(backup.config.can_baud_rate);
 
+	g_config.tx_queue_len = 20;
 	g_config.rx_queue_len = 20;
-	g_config.tx_io = pin_tx;
-	g_config.rx_io = pin_rx;
+	g_config.tx_io        = pin_tx;
+	g_config.rx_io        = pin_rx;
 
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
@@ -895,13 +924,8 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 		return;
 	}
 
-	if (twai_transmit(&tx_msg, 5 / portTICK_PERIOD_MS) != ESP_OK) {
-		stop_rx_thd();
-		twai_stop();
-		twai_initiate_recovery();
-		twai_start();
-		start_rx_thd();
-	}
+	twai_transmit(&tx_msg, 5);
+	
 	xSemaphoreGive(send_mutex);
 }
 
@@ -928,13 +952,8 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 		return;
 	}
 
-	if (twai_transmit(&tx_msg, 5 / portTICK_PERIOD_MS) != ESP_OK) {
-		stop_rx_thd();
-		twai_stop();
-		twai_initiate_recovery();
-		twai_start();
-		start_rx_thd();
-	}
+	twai_transmit(&tx_msg, 5);
+	
 	xSemaphoreGive(send_mutex);
 }
 
