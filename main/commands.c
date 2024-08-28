@@ -1070,10 +1070,13 @@ int commands_printf_lisp(const char* format, ...) {
 	char *print_buffer = malloc(PRINT_BUFFER_SIZE);
 
 	print_buffer[0] = COMM_LISP_PRINT;
-	len = vsnprintf(print_buffer + 1, (PRINT_BUFFER_SIZE - 1), format, arg);
+	int offset = 1;
+	offset += sprintf(print_buffer + offset, lispif_print_prefix(), "%s");
+	
+	len = vsnprintf(print_buffer + offset, (PRINT_BUFFER_SIZE - offset), format, arg);
 	va_end (arg);
 
-	int len_to_print = (len < (PRINT_BUFFER_SIZE - 1)) ? len + 1 : PRINT_BUFFER_SIZE;
+	int len_to_print = (len < (PRINT_BUFFER_SIZE - offset)) ? len + offset : PRINT_BUFFER_SIZE;
 
 	if (len > 0) {
 		if (print_buffer[len_to_print - 1] == '\n') {

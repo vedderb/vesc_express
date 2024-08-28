@@ -79,6 +79,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <string.h>
 
 typedef struct {
 	// BMS
@@ -323,6 +324,21 @@ static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
 
 	lbm_free(print_val_buffer);
 
+	return ENC_SYM_TRUE;
+}
+
+static char print_prefix[50] = {0};
+
+static lbm_value ext_set_print_prefix(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+	
+	if (!lbm_is_array_r(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+	
+	const char *string = lbm_dec_str(args[0]);
+	strncpy(print_prefix, string, sizeof(print_prefix) - 1);
+	
 	return ENC_SYM_TRUE;
 }
 
@@ -5399,6 +5415,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// Various commands
 	lbm_add_extension("print", ext_print);
+	lbm_add_extension("set-print-prefix", ext_set_print_prefix);
 	lbm_add_extension("puts", ext_puts);
 	lbm_add_extension("get-bms-val", ext_get_bms_val);
 	lbm_add_extension("set-bms-val", ext_set_bms_val);
@@ -5799,4 +5816,9 @@ void lispif_process_rmsg(int slot, unsigned char *data, unsigned int len) {
 	}
 
 	xSemaphoreGive(rmsg_mutex);
+}
+
+char* lispif_print_prefix(void) {
+	print_prefix[sizeof(print_prefix) - 1] = 0;
+	return print_prefix;
 }

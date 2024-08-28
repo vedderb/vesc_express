@@ -44,5 +44,6 @@ void lispif_add_dyn_load_callback(bool (*p_func)(const char*, const char**));
 
 void lispif_load_vesc_extensions(void);
 bool lispif_vesc_dynamic_loader(const char *str, const char **code);
+char* lispif_print_prefix(void);
 
 #endif /* LISPBM_LISPIF_H_ */
