@@ -75,6 +75,7 @@
 #include "sdmmc_cmd.h"
 #include "esp_vfs.h"
 #include "lowzip.h"
+#include "aes/esp_aes.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -5374,6 +5375,72 @@ static lbm_value ext_connected_usb(lbm_value *args, lbm_uint argn) {
 	return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
+// Crypto
+
+// (aes-ctr-crypt key counter data start-offset length) -> t
+static lbm_value ext_aes_ctr_crypt(lbm_value *args, lbm_uint argn) {
+    if (!lbm_check_argn_range(argn, 5, 5)) {
+        return ENC_SYM_EERROR;
+    }
+
+    if (!lbm_is_array_r(args[0]) || !lbm_is_array_rw(args[1]) || !lbm_is_array_rw(args[2])) {
+        lbm_set_error_reason("Invalid array types");
+        return ENC_SYM_EERROR;
+    }
+
+    lbm_array_header_t *key_header = (lbm_array_header_t *)lbm_car(args[0]);
+    lbm_array_header_t *counter_header = (lbm_array_header_t *)lbm_car(args[1]);
+    lbm_array_header_t *data_header = (lbm_array_header_t *)lbm_car(args[2]);
+
+    // Check key size (128, 192, or 256 bits)
+    if (key_header->size != 16 && key_header->size != 24 && key_header->size != 32) {
+        lbm_set_error_reason("Key must be 16, 24, or 32 bytes (128, 192, or 256 bits)");
+        return ENC_SYM_EERROR;
+    }
+
+    if (counter_header->size != 16) {
+        lbm_set_error_reason("Counter must be 16 bytes");
+        return ENC_SYM_EERROR;
+    }
+
+    lbm_int start_offset = lbm_dec_as_i32(args[3]);
+    lbm_int length = lbm_dec_as_i32(args[4]);
+
+    if (start_offset < 0 || length < 0 || (start_offset + length) > (lbm_int)data_header->size) {
+        lbm_set_error_reason("Invalid start offset or length");
+        return ENC_SYM_EERROR;
+    }
+
+    uint8_t *key = (uint8_t*)key_header->data;
+    uint8_t *counter = (uint8_t*)counter_header->data;
+    uint8_t *data = (uint8_t*)data_header->data + start_offset;
+
+    // Perform in-place encryption/decryption
+    esp_aes_context ctx;
+    esp_aes_init(&ctx);
+
+    int ret = esp_aes_setkey(&ctx, key, key_header->size * 8);
+    if (ret != 0) {
+        esp_aes_free(&ctx);
+        lbm_set_error_reason("AES key setup failed");
+        return ENC_SYM_EERROR;
+    }
+
+    uint8_t stream_block[16];
+    size_t nc_off = 0;
+
+    ret = esp_aes_crypt_ctr(&ctx, length, &nc_off, counter, stream_block, data, data);
+
+    esp_aes_free(&ctx);
+
+    if (ret != 0) {
+        lbm_set_error_reason("AES-CTR encryption/decryption failed");
+        return ENC_SYM_EERROR;
+    }
+
+    return ENC_SYM_TRUE;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -5649,6 +5716,9 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("connected-wifi", ext_connected_wifi);
 	lbm_add_extension("connected-ble", ext_connected_ble);
 	lbm_add_extension("connected-usb", ext_connected_usb);
+
+	// Crypto
+	lbm_add_extension("aes-ctr-crypt", ext_aes_ctr_crypt);
 
 	// Extension libraries
 	lbm_array_extensions_init();
