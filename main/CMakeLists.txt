@@ -56,6 +56,9 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/array_extensions.c"
 "lispBM/src/extensions/math_extensions.c"
 "lispBM/src/extensions/string_extensions.c"
+"lispBM/src/extensions/display_extensions.c"
+"lispBM/src/extensions/tjpgd.c"
+
 
 "wifi/lispif_wifi_extensions.c"
 
@@ -73,7 +76,6 @@ set(COMPONENT_SRCS
 "display/disp_st7735.c"
 "display/disp_ssd1351.c"
 "display/disp_icna3306.c"
-"display/tjpgd.c"
 
 "drivers/bme280/bme280.c"
 "drivers/bme280/bme280_if.c"
