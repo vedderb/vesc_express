@@ -1,4 +1,4 @@
-(bms-init)
+(loopwhile (not (bms-init)) (sleep 1.0))
 (def t-init-done (systime))
 
 (defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble)))
@@ -98,9 +98,11 @@
 (loopwhile t {
         (spawn-trap "start-fun" start-fun)
         (recv
-            ((exit-error (? tid) (? e))
-                (print (str-merge "Start fun error: " (to-str e)))
-            )
+            ((exit-error (? tid) (? e)) {
+                    (print (str-merge "Start fun error: " (to-str e)))
+                    (loopwhile (not (bms-init)) (sleep 1.0))
+                    (def t-init-done (systime))
+            })
             ((exit-ok (? tid) (? v)) (break))
         )
         (sleep 1.0)
@@ -440,9 +442,10 @@
 (loopwhile t {
         (spawn-trap "main-thd" main-thd)
         (recv
-            ((exit-error (? tid) (? e))
-                (print (str-merge "main-thread error: " (to-str e)))
-            )
+            ((exit-error (? tid) (? e)) {
+                    (print (str-merge "Start fun error: " (to-str e)))
+                    (loopwhile (not (bms-init)) (sleep 1.0))
+            })
             ((exit-ok (? tid) (? v)) 'ok)
         )
         (sleep 1.0)
