@@ -341,6 +341,9 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp(
 						":verb\n"
 						"  Toggle verbose error messages");
+				commands_printf_lisp(
+						":state\n"
+						"  Print evaluator state");
 				commands_printf_lisp(" ");
 				commands_printf_lisp("Anything else will be evaluated as an expression in LBM.");
 				commands_printf_lisp(" ");
@@ -458,6 +461,25 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				verbose_now = !verbose_now;
 				lbm_set_verbose(verbose_now);
 				commands_printf_lisp("Verbose errors %s", verbose_now ? "Enabled" : "Disabled");
+			} else if (strncmp(str, ":state", 6) == 0) {
+				lbm_uint state = lbm_get_eval_state();
+				switch (state) {
+					case EVAL_CPS_STATE_DEAD:
+						commands_printf_lisp("DEAD\n");
+						break;
+					case EVAL_CPS_STATE_PAUSED:
+						commands_printf_lisp("PAUSED\n");
+						break;
+					case EVAL_CPS_STATE_NONE:
+						commands_printf_lisp("NO STATE\n");
+						break;
+					case EVAL_CPS_STATE_RUNNING:
+						commands_printf_lisp("RUNNING\n");
+						break;
+					case EVAL_CPS_STATE_KILL:
+						commands_printf_lisp("KILLING\n");
+						break;
+				}
 			} else {
 				if (repl_buffer) {
 					lispif_unlock_lbm();
