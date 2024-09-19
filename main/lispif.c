@@ -731,9 +731,9 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 
 			lisp_thd_running = true;
 		} else {
-			lbm_pause_eval();
-			while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED) {
-				lbm_pause_eval();
+			lbm_reset_eval();
+			while (lbm_get_eval_state() != EVAL_CPS_STATE_RESET) {
+				lbm_reset_eval();
 				vTaskDelay(1 / portTICK_PERIOD_MS);
 			}
 
@@ -746,9 +746,9 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 			lbm_eval_init_events(20);
 		}
 
-		lbm_pause_eval();
-		while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED) {
-			lbm_pause_eval();
+		lbm_reset_eval();
+		while (lbm_get_eval_state() != EVAL_CPS_STATE_RESET) {
+			lbm_reset_eval();
 			vTaskDelay(1 / portTICK_PERIOD_MS);
 		}
 
