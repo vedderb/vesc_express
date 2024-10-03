@@ -62,6 +62,7 @@ static lbm_string_channel_state_t string_tok_state;
 static lbm_char_channel_t string_tok;
 static lbm_buffered_channel_state_t buffered_tok_state;
 static lbm_char_channel_t buffered_string_tok;
+static bool string_tok_valid = false;
 
 static TaskHandle_t eval_task;
 static volatile bool lisp_thd_running = false;
@@ -529,20 +530,16 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		int32_t tot_len = buffer_get_int32(data, &ind);
 		int8_t restart = data[ind++];
 
-		static bool buffered_channel_created = false;
 		static int32_t offset_last = -1;
 		static int16_t result_last = -1;
 
 		if (offset == 0) {
 			if (!lisp_thd_running) {
 				lispif_restart(true, restart == 2 ? true : false, true);
-				buffered_channel_created = false;
 			} else if (restart == 1) {
 				lispif_restart(true, false, true);
-				buffered_channel_created = false;
 			} else if (restart == 2) {
 				lispif_restart(true, true, true);
-				buffered_channel_created = false;
 			}
 		}
 
@@ -568,7 +565,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		}
 
 		if (offset == 0) {
-			if (buffered_channel_created) {
+			if (string_tok_valid) {
 				int timeout = 1500;
 				while (!buffered_tok_state.reader_closed) {
 					lbm_channel_writer_close(&buffered_string_tok);
@@ -602,6 +599,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 			}
 
 			lbm_create_buffered_char_channel(&buffered_tok_state, &buffered_string_tok);
+			string_tok_valid = true;
 
 			if (lbm_load_and_eval_program(&buffered_string_tok, "main-s") <= 0) {
 				lispif_unlock_lbm();
@@ -614,8 +612,15 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 			}
 
 			lbm_continue_eval();
-			buffered_channel_created = true;
 			lispif_unlock_lbm();
+		}
+
+		if (!string_tok_valid) {
+			result_last = -15;
+			buffer_append_int16(send_buffer, result_last, &send_ind);
+			commands_printf_lisp("Tokenizer Invalid");
+			reply_func(send_buffer, ind);
+			break;
 		}
 
 		int32_t written = 0;
@@ -641,6 +646,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		if (ind == (int32_t)len) {
 			if ((offset + written) == tot_len) {
 				lbm_channel_writer_close(&buffered_string_tok);
+				string_tok_valid = false;
 				offset_last = -1;
 				commands_printf_lisp("Stream done, starting...");
 			}
@@ -697,6 +703,8 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	bool res = false;
 
 	restart_cnt++;
+	prof_running = false;
+	string_tok_valid = false;
 
 	if (prof_running) {
 		prof_running = false;
