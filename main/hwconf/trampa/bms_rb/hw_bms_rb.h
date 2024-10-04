@@ -36,6 +36,7 @@
  */
 
 #define HW_NAME						"BMS RB"
+#define HW_TARGET					"esp32c3"
 
 #define HW_NO_UART
 

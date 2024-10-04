@@ -3321,9 +3321,12 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	}
 
 	gpio_set_direction(pin, GPIO_MODE_INPUT);
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin,
-			mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
-
+#if CONFIG_IDF_TARGET_ESP32C3
+	esp_deep_sleep_enable_gpio_wakeup(1 << pin,mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
+#else
+	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0); 
+	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+#endif
 	return ENC_SYM_TRUE;
 }
 
@@ -5372,7 +5375,11 @@ static lbm_value ext_connected_ble(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_connected_usb(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
-	return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	#if !CONFIG_IDF_TARGET_ESP32
+		return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	#else
+		return false;
+	#endif
 }
 
 // Crypto
@@ -5463,7 +5470,7 @@ void lispif_load_vesc_extensions(void) {
 		}
 		xSemaphoreGive(rmsg_mutex);
 
-		xTaskCreatePinnedToCore(event_task, "LBM Events", 640, NULL, 7, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(event_task, "LBM Events", 1280, NULL, 7, NULL, tskNO_AFFINITY);
 		event_task_running = true;
 	}
 

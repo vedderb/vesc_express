@@ -17,10 +17,13 @@ The instructions linked above will install the master branch of ESP-IDF. To inst
 ```bash
 git clone -b v5.2.2 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.2.2
 cd esp-idf-v5.2.2/
-./install.sh esp32c3
+./install.sh esp32c3 esp32 esp32s3
 ```
 
 At the moment development is done using the stable 5.2.2-release.
+
+Additionally you may want to add export.sh to your .bashrc file.
+```echo "source /path/to/esp-idf-v5.2.2/export.sh" >> ~/.bashrc```
 
 ## Compiling
 
@@ -30,4 +33,14 @@ Once the toolchain is set up in the current path, the project can be built with
 idf.py build
 ```
 
-That will create vesc_express.bin in the build directory, which can be used with the bootloader in VESC Tool. If the ESP32c3 does not come with firmware preinstalled, the USB-port can be used for flashing firmware using the built-in bootloader. That also requires bootloader.bin and partition-table.bin which also can be found in the build directory. This can be done from VESC Tool or using idf.py.
+To build a specific target
+```bash
+idf.py build -DHW_NAME="VESC Express T"
+```
+
+That will create vesc_express.$target.bin in the bin directory, which can be used with the bootloader in VESC Tool. If the ESP32, ESP32c3 or ESP32s3 does not come with firmware preinstalled, the USB-port can be used for flashing firmware using the built-in bootloader. That also requires bootloader.bin and partition-table.bin which also can be found in the build directory. This can be done from VESC Tool or using idf.py.
+
+When switching targets, you need to clean the build directory
+```bash
+idf.py fullclean
+```
