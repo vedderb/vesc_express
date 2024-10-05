@@ -26,6 +26,7 @@
 void mempools_init(void);
 
 uint8_t *mempools_get_packet_buffer(void);
+uint8_t *mempools_get_lbm_packet_buffer(void);
 void mempools_free_packet_buffer(uint8_t *buffer);
 
 #endif /* MEMPOOLS_H_ */
