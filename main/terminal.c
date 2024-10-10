@@ -75,6 +75,8 @@ const char* utils_hw_type_to_string(HW_TYPE hw) {
 }
 
 void terminal_process_string(char *str) {
+	commands_printf("-> %s\n", str);
+	
 	enum { kMaxArgs = 64 };
 	int argc = 0;
 	char *argv[kMaxArgs];
@@ -94,8 +96,6 @@ void terminal_process_string(char *str) {
 	for(int i = 0; argv[0][i] != '\0'; i++){
 		argv[0][i] = tolower(argv[0][i]);
 	}
-	
-	commands_printf("> %s", argv[0]);
 
 	for (int i = 0;i < callback_write;i++) {
 		if (callbacks[i].cbf != 0 && strcmp(argv[0], callbacks[i].command) == 0) {
