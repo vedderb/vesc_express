@@ -189,8 +189,6 @@ void terminal_process_string(char *str) {
 		commands_printf("Firmware          : %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
 		commands_printf("Hardware          : %s", HW_NAME);
 
-		commands_printf("IDF Version       : %s", IDF_VER);
-
 		commands_printf("BLE MTU           : %d", comm_ble_mtu_now());
 		commands_printf("BLE Connected     : %d", comm_ble_is_connected());
 		commands_printf("Custom BLE Started: %d", custom_ble_started());
@@ -230,6 +228,20 @@ void terminal_process_string(char *str) {
 
 		commands_printf("Reset Reason      : %d", esp_reset_reason());
 
+		commands_printf(" ");
+	} else if (strcmp(argv[0], "fw_info") == 0) {
+		commands_printf("Firmware   : %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
+		commands_printf("Hardware   : %s", HW_NAME);
+		commands_printf("Git Branch : %s", GIT_BRANCH_NAME);
+		commands_printf("Git Hash   : %s", GIT_COMMIT_HASH);
+		commands_printf("IDF Version: %s", IDF_VER);
+	
+#ifdef USER_GIT_BRANCH_NAME
+		commands_printf("User Git Branch: %s", USER_GIT_BRANCH_NAME);
+#endif
+#ifdef USER_GIT_COMMIT_HASH
+		commands_printf("User Git Hash  : %s", USER_GIT_COMMIT_HASH);
+#endif
 		commands_printf(" ");
 	} else if (strcmp(argv[0], "can_scan") == 0) {
 		bool found = false;
@@ -274,6 +286,9 @@ void terminal_process_string(char *str) {
 
 		commands_printf("hw_status");
 		commands_printf("  Print some hardware status information.");
+
+		commands_printf("fw_info");
+		commands_printf("  Print detailed firmware info.");
 
 		commands_printf("can_scan");
 		commands_printf("  Scan CAN-bus using ping commands, and print all devices that are found.");
