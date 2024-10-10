@@ -5,3 +5,8 @@ build
 esp_idf_components
 sdkconfig.old
 .vscode
+
+# These should maybe be committed instead, but they weren't before and I don't
+# feel like making that decision right now...
+managed_components/
+dependencies.lock
