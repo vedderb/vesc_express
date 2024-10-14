@@ -1768,6 +1768,7 @@ static lbm_uint sym_break;
 static lbm_uint sym_brk;
 static lbm_uint sym_rst;
 static lbm_uint sym_return;
+static lbm_uint sym_size;
 
 static lbm_value ext_me_defun(lbm_value *argsi, lbm_uint argn) {
 	if (argn != 3) {
@@ -3769,14 +3770,22 @@ static lbm_value ext_f_rm(lbm_value *args, lbm_uint argn) {
 	return utils_rmtree(path_full) ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
-// (f-ls path) -> ((path is-dir size) (path is-dir size) ...)
+// (f-ls path) -> ((path is-dir) (path is-dir) ...)
+// (f-ls path 'size) -> ((path is-dir size) (path is-dir size) ...)
 static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN(1);
+	LBM_CHECK_ARGN_RANGE(1, 2);
 
 	char *path = dec_str_check(args[0]);
 	if (!path) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
+	}
+
+	bool report_size = false;
+	if (argn  == 2) {
+		if (lbm_is_symbol(args[1]) && lbm_dec_sym(args[1]) == symbol_size) {
+			report_size = true;
+		}
 	}
 
 	char path_full[strlen(path) + strlen(file_basepath) + 1];
@@ -3790,34 +3799,37 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 	DIR *d = opendir(path_full);
 	if (d) {
 		while ((dir = readdir(d)) != NULL) {
+			lbm_value current = ENC_SYM_NIL;
+
 			int len_f = strlen(dir->d_name);
 
-			char path_file[strlen(path_full) + strlen(dir->d_name) + 2];
-			strcpy(path_file, path_full);
-			strcat(path_file, "/");
-			strcat(path_file, dir->d_name);
+			if (report_size){
+				char path_file[strlen(path_full) + strlen(dir->d_name) + 2];
+				strcpy(path_file, path_full);
+				strcat(path_file, "/");
+				strcat(path_file, dir->d_name);
 
-			size_t size = 0;
-			if (dir->d_type != DT_DIR) {
-				FILE *f = fopen(path_file, "r");
-				if (f) {
-					fseek(f, 0, SEEK_END);
-					size = ftell(f);
-					fclose(f);
-				}
-			} else {
-				DIR *d2 = opendir(path_file);
-				if (d2) {
-					struct dirent *dir2;
-					while ((dir2 = readdir(d2)) != NULL) {
-						size++;
+				size_t size = 0;
+				if (dir->d_type != DT_DIR) {
+					FILE *f = fopen(path_file, "r");
+					if (f) {
+						fseek(f, 0, SEEK_END);
+						size = ftell(f);
+						fclose(f);
 					}
-					closedir(d2);
+				} else {
+					DIR *d2 = opendir(path_file);
+					if (d2) {
+						struct dirent *dir2;
+						while ((dir2 = readdir(d2)) != NULL) {
+							size++;
+						}
+						closedir(d2);
+					}
 				}
+				current = lbm_cons(lbm_enc_i(size), current);
 			}
 
-			lbm_value current = ENC_SYM_NIL;
-			current = lbm_cons(lbm_enc_i(size), current);
 			current = lbm_cons(dir->d_type == DT_DIR ? ENC_SYM_TRUE : ENC_SYM_NIL, current);
 
 			lbm_value name_buf = ENC_SYM_MERROR;
@@ -5475,6 +5487,8 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_symbol_const("a03", &sym_brk);
 	lbm_add_symbol_const("a04", &sym_rst);
 	lbm_add_symbol_const("return", &sym_return);
+
+	lbm_add_symbol_const("size", &symbol_size);
 
 	lispif_events_load_symbols();
 
