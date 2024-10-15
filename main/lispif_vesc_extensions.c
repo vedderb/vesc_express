@@ -3783,7 +3783,7 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 
 	bool report_size = false;
 	if (argn  == 2) {
-		if (lbm_is_symbol(args[1]) && lbm_dec_sym(args[1]) == symbol_size) {
+		if (lbm_is_symbol(args[1]) && lbm_dec_sym(args[1]) == sym_size) {
 			report_size = true;
 		}
 	}
@@ -5488,7 +5488,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_symbol_const("a04", &sym_rst);
 	lbm_add_symbol_const("return", &sym_return);
 
-	lbm_add_symbol_const("size", &symbol_size);
+	lbm_add_symbol_const("size", &sym_size);
 
 	lispif_events_load_symbols();
 
