@@ -15,13 +15,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//#define _POSIX_C_SOURCE 200809L
+#define _POSIX_C_SOURCE 200809L // nanosleep?
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
 #include <pthread.h>
-//#define _POSIX_C_SOURCE	199309L
 #include <sys/time.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -107,14 +106,14 @@ volatile bool silent_mode = false;
 
 struct read_state_s {
   char *str;   // String being read.
-  int  cid;    // Reader thread id.
+  lbm_cid cid;    // Reader thread id.
   struct read_state_s *next;
 };
 
 typedef struct read_state_s read_state_t;
 read_state_t *readers = NULL; // ongoing list of readers.
 
-void add_reader(char *str, int cid) {
+void add_reader(char *str, lbm_cid cid) {
   read_state_t *new_reader = (read_state_t*)malloc(sizeof(read_state_t));
   new_reader->str = str;
   new_reader->cid = cid;
@@ -134,7 +133,7 @@ void clear_readers(void) {
   readers = NULL;
 }
 
-bool drop_reader(int cid) {
+bool drop_reader(lbm_cid cid) {
 
   bool r = false;
   read_state_t *prev = NULL;
@@ -305,7 +304,6 @@ char * load_file(char *filename) {
   //trailing whitespace
   while (len > 0) {
     if (filename[len-1] == ' ') {
-      printf("shortening\n");
       filename[len-1] = 0;
     }
     else break;
@@ -564,11 +562,11 @@ void parse_opts(int argc, char **argv) {
       vesctcp = true;
       break;
     case VESCTCP_PORT:
-      vesctcp_port = atoi((char *)optarg);
+      vesctcp_port = (uint16_t)atoi((char *)optarg);
       vesctcp = true;
       break;
     case VESCTCP_PROGRAM_FLASH_SIZE:
-      vescif_program_flash_size= atoi((char *)optarg);
+      vescif_program_flash_size= (unsigned int)atoi((char *)optarg);
       break;
     default:
       break;
@@ -1006,19 +1004,20 @@ int commands_printf_lisp(const char* format, ...) {
   char *print_buffer = malloc(PRINT_BUFFER_SIZE);
 
 
-  print_buffer[0] = COMM_LISP_PRINT;
+  print_buffer[0] = (char)COMM_LISP_PRINT;
   int offset = 1;
-  size_t prefix_len = sprintf(print_buffer + offset, lispif_print_prefix(), "%s");
+  int prefix_len = sprintf(print_buffer + offset, lispif_print_prefix(), "%s");
+  if (prefix_len < 0) return prefix_len; // error.
   offset += prefix_len;
 
   len = vsnprintf(
-                  print_buffer + offset, (PRINT_BUFFER_SIZE - offset), format, arg
+                  print_buffer + offset, (size_t)(PRINT_BUFFER_SIZE - offset), format, arg
                   );
   va_end(arg);
 
   int len_to_print = (len < (PRINT_BUFFER_SIZE - offset)) ? len + offset : PRINT_BUFFER_SIZE;
 
-  for (size_t i = 2; i < len_to_print; i++) {
+  for (int i = 2; i < len_to_print; i++) {
     // TODO: Handle newline character in prefix?
     char chr = print_buffer[i - 1];
     if (chr == '\0') {
@@ -1032,8 +1031,8 @@ int commands_printf_lisp(const char* format, ...) {
       if (remaining_len <= 0) {
         break;
       }
-      memmove(print_buffer + i + prefix_len, print_buffer + i, remaining_len);
-      memmove(print_buffer + i, lispif_print_prefix(), prefix_len);
+      memmove(print_buffer + i + prefix_len, print_buffer + i, (size_t)remaining_len);
+      memmove(print_buffer + i, lispif_print_prefix(), (size_t)prefix_len);
       i += prefix_len;
       len_to_print += prefix_len;
     }
@@ -1048,7 +1047,7 @@ int commands_printf_lisp(const char* format, ...) {
       len_to_print--;
     }
 
-    commands_send_packet((unsigned char*)print_buffer, len_to_print);
+    commands_send_packet((unsigned char*)print_buffer, (unsigned int)len_to_print);
   }
 
   free(print_buffer);
@@ -1057,7 +1056,7 @@ int commands_printf_lisp(const char* format, ...) {
 }
 
 #define UTILS_AGE_S(x)		((float)(timestamp() - x) / 1000.0f)
-static uint32_t repl_time = 0;
+//static uint32_t repl_time = 0;
 
 static void vesc_lbm_done_callback(eval_context_t *ctx) {
   lbm_cid cid = ctx->id;
@@ -1225,36 +1224,32 @@ long unsigned int get_cpu_last_ticks = 1;
 
 float get_cpu_usage(void) {
 
-  int pid = getpid();
-  
-  int ticks_per_s = sysconf(_SC_CLK_TCK);
-  float cpu_usage = 0.0;
-    
+  int ticks_per_s = (int)sysconf(_SC_CLK_TCK);
+  float cpu_usage = -1;
+
   char fname[200] ;
   snprintf(fname, sizeof(fname), "/proc/self/stat") ;
   FILE *fp = fopen(fname, "r") ;
-  if ( !fp ) {
-    return -1;
+  if ( fp ) {
+    long unsigned int ucpu = 0, scpu=0, tot_cpu = 0 ;
+    if ( fscanf(fp, "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s  %lu %lu",
+		&ucpu, &scpu) == 2 ) {
+      tot_cpu = ucpu + scpu ;
+
+      long unsigned int ticks = tot_cpu - get_cpu_last_ticks;
+      unsigned int t_now = timestamp();
+      unsigned int t_diff = t_now - get_cpu_last_time;
+
+      // Not sure about this :)
+      cpu_usage = 100.0f * (float)(((float)ticks / ((float)t_diff / 1000000.0f))  / (float)ticks_per_s);
+      if (cpu_usage > 100) cpu_usage = 100;
+      if (cpu_usage < 0) cpu_usage = 0;
+
+      get_cpu_last_time = t_now;
+      get_cpu_last_ticks = tot_cpu;
+    }
+    fclose(fp);
   }
-  long unsigned int ucpu = 0, scpu=0, tot_cpu = -1 ;
-  if ( fscanf(fp, "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s  %lu %lu",
-              &ucpu, &scpu) == 2 ) {
-    tot_cpu = ucpu + scpu ;
-
-    long unsigned int ticks = tot_cpu - get_cpu_last_ticks;
-    unsigned int t_now = timestamp();
-    unsigned int t_diff = t_now - get_cpu_last_time;
-
-    // Not sure about this :)
-    cpu_usage = 100.0f * (((float)ticks / ((float)t_diff / 1000000.0))  / ticks_per_s);
-    if (cpu_usage > 100) cpu_usage = 100;
-    if (cpu_usage < 0) cpu_usage = 0;
-
-    get_cpu_last_time = t_now;
-    get_cpu_last_ticks = tot_cpu;
-  }
-
-  fclose(fp) ;
   return cpu_usage ;
 }
 
@@ -1279,7 +1274,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
     send_buffer[ind++] = 1;
 
     strcpy((char*)(send_buffer + ind), HW_NAME);
-    ind += strlen(HW_NAME) + 1;
+    ind += (int32_t)strlen(HW_NAME) + 1;
 
     //size_t size_bits = esp_efuse_get_field_size(ESP_EFUSE_MAC_FACTORY);
     //esp_efuse_read_field_blob(ESP_EFUSE_MAC_FACTORY, send_buffer + ind, size_bits);
@@ -1305,10 +1300,10 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
     send_buffer[ind++] = 0; // No NRF flags
 
     strcpy((char*)(send_buffer + ind), FW_NAME);
-    ind += strlen(FW_NAME) + 1;
+    ind += (int32_t)strlen(FW_NAME) + 1;
 
     buffer_append_uint32(send_buffer, 967, &ind); // main_calc_hw_crc()
-    reply_func(send_buffer, ind);
+    reply_func(send_buffer, (unsigned int)ind);
   } break;
 
   case COMM_LISP_SET_RUNNING: {
@@ -1334,7 +1329,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
     uint8_t send_buffer[50];
     send_buffer[ind++] = packet_id;
     send_buffer[ind++] = ok;
-    reply_func(send_buffer, ind);
+    reply_func(send_buffer, (unsigned int)ind);
   } break;
 
   case COMM_LISP_GET_STATS: {
@@ -1349,10 +1344,10 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
 
     lbm_gc_lock();
     if (lbm_heap_state.gc_num > 0) {
-      heap_use = 100.0 * (float)(heap_size - lbm_heap_state.gc_last_free) / (float)heap_size;
+      heap_use = 100.0f * (float)(heap_size - lbm_heap_state.gc_last_free) / (float)heap_size;
     }
 
-    mem_use = 100.0 * (float)(lbm_memory_num_words() - lbm_memory_num_free()) / (float)lbm_memory_num_words();
+    mem_use = 100.0f * (float)(lbm_memory_num_words() - lbm_memory_num_free()) / (float)lbm_memory_num_words();
 
     uint8_t send_buffer_global[4096];
     int32_t ind = 0;
@@ -1384,7 +1379,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
               ((name[0] == 'v' || name[0] == 'V') &&
                (name[1] == 't' || name[1] == 'T'))) {
             strcpy((char*)(send_buffer_global + ind), name);
-            ind += strlen(name) + 1;
+            ind += (int32_t)strlen(name) + 1;
             buffer_append_float32_auto(send_buffer_global, lbm_dec_as_float(lbm_cdr(key_val)), &ind);
           }
         }
@@ -1399,7 +1394,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
 
     lbm_gc_unlock();
 
-    reply_func(send_buffer_global, ind);
+    reply_func(send_buffer_global, (unsigned int)ind);
   } break;
 
   case COMM_LISP_REPL_CMD: {
@@ -1590,7 +1585,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
           if (buffer) {
             memcpy(buffer, data, len);
             lbm_create_string_char_channel(&string_tok_state, &string_tok, buffer);
-            int cid = lbm_load_and_eval_expression(&string_tok);
+            lbm_cid cid = lbm_load_and_eval_expression(&string_tok);
             if (cid >= 0) { 
               add_reader(buffer, cid);
             } else {
@@ -1615,7 +1610,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
     int32_t ind = 0;
     int32_t offset = buffer_get_int32(data, &ind);
     int32_t tot_len = buffer_get_int32(data, &ind);
-    int8_t restart = data[ind++];
+    int8_t restart = (int8_t)data[ind++];
 
     static bool buffered_channel_created = false;
     static int32_t offset_last = -1;
@@ -1641,7 +1636,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
 
     if (offset_last == offset) {
       buffer_append_int16(send_buffer, result_last, &send_ind);
-      reply_func(send_buffer, ind);
+      reply_func(send_buffer, (unsigned int)ind);
       break;
     }
 
@@ -1651,7 +1646,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
       result_last = -1;
       offset_last = -1;
       buffer_append_int16(send_buffer, result_last, &send_ind);
-      reply_func(send_buffer, ind);
+      reply_func(send_buffer, (unsigned int)ind);
       break;
     }
 
@@ -1672,7 +1667,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
           offset_last = -1;
           buffer_append_int16(send_buffer, result_last, &send_ind);
           commands_printf_lisp("Reader not closing");
-          reply_func(send_buffer, ind);
+          reply_func(send_buffer, (unsigned int)ind);
           break;
         }
       }
@@ -1691,7 +1686,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
         offset_last = -1;
         buffer_append_int16(send_buffer, result_last, &send_ind);
         commands_printf_lisp("Could not pause");
-        reply_func(send_buffer, ind);
+        reply_func(send_buffer, (unsigned int)ind);
         break;
       }
 
@@ -1703,7 +1698,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
         offset_last = -1;
         buffer_append_int16(send_buffer, result_last, &send_ind);
         commands_printf_lisp("Could not start eval");
-        reply_func(send_buffer, ind);
+        reply_func(send_buffer, (unsigned int)ind);
         break;
       }
 
@@ -1755,7 +1750,7 @@ void repl_process_cmd(unsigned char *data, unsigned int len,
       }
     }
 
-    reply_func(send_buffer, send_ind);
+    reply_func(send_buffer, (unsigned int)send_ind);
   } break;
   case COMM_LISP_WRITE_CODE: {
   } break;
@@ -1789,7 +1784,7 @@ void *udp_broadcast_task(void *arg) {
 
   char hostbuffer[256];
   char *ip;
-  int hostname = gethostname(hostbuffer, sizeof(hostbuffer));
+  gethostname(hostbuffer, sizeof(hostbuffer));
   struct hostent *host_entry;
 
   host_entry = gethostbyname(hostbuffer);
@@ -1807,21 +1802,24 @@ void *udp_broadcast_task(void *arg) {
   sDestAddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
   sDestAddr.sin_port = htons(65109);
 
-  for (;;) {
-    char sendbuf[50];
-    size_t ind = 0;
-    ind += sprintf(sendbuf, "%s::%s::%u", "LBM-REPL",  ip, vesctcp_port) + 1;
-    sendto(sock, sendbuf, ind, 0, (struct sockaddr *)&sDestAddr, sizeof(sDestAddr));
-    sleep(2);
+  char sendbuf[50];
+  int ind = sprintf(sendbuf, "%s::%s::%u", "LBM-REPL",  ip, vesctcp_port) + 1;
+
+  if (ind > 0) {
+    for (;;) {
+      sendto(sock, sendbuf, (size_t)ind, 0, (struct sockaddr *)&sDestAddr, sizeof(sDestAddr));
+      sleep(2);
+    }
   }
+  return (void*)0;
 }
 
 void send_tcp_bytes(unsigned char *buffer, unsigned int len) {
-  int to_write = len;
+  int to_write = (int)len;
   int error_cnt = 0;
 
   while (to_write > 0) {
-    int written = write (connected_socket, buffer + (len - to_write), to_write);
+    ssize_t written = write(connected_socket, buffer + ((int)len - to_write), (size_t)to_write);
     if (written < 0) {
       error_cnt ++;
       if (error_cnt > SEND_MAX_RETRY) {
@@ -1829,7 +1827,7 @@ void send_tcp_bytes(unsigned char *buffer, unsigned int len) {
       }
       sleep_callback(10);
     }
-    to_write -= written;
+    to_write -= (int)written;
   }
 }
 
@@ -1848,14 +1846,14 @@ void *vesctcp_client_handler(void *arg) {
   uint8_t buffer[1024];
   packet_init(send_tcp_bytes, process_packet_local,&packet);
   send_func = send_packet_local;
-  int len;
+  ssize_t len;
 
   struct sockaddr_in addr;
   socklen_t addr_size = sizeof(struct sockaddr_in);
-  int res = getpeername(connected_socket, (struct sockaddr *)&addr, &addr_size);
+  getpeername(connected_socket, (struct sockaddr *)&addr, &addr_size);
   char ip[256];
   memset(ip,0,256);
-  strncpy(ip, inet_ntoa(addr.sin_addr), 256);
+  strncpy(ip, inet_ntoa(addr.sin_addr), 255);
 
   printf("Client %s connected\n",ip);
 
@@ -1872,7 +1870,7 @@ void *vesctcp_client_handler(void *arg) {
   send_func = NULL;
   printf("Client %s disconnected\n",ip);
   vesctcp_server_in_use = false;
-
+  return (void*)0;
 }
 
 
@@ -1920,14 +1918,18 @@ int main(int argc, char **argv) {
 
       if (client_socket >= 0 && !vesctcp_server_in_use ) {
         vesctcp_server_in_use = true;
+        // TODO: is this cast really ok?
         pthread_create(&client_thread, NULL, vesctcp_client_handler, (void*)client_socket);
 
       } else if (client_socket >= 0) {
         char ip[256];
         memset(ip,0,256);
-        strncpy(ip, inet_ntoa(client_sockaddr_in.sin_addr), 256);
+        strncpy(ip, inet_ntoa(client_sockaddr_in.sin_addr), 255);
         printf("Refusing connection from %s\n", ip);
-        write(client_socket, vesctcp_in_use, strlen(vesctcp_in_use));
+        ssize_t r = write(client_socket, vesctcp_in_use, strlen(vesctcp_in_use));
+	if (r < 0) {
+	  printf("Unable to write to refused client\n");
+	}
       }
     }
   } else {
