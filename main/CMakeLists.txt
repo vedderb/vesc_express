@@ -113,3 +113,19 @@ set(COMPONENT_ADD_INCLUDEDIRS
 )
 
 register_component()
+
+if((DEFINED ENV{HW_SRC}) OR (DEFINED ENV{HW_HEADER}))
+    if(NOT DEFINED ENV{HW_SRC})
+        message(FATAL_ERROR "HW_SRC not defined while HW_HEADER is set. You must either set both or none.")
+    endif()
+    if(NOT DEFINED ENV{HW_HEADER})
+        message(FATAL_ERROR "HW_HEADER not defined while HW_SRC is set. You must either set both or none.")
+    endif()
+    
+    message(STATUS "Setting HW_SOURCE=\"$ENV{HW_SRC}\" and HW_HEADER=\"$ENV{HW_HEADER}\" definitions")
+    
+    add_compile_definitions(
+        HW_SOURCE=\"$ENV{HW_SRC}\"
+        HW_HEADER=\"$ENV{HW_HEADER}\"
+    )
+endif()
