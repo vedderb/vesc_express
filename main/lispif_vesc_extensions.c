@@ -3501,9 +3501,14 @@ static lbm_value ext_f_connect(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	bool res = log_mount_card(pin_mosi, pin_miso, pin_sck, pin_cs, spi_speed);
+	esp_err_t res = log_mount_card(pin_mosi, pin_miso, pin_sck, pin_cs, spi_speed);
 
-	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	if (res == ESP_OK) {
+		return ENC_SYM_TRUE;
+	} else {
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
 }
 
 // (f-connect-nand pin-mosi pin-miso pin-sck pin-cs optSpiSpeed) -> t or nil
