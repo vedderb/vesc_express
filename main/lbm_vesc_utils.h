@@ -199,3 +199,10 @@ bool lbm_check_argn_least(lbm_uint argn, lbm_uint n_min);
  * @return If necessary allocations were successfull. 
 */
 bool f_pack_array(lbm_flat_value_t *result, void *data, size_t size);
+
+/**
+ * Set LBM Error reason based on the ESP error code.
+ *  
+ * @param res The ESP error code to set as the error reason.
+*/
+void lbm_set_esp_error_reason(esp_err_t res);

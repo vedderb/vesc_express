@@ -267,7 +267,7 @@ static void log_task(void *arg) {
 	}
 }
 
-bool log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq) {
+esp_err_t log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq) {
 	esp_err_t ret;
 
 	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
@@ -288,10 +288,10 @@ bool log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int fre
 	};
 
 	log_unmount_card();
-
+	
 	ret = spi_bus_initialize(m_host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
 	if (ret != ESP_OK) {
-		return false;
+		return ret;
 	}
 
 	sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
@@ -299,13 +299,7 @@ bool log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int fre
 	slot_config.host_id = m_host.slot;
 
 	file_basepath = "/sdcard/";
-	ret = esp_vfs_fat_sdspi_mount("/sdcard", &m_host, &slot_config, &mount_config, &m_card);
-
-	if (ret != ESP_OK) {
-		return false;
-	}
-
-	return true;
+	return esp_vfs_fat_sdspi_mount("/sdcard", &m_host, &slot_config, &mount_config, &m_card);
 }
 
 void log_unmount_card(void) {

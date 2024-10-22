@@ -27,7 +27,7 @@
 
 // Functions
 bool log_init(void);
-bool log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq);
+esp_err_t log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq);
 void log_unmount_card(void);
 bool log_mount_nand_flash(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq);
 void log_unmount_nand_flash(void);

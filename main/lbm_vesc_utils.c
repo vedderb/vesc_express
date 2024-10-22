@@ -1,5 +1,6 @@
 /*
 	Copyright 2023 Rasmus Söderhielm    rasmus.soderhielm@gmail.com
+	          2024 Joakim Lundborg  	joakim.lundborg@gmail.com
 
 	This file is part of the VESC firmware.
 
@@ -137,4 +138,10 @@ bool f_pack_array(lbm_flat_value_t *result, void *data, size_t size) {
 	}
 
 	return true;
+}
+
+void lbm_set_esp_error_reason(esp_err_t res) {
+	static char ebuf[64];
+	sprintf(ebuf, "%s: %d", esp_err_to_name(res), res);
+	lbm_set_error_reason(ebuf);
 }
