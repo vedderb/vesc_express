@@ -82,7 +82,7 @@ static const char* macros[] = {
 "(define loopwhile (macro (cnd body) (me-loopwhile cnd body)))",
 "(define looprange (macro (it start end body) (me-looprange it start end body)))",
 "(define loopforeach (macro (it lst body) (me-loopforeach it lst body)))",
-"(define loopwhile-thd (macro (stk cnd body) `(spawn ,stk (fn () (loopwhile ,cnd ,body)))))",
+"(define loopwhile-thd (macro (stk cnd body) `(spawn ,@(if (list? stk) stk (list stk)) (fn () (loopwhile ,cnd ,body)))))",
 };
 
 #define DYN_LOAD_CALLBACK_LEN	10
