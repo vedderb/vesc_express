@@ -3235,6 +3235,23 @@ static lbm_value ext_gnss_age(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float(UTILS_AGE_S(nmea_get_state()->gga.update_time));
 }
 
+typedef struct {
+	lbm_cid id;
+	uint16_t rate_ms;
+	int num_uart;
+	int pin_rx;
+	int pin_tx;
+} ublox_init_args;
+
+static void ublox_init_task(void *arg) {
+	ublox_init_args *a = (ublox_init_args*)arg;
+
+	bool res = ublox_init(false, a->rate_ms, a->num_uart, a->pin_rx, a->pin_tx);
+	lbm_unblock_ctx_unboxed(a->id, res ? ENC_SYM_TRUE : ENC_SYM_NIL);
+
+	vTaskDelete(NULL);
+}
+
 static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
 	if (argn > 4) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
@@ -3273,7 +3290,17 @@ static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	return ublox_init(false, rate, uart_num, pin_rx, pin_tx) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	static ublox_init_args a;
+	a.id = lbm_get_current_cid();
+	a.rate_ms = rate;
+	a.num_uart = uart_num;
+	a.pin_rx = pin_rx;
+	a.pin_tx = pin_tx;
+
+	xTaskCreatePinnedToCore(ublox_init_task, "Ublox Init", 2048, &a, 7, NULL, tskNO_AFFINITY);
+	lbm_block_ctx_from_extension();
+
+	return ENC_SYM_NIL;
 }
 
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
