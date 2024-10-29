@@ -3244,10 +3244,14 @@ typedef struct {
 } ublox_init_args;
 
 static void ublox_init_task(void *arg) {
+	int restart_cnt = lispif_get_restart_cnt();
 	ublox_init_args *a = (ublox_init_args*)arg;
 
 	bool res = ublox_init(false, a->rate_ms, a->num_uart, a->pin_rx, a->pin_tx);
-	lbm_unblock_ctx_unboxed(a->id, res ? ENC_SYM_TRUE : ENC_SYM_NIL);
+
+	if (restart_cnt == lispif_get_restart_cnt()) {
+		lbm_unblock_ctx_unboxed(a->id, res ? ENC_SYM_TRUE : ENC_SYM_NIL);
+	}
 
 	vTaskDelete(NULL);
 }
