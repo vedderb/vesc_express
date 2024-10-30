@@ -354,10 +354,10 @@ static void bq_init(uint8_t dev_addr) {
 	bq_set_reg(dev_addr, TS1Config, 0b00111011, 1);
 	bq_set_reg(dev_addr, TS3Config, 0b00111011, 1);
 	bq_set_reg(dev_addr, ALERTPinConfig, 0b00111011, 1);
+	bq_set_reg(dev_addr, DCHGPinConfig, 0b00111011, 1);
 
 	// Disabled
 	bq_set_reg(dev_addr, HDQPinConfig, 0x00, 1);
-	bq_set_reg(dev_addr, DCHGPinConfig, 0x00, 1);
 	bq_set_reg(dev_addr, DDSGPinConfig, 0x00, 1);
 
 	// Use all cells
@@ -553,6 +553,7 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	float v1 = (float)command_read(BQ_ADDR_1, TS1Temperature) * counts_to_volts;
 	float v2 = (float)command_read(BQ_ADDR_1, TS3Temperature) * counts_to_volts;
 	float v3 = (float)command_read(BQ_ADDR_1, ALERTTemperature) * counts_to_volts;
+	float v4 = (float)command_read(BQ_ADDR_1, DCHGTemperature) * counts_to_volts;
 
 	// TODO: Use config
 	float ntc_beta = 3380.0;
@@ -560,20 +561,12 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v1), ntc_beta)), ts_list);
 	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v2), ntc_beta)), ts_list);
 	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v3), ntc_beta)), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v4), ntc_beta)), ts_list);
 
 	if (m_cells_ic2 != 0) {
 		ts_list = lbm_cons(lbm_enc_float(
 				(float)command_read(BQ_ADDR_2, IntTemperature) * 0.1 - 273.15), ts_list);
-		v1 = (float)command_read(BQ_ADDR_2, TS1Temperature) * counts_to_volts;
-		v2 = (float)command_read(BQ_ADDR_2, TS3Temperature) * counts_to_volts;
-
-		ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v1), ntc_beta)), ts_list);
-
-//		ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v2), ntc_beta)), ts_list);
-		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list); // v2 reads 0 on IC2 for some reason I can't figure out
 	} else {
-		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
-		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
 		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
 	}
 
