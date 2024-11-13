@@ -113,6 +113,11 @@
 #define CONF_CELLS_IC2 16
 #endif
 
+// Ah Columb Counting
+#ifndef CONF_BATT_AH
+#define CONF_BATT_AH 10
+#endif
+
 // Distributed Balancing
 #ifndef CONF_DIST_BAL
 #define CONF_DIST_BAL 1
@@ -166,6 +171,11 @@
 // Minimum Sleep Current
 #ifndef CONF_MIN_CURRENT_SLEEP
 #define CONF_MIN_CURRENT_SLEEP 0.3
+#endif
+
+// Charger Detection Voltage
+#ifndef CONF_V_CHARGE_DETECT
+#define CONF_V_CHARGE_DETECT 5
 #endif
 
 // Charge Max Temp

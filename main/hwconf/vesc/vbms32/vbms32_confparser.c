@@ -40,6 +40,7 @@ int32_t vbms32_confparser_serialize_main_config_t(uint8_t *buffer, const main_co
 	buffer_append_int16(buffer, conf->max_bal_ch, &ind);
 	buffer[ind++] = (uint8_t)conf->cells_ic1;
 	buffer[ind++] = (uint8_t)conf->cells_ic2;
+	buffer_append_float32_auto(buffer, conf->batt_ah, &ind);
 	buffer[ind++] = conf->dist_bal;
 	buffer[ind++] = conf->balance_mode;
 	buffer_append_float32_auto(buffer, conf->vc_balance_start, &ind);
@@ -51,6 +52,7 @@ int32_t vbms32_confparser_serialize_main_config_t(uint8_t *buffer, const main_co
 	buffer_append_float32_auto(buffer, conf->balance_max_current, &ind);
 	buffer_append_float32_auto(buffer, conf->min_current_ah_wh_cnt, &ind);
 	buffer_append_float32_auto(buffer, conf->min_current_sleep, &ind);
+	buffer_append_float16(buffer, conf->v_charge_detect, 10, &ind);
 	buffer_append_float16(buffer, conf->t_charge_max, 10, &ind);
 	buffer[ind++] = conf->i_measure_mode;
 	buffer_append_float32_auto(buffer, conf->min_charge_current, &ind);
@@ -103,6 +105,7 @@ bool vbms32_confparser_deserialize_main_config_t(const uint8_t *buffer, main_con
 	conf->max_bal_ch = buffer_get_int16(buffer, &ind);
 	conf->cells_ic1 = buffer[ind++];
 	conf->cells_ic2 = buffer[ind++];
+	conf->batt_ah = buffer_get_float32_auto(buffer, &ind);
 	conf->dist_bal = buffer[ind++];
 	conf->balance_mode = buffer[ind++];
 	conf->vc_balance_start = buffer_get_float32_auto(buffer, &ind);
@@ -114,6 +117,7 @@ bool vbms32_confparser_deserialize_main_config_t(const uint8_t *buffer, main_con
 	conf->balance_max_current = buffer_get_float32_auto(buffer, &ind);
 	conf->min_current_ah_wh_cnt = buffer_get_float32_auto(buffer, &ind);
 	conf->min_current_sleep = buffer_get_float32_auto(buffer, &ind);
+	conf->v_charge_detect = buffer_get_float16(buffer, 10, &ind);
 	conf->t_charge_max = buffer_get_float16(buffer, 10, &ind);
 	conf->i_measure_mode = buffer[ind++];
 	conf->min_charge_current = buffer_get_float32_auto(buffer, &ind);
@@ -151,6 +155,7 @@ void vbms32_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->max_bal_ch = CONF_MAX_BAL_CH;
 	conf->cells_ic1 = CONF_CELLS_IC1;
 	conf->cells_ic2 = CONF_CELLS_IC2;
+	conf->batt_ah = CONF_BATT_AH;
 	conf->dist_bal = CONF_DIST_BAL;
 	conf->balance_mode = CONF_BALANCE_MODE;
 	conf->vc_balance_start = CONF_BALANCE_START;
@@ -162,6 +167,7 @@ void vbms32_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->balance_max_current = CONF_BALANCE_MAX_CURRENT;
 	conf->min_current_ah_wh_cnt = CONF_MIN_CURRENT_AH_WH_CNT;
 	conf->min_current_sleep = CONF_MIN_CURRENT_SLEEP;
+	conf->v_charge_detect = CONF_V_CHARGE_DETECT;
 	conf->t_charge_max = CONF_T_CHARGE_MAX;
 	conf->i_measure_mode = CONF_I_MEASURE_MODE;
 	conf->min_charge_current = CONF_MIN_CHARGE_CURRENT;

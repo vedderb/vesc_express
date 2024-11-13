@@ -722,6 +722,7 @@ static lbm_value ext_subcmd_cmdonly(lbm_value *args, lbm_uint argn) {
 typedef struct {
 	lbm_uint cells_ic1;
 	lbm_uint cells_ic2;
+	lbm_uint batt_ah;
 	lbm_uint balance_mode;
 	lbm_uint max_bal_ch;
 	lbm_uint dist_bal;
@@ -749,68 +750,60 @@ typedef struct {
 
 static vesc_syms syms_vesc = {0};
 
-static bool get_add_symbol(char *name, lbm_uint* id) {
-	if (!lbm_get_symbol_by_name(name, id)) {
-		if (!lbm_add_symbol_const(name, id)) {
-			return false;
-		}
-	}
-
-	return true;
-}
-
 static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 	if (*comp == 0) {
 		if (comp == &syms_vesc.cells_ic1) {
-			get_add_symbol("cells_ic1", comp);
+			lbm_add_symbol_const("cells_ic1", comp);
 		} else if (comp == &syms_vesc.cells_ic2) {
-			get_add_symbol("cells_ic2", comp);
+			lbm_add_symbol_const("cells_ic2", comp);
+		} else if (comp == &syms_vesc.batt_ah) {
+			lbm_add_symbol_const("batt_ah", comp);
 		} else if (comp == &syms_vesc.balance_mode) {
-			get_add_symbol("balance_mode", comp);
+			lbm_add_symbol_const("balance_mode", comp);
 		} else if (comp == &syms_vesc.max_bal_ch) {
-			get_add_symbol("max_bal_ch", comp);
+			lbm_add_symbol_const("max_bal_ch", comp);
 		} else if (comp == &syms_vesc.dist_bal) {
-			get_add_symbol("dist_bal", comp);
+			lbm_add_symbol_const("dist_bal", comp);
 		} else if (comp == &syms_vesc.vc_balance_start) {
-			get_add_symbol("vc_balance_start", comp);
+			lbm_add_symbol_const("vc_balance_start", comp);
 		} else if (comp == &syms_vesc.vc_balance_end) {
-			get_add_symbol("vc_balance_end", comp);
+			lbm_add_symbol_const("vc_balance_end", comp);
 		} else if (comp == &syms_vesc.vc_charge_start) {
-			get_add_symbol("vc_charge_start", comp);
+			lbm_add_symbol_const("vc_charge_start", comp);
 		} else if (comp == &syms_vesc.vc_charge_end) {
-			get_add_symbol("vc_charge_end", comp);
+			lbm_add_symbol_const("vc_charge_end", comp);
 		} else if (comp == &syms_vesc.vc_charge_min) {
-			get_add_symbol("vc_charge_min", comp);
+			lbm_add_symbol_const("vc_charge_min", comp);
 		} else if (comp == &syms_vesc.vc_balance_min) {
-			get_add_symbol("vc_balance_min", comp);
+			lbm_add_symbol_const("vc_balance_min", comp);
 		} else if (comp == &syms_vesc.balance_max_current) {
-			get_add_symbol("balance_max_current", comp);
+			lbm_add_symbol_const("balance_max_current", comp);
 		} else if (comp == &syms_vesc.min_current_ah_wh_cnt) {
-			get_add_symbol("min_current_ah_wh_cnt", comp);
+			lbm_add_symbol_const("min_current_ah_wh_cnt", comp);
 		} else if (comp == &syms_vesc.min_current_sleep) {
-			get_add_symbol("min_current_sleep", comp);
+			lbm_add_symbol_const("min_current_sleep", comp);
 		} else if (comp == &syms_vesc.v_charge_detect) {
-			get_add_symbol("v_charge_detect", comp);
+			lbm_add_symbol_const("v_charge_detect", comp);
 		} else if (comp == &syms_vesc.t_charge_max) {
-			get_add_symbol("t_charge_max", comp);
+			lbm_add_symbol_const("t_charge_max", comp);
 		} else if (comp == &syms_vesc.i_measure_mode) {
-			get_add_symbol("i_measure_mode", comp);
+			lbm_add_symbol_const("i_measure_mode", comp);
 		} else if (comp == &syms_vesc.sleep_timeout_reset_ms) {
-			get_add_symbol("sleep_timeout_reset_ms", comp);
+			lbm_add_symbol_const("sleep_timeout_reset_ms", comp);
 		} else if (comp == &syms_vesc.min_charge_current) {
-			get_add_symbol("min_charge_current", comp);
+			lbm_add_symbol_const("min_charge_current", comp);
 		} else if (comp == &syms_vesc.max_charge_current) {
-			get_add_symbol("max_charge_current", comp);
+			lbm_add_symbol_const("max_charge_current", comp);
 		} else if (comp == &syms_vesc.soc_filter_const) {
-			get_add_symbol("soc_filter_const", comp);
+			lbm_add_symbol_const("soc_filter_const", comp);
 		} else if (comp == &syms_vesc.t_bal_lim_start) {
-			get_add_symbol("t_bal_lim_start", comp);
+			lbm_add_symbol_const("t_bal_lim_start", comp);
 		} else if (comp == &syms_vesc.t_bal_lim_end) {
-			get_add_symbol("t_bal_lim_end", comp);
+			lbm_add_symbol_const("t_bal_lim_end", comp);
 		} else if (comp == &syms_vesc.t_charge_min) {
-			get_add_symbol("t_charge_min", comp);
+			lbm_add_symbol_const("t_charge_min", comp);
 		} else if (comp == &syms_vesc.t_charge_mon_en) {
-			get_add_symbol("t_charge_mon_en", comp);
+			lbm_add_symbol_const("t_charge_mon_en", comp);
 		}
 	}
 
@@ -877,6 +870,8 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		int tmp = cfg->balance_mode;
 		res = get_or_set_i(set, &tmp, &set_arg);
 		cfg->balance_mode = tmp;
+	} else if (compare_symbol(name, &syms_vesc.batt_ah)) {
+		res = get_or_set_float(set, &cfg->batt_ah, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.max_bal_ch)) {
 		res = get_or_set_i(set, &cfg->max_bal_ch, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.dist_bal)) {

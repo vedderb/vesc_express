@@ -107,6 +107,9 @@ typedef struct {
 
 	// Cells on second balance IC
 	int cells_ic2;
+	
+	// Battery amp hours
+	float batt_ah;
 
 	// Cell balancing mode
 	BMS_BALANCE_MODE balance_mode;
