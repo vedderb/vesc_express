@@ -273,7 +273,7 @@ esp_err_t log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, in
 	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
 			.format_if_mount_failed = true,
 			.max_files = 5,
-			.allocation_unit_size = 0
+			.allocation_unit_size = 8192
 	};
 
 	m_host.max_freq_khz = freq;
@@ -288,7 +288,7 @@ esp_err_t log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, in
 	};
 
 	log_unmount_card();
-	
+
 	ret = spi_bus_initialize(m_host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
 	if (ret != ESP_OK) {
 		return ret;
