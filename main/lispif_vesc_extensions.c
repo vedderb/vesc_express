@@ -5413,6 +5413,11 @@ static lbm_value ext_connected_wifi(lbm_value *args, lbm_uint argn) {
 	return comm_wifi_is_client_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
+static lbm_value ext_connected_hub(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return comm_wifi_is_connected_hub() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
 static lbm_value ext_connected_ble(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	return comm_ble_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -5764,6 +5769,7 @@ void lispif_load_vesc_extensions(void) {
 
 	// Connection checks
 	lbm_add_extension("connected-wifi", ext_connected_wifi);
+	lbm_add_extension("connected-hub", ext_connected_hub);
 	lbm_add_extension("connected-ble", ext_connected_ble);
 	lbm_add_extension("connected-usb", ext_connected_usb);
 

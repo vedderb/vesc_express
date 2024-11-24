@@ -49,6 +49,7 @@ WIFI_MODE comm_wifi_get_mode(void);
 esp_ip4_addr_t comm_wifi_get_ip(void);
 esp_ip4_addr_t comm_wifi_get_ip_client(void);
 bool comm_wifi_is_client_connected(void);
+bool comm_wifi_is_connected_hub(void);
 bool comm_wifi_is_connecting(void);
 bool comm_wifi_is_connected(void);
 
