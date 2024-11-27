@@ -503,7 +503,7 @@
         ))
 
         (bufset-i16 buf-canid35 0 (* soc 1000)) ; Battery A SOC
-        (bufset-u8 buf-canid35 2 (if (> vt-vchg 5.0) 1 0)) ; Battery A Charging
+        (bufset-u8 buf-canid35 2 (if (> vt-vchg (bms-get-param 'v_charge_detect)) 1 0)) ; Battery A Charging
         (bufset-u16 buf-canid35 3 min-left) ; Battery A Charge Time Minutes
         (bufset-u16 buf-canid35 5 (* (bms-get-param 'batt_ah) 10.0))
         (can-send-sid 35 buf-canid35)
