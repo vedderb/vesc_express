@@ -80,6 +80,11 @@ bool utils_gpio_is_valid(int pin);
 #define __NOP()					__asm__ __volatile__ ("nop")
 #endif
 
+// nan and infinity check for floats
+#define UTILS_IS_INF(x)		((x) == (1.0 / 0.0) || (x) == (-1.0 / 0.0))
+#define UTILS_IS_NAN(x)		((x) != (x))
+#define UTILS_NAN_ZERO(x)	(x = UTILS_IS_NAN(x) ? 0.0 : x)
+
 /**
  * A simple low pass filter.
  *

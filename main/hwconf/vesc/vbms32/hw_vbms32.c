@@ -26,6 +26,7 @@
 #include "lispif.h"
 #include "lispbm.h"
 #include "commands.h"
+#include "utils.h"
 
 #include <math.h>
 
@@ -40,20 +41,18 @@
 // Variables
 static SemaphoreHandle_t i2c_mutex;
 static SemaphoreHandle_t bq_mutex;
-static volatile bool m_bq_active = false;
 static unsigned int m_cells_ic1 = 16;
 static unsigned int m_cells_ic2 = 16;
 static uint16_t m_bal_state_ic1 = 0;
 static uint16_t m_bal_state_ic2 = 0;
 
+// Error messages
+static char *error_comm_bq1 = "BQ1 communication error";
+static char *error_comm_bq2 = "BQ2 communication error";
+
 static esp_err_t i2c_tx_rx(uint8_t addr,
 		const uint8_t* write_buffer, size_t write_size,
 		uint8_t* read_buffer, size_t read_size) {
-
-	if (!m_bq_active) {
-		commands_printf_lisp("BQ76952 not active");
-		return -2;
-	}
 
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
 
@@ -209,9 +208,15 @@ static bool bq_set_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t reg_data, u
 	return res;
 }
 
-static int16_t command_read(uint8_t dev_addr, uint8_t command) {
+static int16_t command_read(uint8_t dev_addr, uint8_t command, bool *ok) {
+	if (ok) {
+		*ok = false;
+	}
 	uint8_t RX_data[2] = {0, 0};
 	if (bq_read_block(dev_addr, command, RX_data, 2)) {
+		if (ok) {
+			*ok = true;
+		}
 		return (int16_t)(((uint16_t)RX_data[1] << 8) | (uint16_t)RX_data[0]);
 	} else {
 		return -1;
@@ -433,8 +438,6 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 	i2c_reset_tx_fifo(0);
 	i2c_reset_rx_fifo(0);
 
-	m_bq_active = true;
-
 	vTaskDelay(50);
 
 	// Reset the address of the first BQ just in case
@@ -461,9 +464,12 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 	m_cells_ic1 = cells_ic1;
 	m_cells_ic2 = cells_ic2;
 
-	bool res = command_read(BQ_ADDR_1, Cell2Voltage) >= 0;
+	bool res = false;
+	command_read(BQ_ADDR_1, Cell2Voltage, &res);
 	if (m_cells_ic2 > 0) {
-		res = res && command_read(BQ_ADDR_2, Cell2Voltage) >= 0;
+		bool res2 = false;
+		command_read(BQ_ADDR_2, Cell2Voltage, &res2);
+		res = res && res2;
 	}
 
 	xSemaphoreGive(bq_mutex);
@@ -512,8 +518,6 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 		command_subcommands(BQ_ADDR_2, DEEPSLEEP);
 	}
 
-	m_bq_active = false;
-
 	xSemaphoreGive(bq_mutex);
 
 	return ENC_SYM_TRUE;
@@ -525,13 +529,25 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 	lbm_value vc_list = ENC_SYM_NIL;
 
 	for (int i = 0;i < m_cells_ic1; i++) {
-		int res = command_read(BQ_ADDR_1, Cell1Voltage + i * 2);
-		vc_list = lbm_cons(lbm_enc_float((float)res / 1000.0), vc_list);
+		bool ok = false;
+		int res = command_read(BQ_ADDR_1, Cell1Voltage + i * 2, &ok);
+		if (ok) {
+			vc_list = lbm_cons(lbm_enc_float((float)res / 1000.0), vc_list);
+		} else {
+			lbm_set_error_reason(error_comm_bq1);
+			return ENC_SYM_EERROR;
+		}
 	}
 
 	for (int i = 0;i < m_cells_ic2; i++) {
-		int res = command_read(BQ_ADDR_2, Cell1Voltage + i * 2);
-		vc_list = lbm_cons(lbm_enc_float((float)res / 1000.0), vc_list);
+		bool ok = false;
+		int res = command_read(BQ_ADDR_2, Cell1Voltage + i * 2, &ok);
+		if (ok) {
+			vc_list = lbm_cons(lbm_enc_float((float)res / 1000.0), vc_list);
+		} else {
+			lbm_set_error_reason(error_comm_bq2);
+			return ENC_SYM_EERROR;
+		}
 	}
 
 	return lbm_list_destructive_reverse(vc_list);
@@ -539,47 +555,70 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 
 #define NTC_TEMP(res, beta)			(1.0 / ((logf((res) / 10000.0) / beta) + (1.0 / 298.15)) - 273.15)
 #define NTC_RES(volts)				(18.0e3 / (1.8 / volts - 1.0) - 500.0)
+#define NAN_TO_M1(x)				(UTILS_IS_NAN(x) ? -1.0 : x)
 
 static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
 	lbm_value ts_list = ENC_SYM_NIL;
-	ts_list = lbm_cons(lbm_enc_float(
-			(float)command_read(BQ_ADDR_1, IntTemperature) * 0.1 - 273.15), ts_list);
+	bool ok = false;
+	ts_list = lbm_cons(lbm_enc_float((float)command_read(BQ_ADDR_1, IntTemperature, &ok) * 0.1 - 273.15), ts_list);
+	if (!ok) { goto exit_error1; }
 
 	// Multiply by 256 as only 16 of the 24 bits are used
 	const float counts_to_volts = 0.358e-6 * 256.0;
 
-	float v1 = (float)command_read(BQ_ADDR_1, TS1Temperature) * counts_to_volts;
-	float v2 = (float)command_read(BQ_ADDR_1, TS3Temperature) * counts_to_volts;
-	float v3 = (float)command_read(BQ_ADDR_1, ALERTTemperature) * counts_to_volts;
-	float v4 = (float)command_read(BQ_ADDR_1, DCHGTemperature) * counts_to_volts;
+	float v1 = (float)command_read(BQ_ADDR_1, TS1Temperature, &ok) * counts_to_volts;
+	if (!ok) { goto exit_error1; }
+	float v2 = (float)command_read(BQ_ADDR_1, TS3Temperature, &ok) * counts_to_volts;
+	if (!ok) { goto exit_error1; }
+	float v3 = (float)command_read(BQ_ADDR_1, ALERTTemperature, &ok) * counts_to_volts;
+	if (!ok) { goto exit_error1; }
+	float v4 = (float)command_read(BQ_ADDR_1, DCHGTemperature, &ok) * counts_to_volts;
+	if (!ok) { goto exit_error1; }
 
 	// TODO: Use config
 	float ntc_beta = 3380.0;
 
-	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v1), ntc_beta)), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v2), ntc_beta)), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v3), ntc_beta)), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(NTC_TEMP(NTC_RES(v4), ntc_beta)), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v1), ntc_beta))), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v2), ntc_beta))), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v3), ntc_beta))), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v4), ntc_beta))), ts_list);
 
 	if (m_cells_ic2 != 0) {
 		ts_list = lbm_cons(lbm_enc_float(
-				(float)command_read(BQ_ADDR_2, IntTemperature) * 0.1 - 273.15), ts_list);
+				(float)command_read(BQ_ADDR_2, IntTemperature, &ok) * 0.1 - 273.15), ts_list);
+		if (!ok) { goto exit_error2; }
 	} else {
 		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
 	}
 
 	return lbm_list_destructive_reverse(ts_list);
+
+	exit_error1:
+	lbm_set_error_reason(error_comm_bq1);
+	return ENC_SYM_EERROR;
+
+	exit_error2:
+	lbm_set_error_reason(error_comm_bq2);
+	return ENC_SYM_EERROR;
 }
 
 static lbm_value ext_get_current(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
+	bool ok = false;
+	float current = ((float)command_read(BQ_ADDR_1, CC2Current, &ok) / 100.0);
+
+	if (!ok) {
+		lbm_set_error_reason(error_comm_bq1);
+		return ENC_SYM_EERROR;
+	}
+
 #if PCB_VERSION == 2
-	return lbm_enc_float(((float)command_read(BQ_ADDR_1, CC2Current) / 100.0));
+	return lbm_enc_float(current);
 #else
-	return lbm_enc_float(-((float)command_read(BQ_ADDR_1, CC2Current) / 100.0));
+	return lbm_enc_float(-current);
 #endif
 }
 
@@ -654,6 +693,9 @@ static lbm_value ext_set_bal(lbm_value *args, lbm_uint argn) {
 		}
 
 		res = subcommands_write16(BQ_ADDR_1, CB_ACTIVE_CELLS, m_bal_state_ic1);
+		if (!res) {
+			lbm_set_error_reason(error_comm_bq1);
+		}
 	} else if ((ch - m_cells_ic1) < m_cells_ic2) {
 		if (state) {
 			m_bal_state_ic2 |= (1 << (ch - m_cells_ic1));
@@ -662,9 +704,12 @@ static lbm_value ext_set_bal(lbm_value *args, lbm_uint argn) {
 		}
 
 		res = subcommands_write16(BQ_ADDR_2, CB_ACTIVE_CELLS, m_bal_state_ic2);
+		if (!res) {
+			lbm_set_error_reason(error_comm_bq1);
+		}
 	}
 
-	return res ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	return res ? ENC_SYM_TRUE : ENC_SYM_EERROR;
 }
 
 static lbm_value ext_get_bal(lbm_value *args, lbm_uint argn) {
@@ -705,7 +750,14 @@ static lbm_value ext_direct_cmd(lbm_value *args, lbm_uint argn) {
 		addr = BQ_ADDR_2;
 	}
 
-	return lbm_enc_i(command_read(addr, lbm_dec_as_u32(args[1])));
+	bool ok = false;
+	int res = command_read(addr, lbm_dec_as_u32(args[1]), &ok);
+	if (ok) {
+		return lbm_enc_i(res);
+	} else {
+		lbm_set_error_reason(addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2);
+		return ENC_SYM_EERROR;
+	}
 }
 
 static lbm_value ext_subcmd_cmdonly(lbm_value *args, lbm_uint argn) {
