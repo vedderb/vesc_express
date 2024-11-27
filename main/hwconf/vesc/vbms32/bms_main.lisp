@@ -58,25 +58,25 @@
 (def rtc-val-magic 114)
 
 ; If in deepsleep, this will return 4
-; (bms-direct-cmd 0x10 0x00)
+; (bms-direct-cmd 1 0x00)
 
 ; Exit deepsleep
-; (bms-subcmd-cmdonly 0x10 0x000e)
+; (bms-subcmd-cmdonly 1 0x000e)
 
 (defun init-hw () {
         (loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
         (var was-sleep false)
-        (if (= (bms-direct-cmd 0x10 0x00) 4) {
+        (if (= (bms-direct-cmd 1 0x00) 4) {
                 (setq was-sleep true)
-                (loopwhile (= (bms-direct-cmd 0x10 0x00) 4) {
-                        (bms-subcmd-cmdonly 0x10 0x000e)
+                (loopwhile (= (bms-direct-cmd 1 0x00) 4) {
+                        (bms-subcmd-cmdonly 1 0x000e)
                         (sleep 0.01)
                 })
         })
-        (if (and (> (bms-get-param 'cells_ic2) 0) (= (bms-direct-cmd 0x08 0x00) 4)) {
+        (if (and (> (bms-get-param 'cells_ic2) 0) (= (bms-direct-cmd 2 0x00) 4)) {
                 (setq was-sleep true)
-                (loopwhile (= (bms-direct-cmd 0x08 0x00) 4) {
-                        (bms-subcmd-cmdonly 0x08 0x000e)
+                (loopwhile (= (bms-direct-cmd 2 0x00) 4) {
+                        (bms-subcmd-cmdonly 2 0x000e)
                         (sleep 0.01)
                 })
         })
@@ -512,6 +512,14 @@
 })
 
 (defun main-ctrl () (loopwhile t {
+            ; Exit if any of the BQs has fallen asleep
+            (if (or
+                    (= (bms-direct-cmd 1 0x00) 4)
+                    (and (> (bms-get-param 'cells_ic2) 0) (= (bms-direct-cmd 2 0x00) 4))
+                )
+                (exit-error 0)
+            )
+
             (var v-cells (bms-get-vcells))
 
             ; First and last are balance IC temps
