@@ -125,6 +125,7 @@ typedef struct {
 	lbm_uint fw_ver;
 	lbm_uint uuid;
 	lbm_uint hw_type;
+	lbm_uint part_running;
 
 	// Rates
 	lbm_uint rate_100k;
@@ -241,6 +242,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("uuid", comp);
 		} else if (comp == &syms_vesc.hw_type) {
 			lbm_add_symbol_const("hw-type", comp);
+		} else if (comp == &syms_vesc.part_running) {
+			lbm_add_symbol_const("part-running", comp);
 		}
 
 		else if (comp == &syms_vesc.rate_100k) {
@@ -1003,6 +1006,18 @@ static lbm_value ext_sysinfo(lbm_value *args, lbm_uint argn) {
 		res = lbm_cons(lbm_enc_i(FW_VERSION_MAJOR), res);
 	} else if (compare_symbol(name, &syms_vesc.hw_type)) {
 		res = lbm_enc_sym(sym_hw_express);
+	} else if (compare_symbol(name, &syms_vesc.part_running)) {
+		const esp_partition_t *running = esp_ota_get_running_partition();
+		if (running != NULL) {
+			lbm_value lbm_res;
+			if (lbm_create_array(&lbm_res, strlen(running->label) + 1)) {
+				lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(lbm_res);
+				strcpy((char*)arr->data, running->label);
+				res = lbm_res;
+			} else {
+				res = ENC_SYM_MERROR;
+			}
+		}
 	}
 
 	return res;

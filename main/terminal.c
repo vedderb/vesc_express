@@ -221,6 +221,7 @@ void terminal_process_string(char *str) {
 			if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
 				commands_printf("App running ver   : %s", running_app_info.version);
 				commands_printf("App running proj  : %s", running_app_info.project_name);
+				commands_printf("App partition     : %s", running->label);
 			}
 		} else {
 			commands_printf("Could not get running partition.");
