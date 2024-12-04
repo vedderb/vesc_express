@@ -126,6 +126,8 @@ typedef struct {
 	lbm_uint uuid;
 	lbm_uint hw_type;
 	lbm_uint part_running;
+	lbm_uint git_branch;
+	lbm_uint git_hash;
 
 	// Rates
 	lbm_uint rate_100k;
@@ -244,6 +246,10 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("hw-type", comp);
 		} else if (comp == &syms_vesc.part_running) {
 			lbm_add_symbol_const("part-running", comp);
+		} else if (comp == &syms_vesc.git_branch) {
+			lbm_add_symbol_const("git-branch", comp);
+		} else if (comp == &syms_vesc.git_hash) {
+			lbm_add_symbol_const("git-hash", comp);
 		}
 
 		else if (comp == &syms_vesc.rate_100k) {
@@ -1017,6 +1023,24 @@ static lbm_value ext_sysinfo(lbm_value *args, lbm_uint argn) {
 			} else {
 				res = ENC_SYM_MERROR;
 			}
+		}
+	} else if (compare_symbol(name, &syms_vesc.git_branch)) {
+		lbm_value lbm_res;
+		if (lbm_create_array(&lbm_res, strlen(GIT_BRANCH_NAME) + 1)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(lbm_res);
+			strcpy((char*)arr->data, GIT_BRANCH_NAME);
+			res = lbm_res;
+		} else {
+			res = ENC_SYM_MERROR;
+		}
+	} else if (compare_symbol(name, &syms_vesc.git_hash)) {
+		lbm_value lbm_res;
+		if (lbm_create_array(&lbm_res, strlen(GIT_COMMIT_HASH) + 1)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(lbm_res);
+			strcpy((char*)arr->data, GIT_COMMIT_HASH);
+			res = lbm_res;
+		} else {
+			res = ENC_SYM_MERROR;
 		}
 	}
 
