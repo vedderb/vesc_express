@@ -777,7 +777,11 @@ typedef struct {
 	lbm_uint batt_ah;
 	lbm_uint balance_mode;
 	lbm_uint max_bal_ch;
+	lbm_uint soc_use_ah;
 	lbm_uint dist_bal;
+	lbm_uint block_sleep;
+	lbm_uint vc_empty;
+	lbm_uint vc_full;
 	lbm_uint vc_balance_start;
 	lbm_uint vc_balance_end;
 	lbm_uint vc_charge_start;
@@ -790,7 +794,8 @@ typedef struct {
 	lbm_uint v_charge_detect;
 	lbm_uint t_charge_max;
 	lbm_uint i_measure_mode;
-	lbm_uint sleep_timeout_reset_ms;
+	lbm_uint sleep_regular;
+	lbm_uint sleep_long;
 	lbm_uint min_charge_current;
 	lbm_uint max_charge_current;
 	lbm_uint soc_filter_const;
@@ -816,6 +821,10 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("max_bal_ch", comp);
 		} else if (comp == &syms_vesc.dist_bal) {
 			lbm_add_symbol_const("dist_bal", comp);
+		} else if (comp == &syms_vesc.vc_empty) {
+			lbm_add_symbol_const("vc_empty", comp);
+		} else if (comp == &syms_vesc.vc_full) {
+			lbm_add_symbol_const("vc_full", comp);
 		} else if (comp == &syms_vesc.vc_balance_start) {
 			lbm_add_symbol_const("vc_balance_start", comp);
 		} else if (comp == &syms_vesc.vc_balance_end) {
@@ -840,8 +849,10 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("t_charge_max", comp);
 		} else if (comp == &syms_vesc.i_measure_mode) {
 			lbm_add_symbol_const("i_measure_mode", comp);
-		} else if (comp == &syms_vesc.sleep_timeout_reset_ms) {
-			lbm_add_symbol_const("sleep_timeout_reset_ms", comp);
+		} else if (comp == &syms_vesc.sleep_regular) {
+			lbm_add_symbol_const("sleep_regular", comp);
+		} else if (comp == &syms_vesc.sleep_long) {
+			lbm_add_symbol_const("sleep_long", comp);
 		} else if (comp == &syms_vesc.min_charge_current) {
 			lbm_add_symbol_const("min_charge_current", comp);
 		} else if (comp == &syms_vesc.max_charge_current) {
@@ -926,8 +937,16 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &cfg->batt_ah, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.max_bal_ch)) {
 		res = get_or_set_i(set, &cfg->max_bal_ch, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.soc_use_ah)) {
+		res = get_or_set_bool(set, &cfg->soc_use_ah, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.block_sleep)) {
+		res = get_or_set_bool(set, &cfg->block_sleep, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.dist_bal)) {
 		res = get_or_set_bool(set, &cfg->dist_bal, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.vc_empty)) {
+		res = get_or_set_float(set, &cfg->vc_empty, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.vc_full)) {
+		res = get_or_set_float(set, &cfg->vc_full, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.vc_balance_start)) {
 		res = get_or_set_float(set, &cfg->vc_balance_start, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.vc_balance_end)) {
@@ -954,8 +973,10 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		int tmp = cfg->i_measure_mode;
 		res = get_or_set_i(set, &tmp, &set_arg);
 		cfg->i_measure_mode = tmp;
-	} else if (compare_symbol(name, &syms_vesc.sleep_timeout_reset_ms)) {
-		res = get_or_set_i(set, &cfg->sleep_timeout_reset_ms, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.sleep_regular)) {
+		res = get_or_set_float(set, &cfg->sleep_regular, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.sleep_long)) {
+		res = get_or_set_float(set, &cfg->sleep_long, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.min_charge_current)) {
 		res = get_or_set_float(set, &cfg->min_charge_current, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.max_charge_current)) {

@@ -425,6 +425,30 @@ p, li { white-space: pre-wrap; }
             <suffix> Ah</suffix>
             <vTx>9</vTx>
         </batt_ah>
+        <soc_use_ah>
+            <longName>Use Columb Counting</longName>
+            <type>5</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Use columb counting for SOC instead of the cell voltage. Columb counting is stable under load, but can drift over time especially when not charging the battery full.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_SOC_USE_AH</cDefine>
+            <valInt>0</valInt>
+        </soc_use_ah>
+        <block_sleep>
+            <longName>Block Sleep Mode</longName>
+            <type>5</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Block sleep mode. This is useful for debugging and setting up the BMS for the first time. When the setup is done the sleep mode must be unblocked, otherwise the BMS will drain the battery.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_BLOCK_SLEEP</cDefine>
+            <valInt>1</valInt>
+        </block_sleep>
         <balance_mode>
             <longName>Balancing Mode</longName>
             <type>4</type>
@@ -485,6 +509,50 @@ p, li { white-space: pre-wrap; }
             <cDefine>CONF_DIST_BAL</cDefine>
             <valInt>1</valInt>
         </dist_bal>
+        <vc_empty>
+            <longName>Cell Voltage Empty</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Cell voltage when empty.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_VC_EMPTY</cDefine>
+            <editorDecimalsDouble>2</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>99</maxDouble>
+            <minDouble>0</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>0.01</stepDouble>
+            <valDouble>3.1</valDouble>
+            <vTxDoubleScale>1</vTxDoubleScale>
+            <suffix> V</suffix>
+            <vTx>9</vTx>
+        </vc_empty>
+        <vc_full>
+            <longName>Cell Voltage Full</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Cell voltage when full.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_VC_FULL</cDefine>
+            <editorDecimalsDouble>2</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>99</maxDouble>
+            <minDouble>0</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>0.01</stepDouble>
+            <valDouble>4.2</valDouble>
+            <vTxDoubleScale>1</vTxDoubleScale>
+            <suffix> V</suffix>
+            <vTx>9</vTx>
+        </vc_full>
         <vc_balance_start>
             <longName>Balance Starting Voltage</longName>
             <type>1</type>
@@ -791,34 +859,50 @@ p, li { white-space: pre-wrap; }
             <suffix> A</suffix>
             <vTx>9</vTx>
         </max_charge_current>
-        <sleep_timeout_reset_ms>
-            <longName>Sleep Timeout Reset Time</longName>
-            <type>2</type>
+        <sleep_regular>
+            <longName>Sleep Time Regular</longName>
+            <type>1</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
 &lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Go to sleep if no keep-awake event has occurred for longer time than this. Examples of keep-awake events are:&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;ul style=&quot;margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;&quot;&gt;&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Balancing is active&lt;/li&gt;
-&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Values are polled over CAN or USB&lt;/li&gt;
-&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;USB cable plugged in&lt;/li&gt;
-&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Charging is active&lt;/li&gt;
-&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Other BMSes on the CAN-bus are charging or balancing&lt;/li&gt;
-&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;VESC status messages are received&lt;/li&gt;
-&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Current over &lt;span style=&quot; font-style:italic;&quot;&gt;min_current_sleep&lt;/span&gt; is drawn&lt;/li&gt;&lt;/ul&gt;&lt;/body&gt;&lt;/html&gt;</description>
-            <cDefine>CONF_SLEEP_TIMEOUT_MS</cDefine>
-            <editorScale>0.001</editorScale>
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Time to sleep between polling for the charger and tracking state. If this time is shorter the BMS will react faster to e.g. plugging in a charger or data on the CAN-bus, but it will also draw more power.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_SLEEP_REGULAR</cDefine>
+            <editorDecimalsDouble>1</editorDecimalsDouble>
+            <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
-            <maxInt>9999999</maxInt>
-            <minInt>0</minInt>
+            <maxDouble>999</maxDouble>
+            <minDouble>0</minDouble>
             <showDisplay>0</showDisplay>
-            <stepInt>1</stepInt>
-            <valInt>240000</valInt>
+            <stepDouble>1</stepDouble>
+            <valDouble>10</valDouble>
+            <vTxDoubleScale>10</vTxDoubleScale>
             <suffix> s</suffix>
-            <vTx>6</vTx>
-        </sleep_timeout_reset_ms>
+            <vTx>7</vTx>
+        </sleep_regular>
+        <sleep_long>
+            <longName>Sleep Time Long</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Same as sleep time regular, but this time will be used when the SOC is below 5%. By making this time longer the BMS will drain the battery slower, but also react slower.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_SLEEP_LONG</cDefine>
+            <editorDecimalsDouble>1</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>999</maxDouble>
+            <minDouble>0</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>1</stepDouble>
+            <valDouble>10</valDouble>
+            <vTxDoubleScale>10</vTxDoubleScale>
+            <suffix> s</suffix>
+            <vTx>7</vTx>
+        </sleep_long>
         <soc_filter_const>
             <longName>SoC Filter Constant</longName>
             <type>1</type>
@@ -944,8 +1028,12 @@ p, li { white-space: pre-wrap; }
         <ser>cells_ic1</ser>
         <ser>cells_ic2</ser>
         <ser>batt_ah</ser>
+        <ser>soc_use_ah</ser>
+        <ser>block_sleep</ser>
         <ser>dist_bal</ser>
         <ser>balance_mode</ser>
+        <ser>vc_empty</ser>
+        <ser>vc_full</ser>
         <ser>vc_balance_start</ser>
         <ser>vc_balance_end</ser>
         <ser>vc_charge_start</ser>
@@ -960,7 +1048,8 @@ p, li { white-space: pre-wrap; }
         <ser>i_measure_mode</ser>
         <ser>min_charge_current</ser>
         <ser>max_charge_current</ser>
-        <ser>sleep_timeout_reset_ms</ser>
+        <ser>sleep_regular</ser>
+        <ser>sleep_long</ser>
         <ser>soc_filter_const</ser>
         <ser>t_bal_lim_start</ser>
         <ser>t_bal_lim_end</ser>
@@ -1016,6 +1105,9 @@ p, li { white-space: pre-wrap; }
                     <param>cells_ic1</param>
                     <param>cells_ic2</param>
                     <param>batt_ah</param>
+                    <param>soc_use_ah</param>
+                    <param>vc_empty</param>
+                    <param>vc_full</param>
                 </subgroupParams>
             </subgroup>
             <subgroup>
@@ -1050,7 +1142,9 @@ p, li { white-space: pre-wrap; }
                 <subgroupName>Sleep</subgroupName>
                 <subgroupParams>
                     <param>min_current_sleep</param>
-                    <param>sleep_timeout_reset_ms</param>
+                    <param>sleep_regular</param>
+                    <param>sleep_long</param>
+                    <param>block_sleep</param>
                 </subgroupParams>
             </subgroup>
             <subgroup>

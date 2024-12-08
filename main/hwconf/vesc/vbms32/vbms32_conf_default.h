@@ -118,6 +118,16 @@
 #define CONF_BATT_AH 10
 #endif
 
+// Use Columb Counting
+#ifndef CONF_SOC_USE_AH
+#define CONF_SOC_USE_AH 0
+#endif
+
+// Block Sleep Mode
+#ifndef CONF_BLOCK_SLEEP
+#define CONF_BLOCK_SLEEP 1
+#endif
+
 // Distributed Balancing
 #ifndef CONF_DIST_BAL
 #define CONF_DIST_BAL 1
@@ -126,6 +136,16 @@
 // Balancing Mode
 #ifndef CONF_BALANCE_MODE
 #define CONF_BALANCE_MODE 2
+#endif
+
+// Cell Voltage Empty
+#ifndef CONF_VC_EMPTY
+#define CONF_VC_EMPTY 3.1
+#endif
+
+// Cell Voltage Full
+#ifndef CONF_VC_FULL
+#define CONF_VC_FULL 4.2
 #endif
 
 // Balance Starting Voltage
@@ -198,9 +218,14 @@
 #define CONF_MAX_CHARGE_CURRENT 16
 #endif
 
-// Sleep Timeout Reset Time
-#ifndef CONF_SLEEP_TIMEOUT_MS
-#define CONF_SLEEP_TIMEOUT_MS 240000
+// Sleep Time Regular
+#ifndef CONF_SLEEP_REGULAR
+#define CONF_SLEEP_REGULAR 10
+#endif
+
+// Sleep Time Long
+#ifndef CONF_SLEEP_LONG
+#define CONF_SLEEP_LONG 10
 #endif
 
 // SoC Filter Constant

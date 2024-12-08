@@ -107,7 +107,7 @@ typedef struct {
 
 	// Cells on second balance IC
 	int cells_ic2;
-	
+
 	// Battery amp hours
 	float batt_ah;
 
@@ -117,8 +117,20 @@ typedef struct {
 	// Maximum simultaneous balancing channels
 	int max_bal_ch;
 
+	// Use amp hours for columb counting
+	bool soc_use_ah;
+
+	// Block sleep mode
+	bool block_sleep;
+
 	// Distributed balancing
 	bool dist_bal;
+
+	// Cell voltage when empty
+	float vc_empty;
+
+	// Cell voltage when full
+	float vc_full;
 
 	// Start balancing if cell voltage is this much above the minimum cell voltage
 	float vc_balance_start;
@@ -156,8 +168,11 @@ typedef struct {
 	// Current measurement mode
 	I_MEASURE_MODE i_measure_mode;
 
-	// Reset sleep timeout to this value at events that prevent sleeping
-	int sleep_timeout_reset_ms;
+	// Regular sleep time
+	float sleep_regular;
+
+	// Long sleep time, for when SOC is low
+	float sleep_long;
 
 	// Stop charging when the charge current goes below this value
 	float min_charge_current;
