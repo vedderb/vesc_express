@@ -6,22 +6,6 @@
 
 ; Times (in seconds)
 (def charger-max-delay 3.0)
-(def sleep-regular 10.0)
-(def sleep-long 50.0)
-
-; Cell voltage when empty
-;(def vcell-empty 2.9) ; LFP
-(def vcell-empty 3.1) ; LiIon
-
-; Cell voltage when full
-;(def vcell-full 3.65) ; LFP
-(def vcell-full 4.2) ; LiIon
-
-; Use amp hours (columb counting) for SOC
-(def soc-use-ah false)
-
-; Disable sleep mode for debugging
-(def block-sleep false)
 
 ;;;;;;;;; End User Settings ;;;;;;;;;
 
@@ -138,10 +122,10 @@
 )))
 
 ; SOC from battery voltage
-(defun calc-soc (v-cell) (truncate (/ (- v-cell vcell-empty) (- vcell-full vcell-empty)) 0.0 1.0))
+(defun calc-soc (v-cell) (truncate (/ (- v-cell (bms-get-param 'vc_empty)) (- (bms-get-param 'vc_full) (bms-get-param 'vc_empty))) 0.0 1.0))
 
 ; True when VESC Tool is connected, used to block sleep
-(defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble) block-sleep))
+(defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble) (bms-get-param 'block_sleep)))
 
 (defunret can-active () {
         (var devs (can-list-devs))
@@ -190,12 +174,12 @@
                 (if (< (assoc rtc-val 'soc) 0.05)
                     {
                         (bms-set-btn-wakeup-state -1)
-                        (sleep-deep sleep-long)
+                        (sleep-deep (bms-get-param 'sleep_long))
                     }
                     {
                         (sleep-config-wakeup-pin 0 1)
                         (bms-set-btn-wakeup-state 1)
-                        (sleep-deep sleep-regular)
+                        (sleep-deep (bms-get-param 'sleep_regular))
                     }
                 )
         })
@@ -257,7 +241,7 @@
                 })
         })
 
-        (if (and (< soc 0.05) (not trigger-bal-after-charge) (not block-sleep)) (setq do-sleep true))
+        (if (and (< soc 0.05) (not trigger-bal-after-charge) (not (bms-get-param 'block_sleep))) (setq do-sleep true))
 
         ;(sleep 5)
         ;(print v-cells)
@@ -273,12 +257,12 @@
                 (if (< (assoc rtc-val 'soc) 0.05)
                     {
                         (bms-set-btn-wakeup-state -1)
-                        (sleep-deep sleep-long)
+                        (sleep-deep (bms-get-param 'sleep_long))
                     }
                     {
                         (sleep-config-wakeup-pin 0 1)
                         (bms-set-btn-wakeup-state 1)
-                        (sleep-deep sleep-regular)
+                        (sleep-deep (bms-get-param 'sleep_regular))
                     }
                 )
         })
@@ -497,7 +481,7 @@
                     (set-bms-val 'bms-temps-adc i (ix (bms-get-temps) i))
             })
 
-            (if soc-use-ah
+            (if (bms-get-param 'soc_use_ah)
                 {
                     ; Coulomb counting
                     (setq soc (/ ah-cnt-soc (bms-get-param 'batt_ah)))
@@ -618,24 +602,24 @@
                             (bms-sleep)
                             (sleep-config-wakeup-pin 0 1)
                             (bms-set-btn-wakeup-state 1)
-                            (sleep-deep sleep-regular)
+                            (sleep-deep (bms-get-param 'sleep_regular))
                     })
             })
 
             ; Set SOC to 0 below 2.9V and not under load.
-            (if (and (> i-zero-time 10.0) (<= c-min vcell-empty)) {
+            (if (and (> i-zero-time 10.0) (<= c-min (bms-get-param 'vc_empty))) {
                     (setq ah-cnt-soc 0.0)
             })
 
             ; Always go to sleep when SOC is too low
-            (if (and (< soc 0.05) (> i-zero-time 1.0) (<= c-min vcell-empty) (not block-sleep) (not (can-active))) {
+            (if (and (< soc 0.05) (> i-zero-time 1.0) (<= c-min (bms-get-param 'vc_empty)) (not (bms-get-param 'block_sleep)) (not (can-active))) {
                     ; Sleep longer and do not use the key to wake up when
                     ; almost empty
                     (save-rtc-val)
                     (save-settings)
                     (bms-sleep)
                     (bms-set-btn-wakeup-state -1)
-                    (sleep-deep sleep-long)
+                    (sleep-deep (bms-get-param 'sleep_long))
             })
 
             (sleep 0.1)
