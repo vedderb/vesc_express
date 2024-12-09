@@ -225,7 +225,7 @@
 
 // Sleep Time Long
 #ifndef CONF_SLEEP_LONG
-#define CONF_SLEEP_LONG 10
+#define CONF_SLEEP_LONG 30
 #endif
 
 // SoC Filter Constant

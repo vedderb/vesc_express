@@ -819,8 +819,12 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("balance_mode", comp);
 		} else if (comp == &syms_vesc.max_bal_ch) {
 			lbm_add_symbol_const("max_bal_ch", comp);
+		} else if (comp == &syms_vesc.soc_use_ah) {
+			lbm_add_symbol_const("soc_use_ah", comp);
 		} else if (comp == &syms_vesc.dist_bal) {
 			lbm_add_symbol_const("dist_bal", comp);
+		} else if (comp == &syms_vesc.block_sleep) {
+			lbm_add_symbol_const("block_sleep", comp);
 		} else if (comp == &syms_vesc.vc_empty) {
 			lbm_add_symbol_const("vc_empty", comp);
 		} else if (comp == &syms_vesc.vc_full) {
