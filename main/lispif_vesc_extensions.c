@@ -128,6 +128,12 @@ typedef struct {
 	lbm_uint part_running;
 	lbm_uint git_branch;
 	lbm_uint git_hash;
+	
+	// FW Info
+	lbm_uint version;
+	lbm_uint test_version;
+	lbm_uint commit;
+	lbm_uint user_commit;
 
 	// Rates
 	lbm_uint rate_100k;
@@ -251,6 +257,16 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 		} else if (comp == &syms_vesc.git_hash) {
 			lbm_add_symbol_const("git-hash", comp);
 		}
+		
+		else if (comp == &syms_vesc.version) {
+			lbm_add_symbol_const("version", comp);
+		} else if (comp == &syms_vesc.test_version) {
+			lbm_add_symbol_const("test-version", comp);
+		} else if (comp == &syms_vesc.commit) {
+			lbm_add_symbol_const("commit", comp);
+		} else if (comp == &syms_vesc.user_commit) {
+			lbm_add_symbol_const("user-commit", comp);
+		}
 
 		else if (comp == &syms_vesc.rate_100k) {
 			lbm_add_symbol_const("rate-100k", comp);
@@ -310,6 +326,23 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 	}
 
 	return *comp == sym;
+}
+
+static bool start_flatten_with_gc(lbm_flat_value_t *v, size_t buffer_size) {
+	if (lbm_start_flatten(v, buffer_size)) {
+		return true;
+	}
+
+	int timeout = 3;
+	uint32_t gc_last = lbm_heap_state.gc_num;
+	lbm_request_gc();
+
+	while (lbm_heap_state.gc_num <= gc_last && timeout > 0) {
+		vTaskDelay(1);
+		timeout--;
+	}
+
+	return lbm_start_flatten(v, buffer_size);
 }
 
 static bool is_symbol_true_false(lbm_value v) {
@@ -4034,17 +4067,24 @@ static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+typedef struct {
+	uint8_t version_major;
+	uint8_t version_minor;
+	uint8_t test_version;
+	char commit_hash[47];
+	char user_commit_hash[47];
+} fw_info_t;
+
 static send_func_t fw_send_func_old;
 static volatile bool fw_reply_rx = false;
 static volatile bool fw_reply_ok = false;
+static volatile fw_info_t fw_reply_fw_info = {0};
 static volatile lbm_cid fw_rx_cid = -1;
 
 static void fw_reply_func(unsigned char *data, unsigned int len) {
 	if (len < 2) {
 		return;
 	}
-
-	fw_reply_rx = true;
 
 	COMM_PACKET_ID packet_id;
 
@@ -4061,15 +4101,114 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 	case COMM_QMLUI_WRITE:
 	case COMM_LISP_SET_RUNNING:
 		fw_reply_ok = data[0];
+		
+		if (fw_rx_cid >= 0) {
+			lbm_unblock_ctx_unboxed(fw_rx_cid, fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL);
+		}
 		break;
+	case COMM_FW_INFO: {
+		uint32_t index                 = 0;
+		fw_reply_fw_info.version_major = data[index++];
+		fw_reply_fw_info.version_minor = data[index++];
+		fw_reply_fw_info.test_version  = data[index++];
 
+		strncpy(
+			(char *)fw_reply_fw_info.commit_hash, (char *)&data[index],
+			sizeof(fw_reply_fw_info.commit_hash) - 1
+		);
+		size_t commit_hash_size = strlen((char *)fw_reply_fw_info.commit_hash)
+			+ 1;
+		index += commit_hash_size;
+
+		strncpy(
+			(char *)fw_reply_fw_info.user_commit_hash, (char *)&data[index],
+			sizeof(fw_reply_fw_info.user_commit_hash) - 1
+		);
+		size_t user_commit_hash_size =
+			strlen((char *)fw_reply_fw_info.user_commit_hash) + 1;
+		index += user_commit_hash_size;
+
+		lbm_flat_value_t v;
+
+		if (fw_rx_cid >= 0) {
+			bool result = start_flatten_with_gc(
+				&v, 65 + commit_hash_size + user_commit_hash_size
+			);
+
+			result = result && f_cons(&v); // +1
+
+			// ('version . (uint uint))
+			result = result && f_cons(&v); // +1
+			// Ensure that the symbol is added.
+			compare_symbol(0, &syms_vesc.version);
+			result = result && f_sym(&v, syms_vesc.version); // +5
+
+			result = result && f_cons(&v); // +1
+			result = result
+				&& f_u(&v, (lbm_uint)fw_reply_fw_info.version_major); // +5
+
+			result = result && f_cons(&v); // +1
+			result = result
+				&& f_u(&v, (lbm_uint)fw_reply_fw_info.version_minor); // +5
+			result = result && f_sym(&v, SYM_NIL);                    // +5
+
+			result = result && f_cons(&v); // +1
+
+			// ('test_version . uint)
+			result = result && f_cons(&v); // + 1
+			compare_symbol(0, &syms_vesc.test_version);
+			result = result && f_sym(&v, syms_vesc.test_version); // +5
+			result = result
+				&& f_u(&v, (lbm_uint)fw_reply_fw_info.test_version); // +5
+
+			result = result && f_cons(&v); // +1
+
+			// ('commit . str)
+			result = result && f_cons(&v); // +1
+			compare_symbol(0, &syms_vesc.commit);
+			result = result && f_sym(&v, syms_vesc.commit); // +5
+			if (fw_reply_fw_info.commit_hash[0] == '\0') {
+				result = result && f_sym(&v, SYM_NIL);
+			} else {
+				result = result
+					&& f_lbm_array(
+						&v, commit_hash_size,
+						(uint8_t *)fw_reply_fw_info.commit_hash
+					);
+			} // +5 + user_commit_hash_size
+			result = result && f_cons(&v); // +1
+
+			// ('user-commit . str)
+			result = result && f_cons(&v); // +1
+			compare_symbol(0, &syms_vesc.user_commit);
+			result = result && f_sym(&v, syms_vesc.user_commit); // +5
+			if (fw_reply_fw_info.user_commit_hash[0] == '\0') {
+				result = result && f_sym(&v, SYM_NIL);
+			} else {
+				result = result
+					&& f_lbm_array(
+						&v, user_commit_hash_size,
+						(uint8_t *)fw_reply_fw_info.user_commit_hash
+					);
+			} // +5 + user_commit_hash_size
+			result = result && f_sym(&v, SYM_NIL); // +5
+
+			result = result && lbm_finish_flatten(&v);
+
+			if (!result) {
+				lbm_free(v.buf);
+				// TODO: is this ok?
+				lbm_unblock_ctx_unboxed(fw_rx_cid, ENC_SYM_MERROR);
+			} else if (!lbm_unblock_ctx(fw_rx_cid, &v)) {
+				lbm_free(v.buf);
+				lbm_unblock_ctx_unboxed(fw_rx_cid, ENC_SYM_EERROR);
+			}
+		}
+	} break;
 	default:
 		return;
 	}
-
-	if (fw_rx_cid >= 0) {
-		lbm_unblock_ctx_unboxed(fw_rx_cid, fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL);
-	}
+	fw_reply_rx = true;
 
 	commands_set_send_func(fw_send_func_old);
 }
@@ -4352,6 +4491,129 @@ static lbm_value ext_fw_write_raw(lbm_value *args, lbm_uint argn) {
 	esp_err_t res = esp_partition_write(update_partition, offset, arr_in->data, arr_in->size);
 
 	return res == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+// (fw-info optCanId) -> t|nil
+static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+	
+	/*
+	Allocate potentially used return values up front.
+	Return value shape:
+	(
+		('version . (uint uint))
+		('test-version uint)
+		('commit . str)
+		('user-commit . str)
+	)
+	*/
+	lbm_value assoc_list = lbm_allocate_empty_list(4);
+	if (assoc_list == ENC_SYM_MERROR) {
+		return ENC_SYM_MERROR;
+	}
+	lbm_value version_list = lbm_allocate_empty_list(2);
+	if (version_list == ENC_SYM_MERROR) {
+		return ENC_SYM_MERROR;
+	}
+	lbm_value property_cons_cells[4];
+	for (size_t i = 0; i < 4; i++) {
+		property_cons_cells[i] = lbm_cons(ENC_SYM_NIL, ENC_SYM_NIL);
+		if (property_cons_cells[i] == ENC_SYM_MERROR) {
+			return ENC_SYM_MERROR;
+		}
+	}
+	lbm_value commit_str;
+	if (!lbm_heap_allocate_array(&commit_str, 47)) {
+		return ENC_SYM_MERROR;
+	}
+	lbm_value user_commit_str;
+	if (!lbm_heap_allocate_array(&user_commit_str, 47)) {
+		lbm_heap_explicit_free_array(user_commit_str);
+		return ENC_SYM_MERROR;
+	}
+	
+	int can_id = -1;
+	if (argn == 1) {
+		can_id = lbm_dec_as_i32(args[0]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+	
+	uint8_t buf[3];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_FW_INFO;
+	fw_reply_rx = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+	fw_rx_cid = lbm_get_current_cid();
+
+	if (fw_reply_rx) {
+		// Ensure symbols have been added.
+		compare_symbol(0, &syms_vesc.version);
+		compare_symbol(0, &syms_vesc.test_version);
+		compare_symbol(0, &syms_vesc.commit);
+		compare_symbol(0, &syms_vesc.user_commit);
+		
+		size_t i = 0;
+		for (lbm_value current = assoc_list; lbm_is_cons(current); current = lbm_cdr(current)) {
+			lbm_set_car(current, property_cons_cells[i++]);
+		}
+		
+		lbm_set_car_and_cdr(property_cons_cells[0], lbm_enc_sym(syms_vesc.version), version_list);
+		{
+			lbm_value current = version_list;
+			lbm_set_car(current, lbm_enc_u(fw_reply_fw_info.version_major));
+			current = lbm_cdr(current);
+			lbm_set_car(current, lbm_enc_u(fw_reply_fw_info.version_minor));
+		}
+		lbm_set_car_and_cdr(property_cons_cells[1], lbm_enc_sym(syms_vesc.test_version), lbm_enc_u(fw_reply_fw_info.test_version));
+		// TODO: Return nil for the strings that are empty.
+		lbm_set_car_and_cdr(property_cons_cells[2], lbm_enc_sym(syms_vesc.commit), commit_str);
+		{
+			size_t len = strlen((char *)fw_reply_fw_info.commit_hash);
+			if (len == 0) {
+				lbm_set_cdr(property_cons_cells[3], ENC_SYM_NIL);
+				lbm_heap_explicit_free_array(commit_str);
+			} else {				
+				char *data = lbm_dec_str(commit_str);
+				memcpy(data, (char *)fw_reply_fw_info.commit_hash, len + 1);
+				lbm_array_shrink(commit_str, len + 1);
+			}
+		}
+		lbm_set_car_and_cdr(property_cons_cells[3], lbm_enc_sym(syms_vesc.user_commit), user_commit_str);
+		{
+			size_t len = strlen((char *)fw_reply_fw_info.user_commit_hash);
+			if (len == 0) {
+				lbm_set_cdr(property_cons_cells[3], ENC_SYM_NIL);
+				lbm_heap_explicit_free_array(user_commit_str);
+			} else {				
+				char *data = lbm_dec_str(user_commit_str);
+				memcpy(data, (char *)fw_reply_fw_info.user_commit_hash, len + 1);
+				lbm_array_shrink(user_commit_str, len + 1);
+			}
+		}
+		
+		return assoc_list;
+	} else {
+		// Since the return value will be done via a flat value rather than an
+		// lbm value, we will not be using these. The cons cells are freed
+		// automatically.
+		lbm_heap_explicit_free_array(commit_str);
+		lbm_heap_explicit_free_array(user_commit_str);
+		
+		lbm_block_ctx_from_extension_timeout(2.0);
+		return ENC_SYM_NIL;
+	}
 }
 
 static void lbm_run_task(void *arg) {
@@ -5763,6 +6025,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("fw-reboot", ext_fw_reboot);
 	lbm_add_extension("fw-data", ext_fw_data);
 	lbm_add_extension("fw-write-raw", ext_fw_write_raw);
+	lbm_add_extension("fw-info", ext_fw_info);
 
 	// Lbm and script update
 	lbm_add_extension("lbm-erase", ext_lbm_erase);
@@ -5863,23 +6126,6 @@ void lispif_disable_all_events(void) {
 		enc_as504x_deinit(&as504x);
 		as504x_init_done = false;
 	}
-}
-
-static bool start_flatten_with_gc(lbm_flat_value_t *v, size_t buffer_size) {
-	if (lbm_start_flatten(v, buffer_size)) {
-		return true;
-	}
-
-	int timeout = 3;
-	uint32_t gc_last = lbm_heap_state.gc_num;
-	lbm_request_gc();
-
-	while (lbm_heap_state.gc_num <= gc_last && timeout > 0) {
-		vTaskDelay(1);
-		timeout--;
-	}
-
-	return lbm_start_flatten(v, buffer_size);
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
