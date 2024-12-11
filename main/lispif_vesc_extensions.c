@@ -4213,45 +4213,6 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 	commands_set_send_func(fw_send_func_old);
 }
 
-// (fw-erase size optCanId) -> t, nil
-static lbm_value ext_fw_erase(lbm_value *args, lbm_uint argn) {
-	if (argn > 2 || !lbm_is_number(args[0]) || (argn == 2 && !lbm_is_number(args[1]))) {
-		return ENC_SYM_TERROR;
-	}
-
-	int can_id = -1;
-	if (argn == 2) {
-		can_id = lbm_dec_as_i32(args[1]);
-		if (can_id > 254) {
-			return ENC_SYM_TERROR;
-		}
-	}
-
-	uint8_t buf[8];
-	int32_t ind = 0;
-
-	if (can_id >= 0) {
-		buf[ind++] = COMM_FORWARD_CAN;
-		buf[ind++] = can_id;
-	}
-
-	buf[ind++] = COMM_ERASE_NEW_APP;
-	buffer_append_uint32(buf, lbm_dec_as_i32(args[0]), &ind);
-	fw_reply_rx = false;
-	fw_reply_ok = false;
-	fw_rx_cid = -1;
-	fw_send_func_old = commands_get_send_func();
-	commands_process_packet(buf, ind, fw_reply_func);
-	fw_rx_cid = lbm_get_current_cid();
-
-	if (fw_reply_rx) {
-		return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
-	} else {
-		lbm_block_ctx_from_extension_timeout(20.0);
-		return ENC_SYM_TRUE;
-	}
-}
-
 static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cmd) {
 	if (argn > 3 || !lbm_is_number(args[0]) ||
 			!lbm_is_array_r(args[1]) || (argn == 3 && !lbm_is_number(args[2]))) {
@@ -4308,37 +4269,6 @@ static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID
 	return res;
 }
 
-// (fw-reboot optCanId) -> t, nil
-static lbm_value ext_fw_reboot(lbm_value *args, lbm_uint argn) {
-	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
-		return ENC_SYM_TERROR;
-	}
-
-	int can_id = -1;
-	if (argn == 1) {
-		can_id = lbm_dec_as_i32(args[0]);
-		if (can_id > 254) {
-			return ENC_SYM_TERROR;
-		}
-	}
-
-	uint8_t buf[4];
-	unsigned int ind = 0;
-
-	if (can_id >= 0) {
-		buf[ind++] = COMM_FORWARD_CAN;
-		buf[ind++] = can_id;
-	}
-
-	buf[ind++] = COMM_JUMP_TO_BOOTLOADER;
-	fw_send_func_old = commands_get_send_func();
-	commands_process_packet(buf, ind, 0);
-	commands_set_send_func(fw_send_func_old);
-	return ENC_SYM_TRUE;
-}
-
-// LBM and QML erase, upload, run
-
 static lbm_value lbm_qml_erase(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cmd) {
 	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
 		return ENC_SYM_TERROR;
@@ -4380,6 +4310,81 @@ static lbm_value lbm_qml_erase(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cm
 	}
 }
 
+// (fw-erase size optCanId) -> t, nil
+static lbm_value ext_fw_erase(lbm_value *args, lbm_uint argn) {
+	if (argn > 2 || !lbm_is_number(args[0]) || (argn == 2 && !lbm_is_number(args[1]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 2) {
+		can_id = lbm_dec_as_i32(args[1]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_ERASE_NEW_APP;
+	buffer_append_uint32(buf, lbm_dec_as_i32(args[0]), &ind);
+	fw_reply_rx = false;
+	fw_reply_ok = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+	fw_rx_cid = lbm_get_current_cid();
+
+	if (fw_reply_rx) {
+		return fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	} else {
+		lbm_block_ctx_from_extension_timeout(20.0);
+		return ENC_SYM_TRUE;
+	}
+}
+
+// (fw-write offset data optCanId) -> t, nil
+static lbm_value ext_fw_write(lbm_value *args, lbm_uint argn) {
+	return fw_lbm_qml_write(args, argn, COMM_WRITE_NEW_APP_DATA);
+}
+
+// (fw-reboot optCanId) -> t, nil
+static lbm_value ext_fw_reboot(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 1) {
+		can_id = lbm_dec_as_i32(args[0]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[4];
+	unsigned int ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_JUMP_TO_BOOTLOADER;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, 0);
+	commands_set_send_func(fw_send_func_old);
+	return ENC_SYM_TRUE;
+}
+
+// LBM and QML erase, upload, run
+
 // (lbm-erase optCanId) -> t, nil
 static lbm_value ext_lbm_erase(lbm_value *args, lbm_uint argn) {
 	return lbm_qml_erase(args, argn, COMM_LISP_ERASE_CODE);
@@ -4388,11 +4393,6 @@ static lbm_value ext_lbm_erase(lbm_value *args, lbm_uint argn) {
 // (qml-erase optCanId) -> t, nil
 static lbm_value ext_qml_erase(lbm_value *args, lbm_uint argn) {
 	return lbm_qml_erase(args, argn, COMM_QMLUI_ERASE);
-}
-
-// (fw-write offset data optCanId) -> t, nil
-static lbm_value ext_fw_write(lbm_value *args, lbm_uint argn) {
-	return fw_lbm_qml_write(args, argn, COMM_WRITE_NEW_APP_DATA);
 }
 
 // (lbm-write offset data optCanId) -> t, nil
