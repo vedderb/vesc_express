@@ -120,7 +120,7 @@
 (defun calc-soc (v-cell) (truncate (/ (- v-cell (bms-get-param 'vc_empty)) (- (bms-get-param 'vc_full) (bms-get-param 'vc_empty))) 0.0 1.0))
 
 ; True when VESC Tool is connected, used to block sleep
-(defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble) (bms-get-param 'block_sleep)))
+(defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble) (= (bms-get-param 'block_sleep) 1)))
 
 ; Start power switch thread early to avoid output on delay
 (defun psw-on () {
@@ -290,7 +290,7 @@
                 })
         })
 
-        (if (and (< soc 0.05) (not trigger-bal-after-charge) (not (bms-get-param 'block_sleep))) (setq do-sleep true))
+        (if (and (< soc 0.05) (not trigger-bal-after-charge) (= (bms-get-param 'block_sleep) 0)) (setq do-sleep true))
 
         ;(sleep 5)
         ;(print v-cells)
@@ -529,7 +529,7 @@
                     (set-bms-val 'bms-temps-adc i (ix (bms-get-temps) i))
             })
 
-            (if (bms-get-param 'soc_use_ah)
+            (if (= (bms-get-param 'soc_use_ah) 1)
                 {
                     ; Coulomb counting
                     (setq soc (/ ah-cnt-soc (bms-get-param 'batt_ah)))
@@ -659,7 +659,7 @@
             })
 
             ; Always go to sleep when SOC is too low
-            (if (and (< soc 0.05) (> i-zero-time 1.0) (<= c-min (bms-get-param 'vc_empty)) (not (bms-get-param 'block_sleep))) {
+            (if (and (< soc 0.05) (> i-zero-time 1.0) (<= c-min (bms-get-param 'vc_empty)) (= (bms-get-param 'block_sleep) 0)) {
                     ; Sleep longer and do not use the key to wake up when
                     ; almost empty
                     (save-rtc-val)
