@@ -241,7 +241,7 @@
                 })
         })
 
-        (if (and (< soc 0.05) (not trigger-bal-after-charge) (= (bms-get-param 'block_sleep) 0)) (setq do-sleep true))
+        (if (and (< soc 0.05) (not trigger-bal-after-charge) (not (is-connected))) (setq do-sleep true))
 
         ;(sleep 5)
         ;(print v-cells)
@@ -612,7 +612,7 @@
             })
 
             ; Always go to sleep when SOC is too low
-            (if (and (< soc 0.05) (> i-zero-time 1.0) (<= c-min (bms-get-param 'vc_empty)) (= (bms-get-param 'block_sleep) 0) (not (can-active))) {
+            (if (and (< soc 0.05) (> i-zero-time 1.0) (<= c-min (bms-get-param 'vc_empty)) (not (is-connected)) (not (can-active))) {
                     ; Sleep longer and do not use the key to wake up when
                     ; almost empty
                     (save-rtc-val)
