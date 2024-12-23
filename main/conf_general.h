@@ -67,6 +67,9 @@
 
 //#define HW_HEADER					"hw_lb_chg.h"
 //#define HW_SOURCE					"hw_lb_chg.c"
+
+//#define HW_HEADER					"hw_express_plus.h"
+//#define HW_SOURCE					"hw_express_plus.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
