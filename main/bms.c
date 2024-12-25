@@ -80,6 +80,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 			msg.is_charging = (stat >> 0) & 1;
 			msg.is_balancing = (stat >> 1) & 1;
 			msg.is_charge_allowed = (stat >> 2) & 1;
+			msg.data_version = (stat >> 4) & 0x0f;
 
 			if (id == m_values.can_id || m_values.can_id == -1 || UTILS_AGE_S(m_values.update_time) > MAX_CAN_AGE_SEC) {
 				m_values.can_id = id;
@@ -92,6 +93,7 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 				m_values.is_charging = msg.is_charging ? 1 : 0;
 				m_values.is_balancing = msg.is_balancing ? 1 : 0;
 				m_values.is_charge_allowed = msg.is_charge_allowed ? 1 : 0;
+				m_values.data_version = msg.data_version;
 			}
 
 			// In case there is more than one BMS, keep track of the limiting
