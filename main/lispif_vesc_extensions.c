@@ -935,9 +935,11 @@ typedef union {
 	float as_float;
 } eeprom_var;
 
+#define EEPROM_VARS		256
+
 static bool check_eeprom_addr(int addr) {
-	if (addr < 0 || addr > 127) {
-		lbm_set_error_reason("Address must be 0 to 127");
+	if (addr < 0 || addr >= EEPROM_VARS) {
+		lbm_set_error_reason("Address must be 0 to 255");
 		return false;
 	}
 
@@ -945,7 +947,7 @@ static bool check_eeprom_addr(int addr) {
 }
 
 static bool store_eeprom_var(eeprom_var *v, int address) {
-	if (address < 0 || address > 127) {
+	if (address < 0 || address >= EEPROM_VARS) {
 		return false;
 	}
 
@@ -962,7 +964,7 @@ static bool store_eeprom_var(eeprom_var *v, int address) {
 }
 
 static bool read_eeprom_var(eeprom_var *v, int address) {
-	if (address < 0 || address > 127) {
+	if (address < 0 || address >= EEPROM_VARS) {
 		return false;
 	}
 
