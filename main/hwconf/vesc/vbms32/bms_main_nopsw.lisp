@@ -294,7 +294,7 @@
 ;  - Limit channel number when getting warm
 
 (def is-bal false)
-(def temp-num (+ 4 4))
+(def temp-num (+ 5 4))
 (def vtot 0.0)
 (def vout 0.0)
 (def vt-vchg 0.0)
@@ -481,10 +481,11 @@
             (set-bms-val 'bms-temps-adc 1 t-min) ; Cell Min
             (set-bms-val 'bms-temps-adc 2 t-max) ; Cell Max
             (set-bms-val 'bms-temps-adc 3 -300.0) ; Mosfet
-            (set-bms-val 'bms-temps-adc 4 (ix (bms-get-temps) 1)) ; T1
-            (set-bms-val 'bms-temps-adc 5 (ix (bms-get-temps) 2)) ; T2
-            (set-bms-val 'bms-temps-adc 6 (ix (bms-get-temps) 3)) ; T3
-            (set-bms-val 'bms-temps-adc 7 (ix (bms-get-temps) 4)) ; T4
+            (set-bms-val 'bms-temps-adc 4 -300.0) ; Ambient
+            (set-bms-val 'bms-temps-adc 5 (ix (bms-get-temps) 1)) ; T1
+            (set-bms-val 'bms-temps-adc 6 (ix (bms-get-temps) 2)) ; T2
+            (set-bms-val 'bms-temps-adc 7 (ix (bms-get-temps) 3)) ; T3
+            (set-bms-val 'bms-temps-adc 8 (ix (bms-get-temps) 4)) ; T4
             (set-bms-val 'bms-data-version 1) ; IC
 
             (set-bms-val 'bms-v-cell-min c-min)
