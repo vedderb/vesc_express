@@ -111,6 +111,7 @@ typedef struct {
 	lbm_uint wh_cnt_dis_total;
 	lbm_uint msg_age;
 	lbm_uint chg_allowed;
+	lbm_uint data_version;
 
 	// GPIO
 	lbm_uint pin_mode_out;
@@ -130,7 +131,7 @@ typedef struct {
 	lbm_uint part_running;
 	lbm_uint git_branch;
 	lbm_uint git_hash;
-	
+
 	// FW Info
 	lbm_uint version;
 	lbm_uint test_version;
@@ -228,6 +229,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("bms-msg-age", comp);
 		} else if (comp == &syms_vesc.chg_allowed) {
 			lbm_add_symbol_const("bms-chg-allowed", comp);
+		} else if (comp == &syms_vesc.data_version) {
+			lbm_add_symbol_const("bms-data-version", comp);
 		}
 
 		else if (comp == &syms_vesc.pin_mode_out) {
@@ -263,7 +266,7 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 		} else if (comp == &syms_vesc.git_hash) {
 			lbm_add_symbol_const("git-hash", comp);
 		}
-		
+
 		else if (comp == &syms_vesc.version) {
 			lbm_add_symbol_const("version", comp);
 		} else if (comp == &syms_vesc.test_version) {
@@ -595,6 +598,8 @@ static lbm_value get_set_bms_val(bool set, lbm_value *args, lbm_uint argn) {
 		res = lbm_enc_float(UTILS_AGE_S(val->update_time));
 	} else if (compare_symbol(name, &syms_vesc.chg_allowed)) {
 		res = get_or_set_i(set, &val->is_charge_allowed, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.data_version)) {
+		res = get_or_set_i(set, &val->data_version, &set_arg);
 	}
 
 	if (res != ENC_SYM_EERROR && set) {
@@ -4111,7 +4116,7 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 	case COMM_QMLUI_WRITE:
 	case COMM_LISP_SET_RUNNING:
 		fw_reply_ok = data[0];
-		
+
 		if (fw_rx_cid >= 0) {
 			lbm_unblock_ctx_unboxed(fw_rx_cid, fw_reply_ok ? ENC_SYM_TRUE : ENC_SYM_NIL);
 		}
@@ -4508,7 +4513,7 @@ static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
 	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
 		return ENC_SYM_TERROR;
 	}
-	
+
 	/*
 	Allocate potentially used return values up front.
 	Return value shape:
@@ -4543,7 +4548,7 @@ static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
 		lbm_heap_explicit_free_array(user_commit_str);
 		return ENC_SYM_MERROR;
 	}
-	
+
 	int can_id = -1;
 	if (argn == 1) {
 		can_id = lbm_dec_as_i32(args[0]);
@@ -4551,7 +4556,7 @@ static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_TERROR;
 		}
 	}
-	
+
 	uint8_t buf[3];
 	int32_t ind = 0;
 
@@ -4573,12 +4578,12 @@ static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
 		compare_symbol(0, &syms_vesc.test_version);
 		compare_symbol(0, &syms_vesc.commit);
 		compare_symbol(0, &syms_vesc.user_commit);
-		
+
 		size_t i = 0;
 		for (lbm_value current = assoc_list; lbm_is_cons(current); current = lbm_cdr(current)) {
 			lbm_set_car(current, property_cons_cells[i++]);
 		}
-		
+
 		lbm_set_car_and_cdr(property_cons_cells[0], lbm_enc_sym(syms_vesc.version), version_list);
 		{
 			lbm_value current = version_list;
@@ -4594,7 +4599,7 @@ static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
 			if (len == 0) {
 				lbm_set_cdr(property_cons_cells[3], ENC_SYM_NIL);
 				lbm_heap_explicit_free_array(commit_str);
-			} else {				
+			} else {
 				char *data = lbm_dec_str(commit_str);
 				memcpy(data, (char *)fw_reply_fw_info.commit_hash, len + 1);
 				lbm_array_shrink(commit_str, len + 1);
@@ -4606,13 +4611,13 @@ static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
 			if (len == 0) {
 				lbm_set_cdr(property_cons_cells[3], ENC_SYM_NIL);
 				lbm_heap_explicit_free_array(user_commit_str);
-			} else {				
+			} else {
 				char *data = lbm_dec_str(user_commit_str);
 				memcpy(data, (char *)fw_reply_fw_info.user_commit_hash, len + 1);
 				lbm_array_shrink(user_commit_str, len + 1);
 			}
 		}
-		
+
 		return assoc_list;
 	} else {
 		// Since the return value will be done via a flat value rather than an
@@ -4620,7 +4625,7 @@ static lbm_value ext_fw_info(lbm_value *args, lbm_uint argn) {
 		// automatically.
 		lbm_heap_explicit_free_array(commit_str);
 		lbm_heap_explicit_free_array(user_commit_str);
-		
+
 		lbm_block_ctx_from_extension_timeout(2.0);
 		return ENC_SYM_NIL;
 	}

@@ -56,6 +56,7 @@ typedef struct {
 	int is_charging;
 	int is_balancing;
 	int is_charge_allowed;
+	int data_version;
 	uint32_t update_time;
 } bms_values;
 
@@ -70,6 +71,7 @@ typedef struct {
 	bool is_charging;
 	bool is_balancing;
 	bool is_charge_allowed;
+	int data_version;
 } bms_soc_soh_temp_stat;
 
 typedef enum {
@@ -286,7 +288,7 @@ typedef enum {
 	//COMM_PINLOCK3							= 155,
 
 	COMM_SHUTDOWN							= 156,
-	
+
 	COMM_FW_INFO							= 157,
 } COMM_PACKET_ID;
 

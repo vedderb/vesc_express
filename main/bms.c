@@ -474,7 +474,7 @@ void bms_send_status_can(void) {
 	 * b[6]: T_CELL_MAX (-128 to +127 degC)
 	 * b[7]: State bitfield:
 	 * [B7      B6      B5      B4      B3      B2      B1      B0      ]
-	 * [RSV     RSV     RSV     RSV     RSV     CHG_OK  IS_BAL  IS_CHG  ]
+	 * [DV3     DV2     DV1     DV0     RSV     CHG_OK  IS_BAL  IS_CHG  ]
 	 */
 	send_index = 0;
 	buffer_append_float16(buffer, (float_t)m_values.v_cell_min, 1e3, &send_index);
@@ -485,7 +485,8 @@ void bms_send_status_can(void) {
 	buffer[send_index++] =
 			((m_values.is_charging ? 1 : 0) << 0) |
 			((m_values.is_balancing ? 1 : 0) << 1) |
-			((m_values.is_charge_allowed ? 1 : 0) << 2);
+			((m_values.is_charge_allowed ? 1 : 0) << 2) |
+			(m_values.data_version << 4);
 	comm_can_transmit_eid(id | ((uint32_t)CAN_PACKET_BMS_SOC_SOH_TEMP_STAT << 8), buffer, send_index);
 
 	send_index = 0;
