@@ -5812,6 +5812,104 @@ static lbm_value ext_aes_ctr_crypt(lbm_value *args, lbm_uint argn) {
     return ENC_SYM_TRUE;
 }
 
+// NVS
+
+// (nvs_init_qml) -> t
+static lbm_value ext_nvs_qml_erase(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	esp_err_t ret = nvs_flash_erase_partition("qml");
+	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_EERROR;
+}
+
+// (nvs_init_qml) -> t
+static lbm_value ext_nvs_qml_init(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	esp_err_t ret = nvs_flash_init_partition("qml");
+	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+		nvs_flash_erase_partition("qml");
+		ret = nvs_flash_init_partition("qml");
+	}
+
+	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_EERROR;
+}
+
+// (nvs_read path) -> t
+static lbm_value ext_nvs_qml_read(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	char *name = dec_str_check(args[0]);
+	if (!name) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	nvs_handle_t my_handle;
+	esp_err_t ret = nvs_open_from_partition("qml", "lbm", NVS_READONLY, &my_handle);
+	if (ret != ESP_OK) {
+		lbm_set_error_reason("Could not open partition");
+		return ENC_SYM_EERROR;
+	}
+
+	size_t required_size = 0;
+	ret = nvs_get_blob(my_handle, name, NULL, &required_size);
+
+	if (ret != ESP_OK) {
+		lbm_set_error_reason("Could not read path");
+		nvs_close(my_handle);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value res;
+	if (lbm_create_array(&res, required_size)) {
+		lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
+		nvs_get_blob(my_handle, name, arr->data, &required_size);
+		nvs_close(my_handle);
+		return res;
+	} else {
+		return ENC_SYM_MERROR;
+	}
+}
+
+// (nvs_write path data) -> t
+static lbm_value ext_nvs_qml_write(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	char *name = dec_str_check(args[0]);
+	if (!name) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	if (!lbm_is_array_r(args[1])) {
+		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
+
+	nvs_handle_t my_handle;
+	esp_err_t ret = nvs_open_from_partition("qml", "lbm", NVS_READWRITE, &my_handle);
+	if (ret != ESP_OK) {
+		lbm_set_error_reason("Could not open partition");
+		return ENC_SYM_EERROR;
+	}
+
+	ret = nvs_set_blob(my_handle, name, (void*)array->data, array->size);
+	if (ret == ESP_OK) {
+		ret = nvs_commit(my_handle);
+	}
+
+	nvs_close(my_handle);
+
+	if (ret != ESP_OK) {
+		lbm_set_error_reason("Could not write data");
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -6094,6 +6192,12 @@ void lispif_load_vesc_extensions(void) {
 
 	// Crypto
 	lbm_add_extension("aes-ctr-crypt", ext_aes_ctr_crypt);
+
+	// NVS
+	lbm_add_extension("nvs-qml-erase", ext_nvs_qml_erase);
+	lbm_add_extension("nvs-qml-init", ext_nvs_qml_init);
+	lbm_add_extension("nvs-qml-read", ext_nvs_qml_read);
+	lbm_add_extension("nvs-qml-write", ext_nvs_qml_write);
 
 	// Extension libraries
 	lbm_array_extensions_init();
