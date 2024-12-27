@@ -5942,6 +5942,38 @@ static lbm_value ext_nvs_qml_erase_key(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_nvs_qml_list(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	nvs_iterator_t it = NULL;
+	esp_err_t esp_res = nvs_entry_find("qml", "lbm", NVS_TYPE_BLOB, &it);
+	lbm_value res = ENC_SYM_NIL;
+
+	while (esp_res == ESP_OK) {
+		nvs_entry_info_t info;
+		nvs_entry_info(it, &info);
+
+		lbm_value tok;
+		int len = strnlen(info.key, NVS_KEY_NAME_MAX_SIZE);
+
+		if (lbm_create_array(&tok, len + 1)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(tok);
+			memcpy(arr->data, info.key, len);
+			((char*)(arr->data))[len] = '\0';
+			res = lbm_cons(tok, res);
+		} else {
+			res = ENC_SYM_MERROR;
+			break;
+		}
+
+		esp_res = nvs_entry_next(&it);
+	}
+
+	nvs_release_iterator(it);
+
+	return res;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -6231,6 +6263,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("nvs-qml-read", ext_nvs_qml_read);
 	lbm_add_extension("nvs-qml-write", ext_nvs_qml_write);
 	lbm_add_extension("nvs-qml-erase-key", ext_nvs_qml_erase_key);
+	lbm_add_extension("nvs-qml-list", ext_nvs_qml_list);
 
 	// Extension libraries
 	lbm_array_extensions_init();
