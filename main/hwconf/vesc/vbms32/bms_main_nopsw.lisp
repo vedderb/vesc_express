@@ -276,6 +276,18 @@
         (sleep 1.0)
 })
 
+(defun can-sum-current () {
+        (var devs (can-list-devs))
+        (var i-sum 0.0)
+
+        (loopforeach d devs {
+                (var res (can-msg-age d 4))
+                (if (and res (< res 0.1)) (setq i-sum (+ i-sum (canget-current-in d))))
+        })
+
+        i-sum
+})
+
 ; === TODO===
 ;
 ; = Sleep =
@@ -470,7 +482,7 @@
             (setq vtot (apply + v-cells))
             (setq vout (bms-get-vout))
             (setq vt-vchg (bms-get-vchg))
-            (setq iout (bms-current))
+            (setq iout (+ (bms-current) (can-sum-current)))
 
             (looprange i 0 cell-num {
                     (set-bms-val 'bms-v-cell i (ix v-cells i))
@@ -728,6 +740,7 @@
 (loopwhile-thd ("re-init" 200) t {
         (if did-crash {
                 (init-hw)
+                (bms-set-chg 0)
                 (setq did-crash false)
                 (setq crash-cnt (+ crash-cnt 1))
         })
