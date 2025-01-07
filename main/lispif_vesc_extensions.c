@@ -4060,6 +4060,19 @@ static lbm_value ext_f_rename(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+// (f-sync file) -> t, nil
+static lbm_value ext_f_sync(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	FILE *f = file_from_arg(args[0]);
+	if (!f) {
+		lbm_set_error_reason((char*)str_f_not_open);
+		return ENC_SYM_EERROR;
+	}
+
+	return fsync(fileno(f)) == 0 ? ENC_SYM_TRUE : ENC_SYM_EERROR;
+}
+
 // (f-fatinfo) -> (MB-free MB-total)
 static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
@@ -6196,6 +6209,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("f-ls", ext_f_ls);
 	lbm_add_extension("f-size", ext_f_size);
 	lbm_add_extension("f-rename", ext_f_rename);
+	lbm_add_extension("f-sync", ext_f_sync);
 	lbm_add_extension("f-fatinfo", ext_f_fatinfo);
 
 	// Firmware update
