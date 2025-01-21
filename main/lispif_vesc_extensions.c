@@ -5799,6 +5799,8 @@ static const char* dyn_functions[] = {
 		"(bufset-u8 buffer (+ ofs rd) 0)"
 		"(progn (yield 10000) (uart-read-until buffer (- n rd) (+ ofs rd) end))"
 		")))",
+
+		"(defun img-buffer-from-bin (x) x)",
 };
 
 static bool dynamic_loader(const char *str, const char **code) {
