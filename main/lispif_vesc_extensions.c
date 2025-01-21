@@ -1697,7 +1697,7 @@ static lbm_value ext_bits_dec_int(lbm_value *args, lbm_uint argn) {
 	}
 }
 
-// // Events that will be sent to lisp if a handler is registered
+// Events that will be sent to lisp if a handler is registered
 
 static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
 	switch (cmd) {
@@ -4033,9 +4033,72 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 			}
 		}
 	} break;
+
+	case COMM_BMS_BLNC_SELFTEST: {
+		lbm_flat_value_t v;
+
+		if (fw_rx_cid >= 0) {
+			int32_t ind = 0;
+			int ok_ic = buffer_get_int16(data, &ind);
+			int cell_num = (len - 2) / 8;
+
+			bool ok_all = true;
+			for (int i = 0; i < cell_num;i++) {
+				float no_bal = buffer_get_float32_auto(data, &ind);
+				float bal = buffer_get_float32_auto(data, &ind);
+				float diff = fabsf(bal - no_bal);
+				bool ok = (diff / no_bal > 0.03 && bal > 2.0);
+				if (!ok) {
+					ok_all = false;
+					break;
+				}
+			}
+
+			bool result = start_flatten_with_gc(&v, 25 + 24 * cell_num);
+			if (result) {
+				ind = 2;
+
+				f_cons(&v); // +1
+				f_i(&v, ok_ic); // +5
+				f_cons(&v); // +1
+				f_i(&v, ok_all); // +5
+				f_cons(&v); // +1
+				f_i(&v, cell_num); // +5
+
+				for (int i = 0; i < cell_num;i++) { // + 24 * cells
+					f_cons(&v); // +1
+
+					float no_bal = buffer_get_float32_auto(data, &ind);
+					float bal = buffer_get_float32_auto(data, &ind);
+					float diff = fabsf(bal - no_bal);
+					bool ok = (diff / no_bal > 0.03 && bal > 2.0);
+
+					f_cons(&v); // +1
+					f_i(&v, ok); // +5
+					f_cons(&v); // +1
+					f_float(&v, no_bal); // +5
+					f_cons(&v); // +1
+					f_float(&v, bal); // +5
+					f_sym(&v, ENC_SYM_NIL); // +5
+				}
+
+				f_sym(&v, ENC_SYM_NIL); // +5
+				lbm_finish_flatten(&v);
+
+				if (!lbm_unblock_ctx(fw_rx_cid, &v)) {
+					lbm_free(v.buf);
+					lbm_unblock_ctx_unboxed(fw_rx_cid, ENC_SYM_EERROR);
+				}
+			} else {
+				lbm_unblock_ctx_unboxed(fw_rx_cid, ENC_SYM_MERROR);
+			}
+		}
+	} break;
+
 	default:
 		return;
 	}
+
 	fw_reply_rx = true;
 
 	commands_set_send_func(fw_send_func_old);
@@ -4497,6 +4560,43 @@ static lbm_value ext_lbm_run(lbm_value *args, lbm_uint argn) {
 	} else {
 		xTaskCreatePinnedToCore(lbm_run_task, "LBM Restart", 2048, (void*)lbm_dec_as_i32(args[0]), 7, NULL, tskNO_AFFINITY);
 		return ENC_SYM_TRUE;
+	}
+}
+
+// (bms-st optCanId) -> (ok_ic ok_all cell_num (ok no-bal bal) ...)
+static lbm_value ext_bms_st(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && !lbm_is_number(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	int can_id = -1;
+	if (argn == 1) {
+		can_id = lbm_dec_as_i32(args[0]);
+		if (can_id > 254) {
+			return ENC_SYM_TERROR;
+		}
+	}
+
+	uint8_t buf[8];
+	int32_t ind = 0;
+
+	if (can_id >= 0) {
+		buf[ind++] = COMM_FORWARD_CAN;
+		buf[ind++] = can_id;
+	}
+
+	buf[ind++] = COMM_BMS_BLNC_SELFTEST;
+	fw_reply_rx = false;
+	fw_rx_cid = -1;
+	fw_send_func_old = commands_get_send_func();
+	commands_process_packet(buf, ind, fw_reply_func);
+	fw_rx_cid = lbm_get_current_cid();
+
+	if (fw_reply_rx) {
+		return ENC_SYM_NIL;
+	} else {
+		lbm_block_ctx_from_extension_timeout(10.0);
+		return ENC_SYM_NIL;
 	}
 }
 
@@ -5857,6 +5957,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("set-bms-chg-allowed", ext_set_bms_chg_allowed);
 	lbm_add_extension("bms-force-balance", ext_bms_force_balance);
 	lbm_add_extension("bms-zero-offset", ext_bms_zero_offset);
+	lbm_add_extension("bms-st", ext_bms_st);
 	lbm_add_extension("get-adc", ext_get_adc);
 	lbm_add_extension("systime", ext_systime);
 	lbm_add_extension("secs-since", ext_secs_since);
