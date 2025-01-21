@@ -18,61 +18,149 @@
 
 #include <extensions.h>
 
+#ifdef LBM_USE_DYN_FUNS
+static const char* lbm_dyn_fun[] = {
+  "(defun str-merge () (str-join (rest-args)))",
+  "(defun iota (n) (range n))",
+
+  "(defun foldl (f init lst)"
+  "(if (eq lst nil) init (foldl f (f init (car lst)) (cdr lst))))",
+
+  "(defun foldr (f init lst)"
+  "(if (eq lst nil) init (f (car lst) (foldr f init (cdr lst)))))",
+
+  "(defun apply (f lst) (eval (cons f lst)))",
+
+  "(defun zipwith (f xs ys) "
+  "(let (( zip-acc (lambda (acc xs ys) "
+  "(if (and xs ys) "
+  "(zip-acc (cons (f (car xs) (car ys)) acc) (cdr xs) (cdr ys)) "
+  "acc)))) "
+  "(reverse (zip-acc nil xs ys))))",
+
+  "(defun zip (xs ys) "
+  "(zipwith cons xs ys))",
+
+  "(defun filter (f lst)"
+  "(let ((filter-rec (lambda (f lst ys)"
+  "(if (eq lst nil)"
+  "(reverse ys)"
+  "(if (f (car lst))"
+  "(filter-rec f (cdr lst) (cons (car lst) ys))"
+  "(filter-rec f (cdr lst) ys))))))"
+  "(filter-rec f lst nil)"
+  "))",
+
+  "(defun str-cmp-asc (a b) (< (str-cmp a b) 0))",
+  "(defun str-cmp-dsc (a b) (> (str-cmp a b) 0))",
+
+  "(defun second (x) (car (cdr x)))",
+  "(defun third (x) (car (cdr (cdr x))))",
+
+  "(defun abs (x) (if (< x 0) (- x) x))",
+#ifdef LBM_USE_DYN_DEFSTRUCT
+  "(defun create-struct (name num-fields) { "
+  "(var arr (mkarray (+ 1 num-fields))) "
+  "(setix arr 0 name) "
+  "arr "
+  "})",
+
+  "(defun is-struct (struct name) "
+  "(and (eq (type-of struct) type-lisparray) "
+  "(eq (ix struct 0) name)))",
+
+  "(defun accessor-sym (name field) "
+  "(str2sym (str-merge name \"-\" (sym2str field))))",
+
+  "(defun access-set (i) "
+  "(lambda (struct) "
+  "(if (rest-args) "
+  "(setix struct i (rest-args 0)) "
+  "(ix struct i)))) ",
+#endif
+};
+#endif
+
+#ifdef LBM_USE_DYN_MACROS
+static const char* lbm_dyn_macros[] = {
+  "(define defun (macro (name args body) (me-defun name args body)))",
+  "(define defunret (macro (name args body) (me-defunret name args body)))",
+  "(define defmacro (macro (name args body) `(define ,name (macro ,args ,body))))",
+#ifdef LBM_USE_DYN_LOOPS
+  "(define loopfor (macro (it start cnd update body) (me-loopfor it start cnd update body)))",
+  "(define loopwhile (macro (cnd body) (me-loopwhile cnd body)))",
+  "(define looprange (macro (it start end body) (me-looprange it start end body)))",
+  "(define loopforeach (macro (it lst body) (me-loopforeach it lst body)))",
+  "(define loopwhile-thd (macro (stk cnd body) `(spawn ,@(if (list? stk) stk (list stk)) (fn () (loopwhile ,cnd ,body)))))",
+#endif
+#ifdef LBM_USE_DYN_DEFSTRUCT
+  "(define defstruct (macro (name list-of-fields)"
+  "{"
+  "(var num-fields (length list-of-fields))"
+  "(var name-as-string (sym2str name))"
+  "(var new-create-sym (str2sym (str-merge \"make-\" name-as-string)))"
+  "(var new-pred-sym (str2sym (str-merge name-as-string \"?\")))"
+  "(var field-ix (zip list-of-fields (range 1 (+ num-fields 1))))"
+  "`(progn"
+  "(define ,new-create-sym (lambda () (create-struct ',name ,num-fields)))"
+  "(define ,new-pred-sym (lambda (struct) (is-struct struct ',name)))"
+  ",@(map (lambda (x) (list define (accessor-sym name-as-string (car x))"
+  "(access-set (cdr x)))) field-ix)"
+  "'t"
+  ")"
+  "}))",
+#endif
+};
+
+static lbm_uint sym_return;
+
+static lbm_value ext_me_defun(lbm_value *argsi, lbm_uint argn) {
+  if (argn != 3) {
+    return ENC_SYM_EERROR;
+  }
+
+  lbm_value name = argsi[0];
+  lbm_value args = argsi[1];
+  lbm_value body = argsi[2];
+
+  // (define name (lambda args body))
+
+  return make_list(3,
+                   ENC_SYM_DEFINE,
+                   name,
+                   mk_lam(args, body));
+}
+
+static lbm_value ext_me_defunret(lbm_value *argsi, lbm_uint argn) {
+  if (argn != 3) {
+    return ENC_SYM_EERROR;
+  }
+
+  lbm_value name = argsi[0];
+  lbm_value args = argsi[1];
+  lbm_value body = argsi[2];
+
+  // (def name (lambda args (call-cc (lambda (return) body))))
+
+  return make_list(3,
+                   ENC_SYM_DEFINE,
+                   name,
+                   mk_lam(args,
+                          mk_call_cc(mk_lam(make_list(1, lbm_enc_sym(sym_return)),
+                                            body))));
+}
+
+#endif
+
+// DYN LOOPS ////////////////////////////////////////////////////////////
+#ifdef LBM_USE_DYN_LOOPS
+
 static lbm_uint sym_res;
 static lbm_uint sym_loop;
 static lbm_uint sym_break;
 static lbm_uint sym_brk;
 static lbm_uint sym_rst;
 static lbm_uint sym_return;
-
-
-static lbm_value make_list(int num, ...) {
-  va_list arguments;
-  va_start (arguments, num);
-  lbm_value res = ENC_SYM_NIL;
-  for (int i = 0; i < num; i++) {
-    res = lbm_cons(va_arg(arguments, lbm_value), res);
-  }
-  va_end (arguments);
-  return lbm_list_destructive_reverse(res);
-}
-
-
-static inline lbm_value mk_lam(lbm_value args, lbm_value body) {
-  return make_list(3, ENC_SYM_LAMBDA, args, body);
-}
-
-static inline lbm_value mk_call_cc(lbm_value body) {
-  return make_list(2, ENC_SYM_CALL_CC_UNSAFE, body);
-}
-
-static inline lbm_value mk_let(lbm_value bindings, lbm_value body) {
-  return make_list(3, ENC_SYM_LET, bindings, body);
-}
-
-static inline lbm_value mk_if(lbm_value cond, lbm_value tb, lbm_value fb) {
-  return make_list(4, ENC_SYM_IF, cond, tb, fb);
-}
-
-static inline lbm_value mk_inc(lbm_value v) {
-  return make_list(3, ENC_SYM_ADD, v, lbm_enc_i(1));
-}
-
-static inline lbm_value mk_lt(lbm_value a, lbm_value b) {
-  return make_list(3, ENC_SYM_LT, a, b);
-}
-
-static inline lbm_value mk_eq(lbm_value a, lbm_value b) {
-  return make_list(3, ENC_SYM_EQ, a, b);
-}
-
-static inline lbm_value mk_car(lbm_value a) {
-  return make_list(2, ENC_SYM_CAR, a);
-}
-
-static inline lbm_value mk_cdr(lbm_value a) {
-  return make_list(2, ENC_SYM_CDR, a);
-}
 
 static lbm_value ext_me_loopfor(lbm_value *args, lbm_uint argn) {
   if (argn != 5) {
@@ -217,9 +305,17 @@ static lbm_value ext_me_loopforeach(lbm_value *args, lbm_uint argn) {
                                              mk_cdr(lst),
                                              ENC_SYM_NIL)))));
 }
+#endif
 
 
-void lbm_loop_extensions_init(void){
+// DYN_LIB_INIT ////////////////////////////////////////////////////////////
+void lbm_dyn_lib_init(void) {
+#ifdef LBM_USE_DYN_MACROS
+  lbm_add_symbol_const("return", &sym_return);
+
+  lbm_add_extension("me-defun", ext_me_defun);
+  lbm_add_extension("me-defunret", ext_me_defunret);
+#ifdef LBM_USE_DYN_LOOPS
   lbm_add_symbol_const("a01", &sym_res);
   lbm_add_symbol_const("a02", &sym_loop);
   lbm_add_symbol_const("break", &sym_break);
@@ -231,5 +327,34 @@ void lbm_loop_extensions_init(void){
   lbm_add_extension("me-loopwhile", ext_me_loopwhile);
   lbm_add_extension("me-looprange", ext_me_looprange);
   lbm_add_extension("me-loopforeach", ext_me_loopforeach);
+#endif  
+#endif
+}
 
+bool lbm_dyn_lib_find(const char *str, const char **code) {
+#ifndef LBM_USE_DYN_MACROS
+#ifndef LBM_USE_DYN_FUNS
+  (void)str;
+  (void)code;
+#endif
+#endif
+
+#ifdef LBM_USE_DYN_MACROS
+  for (unsigned int i = 0; i < (sizeof(lbm_dyn_macros) / sizeof(lbm_dyn_macros[0]));i++) {
+    if (strmatch(str, lbm_dyn_macros[i] + 8)) { // define is 6 char
+      *code = lbm_dyn_macros[i];
+      return true;
+    }
+  }
+#endif
+
+#ifdef LBM_USE_DYN_FUNS
+  for (unsigned int i = 0; i < (sizeof(lbm_dyn_fun) / sizeof(lbm_dyn_fun[0]));i++) {
+    if (strmatch(str, lbm_dyn_fun[i] + 7)) { // defun is 5
+      *code = lbm_dyn_fun[i];
+      return true;
+    }
+  }
+#endif
+  return false;
 }
