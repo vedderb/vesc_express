@@ -31,7 +31,6 @@ set(COMPONENT_SRCS
 "lispif.c"
 "lispif_events.c"
 "lbm_vesc_utils.c"
-"lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
 "lbm_color_extensions.c"
 "lispBM/src/env.c"
@@ -58,6 +57,8 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/string_extensions.c"
 "lispBM/src/extensions/display_extensions.c"
 "lispBM/src/extensions/tjpgd.c"
+"lispBM/src/extensions/mutex_extensions.c"
+"lispBM/src/extensions/lbm_dyn_lib.c"
 
 
 "wifi/lispif_wifi_extensions.c"
@@ -114,6 +115,12 @@ set(COMPONENT_ADD_INCLUDEDIRS
 )
 
 register_component()
+
+add_compile_definitions(
+    LBM_USE_DYN_FUNS
+    LBM_USE_DYN_MACROS
+    LBM_USE_DYN_LOOPS
+)
 
 if((DEFINED ENV{HW_SRC}) OR (DEFINED ENV{HW_HEADER}))
     if(NOT DEFINED ENV{HW_SRC})

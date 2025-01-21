@@ -764,8 +764,6 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 			ext_load_callbacks[i]();
 		}
 
-		lbm_set_dynamic_load_callback(lispif_vesc_dynamic_loader);
-
 		int code_chars = 0;
 		if (code_data) {
 			code_chars = strnlen(code_data, code_len);
