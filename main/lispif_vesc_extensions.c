@@ -3944,8 +3944,7 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 			(char *)fw_reply_fw_info.commit_hash, (char *)&data[index],
 			sizeof(fw_reply_fw_info.commit_hash) - 1
 		);
-		size_t commit_hash_size = strlen((char *)fw_reply_fw_info.commit_hash)
-			+ 1;
+		size_t commit_hash_size = strlen((char *)fw_reply_fw_info.commit_hash) + 1;
 		index += commit_hash_size;
 
 		strncpy(
@@ -3956,78 +3955,67 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 			strlen((char *)fw_reply_fw_info.user_commit_hash) + 1;
 		index += user_commit_hash_size;
 
-		lbm_flat_value_t v;
-
 		if (fw_rx_cid >= 0) {
-			bool result = start_flatten_with_gc(
-				&v, 65 + commit_hash_size + user_commit_hash_size
-			);
+			lbm_flat_value_t v;
 
-			result = result && f_cons(&v); // +1
+			// If start flatten succeeds the f_*-operations will also succeed if the
+			// size calculation here is correct.
+			if (!start_flatten_with_gc(&v, 65 + commit_hash_size + user_commit_hash_size)) {
+				lbm_unblock_ctx_unboxed(fw_rx_cid, ENC_SYM_MERROR);
+			}
+
+			f_cons(&v); // +1
 
 			// ('version . (uint uint))
-			result = result && f_cons(&v); // +1
+			f_cons(&v); // +1
 			// Ensure that the symbol is added.
 			compare_symbol(0, &syms_vesc.version);
-			result = result && f_sym(&v, syms_vesc.version); // +5
+			f_sym(&v, syms_vesc.version); // +5
 
-			result = result && f_cons(&v); // +1
-			result = result
-				&& f_u(&v, (lbm_uint)fw_reply_fw_info.version_major); // +5
+			f_cons(&v); // +1
+			f_u(&v, (lbm_uint)fw_reply_fw_info.version_major); // +5
 
-			result = result && f_cons(&v); // +1
-			result = result
-				&& f_u(&v, (lbm_uint)fw_reply_fw_info.version_minor); // +5
-			result = result && f_sym(&v, SYM_NIL);                    // +5
+			f_cons(&v); // +1
+			f_u(&v, (lbm_uint)fw_reply_fw_info.version_minor); // +5
+			f_sym(&v, SYM_NIL);                    // +5
 
-			result = result && f_cons(&v); // +1
+			f_cons(&v); // +1
 
 			// ('test_version . uint)
-			result = result && f_cons(&v); // + 1
+			f_cons(&v); // + 1
 			compare_symbol(0, &syms_vesc.test_version);
-			result = result && f_sym(&v, syms_vesc.test_version); // +5
-			result = result
-				&& f_u(&v, (lbm_uint)fw_reply_fw_info.test_version); // +5
+			f_sym(&v, syms_vesc.test_version); // +5
+			f_u(&v, (lbm_uint)fw_reply_fw_info.test_version); // +5
 
-			result = result && f_cons(&v); // +1
+			f_cons(&v); // +1
 
 			// ('commit . str)
-			result = result && f_cons(&v); // +1
+			f_cons(&v); // +1
 			compare_symbol(0, &syms_vesc.commit);
-			result = result && f_sym(&v, syms_vesc.commit); // +5
+			f_sym(&v, syms_vesc.commit); // +5
 			if (fw_reply_fw_info.commit_hash[0] == '\0') {
-				result = result && f_sym(&v, SYM_NIL);
+				f_sym(&v, SYM_NIL);
 			} else {
-				result = result
-					&& f_lbm_array(
-						&v, commit_hash_size,
-						(uint8_t *)fw_reply_fw_info.commit_hash
-					);
+				f_lbm_array(&v, commit_hash_size,
+						(uint8_t*) fw_reply_fw_info.commit_hash);
 			} // +5 + user_commit_hash_size
-			result = result && f_cons(&v); // +1
+			f_cons(&v); // +1
 
 			// ('user-commit . str)
-			result = result && f_cons(&v); // +1
+			f_cons(&v); // +1
 			compare_symbol(0, &syms_vesc.user_commit);
-			result = result && f_sym(&v, syms_vesc.user_commit); // +5
+			f_sym(&v, syms_vesc.user_commit); // +5
 			if (fw_reply_fw_info.user_commit_hash[0] == '\0') {
-				result = result && f_sym(&v, SYM_NIL);
+				f_sym(&v, SYM_NIL);
 			} else {
-				result = result
-					&& f_lbm_array(
-						&v, user_commit_hash_size,
-						(uint8_t *)fw_reply_fw_info.user_commit_hash
-					);
+				f_lbm_array(&v, user_commit_hash_size,
+						(uint8_t*) fw_reply_fw_info.user_commit_hash);
 			} // +5 + user_commit_hash_size
-			result = result && f_sym(&v, SYM_NIL); // +5
+			f_sym(&v, SYM_NIL); // +5
 
-			result = result && lbm_finish_flatten(&v);
+			lbm_finish_flatten(&v);
 
-			if (!result) {
-				lbm_free(v.buf);
-				// TODO: is this ok?
-				lbm_unblock_ctx_unboxed(fw_rx_cid, ENC_SYM_MERROR);
-			} else if (!lbm_unblock_ctx(fw_rx_cid, &v)) {
+			if (!lbm_unblock_ctx(fw_rx_cid, &v)) {
 				lbm_free(v.buf);
 				lbm_unblock_ctx_unboxed(fw_rx_cid, ENC_SYM_EERROR);
 			}
@@ -4100,6 +4088,7 @@ static void fw_reply_func(unsigned char *data, unsigned int len) {
 	}
 
 	fw_reply_rx = true;
+	fw_rx_cid = -1;
 
 	commands_set_send_func(fw_send_func_old);
 }
@@ -4577,6 +4566,11 @@ static lbm_value ext_bms_st(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
+	if (fw_rx_cid >= 0) {
+		lbm_set_error_reason("Commands busy");
+		return ENC_SYM_EERROR;
+	}
+
 	uint8_t buf[8];
 	int32_t ind = 0;
 
@@ -4587,7 +4581,6 @@ static lbm_value ext_bms_st(lbm_value *args, lbm_uint argn) {
 
 	buf[ind++] = COMM_BMS_BLNC_SELFTEST;
 	fw_reply_rx = false;
-	fw_rx_cid = -1;
 	fw_send_func_old = commands_get_send_func();
 	commands_process_packet(buf, ind, fw_reply_func);
 	fw_rx_cid = lbm_get_current_cid();
