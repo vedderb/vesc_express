@@ -4566,11 +4566,6 @@ static lbm_value ext_bms_st(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
-	if (fw_rx_cid >= 0) {
-		lbm_set_error_reason("Commands busy");
-		return ENC_SYM_EERROR;
-	}
-
 	uint8_t buf[8];
 	int32_t ind = 0;
 
