@@ -695,7 +695,7 @@ static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_i(set, &v, &set_arg);
 		if (v != conf->can_baud_rate) {
 			conf->can_baud_rate = v;
-			comm_can_update_baudrate();
+			comm_can_update_baudrate(0);
 		}
 	} else if (compare_symbol(name, &syms_vesc.can_status_rate_hz)) {
 		res = get_or_set_i(set, &conf->can_status_rate_hz, &set_arg);
@@ -1387,6 +1387,25 @@ static lbm_value ext_can_list_devs(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_can_local_id(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	return lbm_enc_i(backup.config.controller_id);
+}
+
+static lbm_value ext_can_update_baud(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+	int kbits = lbm_dec_as_i32(args[0]);
+	CAN_BAUD baud = comm_can_kbits_to_baud(kbits);
+	if (baud != CAN_BAUD_INVALID) {
+		for (int i = 0;i < 10;i++) {
+			comm_can_send_update_baud(kbits, 1000);
+			vTaskDelay(50 / portTICK_PERIOD_MS);
+		}
+		backup.config.can_baud_rate = baud;
+
+		main_store_backup_data();
+		comm_can_update_baudrate(1000);
+		return ENC_SYM_TRUE;
+	} else {
+		return ENC_SYM_TERROR;
+	}
 }
 
 static lbm_value ext_can_start(lbm_value *args, lbm_uint argn) {
@@ -5998,6 +6017,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("can-cmd", ext_can_cmd);
 	lbm_add_extension("can-list-devs", ext_can_list_devs);
 	lbm_add_extension("can-local-id", ext_can_local_id);
+	lbm_add_extension("can-update-baud", ext_can_update_baud);
 
 	lbm_add_extension("can-msg-age", ext_can_msg_age);
 	lbm_add_extension("canget-current", ext_can_get_current);
