@@ -70,6 +70,9 @@
 
 //#define HW_HEADER					"hw_express_plus.h"
 //#define HW_SOURCE					"hw_express_plus.c"
+
+//#define HW_HEADER					"hw_stick.h"
+//#define HW_SOURCE					"hw_stick.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
