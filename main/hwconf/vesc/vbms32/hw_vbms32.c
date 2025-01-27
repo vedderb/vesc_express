@@ -360,9 +360,9 @@ static void bq_init(uint8_t dev_addr) {
 	bq_set_reg(dev_addr, TS3Config, 0b00111011, 1);
 	bq_set_reg(dev_addr, ALERTPinConfig, 0b00111011, 1);
 	bq_set_reg(dev_addr, DCHGPinConfig, 0b00111011, 1);
+	bq_set_reg(dev_addr, HDQPinConfig, 0b00111011, 1);
 
 	// Disabled
-	bq_set_reg(dev_addr, HDQPinConfig, 0x00, 1);
 	bq_set_reg(dev_addr, DDSGPinConfig, 0x00, 1);
 
 	// Use all cells
@@ -576,6 +576,8 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	if (!ok) { goto exit_error1; }
 	float v4 = (float)command_read(BQ_ADDR_1, DCHGTemperature, &ok) * counts_to_volts;
 	if (!ok) { goto exit_error1; }
+	float v5 = (float)command_read(BQ_ADDR_1, HDQTemperature, &ok) * counts_to_volts;
+	if (!ok) { goto exit_error1; }
 
 	// TODO: Use config
 	float ntc_beta = 3380.0;
@@ -584,6 +586,7 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v2), ntc_beta))), ts_list);
 	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v3), ntc_beta))), ts_list);
 	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v4), ntc_beta))), ts_list);
+	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v5), ntc_beta))), ts_list);
 
 	if (m_cells_ic2 != 0) {
 		ts_list = lbm_cons(lbm_enc_float(
