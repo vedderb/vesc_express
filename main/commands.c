@@ -265,8 +265,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		send_buffer[ind++] = 0; // No NRF flags
 
-		strcpy((char*)(send_buffer + ind), FW_NAME);
-		ind += strlen(FW_NAME) + 1;
+		if (lispif_fw_name()[0] == 0) {
+			strcpy((char*)(send_buffer + ind), FW_NAME);
+			ind += strlen(FW_NAME) + 1;
+		} else {
+			strcpy((char*)(send_buffer + ind), lispif_fw_name());
+			ind += strlen(lispif_fw_name()) + 1;
+		}
 
 		buffer_append_uint32(send_buffer, main_calc_hw_crc(), &ind);
 

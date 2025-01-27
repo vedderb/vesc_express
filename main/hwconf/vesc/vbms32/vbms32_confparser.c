@@ -40,6 +40,7 @@ int32_t vbms32_confparser_serialize_main_config_t(uint8_t *buffer, const main_co
 	buffer_append_int16(buffer, conf->max_bal_ch, &ind);
 	buffer[ind++] = (uint8_t)conf->cells_ic1;
 	buffer[ind++] = (uint8_t)conf->cells_ic2;
+	buffer[ind++] = (uint8_t)conf->temp_num;
 	buffer_append_float32_auto(buffer, conf->batt_ah, &ind);
 	buffer[ind++] = conf->soc_use_ah;
 	buffer[ind++] = conf->block_sleep;
@@ -110,6 +111,7 @@ bool vbms32_confparser_deserialize_main_config_t(const uint8_t *buffer, main_con
 	conf->max_bal_ch = buffer_get_int16(buffer, &ind);
 	conf->cells_ic1 = buffer[ind++];
 	conf->cells_ic2 = buffer[ind++];
+	conf->temp_num = buffer[ind++];
 	conf->batt_ah = buffer_get_float32_auto(buffer, &ind);
 	conf->soc_use_ah = buffer[ind++];
 	conf->block_sleep = buffer[ind++];
@@ -165,6 +167,7 @@ void vbms32_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->max_bal_ch = CONF_MAX_BAL_CH;
 	conf->cells_ic1 = CONF_CELLS_IC1;
 	conf->cells_ic2 = CONF_CELLS_IC2;
+	conf->temp_num = CONF_TEMP_NUM;
 	conf->batt_ah = CONF_BATT_AH;
 	conf->soc_use_ah = CONF_SOC_USE_AH;
 	conf->block_sleep = CONF_BLOCK_SLEEP;

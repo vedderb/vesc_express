@@ -382,6 +382,7 @@ static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
 }
 
 static char print_prefix[50] = {0};
+static char fw_name[20] = {0};
 
 static lbm_value ext_set_print_prefix(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(1);
@@ -392,6 +393,19 @@ static lbm_value ext_set_print_prefix(lbm_value *args, lbm_uint argn) {
 
 	const char *string = lbm_dec_str(args[0]);
 	strncpy(print_prefix, string, sizeof(print_prefix) - 1);
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_set_fw_name(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	if (!lbm_is_array_r(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+
+	const char *string = lbm_dec_str(args[0]);
+	strncpy(fw_name, string, sizeof(fw_name) - 1);
 
 	return ENC_SYM_TRUE;
 }
@@ -5971,6 +5985,7 @@ void lispif_load_vesc_extensions(void) {
 	// Various commands
 	lbm_add_extension("print", ext_print);
 	lbm_add_extension("set-print-prefix", ext_set_print_prefix);
+	lbm_add_extension("set-fw-name", ext_set_fw_name);
 	lbm_add_extension("puts", ext_puts);
 	lbm_add_extension("get-bms-val", ext_get_bms_val);
 	lbm_add_extension("set-bms-val", ext_set_bms_val);
@@ -6372,4 +6387,9 @@ void lispif_process_rmsg(int slot, unsigned char *data, unsigned int len) {
 char* lispif_print_prefix(void) {
 	print_prefix[sizeof(print_prefix) - 1] = 0;
 	return print_prefix;
+}
+
+char* lispif_fw_name(void) {
+	fw_name[sizeof(fw_name) - 1] = 0;
+	return fw_name;
 }

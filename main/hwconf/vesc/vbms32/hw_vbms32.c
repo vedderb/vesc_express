@@ -774,6 +774,7 @@ static lbm_value ext_subcmd_cmdonly(lbm_value *args, lbm_uint argn) {
 typedef struct {
 	lbm_uint cells_ic1;
 	lbm_uint cells_ic2;
+	lbm_uint temp_num;
 	lbm_uint batt_ah;
 	lbm_uint balance_mode;
 	lbm_uint max_bal_ch;
@@ -813,6 +814,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("cells_ic1", comp);
 		} else if (comp == &syms_vesc.cells_ic2) {
 			lbm_add_symbol_const("cells_ic2", comp);
+		} else if (comp == &syms_vesc.temp_num) {
+			lbm_add_symbol_const("temp_num", comp);
 		} else if (comp == &syms_vesc.batt_ah) {
 			lbm_add_symbol_const("batt_ah", comp);
 		} else if (comp == &syms_vesc.balance_mode) {
@@ -933,6 +936,8 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_i(set, &cfg->cells_ic1, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.cells_ic2)) {
 		res = get_or_set_i(set, &cfg->cells_ic2, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.temp_num)) {
+		res = get_or_set_i(set, &cfg->temp_num, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.balance_mode)) {
 		int tmp = cfg->balance_mode;
 		res = get_or_set_i(set, &tmp, &set_arg);
@@ -1014,6 +1019,12 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	main_store_backup_data();
+	return lbm_enc_i(1);
+}
+
 static void load_extensions(void) {
 	memset(&syms_vesc, 0, sizeof(syms_vesc));
 
@@ -1065,6 +1076,8 @@ static void load_extensions(void) {
 	lbm_add_extension("bms-get-param", ext_bms_get_param);
 	lbm_add_extension("bms-set-param", ext_bms_set_param);
 	lbm_add_extension("bms-store-cfg", ext_bms_store_cfg);
+
+	lbm_add_extension("bms-fw-version", ext_bms_fw_version);
 }
 
 void hw_init(void) {

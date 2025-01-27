@@ -84,6 +84,7 @@ p, li { white-space: pre-wrap; }
             <enumNames>CAN_BAUD_20K</enumNames>
             <enumNames>CAN_BAUD_50K</enumNames>
             <enumNames>CAN_BAUD_75K</enumNames>
+            <enumNames>CAN_BAUD_100K</enumNames>
         </can_baud_rate>
         <wifi_mode>
             <longName>WiFi Mode</longName>
@@ -403,6 +404,26 @@ p, li { white-space: pre-wrap; }
             <suffix></suffix>
             <vTx>1</vTx>
         </cells_ic2>
+        <temp_num>
+            <longName>Temperature Sensors</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Number of external temperature sensors, starting from the first temperature port on the hardware. If this number is set higher than the hardware has sensors all sensors will be used.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_TEMP_NUM</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>16</maxInt>
+            <minInt>0</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>1</valInt>
+            <suffix></suffix>
+            <vTx>1</vTx>
+        </temp_num>
         <batt_ah>
             <longName>Ah Columb Counting</longName>
             <type>1</type>
@@ -1027,6 +1048,7 @@ p, li { white-space: pre-wrap; }
         <ser>max_bal_ch</ser>
         <ser>cells_ic1</ser>
         <ser>cells_ic2</ser>
+        <ser>temp_num</ser>
         <ser>batt_ah</ser>
         <ser>soc_use_ah</ser>
         <ser>block_sleep</ser>
@@ -1108,6 +1130,7 @@ p, li { white-space: pre-wrap; }
                     <param>soc_use_ah</param>
                     <param>vc_empty</param>
                     <param>vc_full</param>
+                    <param>temp_num</param>
                 </subgroupParams>
             </subgroup>
             <subgroup>

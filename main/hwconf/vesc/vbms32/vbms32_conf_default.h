@@ -113,6 +113,11 @@
 #define CONF_CELLS_IC2 16
 #endif
 
+// Temperature Sensors
+#ifndef CONF_TEMP_NUM
+#define CONF_TEMP_NUM 1
+#endif
+
 // Ah Columb Counting
 #ifndef CONF_BATT_AH
 #define CONF_BATT_AH 10

@@ -107,6 +107,9 @@ typedef struct {
 
 	// Cells on second balance IC
 	int cells_ic2;
+	
+	// Number of external temperature sensors
+	int temp_num;
 
 	// Battery amp hours
 	float batt_ah;
