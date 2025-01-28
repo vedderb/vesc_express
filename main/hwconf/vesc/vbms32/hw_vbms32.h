@@ -167,6 +167,9 @@ typedef struct {
 
 	// Only allow charging when the cell temperature is below this value
 	float t_charge_max;
+	
+	// Only allow charging when the MOSFET temperature is below this value
+	float t_charge_max_mos;
 
 	// Current measurement mode
 	I_MEASURE_MODE i_measure_mode;

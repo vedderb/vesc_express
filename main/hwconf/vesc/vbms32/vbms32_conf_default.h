@@ -203,9 +203,14 @@
 #define CONF_V_CHARGE_DETECT 5
 #endif
 
-// Charge Max Temp
+// Charge Temp Max
 #ifndef CONF_T_CHARGE_MAX
 #define CONF_T_CHARGE_MAX 45
+#endif
+
+// Charge Temp Max Mos
+#ifndef CONF_T_CHARGE_MAX_MOS
+#define CONF_T_CHARGE_MAX_MOS 85
 #endif
 
 // Current Measurement Mode
@@ -248,7 +253,7 @@
 #define CONF_T_BAL_LIM_END 75
 #endif
 
-// Charge Min Temp
+// Charge Temp Min
 #ifndef CONF_T_CHARGE_MIN
 #define CONF_T_CHARGE_MIN 0
 #endif

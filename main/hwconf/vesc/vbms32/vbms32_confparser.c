@@ -59,6 +59,7 @@ int32_t vbms32_confparser_serialize_main_config_t(uint8_t *buffer, const main_co
 	buffer_append_float32_auto(buffer, conf->min_current_sleep, &ind);
 	buffer_append_float16(buffer, conf->v_charge_detect, 10, &ind);
 	buffer_append_float16(buffer, conf->t_charge_max, 10, &ind);
+	buffer_append_float16(buffer, conf->t_charge_max_mos, 10, &ind);
 	buffer[ind++] = conf->i_measure_mode;
 	buffer_append_float32_auto(buffer, conf->min_charge_current, &ind);
 	buffer_append_float32_auto(buffer, conf->max_charge_current, &ind);
@@ -130,6 +131,7 @@ bool vbms32_confparser_deserialize_main_config_t(const uint8_t *buffer, main_con
 	conf->min_current_sleep = buffer_get_float32_auto(buffer, &ind);
 	conf->v_charge_detect = buffer_get_float16(buffer, 10, &ind);
 	conf->t_charge_max = buffer_get_float16(buffer, 10, &ind);
+	conf->t_charge_max_mos = buffer_get_float16(buffer, 10, &ind);
 	conf->i_measure_mode = buffer[ind++];
 	conf->min_charge_current = buffer_get_float32_auto(buffer, &ind);
 	conf->max_charge_current = buffer_get_float32_auto(buffer, &ind);
@@ -186,6 +188,7 @@ void vbms32_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->min_current_sleep = CONF_MIN_CURRENT_SLEEP;
 	conf->v_charge_detect = CONF_V_CHARGE_DETECT;
 	conf->t_charge_max = CONF_T_CHARGE_MAX;
+	conf->t_charge_max_mos = CONF_T_CHARGE_MAX_MOS;
 	conf->i_measure_mode = CONF_I_MEASURE_MODE;
 	conf->min_charge_current = CONF_MIN_CHARGE_CURRENT;
 	conf->max_charge_current = CONF_MAX_CHARGE_CURRENT;

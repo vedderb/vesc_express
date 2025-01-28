@@ -795,7 +795,7 @@ p, li { white-space: pre-wrap; }
             <vTx>7</vTx>
         </v_charge_detect>
         <t_charge_max>
-            <longName>Charge Max Temp</longName>
+            <longName>Charge Temp Max</longName>
             <type>1</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -816,6 +816,28 @@ p, li { white-space: pre-wrap; }
             <suffix> °C</suffix>
             <vTx>7</vTx>
         </t_charge_max>
+        <t_charge_max_mos>
+            <longName>Charge Temp Max Mos</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Disable charging when the MOSFET temperature is above this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_T_CHARGE_MAX_MOS</cDefine>
+            <editorDecimalsDouble>1</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>180</maxDouble>
+            <minDouble>-15</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>1</stepDouble>
+            <valDouble>85</valDouble>
+            <vTxDoubleScale>10</vTxDoubleScale>
+            <suffix> °C</suffix>
+            <vTx>7</vTx>
+        </t_charge_max_mos>
         <i_measure_mode>
             <longName>Current Measurement Mode</longName>
             <type>4</type>
@@ -991,7 +1013,7 @@ p, li { white-space: pre-wrap; }
             <vTx>7</vTx>
         </t_bal_lim_end>
         <t_charge_min>
-            <longName>Charge Min Temp</longName>
+            <longName>Charge Temp Min</longName>
             <type>1</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -1067,6 +1089,7 @@ p, li { white-space: pre-wrap; }
         <ser>min_current_sleep</ser>
         <ser>v_charge_detect</ser>
         <ser>t_charge_max</ser>
+        <ser>t_charge_max_mos</ser>
         <ser>i_measure_mode</ser>
         <ser>min_charge_current</ser>
         <ser>max_charge_current</ser>
@@ -1142,6 +1165,7 @@ p, li { white-space: pre-wrap; }
                     <param>v_charge_detect</param>
                     <param>t_charge_min</param>
                     <param>t_charge_max</param>
+                    <param>t_charge_max_mos</param>
                     <param>t_charge_mon_en</param>
                     <param>min_charge_current</param>
                     <param>max_charge_current</param>

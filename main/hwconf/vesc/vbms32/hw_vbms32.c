@@ -797,6 +797,7 @@ typedef struct {
 	lbm_uint min_current_sleep;
 	lbm_uint v_charge_detect;
 	lbm_uint t_charge_max;
+	lbm_uint t_charge_max_mos;
 	lbm_uint i_measure_mode;
 	lbm_uint sleep_regular;
 	lbm_uint sleep_long;
@@ -857,6 +858,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("v_charge_detect", comp);
 		} else if (comp == &syms_vesc.t_charge_max) {
 			lbm_add_symbol_const("t_charge_max", comp);
+		} else if (comp == &syms_vesc.t_charge_max_mos) {
+			lbm_add_symbol_const("t_charge_max_mos", comp);
 		} else if (comp == &syms_vesc.i_measure_mode) {
 			lbm_add_symbol_const("i_measure_mode", comp);
 		} else if (comp == &syms_vesc.sleep_regular) {
@@ -981,6 +984,8 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &cfg->v_charge_detect, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.t_charge_max)) {
 		res = get_or_set_float(set, &cfg->t_charge_max, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.t_charge_max_mos)) {
+		res = get_or_set_float(set, &cfg->t_charge_max_mos, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.i_measure_mode)) {
 		int tmp = cfg->i_measure_mode;
 		res = get_or_set_i(set, &tmp, &set_arg);
@@ -1025,7 +1030,7 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	main_store_backup_data();
-	return lbm_enc_i(1);
+	return lbm_enc_i(2);
 }
 
 static void load_extensions(void) {
