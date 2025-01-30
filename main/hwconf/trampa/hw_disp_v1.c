@@ -238,8 +238,6 @@ static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	esp_bluedroid_disable();
-	esp_bt_controller_disable();
 	esp_wifi_stop();
 
 #if DISP_HW_VERSION == DISP_V1_3

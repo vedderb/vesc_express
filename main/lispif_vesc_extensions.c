@@ -3244,8 +3244,6 @@ static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	esp_bluedroid_disable();
-	esp_bt_controller_disable();
 	esp_wifi_stop();
 
 	float sleep_time = lbm_dec_as_float(args[0]);
@@ -3261,8 +3259,6 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	esp_bluedroid_disable();
-	esp_bt_controller_disable();
 	esp_wifi_stop();
 
 	float sleep_time = lbm_dec_as_float(args[0]);

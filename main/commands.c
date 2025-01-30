@@ -286,8 +286,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 					comm_wifi_disconnect();
 					vTaskDelay(50 / portTICK_PERIOD_MS);
 
-					esp_bluedroid_disable();
-					esp_bt_controller_disable();
 					esp_wifi_stop();
 
 					// Here we must use esp_restart even though that does not play nicely
@@ -351,9 +349,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_REBOOT: {
 		comm_wifi_disconnect();
-
-		esp_bluedroid_disable();
-		esp_bt_controller_disable();
 		esp_wifi_stop();
 
 		// Deep sleep to reboot as that disconnects USB properly
