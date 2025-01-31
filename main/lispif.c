@@ -120,7 +120,12 @@ void lispif_init(void) {
 	memset(&buffered_tok_state, 0, sizeof(buffered_tok_state));
 	lbm_mutex = xSemaphoreCreateMutex();
 	lispif_restart(false, true, true);
+
+#ifdef LBM_USE_TIME_QUOTA
+	lbm_set_eval_time_quota(2000);
+#else
 	lbm_set_eval_step_quota(50);
+#endif
 }
 
 int lispif_get_restart_cnt(void) {
