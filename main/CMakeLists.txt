@@ -59,7 +59,8 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/tjpgd.c"
 "lispBM/src/extensions/mutex_extensions.c"
 "lispBM/src/extensions/lbm_dyn_lib.c"
-
+"lispBM/src/extensions/ttf_extensions.c"
+"lispBM/src/extensions/schrift.c"
 
 "wifi/lispif_wifi_extensions.c"
 
@@ -123,6 +124,7 @@ add_compile_definitions(
     LBM_USE_DYN_ARRAYS
     LBM_USE_TIME_QUOTA
     LBM_USE_ERROR_LINENO
+    LBM_USE_DYN_TTF
 )
 
 if((DEFINED ENV{HW_SRC}) OR (DEFINED ENV{HW_HEADER}))

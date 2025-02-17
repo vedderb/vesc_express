@@ -28,6 +28,7 @@
 #include "extensions/math_extensions.h"
 #include "extensions/mutex_extensions.h"
 #include "extensions/lbm_dyn_lib.h"
+#include "extensions/ttf_extensions.h"
 #include "lispif_disp_extensions.h"
 #include "lispif_wifi_extensions.h"
 #include "lispif_ble_extensions.h"
@@ -6237,6 +6238,7 @@ void lispif_load_vesc_extensions(void) {
 	lbm_color_extensions_init();
 	lbm_mutex_extensions_init();
 	lbm_dyn_lib_init();
+	lbm_ttf_extensions_init();
 
 	lbm_set_dynamic_load_callback(dynamic_loader);
 }
