@@ -5,7 +5,7 @@
 
 // CAN ID
 #ifndef CONF_CONTROLLER_ID
-#define CONF_CONTROLLER_ID -1
+#define CONF_CONTROLLER_ID 3
 #endif
 
 // CAN Baud Rate
@@ -75,7 +75,7 @@
 
 // Bluetooth Mode
 #ifndef CONF_BLE_MODE
-#define CONF_BLE_MODE 0
+#define CONF_BLE_MODE 1
 #endif
 
 // Name

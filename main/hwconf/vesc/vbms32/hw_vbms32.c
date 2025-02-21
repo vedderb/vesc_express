@@ -208,6 +208,34 @@ static bool bq_set_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t reg_data, u
 	return res;
 }
 
+static bool bq_read_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t *reg_data, uint8_t datalen) {
+	uint8_t TX_RegData[2] = {0x00, 0x00};
+	uint8_t RX_RegData[4] = {0x00, 0x00, 0x00, 0x00};
+
+	if (datalen > 4) {
+		datalen = 4;
+	}
+
+	bool res = false;
+
+	// TX_RegData in little endian format
+	TX_RegData[0] = reg_addr & 0xff;
+	TX_RegData[1] = (reg_addr >> 8) & 0xff;
+
+	bq_write_block(dev_addr, 0x3E, TX_RegData, 2);
+	vTaskDelay(2);
+	res = bq_read_block(dev_addr, 0x40, RX_RegData, datalen);
+
+	if (res) {
+		*reg_data = (((uint32_t)RX_RegData[3]) << 24) | (((uint32_t)RX_RegData[2]) << 16) |
+				(((uint32_t)RX_RegData[1]) << 8) | (((uint32_t)RX_RegData[0]) << 0);
+	} else {
+		*reg_data = 0;
+	}
+
+	return res;
+}
+
 static int16_t command_read(uint8_t dev_addr, uint8_t command, bool *ok) {
 	if (ok) {
 		*ok = false;
@@ -774,6 +802,50 @@ static lbm_value ext_subcmd_cmdonly(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(command_subcommands(addr, lbm_dec_as_u32(args[1])));
 }
 
+static lbm_value ext_read_reg(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(3);
+
+	uint8_t addr = BQ_ADDR_1;
+	if (lbm_dec_as_i32(args[0]) == 2) {
+		addr = BQ_ADDR_2;
+	}
+
+	int reg = lbm_dec_as_i32(args[1]);
+	int len = lbm_dec_as_i32(args[2]);
+
+	uint32_t reg_data = 0;
+	bool ok = bq_read_reg(addr, reg, &reg_data, len);
+
+	if (ok) {
+		return lbm_enc_u32(reg_data);
+	} else {
+		lbm_set_error_reason(addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2);
+		return ENC_SYM_EERROR;
+	}
+}
+
+static lbm_value ext_write_reg(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(4);
+
+	uint8_t addr = BQ_ADDR_1;
+	if (lbm_dec_as_i32(args[0]) == 2) {
+		addr = BQ_ADDR_2;
+	}
+
+	int reg = lbm_dec_as_i32(args[1]);
+	uint32_t data = lbm_dec_as_u32(args[2]);
+	int len = lbm_dec_as_i32(args[3]);
+
+	bool ok = bq_set_reg(addr, reg, data, len);
+
+	if (ok) {
+		return ENC_SYM_TRUE;
+	} else {
+		lbm_set_error_reason(addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2);
+		return ENC_SYM_EERROR;
+	}
+}
+
 typedef struct {
 	lbm_uint cells_ic1;
 	lbm_uint cells_ic2;
@@ -1030,7 +1102,7 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	main_store_backup_data();
-	return lbm_enc_i(2);
+	return lbm_enc_i(3);
 }
 
 static void load_extensions(void) {
@@ -1079,6 +1151,8 @@ static void load_extensions(void) {
 	// HW-specific commands
 	lbm_add_extension("bms-direct-cmd", ext_direct_cmd);
 	lbm_add_extension("bms-subcmd-cmdonly", ext_subcmd_cmdonly);
+	lbm_add_extension("bms-read-reg", ext_read_reg);
+	lbm_add_extension("bms-write-reg", ext_write_reg);
 
 	// Configuration
 	lbm_add_extension("bms-get-param", ext_bms_get_param);

@@ -43,13 +43,6 @@
 
 #define HW_NAME						"VBMS32"
 
-/*
- * PCB-versions
- *
- * 1: First prototype, PCB says 1.0
- * 2: Second prototype, PCB says 1.1
- *
- */
 #define PCB_VERSION					2
 
 #define HW_EARLY_LBM_INIT
@@ -201,6 +194,9 @@ typedef struct {
 	// Enable temperature monitoring during charging
 	bool t_charge_mon_en;
 } main_config_t;
+
+// Default setting Overrides
+#define HW_DEFAULT_ID				3
 
 // CAN
 #define CAN_TX_GPIO_NUM				7
