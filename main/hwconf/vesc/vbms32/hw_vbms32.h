@@ -62,18 +62,6 @@
 #define OVR_CONF_MAIN_CONFIG
 #define VAR_INIT_CODE				259763459
 
-typedef enum {
-	BALANCE_MODE_DISABLED = 0,
-	BALANCE_MODE_CHARGING_ONLY,
-	BALANCE_MODE_DURING_AND_AFTER_CHARGING,
-	BALANCE_MODE_ALWAYS
-} BMS_BALANCE_MODE;
-
-typedef enum {
-	I_MEASURE_MODE_BMS = 0,
-	I_MEASURE_MODE_VESC
-} I_MEASURE_MODE;
-
 typedef struct {
 	int controller_id;
 	CAN_BAUD can_baud_rate;
@@ -107,9 +95,6 @@ typedef struct {
 	// Battery amp hours
 	float batt_ah;
 
-	// Cell balancing mode
-	BMS_BALANCE_MODE balance_mode;
-
 	// Maximum simultaneous balancing channels
 	int max_bal_ch;
 
@@ -118,9 +103,6 @@ typedef struct {
 
 	// Block sleep mode
 	bool block_sleep;
-
-	// Distributed balancing
-	bool dist_bal;
 
 	// Cell voltage when empty
 	float vc_empty;
@@ -164,9 +146,6 @@ typedef struct {
 	// Only allow charging when the MOSFET temperature is below this value
 	float t_charge_max_mos;
 
-	// Current measurement mode
-	I_MEASURE_MODE i_measure_mode;
-
 	// Regular sleep time
 	float sleep_regular;
 
@@ -182,17 +161,35 @@ typedef struct {
 	// Filter constant for SoC filter
 	float soc_filter_const;
 
-	// Start limiting the number of balancing channels at this temperature
-	float t_bal_lim_start;
-
-	// Disable all balancing channels above this temperature
-	float t_bal_lim_end;
+	// Do not allow balancing above this cell temperature
+	float t_bal_max_cell;
+	
+	// Do not allow balancing above this balance IC temperature
+	float t_bal_max_ic;
 
 	// Only allow charging when the cell temperature is above this value
 	float t_charge_min;
 
 	// Enable temperature monitoring during charging
 	bool t_charge_mon_en;
+	
+	// Maximum precharge time
+	float psw_t_pchg;
+	
+	// Shortcircuit protection enabled
+	bool psw_scd_en;
+	
+	// Shortcircuit protection threshold
+	int psw_scd_tres;
+	
+	// Enable overtemperature protection
+	bool t_psw_en;
+	
+	// Turn off power switch when MOSFET temperature is above this value
+	float t_psw_max_mos;
+	
+	// Wait for init done before enabling power switch
+	bool psw_wait_init;
 } main_config_t;
 
 // Default setting Overrides

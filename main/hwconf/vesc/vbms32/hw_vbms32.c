@@ -851,10 +851,8 @@ typedef struct {
 	lbm_uint cells_ic2;
 	lbm_uint temp_num;
 	lbm_uint batt_ah;
-	lbm_uint balance_mode;
 	lbm_uint max_bal_ch;
 	lbm_uint soc_use_ah;
-	lbm_uint dist_bal;
 	lbm_uint block_sleep;
 	lbm_uint vc_empty;
 	lbm_uint vc_full;
@@ -870,16 +868,21 @@ typedef struct {
 	lbm_uint v_charge_detect;
 	lbm_uint t_charge_max;
 	lbm_uint t_charge_max_mos;
-	lbm_uint i_measure_mode;
 	lbm_uint sleep_regular;
 	lbm_uint sleep_long;
 	lbm_uint min_charge_current;
 	lbm_uint max_charge_current;
 	lbm_uint soc_filter_const;
-	lbm_uint t_bal_lim_start;
-	lbm_uint t_bal_lim_end;
+	lbm_uint t_bal_max_cell;
+	lbm_uint t_bal_max_ic;
 	lbm_uint t_charge_min;
 	lbm_uint t_charge_mon_en;
+	lbm_uint psw_t_pchg;
+	lbm_uint psw_scd_en;
+	lbm_uint psw_scd_tres;
+	lbm_uint t_psw_en;
+	lbm_uint t_psw_max_mos;
+	lbm_uint psw_wait_init;
 } vesc_syms;
 
 static vesc_syms syms_vesc = {0};
@@ -894,14 +897,10 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("temp_num", comp);
 		} else if (comp == &syms_vesc.batt_ah) {
 			lbm_add_symbol_const("batt_ah", comp);
-		} else if (comp == &syms_vesc.balance_mode) {
-			lbm_add_symbol_const("balance_mode", comp);
 		} else if (comp == &syms_vesc.max_bal_ch) {
 			lbm_add_symbol_const("max_bal_ch", comp);
 		} else if (comp == &syms_vesc.soc_use_ah) {
 			lbm_add_symbol_const("soc_use_ah", comp);
-		} else if (comp == &syms_vesc.dist_bal) {
-			lbm_add_symbol_const("dist_bal", comp);
 		} else if (comp == &syms_vesc.block_sleep) {
 			lbm_add_symbol_const("block_sleep", comp);
 		} else if (comp == &syms_vesc.vc_empty) {
@@ -932,8 +931,6 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("t_charge_max", comp);
 		} else if (comp == &syms_vesc.t_charge_max_mos) {
 			lbm_add_symbol_const("t_charge_max_mos", comp);
-		} else if (comp == &syms_vesc.i_measure_mode) {
-			lbm_add_symbol_const("i_measure_mode", comp);
 		} else if (comp == &syms_vesc.sleep_regular) {
 			lbm_add_symbol_const("sleep_regular", comp);
 		} else if (comp == &syms_vesc.sleep_long) {
@@ -944,14 +941,28 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("max_charge_current", comp);
 		} else if (comp == &syms_vesc.soc_filter_const) {
 			lbm_add_symbol_const("soc_filter_const", comp);
-		} else if (comp == &syms_vesc.t_bal_lim_start) {
-			lbm_add_symbol_const("t_bal_lim_start", comp);
-		} else if (comp == &syms_vesc.t_bal_lim_end) {
-			lbm_add_symbol_const("t_bal_lim_end", comp);
+		} else if (comp == &syms_vesc.t_bal_max_cell) {
+			lbm_add_symbol_const("t_bal_max_cell", comp);
+		} else if (comp == &syms_vesc.t_bal_max_ic) {
+			lbm_add_symbol_const("t_bal_max_ic", comp);
 		} else if (comp == &syms_vesc.t_charge_min) {
 			lbm_add_symbol_const("t_charge_min", comp);
 		} else if (comp == &syms_vesc.t_charge_mon_en) {
 			lbm_add_symbol_const("t_charge_mon_en", comp);
+		} else if (comp == &syms_vesc.t_charge_mon_en) {
+			lbm_add_symbol_const("t_charge_mon_en", comp);
+		} else if (comp == &syms_vesc.psw_t_pchg) {
+			lbm_add_symbol_const("psw_t_pchg", comp);
+		} else if (comp == &syms_vesc.psw_scd_en) {
+			lbm_add_symbol_const("psw_scd_en", comp);
+		} else if (comp == &syms_vesc.psw_scd_tres) {
+			lbm_add_symbol_const("psw_scd_tres", comp);
+		} else if (comp == &syms_vesc.t_psw_en) {
+			lbm_add_symbol_const("t_psw_en", comp);
+		} else if (comp == &syms_vesc.t_psw_max_mos) {
+			lbm_add_symbol_const("t_psw_max_mos", comp);
+		} else if (comp == &syms_vesc.psw_wait_init) {
+			lbm_add_symbol_const("psw_wait_init", comp);
 		}
 	}
 
@@ -1016,10 +1027,6 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_i(set, &cfg->cells_ic2, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temp_num)) {
 		res = get_or_set_i(set, &cfg->temp_num, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.balance_mode)) {
-		int tmp = cfg->balance_mode;
-		res = get_or_set_i(set, &tmp, &set_arg);
-		cfg->balance_mode = tmp;
 	} else if (compare_symbol(name, &syms_vesc.batt_ah)) {
 		res = get_or_set_float(set, &cfg->batt_ah, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.max_bal_ch)) {
@@ -1028,8 +1035,6 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_bool(set, &cfg->soc_use_ah, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.block_sleep)) {
 		res = get_or_set_bool(set, &cfg->block_sleep, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.dist_bal)) {
-		res = get_or_set_bool(set, &cfg->dist_bal, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.vc_empty)) {
 		res = get_or_set_float(set, &cfg->vc_empty, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.vc_full)) {
@@ -1058,10 +1063,6 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &cfg->t_charge_max, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.t_charge_max_mos)) {
 		res = get_or_set_float(set, &cfg->t_charge_max_mos, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.i_measure_mode)) {
-		int tmp = cfg->i_measure_mode;
-		res = get_or_set_i(set, &tmp, &set_arg);
-		cfg->i_measure_mode = tmp;
 	} else if (compare_symbol(name, &syms_vesc.sleep_regular)) {
 		res = get_or_set_float(set, &cfg->sleep_regular, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.sleep_long)) {
@@ -1072,14 +1073,26 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &cfg->max_charge_current, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.soc_filter_const)) {
 		res = get_or_set_float(set, &cfg->soc_filter_const, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.t_bal_lim_start)) {
-		res = get_or_set_float(set, &cfg->t_bal_lim_start, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.t_bal_lim_end)) {
-		res = get_or_set_float(set, &cfg->t_bal_lim_end, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.t_bal_max_cell)) {
+		res = get_or_set_float(set, &cfg->t_bal_max_cell, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.t_bal_max_ic)) {
+		res = get_or_set_float(set, &cfg->t_bal_max_ic, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.t_charge_min)) {
 		res = get_or_set_float(set, &cfg->t_charge_min, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.t_charge_mon_en)) {
 		res = get_or_set_bool(set, &cfg->t_charge_mon_en, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.psw_t_pchg)) {
+		res = get_or_set_float(set, &cfg->psw_t_pchg, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.psw_scd_en)) {
+		res = get_or_set_bool(set, &cfg->psw_scd_en, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.psw_scd_tres)) {
+		res = get_or_set_i(set, &cfg->psw_scd_tres, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.t_psw_en)) {
+		res = get_or_set_bool(set, &cfg->t_psw_en, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.t_psw_max_mos)) {
+		res = get_or_set_float(set, &cfg->t_psw_max_mos, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.psw_wait_init)) {
+		res = get_or_set_bool(set, &cfg->psw_wait_init, &set_arg);
 	}
 
 	return res;
@@ -1102,7 +1115,7 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	main_store_backup_data();
-	return lbm_enc_i(3);
+	return lbm_enc_i(4);
 }
 
 static void load_extensions(void) {

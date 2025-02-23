@@ -133,16 +133,6 @@
 #define CONF_BLOCK_SLEEP 1
 #endif
 
-// Distributed Balancing
-#ifndef CONF_DIST_BAL
-#define CONF_DIST_BAL 1
-#endif
-
-// Balancing Mode
-#ifndef CONF_BALANCE_MODE
-#define CONF_BALANCE_MODE 2
-#endif
-
 // Cell Voltage Empty
 #ifndef CONF_VC_EMPTY
 #define CONF_VC_EMPTY 3.1
@@ -183,6 +173,16 @@
 #define CONF_BALANCE_MIN 3.5
 #endif
 
+// Max Cell Temp Balancing
+#ifndef CONF_T_BAL_MAX_CELL
+#define CONF_T_BAL_MAX_CELL 45
+#endif
+
+// Max BMS Temp Balancing
+#ifndef CONF_T_BAL_MAX_IC
+#define CONF_T_BAL_MAX_IC 85
+#endif
+
 // Balance Maximum Current
 #ifndef CONF_BALANCE_MAX_CURRENT
 #define CONF_BALANCE_MAX_CURRENT 1
@@ -213,11 +213,6 @@
 #define CONF_T_CHARGE_MAX_MOS 85
 #endif
 
-// Current Measurement Mode
-#ifndef CONF_I_MEASURE_MODE
-#define CONF_I_MEASURE_MODE 0
-#endif
-
 // Min Charge Current
 #ifndef CONF_MIN_CHARGE_CURRENT
 #define CONF_MIN_CHARGE_CURRENT 0.5
@@ -243,24 +238,39 @@
 #define CONF_SOC_FILTER_CONST 1e-05
 #endif
 
-// Temp Bal Lim Start
-#ifndef CONF_T_BAL_LIM_START
-#define CONF_T_BAL_LIM_START 60
-#endif
-
-// Temp Bal Lim End
-#ifndef CONF_T_BAL_LIM_END
-#define CONF_T_BAL_LIM_END 75
-#endif
-
 // Charge Temp Min
 #ifndef CONF_T_CHARGE_MIN
 #define CONF_T_CHARGE_MIN 0
 #endif
 
-// Charge Temp Mon
-#ifndef CONF_T_CHARGE_MON_EN
-#define CONF_T_CHARGE_MON_EN 1
+// Precharge Time Max
+#ifndef CONF_PSW_T_PCHG
+#define CONF_PSW_T_PCHG 3
+#endif
+
+// Shortcircuit Protection Enabled
+#ifndef CONF_PSW_SCD_EN
+#define CONF_PSW_SCD_EN 1
+#endif
+
+// Shortcircuit Protection Threshold
+#ifndef CONF_PSW_SCD_TRES
+#define CONF_PSW_SCD_TRES 4
+#endif
+
+// Temperature Protection Enabled
+#ifndef CONF_T_PSW_EN
+#define CONF_T_PSW_EN 1
+#endif
+
+// PSW Temp Max Mos
+#ifndef CONF_T_PSW_MAX_MOS
+#define CONF_T_PSW_MAX_MOS 105
+#endif
+
+// Wait for Init
+#ifndef CONF_PSW_WAIT_INIT
+#define CONF_PSW_WAIT_INIT 0
 #endif
 
 // VBMS32_CONF_DEFAULT_H_

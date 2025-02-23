@@ -470,34 +470,6 @@ p, li { white-space: pre-wrap; }
             <cDefine>CONF_BLOCK_SLEEP</cDefine>
             <valInt>1</valInt>
         </block_sleep>
-        <balance_mode>
-            <longName>Balancing Mode</longName>
-            <type>4</type>
-            <transmittable>1</transmittable>
-            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Cell Balancing Mode. Options:&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Sans Serif';&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif'; font-weight:600;&quot;&gt;BALANCE_MODE_DISABLED&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Do not balance cells at all.&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Sans Serif';&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif'; font-weight:600;&quot;&gt;BALANCE_MODE_CHARGING_ONLY&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Only balance while charging.&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Sans Serif';&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif'; font-weight:600;&quot;&gt;BALANCE_MODE_DURING_AND_AFTER_CHARGING&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Balance cells during charging and after charging has finished. Balancing will stop as soon as the &lt;/span&gt;&lt;span style=&quot; font-family:'Sans Serif'; font-style:italic;&quot;&gt;balance_max_current&lt;/span&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt; is exceeded.&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Sans Serif';&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif'; font-weight:600;&quot;&gt;BALANCE_MODE_ALWAYS&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Sans Serif';&quot;&gt;Always allow balancing.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
-            <cDefine>CONF_BALANCE_MODE</cDefine>
-            <valInt>2</valInt>
-            <enumNames>BALANCE_MODE_DISABLED</enumNames>
-            <enumNames>BALANCE_MODE_CHARGING_ONLY</enumNames>
-            <enumNames>BALANCE_MODE_DURING_AND_AFTER_CHARGING</enumNames>
-            <enumNames>BALANCE_MODE_ALWAYS</enumNames>
-        </balance_mode>
         <max_bal_ch>
             <longName>Max Balance Channels</longName>
             <type>2</type>
@@ -518,18 +490,6 @@ p, li { white-space: pre-wrap; }
             <suffix></suffix>
             <vTx>4</vTx>
         </max_bal_ch>
-        <dist_bal>
-            <longName>Distributed Balancing</longName>
-            <type>5</type>
-            <transmittable>1</transmittable>
-            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Enables distributed balancing between BMSes on the CAN-bus.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
-            <cDefine>CONF_DIST_BAL</cDefine>
-            <valInt>1</valInt>
-        </dist_bal>
         <vc_empty>
             <longName>Cell Voltage Empty</longName>
             <type>1</type>
@@ -706,6 +666,50 @@ p, li { white-space: pre-wrap; }
             <suffix> V</suffix>
             <vTx>9</vTx>
         </vc_balance_min>
+        <t_bal_max_cell>
+            <longName>Max Cell Temp Balancing</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Disable balancing when the cell temperature is above this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_T_BAL_MAX_CELL</cDefine>
+            <editorDecimalsDouble>1</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>150</maxDouble>
+            <minDouble>-15</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>1</stepDouble>
+            <valDouble>45</valDouble>
+            <vTxDoubleScale>10</vTxDoubleScale>
+            <suffix> °C</suffix>
+            <vTx>7</vTx>
+        </t_bal_max_cell>
+        <t_bal_max_ic>
+            <longName>Max BMS Temp Balancing</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Disable balancing when the BMS temperature is above this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_T_BAL_MAX_IC</cDefine>
+            <editorDecimalsDouble>1</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>150</maxDouble>
+            <minDouble>-15</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>1</stepDouble>
+            <valDouble>85</valDouble>
+            <vTxDoubleScale>10</vTxDoubleScale>
+            <suffix> °C</suffix>
+            <vTx>7</vTx>
+        </t_bal_max_ic>
         <balance_max_current>
             <longName>Balance Maximum Current</longName>
             <type>1</type>
@@ -838,26 +842,6 @@ p, li { white-space: pre-wrap; }
             <suffix> °C</suffix>
             <vTx>7</vTx>
         </t_charge_max_mos>
-        <i_measure_mode>
-            <longName>Current Measurement Mode</longName>
-            <type>4</type>
-            <transmittable>1</transmittable>
-            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Current measurement mode. Some BMS versions have optional current measurement, and can instead use the current reported by the VESCs on the CAN-bus.&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;BMS&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Use BMS current sensor. Might need configuration on hardware with an external PCB.&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;VESC&lt;/span&gt; &lt;span style=&quot; font-weight:600;&quot;&gt;CAN&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Use sum of currents reported by VESCs on the CAN-bus.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
-            <cDefine>CONF_I_MEASURE_MODE</cDefine>
-            <valInt>0</valInt>
-            <enumNames>BMS</enumNames>
-            <enumNames>VESC CAN</enumNames>
-        </i_measure_mode>
         <min_charge_current>
             <longName>Min Charge Current</longName>
             <type>1</type>
@@ -968,50 +952,6 @@ p, li { white-space: pre-wrap; }
             <suffix></suffix>
             <vTx>9</vTx>
         </soc_filter_const>
-        <t_bal_lim_start>
-            <longName>Temp Bal Lim Start</longName>
-            <type>1</type>
-            <transmittable>1</transmittable>
-            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Start limiting the number of balancing channels at this temperature.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
-            <cDefine>CONF_T_BAL_LIM_START</cDefine>
-            <editorDecimalsDouble>1</editorDecimalsDouble>
-            <editorScale>1</editorScale>
-            <editAsPercentage>0</editAsPercentage>
-            <maxDouble>200</maxDouble>
-            <minDouble>0</minDouble>
-            <showDisplay>0</showDisplay>
-            <stepDouble>1</stepDouble>
-            <valDouble>60</valDouble>
-            <vTxDoubleScale>10</vTxDoubleScale>
-            <suffix> °C</suffix>
-            <vTx>7</vTx>
-        </t_bal_lim_start>
-        <t_bal_lim_end>
-            <longName>Temp Bal Lim End</longName>
-            <type>1</type>
-            <transmittable>1</transmittable>
-            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Disable all balancing channels above this temperature.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
-            <cDefine>CONF_T_BAL_LIM_END</cDefine>
-            <editorDecimalsDouble>1</editorDecimalsDouble>
-            <editorScale>1</editorScale>
-            <editAsPercentage>0</editAsPercentage>
-            <maxDouble>200</maxDouble>
-            <minDouble>0</minDouble>
-            <showDisplay>0</showDisplay>
-            <stepDouble>1</stepDouble>
-            <valDouble>75</valDouble>
-            <vTxDoubleScale>10</vTxDoubleScale>
-            <suffix> °C</suffix>
-            <vTx>7</vTx>
-        </t_bal_lim_end>
         <t_charge_min>
             <longName>Charge Temp Min</longName>
             <type>1</type>
@@ -1034,18 +974,120 @@ p, li { white-space: pre-wrap; }
             <suffix> °C</suffix>
             <vTx>7</vTx>
         </t_charge_min>
-        <t_charge_mon_en>
-            <longName>Charge Temp Mon</longName>
+        <psw_t_pchg>
+            <longName>Precharge Time Max</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Maximum precharge time. Give up precharge if the voltage does not rise to the threshold within this time.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_PSW_T_PCHG</cDefine>
+            <editorDecimalsDouble>2</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>99</maxDouble>
+            <minDouble>0.1</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>0.2</stepDouble>
+            <valDouble>3</valDouble>
+            <vTxDoubleScale>100</vTxDoubleScale>
+            <suffix> S</suffix>
+            <vTx>7</vTx>
+        </psw_t_pchg>
+        <psw_scd_en>
+            <longName>Shortcircuit Protection Enabled</longName>
             <type>5</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
 &lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Enable temperature monitoring during charging. This can be disabled to allow charging when a temperature sensor is broken or missing.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
-            <cDefine>CONF_T_CHARGE_MON_EN</cDefine>
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Enable hardware shortcircuit protection.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_PSW_SCD_EN</cDefine>
             <valInt>1</valInt>
-        </t_charge_mon_en>
+        </psw_scd_en>
+        <psw_scd_tres>
+            <longName>Shortcircuit Protection Threshold</longName>
+            <type>4</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Shortcircuit protection shunt voltage threshold. Trigger hardware shortcircuit protection when the voltage across the current sense shunt is at this value. The corresponding current will be this voltage divided by the shunt resistance.&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Example&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-weight:600;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;VBMS32 V1 has a 0.2 mOhm shunt. With a threshold of 100 mV, the protection will be triggered at&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;0.1 / 0.0002 = 500A&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_PSW_SCD_TRES</cDefine>
+            <valInt>4</valInt>
+            <enumNames>10 mV</enumNames>
+            <enumNames>20 mV</enumNames>
+            <enumNames>40 mV</enumNames>
+            <enumNames>60 mV</enumNames>
+            <enumNames>80 mV</enumNames>
+            <enumNames>100 mV</enumNames>
+            <enumNames>125 mV</enumNames>
+            <enumNames>150 mV</enumNames>
+            <enumNames>175 mV</enumNames>
+            <enumNames>200 mV</enumNames>
+            <enumNames>250 mV</enumNames>
+            <enumNames>300 mV</enumNames>
+            <enumNames>350 mV</enumNames>
+            <enumNames>400 mV</enumNames>
+            <enumNames>450 mV</enumNames>
+            <enumNames>500 mV</enumNames>
+        </psw_scd_tres>
+        <t_psw_en>
+            <longName>Temperature Protection Enabled</longName>
+            <type>5</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Enable overtemperature protection.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_T_PSW_EN</cDefine>
+            <valInt>1</valInt>
+        </t_psw_en>
+        <t_psw_max_mos>
+            <longName>PSW Temp Max Mos</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Disable output when the MOSFET temperature is above this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_T_PSW_MAX_MOS</cDefine>
+            <editorDecimalsDouble>1</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>180</maxDouble>
+            <minDouble>-15</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>1</stepDouble>
+            <valDouble>105</valDouble>
+            <vTxDoubleScale>10</vTxDoubleScale>
+            <suffix> °C</suffix>
+            <vTx>7</vTx>
+        </t_psw_max_mos>
+        <psw_wait_init>
+            <longName>Wait for Init</longName>
+            <type>5</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Wait for full initialization before enabling the power switch. With this option enabled it will take longer to turn on the power switch after sleep (2 - 3 seconds longer), but it ensures that hardware shortcircuit detection is activated and that the correct cell voltage is used for precharging.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_PSW_WAIT_INIT</cDefine>
+            <valInt>0</valInt>
+        </psw_wait_init>
     </Params>
     <SerOrder>
         <ser>controller_id</ser>
@@ -1074,8 +1116,6 @@ p, li { white-space: pre-wrap; }
         <ser>batt_ah</ser>
         <ser>soc_use_ah</ser>
         <ser>block_sleep</ser>
-        <ser>dist_bal</ser>
-        <ser>balance_mode</ser>
         <ser>vc_empty</ser>
         <ser>vc_full</ser>
         <ser>vc_balance_start</ser>
@@ -1084,22 +1124,26 @@ p, li { white-space: pre-wrap; }
         <ser>vc_charge_end</ser>
         <ser>vc_charge_min</ser>
         <ser>vc_balance_min</ser>
+        <ser>t_bal_max_cell</ser>
+        <ser>t_bal_max_ic</ser>
         <ser>balance_max_current</ser>
         <ser>min_current_ah_wh_cnt</ser>
         <ser>min_current_sleep</ser>
         <ser>v_charge_detect</ser>
         <ser>t_charge_max</ser>
         <ser>t_charge_max_mos</ser>
-        <ser>i_measure_mode</ser>
         <ser>min_charge_current</ser>
         <ser>max_charge_current</ser>
         <ser>sleep_regular</ser>
         <ser>sleep_long</ser>
         <ser>soc_filter_const</ser>
-        <ser>t_bal_lim_start</ser>
-        <ser>t_bal_lim_end</ser>
         <ser>t_charge_min</ser>
-        <ser>t_charge_mon_en</ser>
+        <ser>psw_t_pchg</ser>
+        <ser>psw_scd_en</ser>
+        <ser>psw_scd_tres</ser>
+        <ser>t_psw_en</ser>
+        <ser>t_psw_max_mos</ser>
+        <ser>psw_wait_init</ser>
     </SerOrder>
     <Grouping>
         <group>
@@ -1166,7 +1210,6 @@ p, li { white-space: pre-wrap; }
                     <param>t_charge_min</param>
                     <param>t_charge_max</param>
                     <param>t_charge_max_mos</param>
-                    <param>t_charge_mon_en</param>
                     <param>min_charge_current</param>
                     <param>max_charge_current</param>
                 </subgroupParams>
@@ -1174,15 +1217,13 @@ p, li { white-space: pre-wrap; }
             <subgroup>
                 <subgroupName>Balancing</subgroupName>
                 <subgroupParams>
-                    <param>balance_mode</param>
                     <param>vc_balance_start</param>
                     <param>vc_balance_end</param>
                     <param>vc_balance_min</param>
                     <param>balance_max_current</param>
                     <param>max_bal_ch</param>
-                    <param>dist_bal</param>
-                    <param>t_bal_lim_start</param>
-                    <param>t_bal_lim_end</param>
+                    <param>t_bal_max_cell</param>
+                    <param>t_bal_max_ic</param>
                 </subgroupParams>
             </subgroup>
             <subgroup>
@@ -1198,6 +1239,17 @@ p, li { white-space: pre-wrap; }
                 <subgroupName>Counters</subgroupName>
                 <subgroupParams>
                     <param>min_current_ah_wh_cnt</param>
+                </subgroupParams>
+            </subgroup>
+            <subgroup>
+                <subgroupName>PSW</subgroupName>
+                <subgroupParams>
+                    <param>psw_t_pchg</param>
+                    <param>psw_scd_en</param>
+                    <param>psw_scd_tres</param>
+                    <param>t_psw_en</param>
+                    <param>t_psw_max_mos</param>
+                    <param>psw_wait_init</param>
                 </subgroupParams>
             </subgroup>
         </group>
