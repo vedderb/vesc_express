@@ -1112,10 +1112,88 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// I2C Overrides
+
+static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 && argn != 3) {
+		return ENC_SYM_EERROR;
+	}
+
+	uint16_t addr = 0;
+	size_t txlen = 0;
+	size_t rxlen = 0;
+	uint8_t *txbuf = 0;
+	uint8_t *rxbuf = 0;
+
+	const unsigned int max_len = 20;
+	uint8_t to_send[max_len];
+
+	if (!lbm_is_number(args[0])) {
+		return ENC_SYM_EERROR;
+	}
+	addr = lbm_dec_as_u32(args[0]);
+
+	if (lbm_is_array_r(args[1])) {
+		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
+		txbuf = (uint8_t*)array->data;
+		txlen = array->size;
+	} else {
+		lbm_value curr = args[1];
+		while (lbm_is_cons(curr)) {
+			lbm_value  arg = lbm_car(curr);
+
+			if (lbm_is_number(arg)) {
+				to_send[txlen++] = lbm_dec_as_u32(arg);
+			} else {
+				return ENC_SYM_EERROR;
+			}
+
+			if (txlen == max_len) {
+				break;
+			}
+
+			curr = lbm_cdr(curr);
+		}
+
+		if (txlen > 0) {
+			txbuf = to_send;
+		}
+	}
+
+	if (argn >= 3 && lbm_is_array_rw(args[2])) {
+		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[2]);
+		rxbuf = (uint8_t*)array->data;
+		rxlen = array->size;
+	}
+
+	return lbm_enc_i(i2c_tx_rx(addr, txbuf, txlen, rxbuf, rxlen));
+}
+
+static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint8_t address = lbm_dec_as_u32(args[0]);
+	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
+	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
+	i2c_master_stop(cmd);
+	esp_err_t ret = i2c_master_cmd_begin(0, cmd, 50 / portTICK_PERIOD_MS);
+	i2c_cmd_link_delete(cmd);
+	xSemaphoreGive(i2c_mutex);
+
+	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 	main_store_backup_data();
-	return lbm_enc_i(4);
+	return lbm_enc_i(5);
 }
 
 static void load_extensions(void) {
@@ -1171,6 +1249,11 @@ static void load_extensions(void) {
 	lbm_add_extension("bms-get-param", ext_bms_get_param);
 	lbm_add_extension("bms-set-param", ext_bms_set_param);
 	lbm_add_extension("bms-store-cfg", ext_bms_store_cfg);
+
+	// Replace existing I2C-extensions
+	lbm_add_extension("i2c-start", ext_i2c_start);
+	lbm_add_extension("i2c-tx-rx", ext_i2c_tx_rx);
+	lbm_add_extension("i2c-detect-addr", ext_i2c_detect_addr);
 
 	lbm_add_extension("bms-fw-version", ext_bms_fw_version);
 }
