@@ -598,6 +598,32 @@ static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_bool(current_value);
 }
 
+static lbm_value ext_wifi_max_tx_power(lbm_value *args, lbm_uint argn) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
+		return ENC_SYM_EERROR;
+	}
+
+    int8_t power;
+    if (esp_wifi_get_max_tx_power(&power) != ESP_OK) {
+        return ENC_SYM_EERROR;
+    }
+
+	if (argn == 0) {
+		return lbm_enc_i(power);
+	}
+
+	if (!lbm_is_number(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+	
+	int8_t new_power = lbm_dec_as_i32(args[0]);
+    if (esp_wifi_set_max_tx_power(new_power) != ESP_OK) {
+        return ENC_SYM_EERROR;
+    }
+
+	return lbm_enc_i(new_power);
+}
+
 typedef struct {
 	lbm_cid id;
 	wifi_ftm_initiator_cfg_t cfg;
@@ -1453,6 +1479,7 @@ void lispif_load_wifi_extensions(void) {
 	lbm_add_extension("wifi-connect", ext_wifi_connect);
 	lbm_add_extension("wifi-disconnect", ext_wifi_disconnect);
 	lbm_add_extension("wifi-status", ext_wifi_status);
+	lbm_add_extension("wifi-max-tx-power", ext_wifi_max_tx_power);
 	lbm_add_extension("wifi-auto-reconnect", ext_wifi_auto_reconnect);
 	lbm_add_extension("wifi-ftm-measure", ext_wifi_ftm_measure);
 	lbm_add_extension("tcp-connect", ext_tcp_connect);
