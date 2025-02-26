@@ -166,6 +166,8 @@ typedef struct {
 	lbm_uint ble_mode;
 	lbm_uint ble_name;
 	lbm_uint ble_pin;
+	lbm_uint ble_service_capacity;
+	lbm_uint ble_chr_descr_capacity;
 
 	// Arrays
 	lbm_uint copy;
@@ -327,6 +329,10 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("ble-name", comp);
 		} else if (comp == &syms_vesc.ble_pin) {
 			lbm_add_symbol_const("ble-pin", comp);
+		} else if (comp == &syms_vesc.ble_service_capacity) {
+			lbm_add_symbol_const("ble-service-capacity", comp);
+		} else if (comp == &syms_vesc.ble_chr_descr_capacity) {
+			lbm_add_symbol_const("ble-chr-descr-capacity", comp);
 		}
 
 		else if (comp == &syms_vesc.copy) {
@@ -751,6 +757,10 @@ static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_string(set, conf->ble_name, &set_arg, sizeof(conf->ble_name));
 	} else if (compare_symbol(name, &syms_vesc.ble_pin)) {
 		res = get_or_set_u32(set, &conf->ble_pin, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.ble_service_capacity)) {
+		res = get_or_set_u32(set, &conf->ble_service_capacity, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.ble_chr_descr_capacity)) {
+		res = get_or_set_u32(set, &conf->ble_chr_descr_capacity, &set_arg);
 	}
 
 	return res;
