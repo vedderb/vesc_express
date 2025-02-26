@@ -68,8 +68,8 @@
 //#define HW_HEADER					"hw_lb_chg.h"
 //#define HW_SOURCE					"hw_lb_chg.c"
 
-//#define HW_HEADER					"hw_express_plus.h"
-//#define HW_SOURCE					"hw_express_plus.c"
+//#define HW_HEADER					"hw_scope.h"
+//#define HW_SOURCE					"hw_scope.c"
 
 //#define HW_HEADER					"hw_stick.h"
 //#define HW_SOURCE					"hw_stick.c"

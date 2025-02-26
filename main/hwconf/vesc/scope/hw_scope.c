@@ -17,7 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "hw_express_plus.h"
+#include "hw_scope.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

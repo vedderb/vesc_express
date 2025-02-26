@@ -100,7 +100,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/vesc"
 "hwconf/vesc/vbms32"
 "hwconf/vesc/vdisp_dual"
-"hwconf/vesc/express_plus"
+"hwconf/vesc/scope"
 
 "lispBM"
 "lispBM/include"

@@ -17,20 +17,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_HWCONF_VESC_VDISP_DUAL_H_
-#define MAIN_HWCONF_VESC_VDISP_DUAL_H_
-
-/*
- * TODO:
- * - Flip gnss-connections
- * - Share SPI between memory and display
- * - Use old display spi pins for buttons only
- */
+#ifndef MAIN_HWCONF_VESC_SCOPE_H_
+#define MAIN_HWCONF_VESC_SCOPE_H_
 
 #include "driver/gpio.h"
 #include "adc.h"
 
-#define HW_NAME						"Express Plus"
+#define HW_NAME						"VL Scope"
 
 #define HW_NO_UART
 
@@ -60,4 +53,4 @@
 // Functions
 void hw_init(void);
 
-#endif /* MAIN_HWCONF_VESC_VDISP_DUAL_H_ */
+#endif /* MAIN_HWCONF_VESC_SCOPE_H_ */
