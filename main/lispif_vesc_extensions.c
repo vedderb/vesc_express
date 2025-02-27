@@ -758,9 +758,13 @@ static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
 	} else if (compare_symbol(name, &syms_vesc.ble_pin)) {
 		res = get_or_set_u32(set, &conf->ble_pin, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.ble_service_capacity)) {
-		res = get_or_set_u32(set, &conf->ble_service_capacity, &set_arg);
+		int v = conf->ble_service_capacity;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->ble_service_capacity = v;
 	} else if (compare_symbol(name, &syms_vesc.ble_chr_descr_capacity)) {
-		res = get_or_set_u32(set, &conf->ble_chr_descr_capacity, &set_arg);
+		int v = conf->ble_chr_descr_capacity;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->ble_chr_descr_capacity = v;
 	}
 
 	return res;
