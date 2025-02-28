@@ -30,8 +30,8 @@
 #define HW_INIT_HOOK()				hw_init()
 
 // CAN
-#define CAN_TX_GPIO_NUM				1
-#define CAN_RX_GPIO_NUM				0
+#define CAN_TX_GPIO_NUM				0
+#define CAN_RX_GPIO_NUM				1
 
 // SD-card
 #define SD_PIN_MOSI					5
