@@ -575,6 +575,8 @@ void lbm_image_init(uint32_t* image_mem_address,
   image_write = image_write_fun;
   image_address = image_mem_address;
   image_size = image_size_words;
+  write_index = 0;
+  
 }
 
 bool lbm_image_exists(void) {
