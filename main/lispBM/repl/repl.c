@@ -827,11 +827,10 @@ int init_repl() {
   //Load an image
 
   // TODO: Combine set callbacks and init.
-  lbm_image_set_callbacks(image_clear,
-                          image_write);
 
   lbm_image_init(image_storage,
-                 image_storage_size);
+                 image_storage_size,
+                 image_write);
 
   if (image_input_file) {
     FILE *f = fopen(image_input_file, "rb");
@@ -859,9 +858,15 @@ int init_repl() {
     }
   }
 
+  if (!lbm_image_exists()) {
+    printf("ERROR: No image!\n");
+    return 0;
+  }
   printf("booting image\n");
   lbm_image_boot();
-
+  // Recreate symbol list from image before adding.
+  lbm_add_eval_symbols();
+  // Image must be booted before adding any symbol.
   init_exts();
 
 #ifdef WITH_SDL
@@ -1349,7 +1354,6 @@ bool vescif_restart(bool print, bool load_code, bool load_imports) {
                 EXTENSION_STORAGE_SIZE)) {
     return 0;
   }
-
 
   if (!lbm_eval_init_events(20)) {
     return 0;
