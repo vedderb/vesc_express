@@ -897,7 +897,7 @@ static lbm_value fundamental_assoc(lbm_value *args, lbm_uint nargs, eval_context
 
 static lbm_value fundamental_acons(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   (void) ctx;
-  lbm_value result = ENC_SYM_EERROR;
+  lbm_value result = ENC_SYM_TERROR;
   if (nargs == 3) {
     lbm_value keyval = lbm_cons(args[0], args[1]);
     lbm_value new_alist = lbm_cons(keyval, args[2]);
@@ -913,15 +913,35 @@ static lbm_value fundamental_acons(lbm_value *args, lbm_uint nargs, eval_context
   return result;
 }
 
+static bool set_assoc(lbm_value *res, lbm_value keyval, lbm_value assocs) {
+  lbm_value curr = assocs;
+  lbm_value key = lbm_car(keyval);
+  while (lbm_is_cons(curr)) {
+    if (struct_eq(key, lbm_caar(curr))) {
+      lbm_set_car(curr, keyval);
+      *res = assocs;
+      return true;
+    }
+    curr = lbm_cdr(curr);
+  }
+  return false;
+}
+
 static lbm_value fundamental_set_assoc(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
-  (void) ctx;
-  lbm_value result = ENC_SYM_EERROR;
+  (void)ctx;
+  lbm_value result = ENC_SYM_TERROR;
+  lbm_value keyval = ENC_SYM_NIL;
+  lbm_value assocs = ENC_SYM_NIL;
   if (nargs == 3) {
-    result = lbm_env_set_functional(args[0], args[1], args[2]);
+    keyval = lbm_cons(args[1], args[2]);
+    if (lbm_is_symbol(keyval)) return keyval;
+    assocs = args[0];
   } else if (nargs == 2 && lbm_is_cons(args[1])) {
-    lbm_value x = lbm_car(args[1]);
-    lbm_value xs = lbm_cdr(args[1]);
-    result = lbm_env_set(args[0], x, xs);
+    assocs = args[0];
+    keyval = args[1];
+  } else return result;
+  if (!set_assoc(&result, keyval, assocs)) {
+    result = ENC_SYM_EERROR;
   }
   return result;
 }
@@ -1376,7 +1396,7 @@ static lbm_value fundamental_is_list(lbm_value *args, lbm_uint argn, eval_contex
   (void) ctx;
   lbm_value res = ENC_SYM_TERROR;
   if (argn == 1) {
-    res = lbm_is_list_rw(args[0]) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+    res = lbm_is_list(args[0]) ? ENC_SYM_TRUE : ENC_SYM_NIL;
   }
   return res;
 }
@@ -1421,6 +1441,20 @@ static lbm_value fundamental_is_string(lbm_value *args, lbm_uint argn, eval_cont
   if (argn == 1) {
     char *str;
     res = lbm_value_is_printable_string(args[0], &str) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+  }
+  return res;
+}
+
+// Check if a value is a constant (stored in flash)
+// Only half true for some shared arrays.. maybe rethink that.
+// constant? is true for constant pointers.
+// atoms could be considered constant in general but are not by constant?
+static lbm_value fundamental_is_constant(lbm_value *args, lbm_uint argn, eval_context_t *ctx) {
+  (void) ctx;
+  lbm_value res = ENC_SYM_TERROR;
+  if (argn == 1) {
+    lbm_type t = lbm_type_of(args[0]);
+    return (((args[0] & LBM_PTR_BIT) && (t & LBM_PTR_TO_CONSTANT_BIT)) ? ENC_SYM_TRUE : ENC_SYM_NIL);
   }
   return res;
 }
@@ -1492,5 +1526,6 @@ const fundamental_fun fundamental_table[] =
    fundamental_int_div,
    fundamental_identity,
    fundamental_array,
-   fundamental_is_string
+   fundamental_is_string,
+   fundamental_is_constant
   };
