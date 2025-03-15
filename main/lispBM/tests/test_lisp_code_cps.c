@@ -51,8 +51,6 @@
 #define SUCCESS 1
 
 lbm_extension_t extensions[EXTENSION_STORAGE_SIZE];
-lbm_uint constants_memory[CONSTANT_MEMORY_SIZE];
-lbm_uint constants_memory_size = CONSTANT_MEMORY_SIZE;
 
 #define IMAGE_STORAGE_SIZE              (128 * 1024)
 #ifdef LBM64
@@ -70,7 +68,8 @@ static uint32_t timeout = 10;
 static uint32_t timeout = 30;
 #endif
 
-bool image_write(uint32_t w, lbm_uint ix) {
+bool image_write(uint32_t w, int32_t ix, bool const_heap) {
+  (void) const_heap;
   if (image_storage[ix] == 0xffffffff) {
     image_storage[ix] = w;
     return true;
@@ -406,12 +405,12 @@ LBM_EXTENSION(ext_check, args, argn) {
 
 char *const_prg = "(define a 10) (+ a 1)";
 
-LBM_EXTENSION(ext_const_prg, args, argn) {
+LBM_EXTENSION(ext_flash_prg, args, argn) {
   (void) args;
   (void) argn;
   lbm_value v = ENC_SYM_NIL;
 
-  if (!lbm_share_const_array(&v, const_prg, strlen(const_prg)+1))
+  if (!lbm_share_array_const(&v, const_prg, strlen(const_prg)+1))
     return ENC_SYM_NIL;
   return v;
 }
@@ -572,14 +571,12 @@ int main(int argc, char **argv) {
   }
 
   lbm_image_init(image_storage,
-                 image_storage_size,
+                 image_storage_size / sizeof(lbm_uint),
                  image_write);
 
   image_clear();
-  if (!lbm_image_create_const_heap(constants_memory_size)) {
-    printf("Failed to create const heap in image\n");
-    return 0;
-  }
+  lbm_image_create();
+
   if (!lbm_image_boot()) {
     printf("Error booting image\n");
     return 0;
@@ -616,7 +613,7 @@ int main(int argc, char **argv) {
 
   lbm_add_extension("unblock-rmbr", ext_unblock_rmbr);
   lbm_add_extension("unblock-error", ext_unblock_error);
-  lbm_add_extension("const-prg", ext_const_prg);
+  lbm_add_extension("flash-prg", ext_flash_prg);
   lbm_add_extension("check", ext_check);
   lbm_add_extension("load-inc-i", ext_load_inc_i);
   lbm_add_extension("flatten-depth", ext_flatten_depth);

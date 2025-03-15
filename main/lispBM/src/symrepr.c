@@ -233,6 +233,7 @@ special_sym const special_symbols[] =  {
   {"list?"          , SYM_IS_LIST},
   {"number?"        , SYM_IS_NUMBER},
   {"string?"        , SYM_IS_STRING},
+  {"constant?"      , SYM_IS_CONSTANT},
 
   // fast access in list
   {"ix"             , SYM_IX},
@@ -357,7 +358,6 @@ int lbm_get_symbol_by_name(char *name, lbm_uint* id) {
   lbm_uint *curr = symlist;
   while (curr) {
     char *str = (char*)curr[NAME];
-    //printf("looking for %s at %x\n",name, (lbm_uint)str);
     if (str_eq(name, str)) {
       *id = curr[ID];
       return 1;
@@ -369,8 +369,7 @@ int lbm_get_symbol_by_name(char *name, lbm_uint* id) {
 
 extern lbm_flash_status lbm_write_const_array_padded(uint8_t *data, lbm_uint n, lbm_uint *res);
 
-
-static bool store_symbol_name_flash(char *name, lbm_uint *res) {
+bool store_symbol_name_flash(char *name, lbm_uint *res) {
   size_t n = strlen(name) + 1;
   if (n == 1) return 0; // failure if empty symbol
 
