@@ -121,13 +121,18 @@
 // -- flattening a value that in turn points to a constant value, duplicates
 //    the constant value.
 
+//  TODO: Put more info into the IMAGE_INITIALIZED FIELD
+//        - 32/64 bit  etc
+
 #define IMAGE_INITIALIZED (uint32_t)0x01    // [ 0x01 ]
+                                            // Address downwards ->
 #define CONSTANT_HEAP_IX  (uint32_t)0x02    // [ 0x02 | uint32]
 #define BINDING_CONST     (uint32_t)0x03    // [ 0x03 | key | lbm_uint ]
 #define BINDING_FLAT      (uint32_t)0x04    // [ 0x04 | size bytes | key | flatval ]
 #define STARTUP_ENTRY     (uint32_t)0x05    // [ 0x05 | symbol ])
-#define SYMBOL_ENTRY      (uint32_t)0x06    // [ 0x06 | ID | NAME PTR | NEXT_PTR] // symbol_entry with highest address is root.
-#define EXTENSION_TABLE   (uint32_t)0x07    // [ 0x07 | NUM | EXT ...]
+#define SYMBOL_ENTRY      (uint32_t)0x06    // [ 0x06 | NEXT_PTR |  ID | NAME PTR ] // symbol_entry with highest address is root.
+#define SYMBOL_LINK_ENTRY (uint32_t)0x07    // [ 0x07 | C_LINK_PTR | NEXT_PTR | ID | NAME PTR ]
+#define EXTENSION_TABLE   (uint32_t)0x08    // [ 0x08 | NUM | EXT ...]
 // tagged data  that can vary in size has a size bytes field.
 // Fixed size data does not.
 
@@ -148,6 +153,7 @@ static uint32_t image_size = 0;
 static bool image_startup = false;
 static uint32_t image_startup_size;
 static lbm_value image_startup_symbol = ENC_SYM_NIL;
+static bool image_has_extensions = false;
 
 uint32_t *lbm_image_get_image(void) {
   return image_address;
@@ -163,6 +169,10 @@ int32_t lbm_image_get_write_index(void) {
 
 bool lbm_image_has_startup(void) {
   return image_startup;
+}
+
+bool lbm_image_has_extensions(void) {
+  return image_has_extensions;
 }
 
 lbm_value lbm_image_get_startup(void) {
@@ -519,6 +529,19 @@ lbm_uint *lbm_image_add_symbol(char *name, lbm_uint id, lbm_uint symlist) {
   return NULL;
 }
 
+// The symbol id is written to the link address upon image-boot
+lbm_uint *lbm_image_add_and_link_symbol(char *name, lbm_uint id, lbm_uint symlist, lbm_uint *link) {
+  bool r = write_u32(SYMBOL_LINK_ENTRY, &write_index,DOWNWARDS);
+  r = r && write_lbm_uint((lbm_uint)link, &write_index, DOWNWARDS);
+  r = r && write_lbm_uint(symlist, &write_index, DOWNWARDS);
+  r = r && write_lbm_uint(id, &write_index, DOWNWARDS);
+  r = r && write_lbm_uint((lbm_uint)name, &write_index, DOWNWARDS);
+  lbm_uint entry_ptr = (lbm_uint)(image_address + write_index + 1);
+  if (r)
+    return (lbm_uint*)entry_ptr;
+  return NULL;
+}
+
 // Set the name of the startup function from the env.
 bool lbm_image_save_startup(lbm_value sym) {
   bool r = write_u32(STARTUP_ENTRY, &write_index, DOWNWARDS);
@@ -594,17 +617,17 @@ bool lbm_image_save_dynamic_extensions(void) {
       // This makes dynamic extensions useless on Linux.
       // Static extensions are fine as they will be re-added after image-boot
       // and faulty FPTRs will be replaced.
-#ifdef __PIC__
-      r = store_symbol_name_flash(name_ptr, &addr);
-      if (!r) return r;
-      name_ptr = (char *)addr;
-#else
+      //#ifdef __PIC__
+      //r = store_symbol_name_flash(name_ptr, &addr);
+      //if (!r) return r;
+      //name_ptr = (char *)addr;
+      //#else
       if (lbm_memory_ptr_inside((lbm_uint *)name_ptr)) {
         r = store_symbol_name_flash(name_ptr, &addr);
         if (!r) return r;
         name_ptr = (char *)addr;
       }
-#endif
+      //#endif
 #ifdef LBM64
       r = r && write_u64((uint64_t)name_ptr, &write_index, DOWNWARDS);
       r = r && write_u64((uint64_t)extension_table[i].fptr, &write_index, DOWNWARDS);
@@ -741,6 +764,26 @@ bool lbm_image_boot(void) {
       lbm_symrepr_set_symlist((lbm_uint*)(image_address + entry_pos));
       pos -= 3 * (int32_t)(sizeof(lbm_uint) / 4);
     } break;
+    case SYMBOL_LINK_ENTRY: {
+      int32_t entry_pos = pos - (int32_t)(3 * (sizeof(lbm_uint) / 4));
+      int32_t tmp = pos;
+      lbm_uint link_ptr;
+      lbm_uint sym_id;
+#ifdef LBM64
+      link_ptr = read_u64(tmp);
+      sym_id   = read_u64(tmp-4);
+#else
+      link_ptr = read_u32(tmp);
+      sym_id   = read_u32(tmp-2);
+#endif
+      //#ifdef __PIC__
+      //printf("write symbol id %u to address %x\n", sym_id, link_ptr);
+      //#else
+      *((lbm_uint*)link_ptr) = sym_id;
+      //#endif
+      lbm_symrepr_set_symlist((lbm_uint*)(image_address + entry_pos));
+      pos -= 4 * (int32_t)(sizeof(lbm_uint) / 4);
+    } break;
     case EXTENSION_TABLE: {
       int32_t num = (int32_t)read_u32(pos); pos --;
 
@@ -759,6 +802,7 @@ bool lbm_image_boot(void) {
         extension_table[i].fptr = (extension_fptr)fptr;
       }
       lbm_extensions_set_next((lbm_uint)i);
+      image_has_extensions = true;
     } break;
     default:
       write_index = pos+1;

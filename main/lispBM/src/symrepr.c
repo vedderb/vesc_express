@@ -405,41 +405,6 @@ bool store_symbol_name_flash(char *name, lbm_uint *res) {
 //       |
 //        [name n-bytes]
 //
-/* static bool add_symbol_to_symtab(char* name, lbm_uint id) { */
-/*   bool r = false; */
-/*   size_t n = strlen(name) + 1; */
-/*   if (n > 1 && n <= 257) { */
-/*     size_t alloc_size = n + (3 * sizeof(lbm_uint)); */
-/*     char *storage = lbm_malloc(alloc_size); */
-/*     if (storage) { */
-/*       memcpy(storage + (3 * sizeof(lbm_uint)), name, n); */
-/*       lbm_uint *m = (lbm_uint*)storage; */
-
-/*       symbol_table_size_list += 3 * sizeof(lbm_uint); // Bytes */
-/*       symbol_table_size_strings += n; // Bytes */
-/*       m[NAME] = (lbm_uint)&m[3]; */
-/*       m[NEXT] = (lbm_uint) symlist; */
-/*       symlist = m; */
-/*       m[ID] =id; */
-/*       r = true; */
-/*     } */
-/*   } */
-/*   return r; */
-/* } */
-
-/* static bool add_symbol_to_symtab_flash(lbm_uint name, lbm_uint id) { */
-/*   lbm_uint entry[3]; */
-/*   entry[NAME] = name; */
-/*   entry[NEXT] = (lbm_uint) symlist; */
-/*   entry[ID]   = id; */
-/*   lbm_uint entry_addr = 0; */
-/*   if (lbm_write_const_raw(entry,3, &entry_addr) == LBM_FLASH_WRITE_OK) { */
-/*     symlist = (lbm_uint*)entry_addr; */
-/*     symbol_table_size_list_flash += 3; */
-/*     return true; */
-/*   } */
-/*   return false; */
-/* } */
 
 int lbm_add_symbol_base(char *name, lbm_uint *id) {
   lbm_uint symbol_name_storage;
@@ -466,12 +431,17 @@ int lbm_add_symbol(char *name, lbm_uint* id) {
 
 // on Linux, win, etc a const string may not be at
 // the same address between runs.
-int lbm_add_symbol_const_base(char *name, lbm_uint* id) {
+int lbm_add_symbol_const_base(char *name, lbm_uint* id, bool link) {
   lbm_uint symbol_name_storage = (lbm_uint)name;
 #ifdef __PIC__
   if (!store_symbol_name_flash(name, &symbol_name_storage)) return 0;
 #endif
-  lbm_uint *new_symlist = lbm_image_add_symbol((char*)symbol_name_storage, next_symbol_id, (lbm_uint)symlist);
+  lbm_uint *new_symlist;
+  if (link) {
+    new_symlist = lbm_image_add_and_link_symbol((char*)symbol_name_storage, next_symbol_id, (lbm_uint)symlist, id);
+  } else {
+    new_symlist = lbm_image_add_symbol((char*)symbol_name_storage, next_symbol_id, (lbm_uint)symlist);
+  }
   if (new_symlist) {
     symlist = new_symlist;
     *id = next_symbol_id ++;
@@ -483,7 +453,7 @@ int lbm_add_symbol_const_base(char *name, lbm_uint* id) {
 int lbm_add_symbol_const(char *name, lbm_uint* id) {
   lbm_uint sym_id;
   if (!lbm_get_symbol_by_name(name, &sym_id)) {
-    return lbm_add_symbol_const_base(name, id);
+    return lbm_add_symbol_const_base(name, id, true);
   } else {
     *id = sym_id;
     return 1;
