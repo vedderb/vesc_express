@@ -55,6 +55,7 @@
 #include "comm_usb.h"
 #include "comm_uart.h"
 #include "comm_ble.h"
+#include "lbm_image.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -5941,6 +5942,31 @@ static lbm_value ext_nvs_qml_list(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+lbm_value ext_image_save(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	bool r = lbm_image_save_global_env();
+
+	lbm_uint main_sym = ENC_SYM_NIL;
+	if (lbm_get_symbol_by_name("main", &main_sym)) {
+		lbm_value binding;
+		if (lbm_global_env_lookup(&binding, lbm_enc_sym(main_sym))) {
+			if (lbm_is_cons(binding) && lbm_car(binding) == ENC_SYM_CLOSURE) {
+				lbm_image_save_startup(lbm_enc_sym(main_sym));
+				goto image_has_main;
+			}
+		}
+	}
+
+	lbm_set_error_reason("No main function in image\n");
+	return ENC_SYM_EERROR;
+
+	image_has_main:
+	r = r && lbm_image_save_dynamic_extensions();
+	r = r && lbm_image_save_constant_heap_ix();
+	return r ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
 static const char* dyn_functions[] = {
 		"(defun uart-read-bytes (buffer n ofs)"
 		"(let ((rd (uart-read buffer n ofs)))"
@@ -5970,7 +5996,7 @@ static bool dynamic_loader(const char *str, const char **code) {
 	return lbm_dyn_lib_find(str, code);
 }
 
-void lispif_load_vesc_extensions(void) {
+void lispif_load_vesc_extensions(bool main_found) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
 		i2c_mutex_init_done = true;
@@ -5996,268 +6022,272 @@ void lispif_load_vesc_extensions(void) {
 		event_task_running = true;
 	}
 
-	lbm_add_symbol_const("hw-express", &sym_hw_express);
-	lbm_add_symbol_const("size", &sym_size);
-
-	lispif_events_load_symbols();
-
 	memset(&syms_vesc, 0, sizeof(syms_vesc));
 
-	// Various commands
-	lbm_add_extension("print", ext_print);
-	lbm_add_extension("set-print-prefix", ext_set_print_prefix);
-	lbm_add_extension("set-fw-name", ext_set_fw_name);
-	lbm_add_extension("puts", ext_puts);
-	lbm_add_extension("get-bms-val", ext_get_bms_val);
-	lbm_add_extension("set-bms-val", ext_set_bms_val);
-	lbm_add_extension("send-bms-can", ext_send_bms_can);
-	lbm_add_extension("set-bms-chg-allowed", ext_set_bms_chg_allowed);
-	lbm_add_extension("bms-force-balance", ext_bms_force_balance);
-	lbm_add_extension("bms-zero-offset", ext_bms_zero_offset);
-	lbm_add_extension("bms-st", ext_bms_st);
-	lbm_add_extension("get-adc", ext_get_adc);
-	lbm_add_extension("systime", ext_systime);
-	lbm_add_extension("secs-since", ext_secs_since);
-	lbm_add_extension("event-enable", ext_enable_event);
-	lbm_add_extension("send-data", ext_send_data);
-	lbm_add_extension("recv-data", ext_recv_data);
-	lbm_add_extension("sysinfo", ext_sysinfo);
-	lbm_add_extension("import", ext_empty);
-	lbm_add_extension("main-init-done", ext_main_init_done);
-	lbm_add_extension("crc16", ext_crc16);
-	lbm_add_extension("crc32", ext_crc32);
-	lbm_add_extension("buf-resize", ext_buf_resize);
+	if (!main_found) {
+		lbm_add_symbol_const("hw-express", &sym_hw_express);
+		lbm_add_symbol_const("size", &sym_size);
+		lispif_events_load_symbols();
 
-	// Configuration
-	lbm_add_extension("conf-get", ext_conf_get);
-	lbm_add_extension("conf-set", ext_conf_set);
-	lbm_add_extension("conf-store", ext_conf_store);
-	lbm_add_extension("reboot", ext_reboot);
+		// Various commands
+		lbm_add_extension("print", ext_print);
+		lbm_add_extension("set-print-prefix", ext_set_print_prefix);
+		lbm_add_extension("set-fw-name", ext_set_fw_name);
+		lbm_add_extension("puts", ext_puts);
+		lbm_add_extension("get-bms-val", ext_get_bms_val);
+		lbm_add_extension("set-bms-val", ext_set_bms_val);
+		lbm_add_extension("send-bms-can", ext_send_bms_can);
+		lbm_add_extension("set-bms-chg-allowed", ext_set_bms_chg_allowed);
+		lbm_add_extension("bms-force-balance", ext_bms_force_balance);
+		lbm_add_extension("bms-zero-offset", ext_bms_zero_offset);
+		lbm_add_extension("bms-st", ext_bms_st);
+		lbm_add_extension("get-adc", ext_get_adc);
+		lbm_add_extension("systime", ext_systime);
+		lbm_add_extension("secs-since", ext_secs_since);
+		lbm_add_extension("event-enable", ext_enable_event);
+		lbm_add_extension("send-data", ext_send_data);
+		lbm_add_extension("recv-data", ext_recv_data);
+		lbm_add_extension("sysinfo", ext_sysinfo);
+		lbm_add_extension("import", ext_empty);
+		lbm_add_extension("main-init-done", ext_main_init_done);
+		lbm_add_extension("crc16", ext_crc16);
+		lbm_add_extension("crc32", ext_crc32);
+		lbm_add_extension("buf-resize", ext_buf_resize);
 
-	// EEPROM
-	lbm_add_extension("eeprom-store-f", ext_eeprom_store_f);
-	lbm_add_extension("eeprom-read-f", ext_eeprom_read_f);
-	lbm_add_extension("eeprom-store-i", ext_eeprom_store_i);
-	lbm_add_extension("eeprom-read-i", ext_eeprom_read_i);
+		// Configuration
+		lbm_add_extension("conf-get", ext_conf_get);
+		lbm_add_extension("conf-set", ext_conf_set);
+		lbm_add_extension("conf-store", ext_conf_store);
+		lbm_add_extension("reboot", ext_reboot);
 
-	// CAN-comands
-	lbm_add_extension("can-start", ext_can_start);
-	lbm_add_extension("can-stop", ext_can_stop);
-	lbm_add_extension("can-use-vesc", ext_can_use_vesc);
-	lbm_add_extension("can-scan", ext_can_scan);
-	lbm_add_extension("can-ping", ext_can_ping);
-	lbm_add_extension("can-send-sid", ext_can_send_sid);
-	lbm_add_extension("can-send-eid", ext_can_send_eid);
-	lbm_add_extension("can-recv-sid", ext_can_recv_sid);
-	lbm_add_extension("can-recv-eid", ext_can_recv_eid);
-	lbm_add_extension("can-cmd", ext_can_cmd);
-	lbm_add_extension("can-list-devs", ext_can_list_devs);
-	lbm_add_extension("can-local-id", ext_can_local_id);
-	lbm_add_extension("can-update-baud", ext_can_update_baud);
+		// EEPROM
+		lbm_add_extension("eeprom-store-f", ext_eeprom_store_f);
+		lbm_add_extension("eeprom-read-f", ext_eeprom_read_f);
+		lbm_add_extension("eeprom-store-i", ext_eeprom_store_i);
+		lbm_add_extension("eeprom-read-i", ext_eeprom_read_i);
 
-	lbm_add_extension("can-msg-age", ext_can_msg_age);
-	lbm_add_extension("canget-current", ext_can_get_current);
-	lbm_add_extension("canget-current-dir", ext_can_get_current_dir);
-	lbm_add_extension("canget-current-in", ext_can_get_current_in);
-	lbm_add_extension("canget-duty", ext_can_get_duty);
-	lbm_add_extension("canget-rpm", ext_can_get_rpm);
-	lbm_add_extension("canget-temp-fet", ext_can_get_temp_fet);
-	lbm_add_extension("canget-temp-motor", ext_can_get_temp_motor);
-	lbm_add_extension("canget-speed", ext_can_get_speed);
-	lbm_add_extension("canget-dist", ext_can_get_dist);
-	lbm_add_extension("canget-ppm", ext_can_get_ppm);
-	lbm_add_extension("canget-adc", ext_can_get_adc);
-	lbm_add_extension("canget-vin", ext_can_get_vin);
+		// CAN-comands
+		lbm_add_extension("can-start", ext_can_start);
+		lbm_add_extension("can-stop", ext_can_stop);
+		lbm_add_extension("can-use-vesc", ext_can_use_vesc);
+		lbm_add_extension("can-scan", ext_can_scan);
+		lbm_add_extension("can-ping", ext_can_ping);
+		lbm_add_extension("can-send-sid", ext_can_send_sid);
+		lbm_add_extension("can-send-eid", ext_can_send_eid);
+		lbm_add_extension("can-recv-sid", ext_can_recv_sid);
+		lbm_add_extension("can-recv-eid", ext_can_recv_eid);
+		lbm_add_extension("can-cmd", ext_can_cmd);
+		lbm_add_extension("can-list-devs", ext_can_list_devs);
+		lbm_add_extension("can-local-id", ext_can_local_id);
+		lbm_add_extension("can-update-baud", ext_can_update_baud);
 
-	lbm_add_extension("canset-current", ext_can_current);
-	lbm_add_extension("canset-current-rel", ext_can_current_rel);
-	lbm_add_extension("canset-duty", ext_can_duty);
-	lbm_add_extension("canset-brake", ext_can_brake);
-	lbm_add_extension("canset-brake-rel", ext_can_brake_rel);
-	lbm_add_extension("canset-rpm", ext_can_rpm);
-	lbm_add_extension("canset-pos", ext_can_pos);
+		lbm_add_extension("can-msg-age", ext_can_msg_age);
+		lbm_add_extension("canget-current", ext_can_get_current);
+		lbm_add_extension("canget-current-dir", ext_can_get_current_dir);
+		lbm_add_extension("canget-current-in", ext_can_get_current_in);
+		lbm_add_extension("canget-duty", ext_can_get_duty);
+		lbm_add_extension("canget-rpm", ext_can_get_rpm);
+		lbm_add_extension("canget-temp-fet", ext_can_get_temp_fet);
+		lbm_add_extension("canget-temp-motor", ext_can_get_temp_motor);
+		lbm_add_extension("canget-speed", ext_can_get_speed);
+		lbm_add_extension("canget-dist", ext_can_get_dist);
+		lbm_add_extension("canget-ppm", ext_can_get_ppm);
+		lbm_add_extension("canget-adc", ext_can_get_adc);
+		lbm_add_extension("canget-vin", ext_can_get_vin);
 
-	// I2C
-	i2c_started = false;
-	lbm_add_extension("i2c-start", ext_i2c_start);
-	lbm_add_extension("i2c-tx-rx", ext_i2c_tx_rx);
-	lbm_add_extension("i2c-detect-addr", ext_i2c_detect_addr);
+		lbm_add_extension("canset-current", ext_can_current);
+		lbm_add_extension("canset-current-rel", ext_can_current_rel);
+		lbm_add_extension("canset-duty", ext_can_duty);
+		lbm_add_extension("canset-brake", ext_can_brake);
+		lbm_add_extension("canset-brake-rel", ext_can_brake_rel);
+		lbm_add_extension("canset-rpm", ext_can_rpm);
+		lbm_add_extension("canset-pos", ext_can_pos);
 
-	// GPIO
-	lbm_add_extension("gpio-configure", ext_gpio_configure);
-	lbm_add_extension("gpio-write", ext_gpio_write);
-	lbm_add_extension("gpio-read", ext_gpio_read);
-	lbm_add_extension("gpio-hold", ext_gpio_hold);
-	lbm_add_extension("gpio-hold-deepsleep", ext_gpio_hold_deepsleep);
+		// I2C
+		i2c_started = false;
+		lbm_add_extension("i2c-start", ext_i2c_start);
+		lbm_add_extension("i2c-tx-rx", ext_i2c_tx_rx);
+		lbm_add_extension("i2c-detect-addr", ext_i2c_detect_addr);
 
-	// Math
-	lbm_add_extension("throttle-curve", ext_throttle_curve);
-	lbm_add_extension("rand", ext_rand);
-	lbm_add_extension("rand-max", ext_rand_max);
+		// GPIO
+		lbm_add_extension("gpio-configure", ext_gpio_configure);
+		lbm_add_extension("gpio-write", ext_gpio_write);
+		lbm_add_extension("gpio-read", ext_gpio_read);
+		lbm_add_extension("gpio-hold", ext_gpio_hold);
+		lbm_add_extension("gpio-hold-deepsleep", ext_gpio_hold_deepsleep);
 
-	// Bit operations
-	lbm_add_extension("bits-enc-int", ext_bits_enc_int);
-	lbm_add_extension("bits-dec-int", ext_bits_dec_int);
+		// Math
+		lbm_add_extension("throttle-curve", ext_throttle_curve);
+		lbm_add_extension("rand", ext_rand);
+		lbm_add_extension("rand-max", ext_rand_max);
 
-	// Lbm settings
-	lbm_add_extension("lbm-set-quota", ext_lbm_set_quota);
-	lbm_add_extension("lbm-set-gc-stack-size", ext_lbm_set_gc_stack_size);
+		// Bit operations
+		lbm_add_extension("bits-enc-int", ext_bits_enc_int);
+		lbm_add_extension("bits-dec-int", ext_bits_dec_int);
 
-	// Plot
-	lbm_add_extension("plot-init", ext_plot_init);
-	lbm_add_extension("plot-add-graph", ext_plot_add_graph);
-	lbm_add_extension("plot-set-graph", ext_plot_set_graph);
-	lbm_add_extension("plot-send-points", ext_plot_send_points);
+		// Lbm settings
+		lbm_add_extension("lbm-set-quota", ext_lbm_set_quota);
+		lbm_add_extension("lbm-set-gc-stack-size", ext_lbm_set_gc_stack_size);
 
-	// IO-boards
-	lbm_add_extension("ioboard-get-adc", ext_ioboard_get_adc);
-	lbm_add_extension("ioboard-get-digital", ext_ioboard_get_digital);
-	lbm_add_extension("ioboard-set-digital", ext_ioboard_set_digital);
-	lbm_add_extension("ioboard-set-pwm", ext_ioboard_set_pwm);
+		// Plot
+		lbm_add_extension("plot-init", ext_plot_init);
+		lbm_add_extension("plot-add-graph", ext_plot_add_graph);
+		lbm_add_extension("plot-set-graph", ext_plot_set_graph);
+		lbm_add_extension("plot-send-points", ext_plot_send_points);
 
-	// ESP NOW
-	lbm_add_extension("esp-now-start", ext_esp_now_start);
-	lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
-	lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
-	lbm_add_extension("esp-now-send", ext_esp_now_send);
-	lbm_add_extension("esp-now-recv", ext_esp_now_recv);
-	lbm_add_extension("get-mac-addr", ext_get_mac_addr);
-	lbm_add_extension("wifi-get-chan", ext_wifi_get_chan);
-	lbm_add_extension("wifi-set-chan", ext_wifi_set_chan);
-	lbm_add_extension("wifi-get-bw", ext_wifi_get_bw);
-	lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
-	lbm_add_extension("wifi-start", ext_wifi_start);
-	lbm_add_extension("wifi-stop", ext_wifi_stop);
+		// IO-boards
+		lbm_add_extension("ioboard-get-adc", ext_ioboard_get_adc);
+		lbm_add_extension("ioboard-get-digital", ext_ioboard_get_digital);
+		lbm_add_extension("ioboard-set-digital", ext_ioboard_set_digital);
+		lbm_add_extension("ioboard-set-pwm", ext_ioboard_set_pwm);
 
-	// Logging
-	lbm_add_extension("log-start", ext_log_start);
-	lbm_add_extension("log-stop", ext_log_stop);
-	lbm_add_extension("log-config-field", ext_log_config_field);
-	lbm_add_extension("log-send-f32", ext_log_send_f32);
-	lbm_add_extension("log-send-f64", ext_log_send_f64);
+		// ESP NOW
+		lbm_add_extension("esp-now-start", ext_esp_now_start);
+		lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
+		lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
+		lbm_add_extension("esp-now-send", ext_esp_now_send);
+		lbm_add_extension("esp-now-recv", ext_esp_now_recv);
+		lbm_add_extension("get-mac-addr", ext_get_mac_addr);
+		lbm_add_extension("wifi-get-chan", ext_wifi_get_chan);
+		lbm_add_extension("wifi-set-chan", ext_wifi_set_chan);
+		lbm_add_extension("wifi-get-bw", ext_wifi_get_bw);
+		lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
+		lbm_add_extension("wifi-start", ext_wifi_start);
+		lbm_add_extension("wifi-stop", ext_wifi_stop);
 
-	// GNSS
-	lbm_add_extension("gnss-lat-lon", ext_gnss_lat_lon);
-	lbm_add_extension("gnss-height", ext_gnss_height);
-	lbm_add_extension("gnss-speed", ext_gnss_speed);
-	lbm_add_extension("gnss-hdop", ext_gnss_hdop);
-	lbm_add_extension("gnss-date-time", ext_gnss_date_time);
-	lbm_add_extension("gnss-age", ext_gnss_age);
-	lbm_add_extension("ublox-init", ext_ublox_init);
+		// Logging
+		lbm_add_extension("log-start", ext_log_start);
+		lbm_add_extension("log-stop", ext_log_stop);
+		lbm_add_extension("log-config-field", ext_log_config_field);
+		lbm_add_extension("log-send-f32", ext_log_send_f32);
+		lbm_add_extension("log-send-f64", ext_log_send_f64);
 
-	// Sleep
-	lbm_add_extension("sleep-deep", ext_sleep_deep);
-	lbm_add_extension("sleep-light", ext_sleep_light);
-	lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
-	lbm_add_extension("rtc-data", ext_rtc_data);
+		// GNSS
+		lbm_add_extension("gnss-lat-lon", ext_gnss_lat_lon);
+		lbm_add_extension("gnss-height", ext_gnss_height);
+		lbm_add_extension("gnss-speed", ext_gnss_speed);
+		lbm_add_extension("gnss-hdop", ext_gnss_hdop);
+		lbm_add_extension("gnss-date-time", ext_gnss_date_time);
+		lbm_add_extension("gnss-age", ext_gnss_age);
+		lbm_add_extension("ublox-init", ext_ublox_init);
 
-	// Extension libraries
-	lispif_load_disp_extensions();
-	lispif_load_wifi_extensions();
-	lispif_load_rgbled_extensions();
+		// Sleep
+		lbm_add_extension("sleep-deep", ext_sleep_deep);
+		lbm_add_extension("sleep-light", ext_sleep_light);
+		lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
+		lbm_add_extension("rtc-data", ext_rtc_data);
 
-	if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
-		lispif_load_ble_extensions();
+		lispif_load_rgbled_extensions();
+
+		lispif_load_disp_extensions();
+		lispif_load_wifi_extensions();
+
+		if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
+			lispif_load_ble_extensions();
+		}
+
+		// CAN-Messages
+		lbm_add_extension("canmsg-recv", ext_canmsg_recv);
+		lbm_add_extension("canmsg-send", ext_canmsg_send);
+
+		// File System
+		lbm_add_extension("f-connect", ext_f_connect);
+		lbm_add_extension("f-connect-nand", ext_f_connect_nand);
+		lbm_add_extension("f-disconnect", ext_f_disconnect);
+		lbm_add_extension("f-open", ext_f_open);
+		lbm_add_extension("f-close", ext_f_close);
+		lbm_add_extension("f-read", ext_f_read);
+		lbm_add_extension("f-readline", ext_f_readline);
+		lbm_add_extension("f-write", ext_f_write);
+		lbm_add_extension("f-tell", ext_f_tell);
+		lbm_add_extension("f-seek", ext_f_seek);
+		lbm_add_extension("f-mkdir", ext_f_mkdir);
+		lbm_add_extension("f-rm", ext_f_rm);
+		lbm_add_extension("f-ls", ext_f_ls);
+		lbm_add_extension("f-size", ext_f_size);
+		lbm_add_extension("f-rename", ext_f_rename);
+		lbm_add_extension("f-sync", ext_f_sync);
+		lbm_add_extension("f-fatinfo", ext_f_fatinfo);
+
+		// Firmware update
+		lbm_add_extension("fw-erase", ext_fw_erase);
+		lbm_add_extension("fw-write", ext_fw_write);
+		lbm_add_extension("fw-reboot", ext_fw_reboot);
+		lbm_add_extension("fw-data", ext_fw_data);
+		lbm_add_extension("fw-write-raw", ext_fw_write_raw);
+		lbm_add_extension("fw-info", ext_fw_info);
+
+		// Lbm and script update
+		lbm_add_extension("lbm-erase", ext_lbm_erase);
+		lbm_add_extension("lbm-write", ext_lbm_write);
+		lbm_add_extension("lbm-run", ext_lbm_run);
+		lbm_add_extension("qml-erase", ext_qml_erase);
+		lbm_add_extension("qml-write", ext_qml_write);
+
+		// AS504x
+		lbm_add_extension("as504x-init", ext_as504x_init);
+		lbm_add_extension("as504x-deinit", ext_as504x_deinit);
+		lbm_add_extension("as504x-angle", ext_as504x_angle);
+
+		// IMU
+		lbm_add_extension("imu-start-lsm6", ext_imu_start_lsm6);
+		lbm_add_extension("imu-stop", ext_imu_stop);
+		lbm_add_extension("get-imu-rpy", ext_get_imu_rpy);
+		lbm_add_extension("get-imu-quat", ext_get_imu_quat);
+		lbm_add_extension("get-imu-acc", ext_get_imu_acc);
+		lbm_add_extension("get-imu-gyro", ext_get_imu_gyro);
+		lbm_add_extension("get-imu-mag", ext_get_imu_mag);
+		lbm_add_extension("get-imu-acc-derot", ext_get_imu_acc_derot);
+		lbm_add_extension("get-imu-gyro-derot", ext_get_imu_gyro_derot);
+
+		// UART
+		lbm_add_extension("uart-start", ext_uart_start);
+		lbm_add_extension("uart-stop", ext_uart_stop);
+		lbm_add_extension("uart-write", ext_uart_write)	;
+		lbm_add_extension("uart-read", ext_uart_read);
+
+		// UARTCOMM
+		lbm_add_extension("uartcomm-start", ext_uartcomm_start);
+		lbm_add_extension("uartcomm-stop", ext_uartcomm_stop);
+
+		// PWM
+		lbm_add_extension("pwm-start", ext_pwm_start);
+		lbm_add_extension("pwm-stop", ext_pwm_stop);
+		lbm_add_extension("pwm-set-duty", ext_pwm_set_duty);
+
+		// Compression
+		lbm_add_extension("unzip", ext_unzip);
+		lbm_add_extension("zip-ls", ext_zip_ls);
+
+		// Connection checks
+		lbm_add_extension("connected-wifi", ext_connected_wifi);
+		lbm_add_extension("connected-hub", ext_connected_hub);
+		lbm_add_extension("connected-ble", ext_connected_ble);
+		lbm_add_extension("connected-usb", ext_connected_usb);
+
+		// Crypto
+		lbm_add_extension("aes-ctr-crypt", ext_aes_ctr_crypt);
+
+		// NVS
+		lbm_add_extension("nvs-qml-erase", ext_nvs_qml_erase);
+		lbm_add_extension("nvs-qml-init", ext_nvs_qml_init);
+		lbm_add_extension("nvs-qml-read", ext_nvs_qml_read);
+		lbm_add_extension("nvs-qml-write", ext_nvs_qml_write);
+		lbm_add_extension("nvs-qml-erase-key", ext_nvs_qml_erase_key);
+		lbm_add_extension("nvs-qml-list", ext_nvs_qml_list);
+
+		// Image
+		lbm_add_extension("image-save", ext_image_save);
+
+		// Extension libraries
+		lbm_math_extensions_init();
+		lbm_color_extensions_init();
+		lbm_mutex_extensions_init();
+		lbm_ttf_extensions_init();
+		lbm_dyn_lib_init();
+		lbm_array_extensions_init();
+		lbm_string_extensions_init();
 	}
-
-	// CAN-Messages
-	lbm_add_extension("canmsg-recv", ext_canmsg_recv);
-	lbm_add_extension("canmsg-send", ext_canmsg_send);
-
-	// File System
-	lbm_add_extension("f-connect", ext_f_connect);
-	lbm_add_extension("f-connect-nand", ext_f_connect_nand);
-	lbm_add_extension("f-disconnect", ext_f_disconnect);
-	lbm_add_extension("f-open", ext_f_open);
-	lbm_add_extension("f-close", ext_f_close);
-	lbm_add_extension("f-read", ext_f_read);
-	lbm_add_extension("f-readline", ext_f_readline);
-	lbm_add_extension("f-write", ext_f_write);
-	lbm_add_extension("f-tell", ext_f_tell);
-	lbm_add_extension("f-seek", ext_f_seek);
-	lbm_add_extension("f-mkdir", ext_f_mkdir);
-	lbm_add_extension("f-rm", ext_f_rm);
-	lbm_add_extension("f-ls", ext_f_ls);
-	lbm_add_extension("f-size", ext_f_size);
-	lbm_add_extension("f-rename", ext_f_rename);
-	lbm_add_extension("f-sync", ext_f_sync);
-	lbm_add_extension("f-fatinfo", ext_f_fatinfo);
-
-	// Firmware update
-	lbm_add_extension("fw-erase", ext_fw_erase);
-	lbm_add_extension("fw-write", ext_fw_write);
-	lbm_add_extension("fw-reboot", ext_fw_reboot);
-	lbm_add_extension("fw-data", ext_fw_data);
-	lbm_add_extension("fw-write-raw", ext_fw_write_raw);
-	lbm_add_extension("fw-info", ext_fw_info);
-
-	// Lbm and script update
-	lbm_add_extension("lbm-erase", ext_lbm_erase);
-	lbm_add_extension("lbm-write", ext_lbm_write);
-	lbm_add_extension("lbm-run", ext_lbm_run);
-	lbm_add_extension("qml-erase", ext_qml_erase);
-	lbm_add_extension("qml-write", ext_qml_write);
-
-	// AS504x
-	lbm_add_extension("as504x-init", ext_as504x_init);
-	lbm_add_extension("as504x-deinit", ext_as504x_deinit);
-	lbm_add_extension("as504x-angle", ext_as504x_angle);
-
-	// IMU
-	lbm_add_extension("imu-start-lsm6", ext_imu_start_lsm6);
-	lbm_add_extension("imu-stop", ext_imu_stop);
-	lbm_add_extension("get-imu-rpy", ext_get_imu_rpy);
-	lbm_add_extension("get-imu-quat", ext_get_imu_quat);
-	lbm_add_extension("get-imu-acc", ext_get_imu_acc);
-	lbm_add_extension("get-imu-gyro", ext_get_imu_gyro);
-	lbm_add_extension("get-imu-mag", ext_get_imu_mag);
-	lbm_add_extension("get-imu-acc-derot", ext_get_imu_acc_derot);
-	lbm_add_extension("get-imu-gyro-derot", ext_get_imu_gyro_derot);
-
-	// UART
-	lbm_add_extension("uart-start", ext_uart_start);
-	lbm_add_extension("uart-stop", ext_uart_stop);
-	lbm_add_extension("uart-write", ext_uart_write)	;
-	lbm_add_extension("uart-read", ext_uart_read);
-
-	// UARTCOMM
-	lbm_add_extension("uartcomm-start", ext_uartcomm_start);
-	lbm_add_extension("uartcomm-stop", ext_uartcomm_stop);
-
-	// PWM
-	lbm_add_extension("pwm-start", ext_pwm_start);
-	lbm_add_extension("pwm-stop", ext_pwm_stop);
-	lbm_add_extension("pwm-set-duty", ext_pwm_set_duty);
-
-	// Compression
-	lbm_add_extension("unzip", ext_unzip);
-	lbm_add_extension("zip-ls", ext_zip_ls);
-
-	// Connection checks
-	lbm_add_extension("connected-wifi", ext_connected_wifi);
-	lbm_add_extension("connected-hub", ext_connected_hub);
-	lbm_add_extension("connected-ble", ext_connected_ble);
-	lbm_add_extension("connected-usb", ext_connected_usb);
-
-	// Crypto
-	lbm_add_extension("aes-ctr-crypt", ext_aes_ctr_crypt);
-
-	// NVS
-	lbm_add_extension("nvs-qml-erase", ext_nvs_qml_erase);
-	lbm_add_extension("nvs-qml-init", ext_nvs_qml_init);
-	lbm_add_extension("nvs-qml-read", ext_nvs_qml_read);
-	lbm_add_extension("nvs-qml-write", ext_nvs_qml_write);
-	lbm_add_extension("nvs-qml-erase-key", ext_nvs_qml_erase_key);
-	lbm_add_extension("nvs-qml-list", ext_nvs_qml_list);
-
-	// Extension libraries
-	lbm_array_extensions_init();
-	lbm_string_extensions_init();
-	lbm_math_extensions_init();
-	lbm_color_extensions_init();
-	lbm_mutex_extensions_init();
-	lbm_dyn_lib_init();
-	lbm_ttf_extensions_init();
 
 	lbm_set_dynamic_load_callback(dynamic_loader);
 }

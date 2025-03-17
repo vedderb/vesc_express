@@ -33,6 +33,7 @@
 #include "lbm_prof.h"
 #include "esp_timer.h"
 #include "utils.h"
+#include "lbm_image.h"
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
@@ -54,9 +55,8 @@ static uint32_t *memory_array;
 static uint32_t *bitmap_array;
 static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE];
 
-static lbm_const_heap_t const_heap;
-static volatile lbm_uint *const_heap_ptr = 0;
-static int const_heap_max_ind = 0;
+static volatile lbm_uint *image_ptr = 0;
+static int image_max_ind = 0;
 
 static lbm_string_channel_state_t string_tok_state;
 static lbm_char_channel_t string_tok;
@@ -93,8 +93,11 @@ void(*ext_load_callbacks[EXT_LOAD_CALLBACK_LEN])(void) = {0};
 // Private functions
 static uint32_t timestamp_callback(void);
 static void sleep_callback(uint32_t us);
-static bool const_heap_write(lbm_uint ix, lbm_uint w);
+static bool image_write(uint32_t w, int32_t ix, bool const_heap);
 static void eval_thread(void *arg);
+
+// Global
+extern lbm_const_heap_t *lbm_const_heap_state;
 
 void lispif_init(void) {
 	heap_size = (2048 + 512);
@@ -387,9 +390,12 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Symbol name size flash: %u Bytes\n", lbm_get_symbol_table_size_names_flash());
 				commands_printf_lisp("Extensions: %u, max %u\n", lbm_get_num_extensions(), lbm_get_max_extensions());
 				commands_printf_lisp("--(Flash)--\n");
-				commands_printf_lisp("Size: %u Bytes\n", const_heap.size);
-				commands_printf_lisp("Used cells: %d\n", const_heap.next);
-				commands_printf_lisp("Free cells: %d\n", const_heap.size / 4 - const_heap.next);
+				int32_t image_size = lbm_image_get_size() - lbm_image_get_write_index();
+				commands_printf_lisp("Size       : %d\n", 512 * 1024);
+				commands_printf_lisp("Imports    : %d\n", (128 * 1024 - lbm_image_get_size()) * 4);
+				commands_printf_lisp("Const Heap : %d\n", lbm_const_heap_state->next * 4);
+				commands_printf_lisp("Image      : %d\n", image_size * 4);
+				commands_printf_lisp("Free       : %d\n", (lbm_image_get_size() - lbm_const_heap_state->next - image_size) * 4);
 				flast_stats stats = flash_helper_stats();
 				commands_printf_lisp("Erase Cnt Tot: %d\n", stats.erase_cnt_tot);
 				commands_printf_lisp("Erase Cnt Max Sector: %d\n", stats.erase_cnt_max);
@@ -458,8 +464,10 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 					commands_printf_lisp(" ");
 				}
 			} else if (strncmp(str, ":reset", 6) == 0) {
+				lispif_unlock_lbm();
 				commands_printf_lisp(lispif_restart(true, flash_helper_code_size(CODE_IND_LISP) > 0, true) ?
 						"Reset OK\n\n" : "Reset Failed\n\n");
+				lispif_lock_lbm();
 			} else if (strncmp(str, ":pause", 6) == 0) {
 				if (pause_eval(30, 1000)) {
 					commands_printf_lisp("Evaluator paused\n");
@@ -510,6 +518,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 						lbm_create_string_char_channel(&string_tok_state, &string_tok, repl_buffer);
 						repl_cid = lbm_load_and_eval_expression(&string_tok);
 						repl_cid_for_buffer = repl_cid;
+						lbm_image_save_constant_heap_ix();
 						lbm_continue_eval();
 
 						if (reply_func != NULL) {
@@ -652,6 +661,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		if (ind == (int32_t)len) {
 			if ((offset + written) == tot_len) {
 				lbm_channel_writer_close(&buffered_string_tok);
+				lbm_image_save_constant_heap_ix();
 				string_tok_valid = false;
 				offset_last = -1;
 				commands_printf_lisp("Stream done, starting...");
@@ -705,6 +715,22 @@ static void done_callback(eval_context_t *ctx) {
 	}
 }
 
+void lispif_stop(void) {
+	if (!lisp_thd_running) {
+		return;
+	}
+
+	lispif_lock_lbm();
+
+	lbm_kill_eval();
+	while (lisp_thd_running) {
+		lbm_kill_eval();
+		vTaskDelay(1 / portTICK_PERIOD_MS);
+	}
+
+	lispif_unlock_lbm();
+}
+
 bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	bool res = false;
 
@@ -723,95 +749,125 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	if (!load_code || (code_data != 0 && code_len > 0)) {
 		lispif_disable_all_events();
 
-		if (!lisp_thd_running) {
-			lbm_init(heap, heap_size,
-					memory_array, mem_size,
-					bitmap_array, bitmap_size,
+		if (lisp_thd_running && lbm_image_exists()) {
+			lbm_image_save_constant_heap_ix();
+		}
+
+		lispif_stop();
+
+		int code_chars = 0;
+		if (code_data) {
+			code_chars = strnlen(code_data, code_len);
+		} else {
+			code_data = (char*)flash_helper_code_data_raw(CODE_IND_LISP);
+		}
+
+		image_max_ind = 0;
+		image_ptr = (lbm_uint*)(code_data + code_len + 16);
+		image_ptr = (lbm_uint*)((uint32_t)image_ptr & 0xFFFFFFF8);
+		if ((((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP))) > (uint32_t)image_ptr) {
+			uint32_t image_len = ((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP)) - (uint32_t)image_ptr;
+			image_len /= sizeof(lbm_uint);
+			image_len &= 0xFFFFFFF8;
+
+			lbm_init(heap, heap_size, memory_array, mem_size, bitmap_array,
+					bitmap_size,
 					GC_STACK_SIZE,
-					PRINT_STACK_SIZE,
-					extension_storage, EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE);
-			lbm_eval_init_events(20);
+					PRINT_STACK_SIZE, extension_storage,
+					EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE);
 
 			lbm_set_timestamp_us_callback(timestamp_callback);
 			lbm_set_usleep_callback(sleep_callback);
 			lbm_set_printf_callback(commands_printf_lisp);
 			lbm_set_ctx_done_callback(done_callback);
-			xTaskCreatePinnedToCore(eval_thread, "lbm_eval", 3072, NULL, 6, NULL, tskNO_AFFINITY);
 
+			lbm_image_init((lbm_uint*)image_ptr, image_len, image_write);
+
+			if (!lbm_image_exists()) {
+				lbm_image_create();
+			}
+
+			uint32_t t_start = xTaskGetTickCount();
+			lbm_image_boot();
+			commands_printf_lisp("Boot time: %d", xTaskGetTickCount() - t_start);
+
+			lbm_add_eval_symbols();
+			lbm_eval_init_events(20);
+
+			xTaskCreatePinnedToCore(eval_thread, "lbm_eval", 3072, NULL, 6, NULL, tskNO_AFFINITY);
 			lisp_thd_running = true;
-		} else {
-			lbm_reset_eval();
-			while (lbm_get_eval_state() != EVAL_CPS_STATE_RESET) {
-				lbm_reset_eval();
+
+			t_start = xTaskGetTickCount();
+			lbm_pause_eval();
+			while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED) {
 				vTaskDelay(1 / portTICK_PERIOD_MS);
 			}
+			commands_printf_lisp("Pause time: %d", xTaskGetTickCount() - t_start);
 
-			lbm_init(heap, heap_size,
-					memory_array, mem_size,
-					bitmap_array, bitmap_size,
-					GC_STACK_SIZE,
-					PRINT_STACK_SIZE,
-					extension_storage, EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE);
-			lbm_eval_init_events(20);
+		} else {
+			commands_printf_lisp("Not enough space to create image");
+			return false;
 		}
 
-		lbm_pause_eval();
-		while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED) {
-			lbm_pause_eval();
-			vTaskDelay(1 / portTICK_PERIOD_MS);
-		}
-
-		lispif_load_vesc_extensions();
-		for (int i = 0;i < EXT_LOAD_CALLBACK_LEN;i++) {
-			if (ext_load_callbacks[i] == 0) {
-				break;
+		uint32_t t_start = xTaskGetTickCount();
+		bool main_found = false;
+		lbm_uint main_sym = ENC_SYM_NIL;
+		if (lbm_get_symbol_by_name("main", &main_sym)) {
+			lbm_value binding;
+			if (lbm_global_env_lookup(&binding, lbm_enc_sym(main_sym))) {
+				if (lbm_is_cons(binding) && lbm_car(binding) == ENC_SYM_CLOSURE) {
+					code_data = "(main)";
+					main_found = true;
+				}
 			}
+		}
+		commands_printf_lisp("Find main time: %d", xTaskGetTickCount() - t_start);
 
-			ext_load_callbacks[i]();
+		t_start = xTaskGetTickCount();
+		lispif_load_vesc_extensions(main_found);
+
+		if (!main_found) {
+			for (int i = 0;i < EXT_LOAD_CALLBACK_LEN;i++) {
+				if (ext_load_callbacks[i] == 0) {
+					break;
+				}
+
+				ext_load_callbacks[i]();
+			}
 		}
 
-		int code_chars = 0;
-		if (code_data) {
-			code_chars = strnlen(code_data, code_len);
-		}
+		commands_printf_lisp("Ext time total: %d", xTaskGetTickCount() - t_start);
 
-		// Load imports
-		if (load_imports) {
-			if (code_len > code_chars + 3) {
-				int32_t ind = code_chars + 1;
-				uint16_t num_imports = buffer_get_uint16((uint8_t*)code_data, &ind);
+		if (!main_found) {
+			if (load_imports) {
+				if (code_len > code_chars + 3) {
+					int32_t ind = code_chars + 1;
+					uint16_t num_imports = buffer_get_uint16((uint8_t*)code_data, &ind);
 
-				if (num_imports > 0 && num_imports < 500) {
-					for (int i = 0;i < num_imports;i++) {
-						char *name = code_data + ind;
-						ind += strlen(name) + 1;
-						int32_t offset = buffer_get_int32((uint8_t*)code_data, &ind);
-						int32_t len = buffer_get_int32((uint8_t*)code_data, &ind);
+					if (num_imports > 0 && num_imports < 500) {
+						for (int i = 0;i < num_imports;i++) {
+							char *name = code_data + ind;
+							ind += strlen(name) + 1;
+							int32_t offset = buffer_get_int32((uint8_t*)code_data, &ind);
+							int32_t len = buffer_get_int32((uint8_t*)code_data, &ind);
 
-						lbm_value val;
-						if (lbm_share_array(&val, code_data + offset, len)) {
-							lbm_define(name, val);
+							lbm_value val;
+							if (lbm_share_array_const(&val, code_data + offset, len)) {
+								lbm_define(name, val);
+							}
 						}
 					}
 				}
 			}
 		}
 
-		if (code_data == 0) {
-			code_data = (char*)flash_helper_code_data_raw(CODE_IND_LISP);
-		}
-
-		const_heap_max_ind = 0;
-		const_heap_ptr = (lbm_uint*)(code_data + code_len + 16);
-		const_heap_ptr = (lbm_uint*)((uint32_t)const_heap_ptr & 0xFFFFFFF4);
-		if ((((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP))) > (uint32_t)const_heap_ptr) {
-			uint32_t const_heap_len = ((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP)) - (uint32_t)const_heap_ptr;
-			lbm_const_heap_init(const_heap_write, &const_heap, (lbm_uint*)const_heap_ptr, const_heap_len);
-		}
-
 		if (load_code) {
 			if (print) {
-				commands_printf_lisp("Parsing %d characters", code_chars);
+				if (main_found) {
+					commands_printf_lisp("Running main-function");
+				} else {
+					commands_printf_lisp("Parsing %d characters", code_chars);
+				}
 			}
 
 			lbm_create_string_char_channel(&string_tok_state, &string_tok, code_data);
@@ -853,19 +909,19 @@ static void sleep_callback(uint32_t us) {
 	vTaskDelay(t);
 }
 
-static bool const_heap_write(lbm_uint ix, lbm_uint w) {
-	if (ix > const_heap_max_ind) {
-		const_heap_max_ind = ix;
+static bool image_write(uint32_t w, int32_t ix, bool const_heap) {
+	if (const_heap && ix > image_max_ind) {
+		image_max_ind = ix;
 	}
 
-	if (const_heap_ptr[ix] == w) {
+	if (image_ptr[ix] == w) {
 		return true;
 	}
 
-	uint32_t offset = (uint32_t)const_heap_ptr - (uint32_t)flash_helper_code_data_raw(CODE_IND_LISP) + sizeof(lbm_uint) * ix;
-	flash_helper_write_code(CODE_IND_LISP, offset, (uint8_t*)&w, sizeof(lbm_uint), (const_heap_max_ind - ix) * sizeof(lbm_uint));
+	uint32_t offset = (uint32_t)image_ptr - (uint32_t)flash_helper_code_data_raw(CODE_IND_LISP) + sizeof(lbm_uint) * ix;
+	flash_helper_write_code(CODE_IND_LISP, offset, (uint8_t*)&w, sizeof(lbm_uint), (image_max_ind - ix) * sizeof(lbm_uint));
 
-	if (const_heap_ptr[ix] != w) {
+	if (image_ptr[ix] != w) {
 		return false;
 	}
 

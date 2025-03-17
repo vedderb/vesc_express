@@ -26,6 +26,7 @@
 #define HW_NAME						"VDisp Dual"
 
 #define HW_NO_UART
+#define HW_EARLY_LBM_INIT
 
 #define HW_INIT_HOOK()				hw_init()
 

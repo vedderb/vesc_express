@@ -52,6 +52,7 @@ set(COMPONENT_SRCS
 "lispBM/src/lbm_flags.c"
 "lispBM/src/lbm_prof.c"
 "lispBM/src/lbm_defrag_mem.c"
+"lispBM/src/lbm_image.c"
 "lispBM/src/extensions/array_extensions.c"
 "lispBM/src/extensions/math_extensions.c"
 "lispBM/src/extensions/string_extensions.c"

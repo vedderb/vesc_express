@@ -42,7 +42,7 @@ void lispif_process_rmsg(int slot, unsigned char *data, unsigned int len);
 void lispif_add_ext_load_callback(void (*p_func)(void));
 void lispif_add_dyn_load_callback(bool (*p_func)(const char*, const char**));
 
-void lispif_load_vesc_extensions(void);
+void lispif_load_vesc_extensions(bool main_found);
 char* lispif_print_prefix(void);
 char* lispif_fw_name(void);
 
