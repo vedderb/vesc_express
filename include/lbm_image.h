@@ -34,12 +34,29 @@ int32_t lbm_image_get_write_index(void);
 
 uint32_t lbm_image_get_size(void);
 bool lbm_image_has_startup(void);
+bool lbm_image_has_extensions(void);
 bool lbm_image_save_startup(lbm_value sym);
 bool lbm_image_save_global_env(void);
 bool lbm_image_save_dynamic_extensions(void);
 bool lbm_image_save_constant_heap_ix(void);
-
+/**
+ * Add a symbol to the image.
+ * Symbols added to the image are restored upon image-boot.
+ * \param name Symbol name.
+ * \param id Symbol id.
+ * \param symlist Ptr to rest of symbol list.
+ * \return pointer to head of symbol list.
+ */
 lbm_uint *lbm_image_add_symbol(char *name, lbm_uint id, lbm_uint symlist);
+/**
+ * Add a symbol to the image and "link" it to a C address (variable).
+ * \param name Symbol name.
+ * \param id Symbol id.
+ * \param symlist Ptr to rest of symbol list.
+ * \param link ptr where to store the symbol ID on image-boot.
+ * \return pointer to head of symbol list.
+ */
+lbm_uint *lbm_image_add_and_link_symbol(char *name, lbm_uint id, lbm_uint symlist, lbm_uint *link);
 
 bool lbm_image_is_empty(void);
 
