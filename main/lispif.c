@@ -763,12 +763,12 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 		}
 
 		image_max_ind = 0;
-		image_ptr = (lbm_uint*)(code_data + code_len + 16);
-		image_ptr = (lbm_uint*)((uint32_t)image_ptr & 0xFFFFFFF8);
+		image_ptr = (lbm_uint*)(code_data + code_len + 32);
+		image_ptr = (lbm_uint*)((uint32_t)image_ptr & 0xFFFFFFF0);
 		if ((((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP))) > (uint32_t)image_ptr) {
 			uint32_t image_len = ((uint32_t)code_data + flash_helper_code_size_raw(CODE_IND_LISP)) - (uint32_t)image_ptr;
 			image_len /= sizeof(lbm_uint);
-			image_len &= 0xFFFFFFF8;
+			image_len &= 0xFFFFFFF0;
 
 			lbm_init(heap, heap_size, memory_array, mem_size, bitmap_array,
 					bitmap_size,
