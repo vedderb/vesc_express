@@ -124,17 +124,21 @@
 //  TODO: Put more info into the IMAGE_INITIALIZED FIELD
 //        - 32/64 bit  etc
 
-#define IMAGE_INITIALIZED (uint32_t)0x01    // [ 0x01 ]
+#ifdef LBM64
+#define IMAGE_INITIALIZED (uint32_t)0xBEEF4001    // [ 0xBEEF4001 ]
+#else
+#define IMAGE_INITIALIZED (uint32_t)0xBEEF2001    // [ 0xBEEF2001 ]
+#endif
                                             // Address downwards ->
 #define CONSTANT_HEAP_IX  (uint32_t)0x02    // [ 0x02 | uint32]
 #define BINDING_CONST     (uint32_t)0x03    // [ 0x03 | key | lbm_uint ]
-#define BINDING_FLAT      (uint32_t)0x04    // [ 0x04 | size bytes | key | flatval ]
+#define BINDING_FLAT      (uint32_t)0x04    // [ 0x04 | size | key | flatval ]
 #define STARTUP_ENTRY     (uint32_t)0x05    // [ 0x05 | symbol ])
 #define SYMBOL_ENTRY      (uint32_t)0x06    // [ 0x06 | NEXT_PTR |  ID | NAME PTR ] // symbol_entry with highest address is root.
 #define SYMBOL_LINK_ENTRY (uint32_t)0x07    // [ 0x07 | C_LINK_PTR | NEXT_PTR | ID | NAME PTR ]
 #define EXTENSION_TABLE   (uint32_t)0x08    // [ 0x08 | NUM | EXT ...]
-// tagged data  that can vary in size has a size bytes field.
-// Fixed size data does not.
+#define VERSION_ENTRY     (uint32_t)0x09    // [ 0x09 | size | string ]
+// Size is in number of 32bit words, even on 64 bit images.
 
 // To be able to work on an image incrementally (even though it is not recommended)
 // many fields are allowed to be duplicated and the later ones have priority
@@ -154,6 +158,7 @@ static bool image_startup = false;
 static uint32_t image_startup_size;
 static lbm_value image_startup_symbol = ENC_SYM_NIL;
 static bool image_has_extensions = false;
+static char* image_version = NULL;
 
 uint32_t *lbm_image_get_image(void) {
   return image_address;
@@ -188,6 +193,7 @@ uint32_t read_u32(int32_t index) {
 }
 
 uint64_t read_u64(int32_t index) {
+  // image_addres is an u32 ptr. so addr + i is a step of i * 4 bytes
   return *((uint64_t*)(image_address + index));
 }
 
@@ -200,18 +206,21 @@ bool write_u32(uint32_t w, int32_t *i, bool direction) {
 
 bool write_u64(uint64_t dw, int32_t *i, bool direction) {
   uint32_t *words = (uint32_t*)&dw;
-  
-  // downwards   ... hw   lw      
-  //                 ix  ix-1   
-  // upwards     hw   lw ... 
+
+  // downwards   ... hw   lw
+  //                 ix  ix-1
+  // upwards     hw   lw ...
   //            ix+1  ix
+
+  // true = downwards
+
   bool r = true;
   if (direction) {
-    r = r && write_u32(words[0], i, direction);
     r = r && write_u32(words[1], i, direction);
+    r = r && write_u32(words[0], i, direction);
   } else {
-    r = r && write_u32(words[1], i, direction);
     r = r && write_u32(words[0], i, direction);
+    r = r && write_u32(words[1], i, direction);
   }
   return r;
 }
@@ -395,10 +404,12 @@ static bool i_f_u64(uint64_t w) {
 static bool i_f_lbm_array(uint32_t num_bytes, uint8_t *data) {
   bool res = fv_write_u8(S_LBM_ARRAY);
   res = res && fv_write_u32(num_bytes);
-  for (uint32_t i = 0; i < num_bytes; i ++ ) {
-    if (!fv_write_u8(data[i])) return false;
+  if (res) {
+    for (uint32_t i = 0; i < num_bytes; i ++ ) {
+      if (!fv_write_u8(data[i])) return false;
+    }
   }
-  return true;
+  return res;
 }
 
 static bool image_flatten_value(lbm_value v) {
@@ -437,7 +448,7 @@ static bool image_flatten_value(lbm_value v) {
       lbm_value *arrdata = (lbm_value*)header->data;
       // always exact multiple of sizeof(lbm_value)
       uint32_t size = (uint32_t)(header->size / sizeof(lbm_value));
-      if (!i_f_lisp_array(size)) return FLATTEN_VALUE_ERROR_NOT_ENOUGH_MEMORY;
+      if (!i_f_lisp_array(size)) return false;
       int fv_r = true;
       for (lbm_uint i = 0; i < size; i ++ ) {
         fv_r =  image_flatten_value(arrdata[i]);
@@ -517,16 +528,38 @@ static bool image_flatten_value(lbm_value v) {
 }
 
 // ////////////////////////////////////////////////////////////
+//
+
+char *lbm_image_get_version(void) {
+  if (image_version) {
+    return image_version;
+  } else {
+    int32_t pos = (int32_t)image_size-2; // fixed position version string.
+    uint32_t val = read_u32(pos); pos --;
+    if (val == VERSION_ENTRY) {
+      int32_t size = (int32_t)read_u32(pos);
+      image_version = (char*)(image_address + (pos - size));
+      return image_version;
+    }
+  }
+  return NULL;
+}
+
+// ////////////////////////////////////////////////////////////
 // Constant heaps as part of an image.
 
 lbm_const_heap_t image_const_heap;
 lbm_uint image_const_heap_start_ix = 0;
 
 bool image_const_heap_write(lbm_uint w, lbm_uint ix) {
-  int32_t i = (int32_t)(image_const_heap_start_ix + ix);
 #ifdef LBM64
-  return write_u64(w, &i, false);
+  int32_t i = (int32_t)(image_const_heap_start_ix + (ix * 2));
+  uint32_t *words = (uint32_t*)&w;
+  bool r = image_write(words[0], i, false);
+  r = r && image_write(words[1], i + 1, false);
+  return r;
 #else
+  int32_t i = (int32_t)(image_const_heap_start_ix + ix);
   return write_u32(w, &i, false);
 #endif
 }
@@ -535,11 +568,19 @@ bool image_const_heap_write(lbm_uint w, lbm_uint ix) {
 // Image manipulation
 
 lbm_uint *lbm_image_add_symbol(char *name, lbm_uint id, lbm_uint symlist) {
+  // 64 bit                             | 32 bit
+  // image[i] = SYMBOL_ENTRY            | image[i] = SYMBOL_ENTRY
+  // image[i-1] = symlist_ptr_high_word | image[i-1] = symlist_ptr
+  // image[i-2] = symlist_ptr_low_word  | image[i-2] = id
+  // image[i-3] = id_high_word          | image[i-3] = name_ptr
+  // image[i-4] = id_low_word
+  // image[i-5] = name_ptr_high_word
+  // image[i-6] = name_ptr_low_word
   bool r = write_u32(SYMBOL_ENTRY, &write_index,DOWNWARDS);
   r = r && write_lbm_uint(symlist, &write_index, DOWNWARDS);
   r = r && write_lbm_uint(id, &write_index, DOWNWARDS);
-  lbm_uint entry_ptr = (lbm_uint)(image_address + write_index);
-  r = r && write_lbm_uint((lbm_uint)name, &write_index, DOWNWARDS);  
+  r = r && write_lbm_uint((lbm_uint)name, &write_index, DOWNWARDS);
+  lbm_uint entry_ptr = (lbm_uint)(image_address + write_index + 1);
   if (r)
     return (lbm_uint*)entry_ptr;
   return NULL;
@@ -547,12 +588,22 @@ lbm_uint *lbm_image_add_symbol(char *name, lbm_uint id, lbm_uint symlist) {
 
 // The symbol id is written to the link address upon image-boot
 lbm_uint *lbm_image_add_and_link_symbol(char *name, lbm_uint id, lbm_uint symlist, lbm_uint *link) {
+  // 64 bit                             | 32 bit
+  // image[i] = SYMBOL_ENTRY            | image[i] = SYMBOL_ENTRY
+  // image[i-1] = link_ptr_high         | image[i-1] link_ptr
+  // image[i-2] = link_ptr_low          | image[i-2] = symlist_ptr
+  // image[i-3] = symlist_ptr_high_word | image[i-3] = id
+  // image[i-4] = symlist_ptr_low_word  | image[i-4] = name_ptr
+  // image[i-5] = id_high_word
+  // image[i-6] = id_low_word
+  // image[i-7] = name_ptr_high_word
+  // image[i-8] = name_ptr_low_word
   bool r = write_u32(SYMBOL_LINK_ENTRY, &write_index,DOWNWARDS);
   r = r && write_lbm_uint((lbm_uint)link, &write_index, DOWNWARDS);
   r = r && write_lbm_uint(symlist, &write_index, DOWNWARDS);
   r = r && write_lbm_uint(id, &write_index, DOWNWARDS);
-  lbm_uint entry_ptr = (lbm_uint)(image_address + write_index);
   r = r && write_lbm_uint((lbm_uint)name, &write_index, DOWNWARDS);
+    lbm_uint entry_ptr = (lbm_uint)(image_address + write_index + 1);
   if (r)
     return (lbm_uint*)entry_ptr;
   return NULL;
@@ -581,7 +632,7 @@ bool lbm_image_save_global_env(void) {
         } else {
           int fv_size = flatten_value_size(val_field, true);
           if (fv_size > 0) {
-            fv_size = (fv_size % 4 == 0) ? (fv_size / 4) : (fv_size / 4) + 1;
+            fv_size = (fv_size % 4 == 0) ? (fv_size / 4) : (fv_size / 4) + 1; // num 32bit words
             int tot_size =  fv_size; //+ 1 + (int)(sizeof(lbm_uint) / 4);
 
             if (write_index + tot_size >= (int32_t)image_size) {
@@ -673,7 +724,7 @@ bool lbm_image_is_empty(void) {
 
 bool lbm_image_exists(void) {
   uint32_t val = read_u32((int32_t)image_size - 1);
-  return val == IMAGE_INITIALIZED; // constant heap always first thing in image
+  return val == IMAGE_INITIALIZED;
 }
 
 void lbm_image_init(uint32_t* image_mem_address,
@@ -685,8 +736,34 @@ void lbm_image_init(uint32_t* image_mem_address,
   write_index = (int32_t)image_size_words -1;
 }
 
-void lbm_image_create(void) {
+void lbm_image_create(char *version_str) {
   write_u32(IMAGE_INITIALIZED, &write_index, DOWNWARDS);
+  if (version_str) {
+    uint32_t bytes = strlen(version_str) + 1;
+    uint32_t words = (bytes % 4 == 0) ? bytes / 4 : (bytes / 4) + 1;
+    write_u32(VERSION_ENTRY, &write_index, DOWNWARDS);
+    write_u32(words, &write_index, DOWNWARDS);
+    uint32_t w = 0;
+    char *buf = (char*)&w;
+    int i = 0;
+    int32_t ix = write_index - (int32_t)(words -1);
+    while (*version_str) {
+      if (i == 4 ) {
+        w = 0;
+        i = 0;
+      }
+      buf[i] = *version_str;
+      if (i == 3) {
+        write_u32(w, &ix, UPWARDS);
+      }
+      version_str++;
+      i ++;
+    }
+    if (i != 0) {
+      write_u32(w, &ix, UPWARDS);
+    }
+    write_index -= (int32_t)words;
+  }
 }
 
 
@@ -707,6 +784,11 @@ bool lbm_image_boot(void) {
                           (lbm_uint*)(image_address));
       // initialized is a one word field
     } break;
+    case VERSION_ENTRY: {
+      uint32_t size = read_u32(pos); pos --;
+      image_version = (char*)(image_address + (pos - (int32_t)size + 1));
+      pos -= (int32_t)size;
+    } break;
     case CONSTANT_HEAP_IX: {
       uint32_t next = read_u32(pos);
       pos --;
@@ -714,12 +796,19 @@ bool lbm_image_boot(void) {
       image_const_heap.next = next;
     } break;
     case BINDING_CONST: {
+      // on 64 bit           | on 32 bit
+      // pos     -> key_high | pos     -> key
+      // pos - 1 -> key_low  | pos - 1 -> val
+      // pos - 2 -> val_high
+      // pos - 3 -> val_low
 #ifdef LBM64
-      lbm_uint bind_key = read_u64(pos);
-      lbm_uint bind_val = read_u64(pos-2);
+      lbm_uint bind_key = read_u64(pos-1);
+      lbm_uint bind_val = read_u64(pos-3);
+      pos -= 4;
 #else
       lbm_uint bind_key = read_u32(pos);
       lbm_uint bind_val = read_u32(pos-1);
+      pos -= 2;
 #endif
       lbm_uint ix_key  = lbm_dec_sym(bind_key) & GLOBAL_ENV_MASK;
       lbm_value *global_env = lbm_get_global_env();
@@ -730,20 +819,27 @@ bool lbm_image_boot(void) {
         return false;
       }
       global_env[ix_key] = new_env;
-      pos -= (int32_t)(sizeof(lbm_uint)/4) * 2;
     } break;
     case BINDING_FLAT: {
-      int32_t s = (int32_t)read_u32(pos); pos -=1;
+      // on 64 bit           | on 32 bit
+      // pos     -> size     | pos     -> size
+      // pos - 1 -> key_high | pos - 1 -> key
+      // pos - 2 -> key_low
+      //
+      int32_t s = (int32_t)read_u32(pos);
+      // size in 32 or 64 bit words.
 #ifdef LBM64
-      lbm_uint bind_key = read_u64(pos);
+      lbm_uint bind_key = read_u64(pos-2);
+      pos -= 3;
 #else
-      lbm_uint bind_key = read_u32(pos);
+      lbm_uint bind_key = read_u32(pos-1);
+      pos -= 2;
 #endif
-      pos -= (int32_t)(sizeof(lbm_uint) / 4);
+
       pos -= s;
       lbm_flat_value_t fv;
       fv.buf = (uint8_t*)(image_address + pos);
-      fv.buf_size = (uint32_t)(s * 4); // larger than actual buf
+      fv.buf_size = (uint32_t)(s * 4); // GEQ than actual buf
       fv.buf_pos = 0;
       lbm_value unflattened;
       lbm_unflatten_value(&fv, &unflattened);
@@ -776,27 +872,56 @@ bool lbm_image_boot(void) {
       image_startup_symbol = sym;
     } break;
     case SYMBOL_ENTRY: {
-      int32_t entry_pos = pos - (int32_t)(2 * (sizeof(lbm_uint) / 4));
+      // on 64 bit                         | on 32 bit
+      // pos     -> symlist_addr_high_word | pos     -> symlist_ptr
+      // pos - 1 -> symlist_addr_low_word  | pos - 1 -> id
+      // pos - 2 -> id_high_word           | pos - 2 -> name_ptr
+      // pos - 3 -> id_low_word            |
+      // pos - 4 -> name_ptr_high_word     |
+      // pos - 5 -> name_ptr_low_word      |
+#ifdef LBM64
+      int32_t entry_pos = pos - 5;
       lbm_symrepr_set_symlist((lbm_uint*)(image_address + entry_pos));
-      pos -= 3 * (int32_t)(sizeof(lbm_uint) / 4);
+      pos -= 6;
+#else
+      int32_t entry_pos = pos - 2;
+      lbm_symrepr_set_symlist((lbm_uint*)(image_address + entry_pos));
+      pos -= 3;
+#endif
     } break;
     case SYMBOL_LINK_ENTRY: {
-      int32_t entry_pos = pos - (int32_t)(3 * (sizeof(lbm_uint) / 4));
-      int32_t tmp = pos;
+      // on 64 bits                        | on 32 bit
+      // pos     -> link_ptr_high          | pos     -> link_ptr
+      // pos - 1 -> link_ptr_low           | pos - 1 -> symlist_ptr
+      // pos - 2 -> symlist_addr_high_word | pos - 2 -> id
+      // pos - 3 -> symlist_addr_low_word  | pos - 3 -> name_ptr;
+      // pos - 4 -> id_high_word
+      // pos - 5 -> id_low_word
+      // pos - 6 -> name_ptr_high_word
+      // pos - 7 -> name_ptr_low_word
+      //int32_t entry_pos = pos - (int32_t)(3 * (sizeof(lbm_uint) / 4));
       lbm_uint link_ptr;
       lbm_uint sym_id;
 #ifdef LBM64
-      link_ptr = read_u64(tmp);
-      sym_id   = read_u64(tmp-4);
-#else
-      link_ptr = read_u32(tmp);
-      sym_id   = read_u32(tmp-2);
-#endif
+      link_ptr = read_u64(pos-1);
+      sym_id   = read_u64(pos-5);
       *((lbm_uint*)link_ptr) = sym_id;
-      lbm_symrepr_set_symlist((lbm_uint*)(image_address + entry_pos));
-      pos -= 4 * (int32_t)(sizeof(lbm_uint) / 4);
+      lbm_symrepr_set_symlist((lbm_uint*)(image_address + (pos - 7)));
+      pos -= 8;
+#else
+      link_ptr = read_u32(pos);
+      sym_id   = read_u32(pos-2);
+      *((lbm_uint*)link_ptr) = sym_id;
+      lbm_symrepr_set_symlist((lbm_uint*)(image_address + (pos - 3)));
+      pos -= 4;
+#endif
     } break;
     case EXTENSION_TABLE: {
+      // on 64 bit                | on 32 bit
+      // pos     -> name_ptr_high | pos     -> name_ptr
+      // pos - 1 -> name_ptr_low  | pos - 1 -> fptr
+      // pos - 2 -> fptr_high
+      // pos - 3 -> fptr_low
       int32_t num = (int32_t)read_u32(pos); pos --;
 
       int32_t i = 0;
@@ -804,11 +929,13 @@ bool lbm_image_boot(void) {
         lbm_uint name;
         lbm_uint fptr;
 #ifdef LBM64
-        name = read_u64(pos); pos -= 2;
-        fptr = read_u64(pos); pos -= 2;
+        name = read_u64(pos-1);
+        fptr = read_u64(pos-3);
+        pos -= 4;
 #else
-        name = read_u32(pos); pos -= 1;
-        fptr = read_u32(pos); pos -= 1;
+        name = read_u32(pos);
+        fptr = read_u32(pos-1);
+        pos -= 2;
 #endif
         extension_table[i].name = (char*)name;
         extension_table[i].fptr = (extension_fptr)fptr;
