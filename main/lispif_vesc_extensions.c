@@ -5952,7 +5952,6 @@ lbm_value ext_image_save(lbm_value *args, lbm_uint argn) {
 		lbm_value binding;
 		if (lbm_global_env_lookup(&binding, lbm_enc_sym(main_sym))) {
 			if (lbm_is_cons(binding) && lbm_car(binding) == ENC_SYM_CLOSURE) {
-				lbm_image_save_startup(lbm_enc_sym(main_sym));
 				goto image_has_main;
 			}
 		}
