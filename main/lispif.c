@@ -396,7 +396,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Const Heap : %d\n", lbm_const_heap_state->next * 4);
 				commands_printf_lisp("Image      : %d\n", image_size * 4);
 				commands_printf_lisp("Free       : %d\n", (lbm_image_get_size() - lbm_const_heap_state->next - image_size) * 4);
-				commands_printf_lisp("ImageVer	 : %s\n", lbm_image_get_version());
+				commands_printf_lisp("ImageVer   : %s\n", lbm_image_get_version());
 				flast_stats stats = flash_helper_stats();
 				commands_printf_lisp("Erase Cnt Tot: %d\n", stats.erase_cnt_tot);
 				commands_printf_lisp("Erase Cnt Max Sector: %d\n", stats.erase_cnt_max);
@@ -782,14 +782,16 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 			lbm_set_printf_callback(commands_printf_lisp);
 			lbm_set_ctx_done_callback(done_callback);
 
-			lbm_image_init((lbm_uint*)image_ptr, image_len, image_write);
+			lbm_image_init((uint32_t*)image_ptr, image_len, image_write);
 
 			if (!lbm_image_exists()) {
 				lbm_image_create(GIT_COMMIT_HASH);
 			} else {
 				if (strcmp(lbm_image_get_version(), GIT_COMMIT_HASH) != 0) {
-					commands_printf_lisp("Image version mismatch with firmware. Please update LBM code.");
-					return false;
+					commands_printf_lisp("Image version mismatch, trying to recreate image...");
+					for (uint32_t i = 0; i < image_len;i++) {
+						image_write(0xffffffff, i, true);
+					}
 				}
 			}
 
