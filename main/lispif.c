@@ -792,6 +792,7 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 					for (uint32_t i = 0; i < image_len;i++) {
 						image_write(0xffffffff, i, true);
 					}
+					lbm_image_create(GIT_COMMIT_HASH);
 				}
 			}
 
