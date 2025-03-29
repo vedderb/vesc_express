@@ -5962,7 +5962,7 @@ lbm_value ext_image_save(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_EERROR;
 
 	image_has_main:
-	r = r && lbm_image_save_dynamic_extensions();
+	r = r && lbm_image_save_extensions();
 	r = r && lbm_image_save_constant_heap_ix();
 	return r ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
