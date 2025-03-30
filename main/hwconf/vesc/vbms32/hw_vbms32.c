@@ -31,12 +31,12 @@
 #include <math.h>
 
 // Settings
-#define BQ_ADDR_1				0x10
-#define BQ_ADDR_2				0x08
-#define I2C_SPEED				100000
+#define BQ_ADDR_1 0x10
+#define BQ_ADDR_2 0x08
+#define I2C_SPEED 100000
 
 // Macros
-#define M_CELLS					(m_cells_ic1 + m_cells_ic2)
+#define M_CELLS (m_cells_ic1 + m_cells_ic2)
 
 // Variables
 static SemaphoreHandle_t i2c_mutex;
@@ -50,21 +50,27 @@ static uint16_t m_bal_state_ic2 = 0;
 static char *error_comm_bq1 = "BQ1 communication error";
 static char *error_comm_bq2 = "BQ2 communication error";
 
-static esp_err_t i2c_tx_rx(uint8_t addr,
-		const uint8_t* write_buffer, size_t write_size,
-		uint8_t* read_buffer, size_t read_size) {
+static esp_err_t i2c_tx_rx(
+	uint8_t addr, const uint8_t *write_buffer, size_t write_size,
+	uint8_t *read_buffer, size_t read_size
+) {
 
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
 
 	esp_err_t res;
 	if (read_size > 0 && read_buffer != NULL) {
 		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 500);
+			res = i2c_master_write_read_device(
+				0, addr, write_buffer, write_size, read_buffer, read_size, 500
+			);
 		} else {
-			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 500);
+			res = i2c_master_read_from_device(
+				0, addr, read_buffer, read_size, 500
+			);
 		}
 	} else {
-		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 500);
+		res =
+			i2c_master_write_to_device(0, addr, write_buffer, write_size, 500);
 	}
 	xSemaphoreGive(i2c_mutex);
 
@@ -76,27 +82,29 @@ static uint8_t crc8(uint8_t *ptr, uint8_t len) {
 	uint8_t crc = 0;
 
 	while (len-- != 0) {
-		for(i = 0x80; i != 0; i /= 2) {
-			if((crc & 0x80) != 0) {
+		for (i = 0x80; i != 0; i /= 2) {
+			if ((crc & 0x80) != 0) {
 				crc *= 2;
 				crc ^= 0x107;
 			} else {
 				crc *= 2;
 			}
 
-			if((*ptr & i) != 0) {
+			if ((*ptr & i) != 0) {
 				crc ^= 0x107;
 			}
 		}
 		ptr++;
 	}
 
-	return(crc);
+	return (crc);
 }
 
-static bool bq_read_block(uint8_t dev_addr, uint8_t reg, uint8_t *buf, uint8_t len) {
+static bool bq_read_block(
+	uint8_t dev_addr, uint8_t reg, uint8_t *buf, uint8_t len
+) {
 	uint8_t read_data[2 * len];
-	esp_err_t res = i2c_tx_rx(dev_addr, &reg, 1, read_data, 2 * len);
+	esp_err_t res          = i2c_tx_rx(dev_addr, &reg, 1, read_data, 2 * len);
 	uint8_t *read_data_ptr = read_data;
 
 	if (res != ESP_OK) {
@@ -105,10 +113,10 @@ static bool bq_read_block(uint8_t dev_addr, uint8_t reg, uint8_t *buf, uint8_t l
 	}
 
 	uint8_t crcbuf[4];
-	crcbuf[0] = dev_addr << 1;
-	crcbuf[1] = reg;
-	crcbuf[2] = (dev_addr << 1) + 1;
-	crcbuf[3] = *read_data_ptr;
+	crcbuf[0]   = dev_addr << 1;
+	crcbuf[1]   = reg;
+	crcbuf[2]   = (dev_addr << 1) + 1;
+	crcbuf[3]   = *read_data_ptr;
 	uint8_t crc = crc8(crcbuf, 4);
 
 	read_data_ptr++;
@@ -136,7 +144,9 @@ static bool bq_read_block(uint8_t dev_addr, uint8_t reg, uint8_t *buf, uint8_t l
 	return true;
 }
 
-static bool bq_write_block(uint8_t dev_addr, uint8_t start_addr, uint8_t *buf, uint8_t len) {
+static bool bq_write_block(
+	uint8_t dev_addr, uint8_t start_addr, uint8_t *buf, uint8_t len
+) {
 	uint8_t txbuf[2 * len + 2];
 	txbuf[0] = dev_addr << 1;
 	txbuf[1] = start_addr;
@@ -156,15 +166,17 @@ static bool bq_write_block(uint8_t dev_addr, uint8_t start_addr, uint8_t *buf, u
 static uint8_t checksum(uint8_t *ptr, int len) {
 	uint8_t sum = 0;
 
-	for (int i = 0;i < len; i++) {
+	for (int i = 0; i < len; i++) {
 		sum += ptr[i];
 	}
 
 	return ~sum;
 }
 
-static bool bq_set_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t reg_data, uint8_t datalen) {
-	uint8_t TX_Buffer[2] = {0x00, 0x00};
+static bool bq_set_reg(
+	uint8_t dev_addr, uint16_t reg_addr, uint32_t reg_data, uint8_t datalen
+) {
+	uint8_t TX_Buffer[2]  = {0x00, 0x00};
 	uint8_t TX_RegData[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 	bool res = false;
@@ -174,41 +186,49 @@ static bool bq_set_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t reg_data, u
 	TX_RegData[1] = (reg_addr >> 8) & 0xff;
 	TX_RegData[2] = reg_data & 0xff; //1st byte of data
 
-	switch(datalen) {
-	case 1: //1 byte datalength
-		bq_write_block(dev_addr, 0x3E, TX_RegData, 3);
-		vTaskDelay(2);
-		TX_Buffer[0] = checksum(TX_RegData, 3);
-		TX_Buffer[1] = 0x05; //combined length of register address and data
-		res = bq_write_block(dev_addr, 0x60, TX_Buffer, 2); // Write the checksum and length
-		vTaskDelay(2);
-		break;
-	case 2: //2 byte datalength
-		TX_RegData[3] = (reg_data >> 8) & 0xff;
-		bq_write_block(dev_addr, 0x3E, TX_RegData, 4);
-		vTaskDelay(2);
-		TX_Buffer[0] = checksum(TX_RegData, 4);
-		TX_Buffer[1] = 0x06; //combined length of register address and data
-		res = bq_write_block(dev_addr, 0x60, TX_Buffer, 2); // Write the checksum and length
-		vTaskDelay(2);
-		break;
-	case 4: //4 byte datalength, Only used for CCGain and Capacity Gain
-		TX_RegData[3] = (reg_data >> 8) & 0xff;
-		TX_RegData[4] = (reg_data >> 16) & 0xff;
-		TX_RegData[5] = (reg_data >> 24) & 0xff;
-		bq_write_block(dev_addr, 0x3E, TX_RegData, 6);
-		vTaskDelay(2);
-		TX_Buffer[0] = checksum(TX_RegData, 6);
-		TX_Buffer[1] = 0x08; //combined length of register address and data
-		res = bq_write_block(dev_addr, 0x60, TX_Buffer, 2); // Write the checksum and length
-		vTaskDelay(2);
-		break;
+	switch (datalen) {
+		case 1: //1 byte datalength
+			bq_write_block(dev_addr, 0x3E, TX_RegData, 3);
+			vTaskDelay(2);
+			TX_Buffer[0] = checksum(TX_RegData, 3);
+			TX_Buffer[1] = 0x05; //combined length of register address and data
+			res          = bq_write_block(
+                dev_addr, 0x60, TX_Buffer, 2
+            ); // Write the checksum and length
+			vTaskDelay(2);
+			break;
+		case 2: //2 byte datalength
+			TX_RegData[3] = (reg_data >> 8) & 0xff;
+			bq_write_block(dev_addr, 0x3E, TX_RegData, 4);
+			vTaskDelay(2);
+			TX_Buffer[0] = checksum(TX_RegData, 4);
+			TX_Buffer[1] = 0x06; //combined length of register address and data
+			res          = bq_write_block(
+                dev_addr, 0x60, TX_Buffer, 2
+            ); // Write the checksum and length
+			vTaskDelay(2);
+			break;
+		case 4: //4 byte datalength, Only used for CCGain and Capacity Gain
+			TX_RegData[3] = (reg_data >> 8) & 0xff;
+			TX_RegData[4] = (reg_data >> 16) & 0xff;
+			TX_RegData[5] = (reg_data >> 24) & 0xff;
+			bq_write_block(dev_addr, 0x3E, TX_RegData, 6);
+			vTaskDelay(2);
+			TX_Buffer[0] = checksum(TX_RegData, 6);
+			TX_Buffer[1] = 0x08; //combined length of register address and data
+			res          = bq_write_block(
+                dev_addr, 0x60, TX_Buffer, 2
+            ); // Write the checksum and length
+			vTaskDelay(2);
+			break;
 	}
 
 	return res;
 }
 
-static bool bq_read_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t *reg_data, uint8_t datalen) {
+static bool bq_read_reg(
+	uint8_t dev_addr, uint16_t reg_addr, uint32_t *reg_data, uint8_t datalen
+) {
 	uint8_t TX_RegData[2] = {0x00, 0x00};
 	uint8_t RX_RegData[4] = {0x00, 0x00, 0x00, 0x00};
 
@@ -227,8 +247,10 @@ static bool bq_read_reg(uint8_t dev_addr, uint16_t reg_addr, uint32_t *reg_data,
 	res = bq_read_block(dev_addr, 0x40, RX_RegData, datalen);
 
 	if (res) {
-		*reg_data = (((uint32_t)RX_RegData[3]) << 24) | (((uint32_t)RX_RegData[2]) << 16) |
-				(((uint32_t)RX_RegData[1]) << 8) | (((uint32_t)RX_RegData[0]) << 0);
+		*reg_data = (((uint32_t)RX_RegData[3]) << 24)
+			| (((uint32_t)RX_RegData[2]) << 16)
+			| (((uint32_t)RX_RegData[1]) << 8)
+			| (((uint32_t)RX_RegData[0]) << 0);
 	} else {
 		*reg_data = 0;
 	}
@@ -266,7 +288,9 @@ static bool command_subcommands(uint8_t dev_addr, uint16_t command) {
 	return res;
 }
 
-static bool subcommands_read16(uint8_t dev_addr, uint16_t command, uint16_t *result) {
+static bool subcommands_read16(
+	uint8_t dev_addr, uint16_t command, uint16_t *result
+) {
 	uint8_t TX_Reg[2] = {0x00, 0x00};
 
 	// TX_Reg in little endian format
@@ -282,7 +306,7 @@ static bool subcommands_read16(uint8_t dev_addr, uint16_t command, uint16_t *res
 	vTaskDelay(2);
 
 	uint8_t RX_data[2] = {0, 0};
-	res = bq_read_block(dev_addr, 0x40, RX_data, 2);
+	res                = bq_read_block(dev_addr, 0x40, RX_data, 2);
 
 	if (!res) {
 		return false;
@@ -293,7 +317,9 @@ static bool subcommands_read16(uint8_t dev_addr, uint16_t command, uint16_t *res
 	return true;
 }
 
-static bool subcommands_write16(uint8_t dev_addr, uint16_t command, uint16_t data) {
+static bool subcommands_write16(
+	uint8_t dev_addr, uint16_t command, uint16_t data
+) {
 	uint8_t TX_Reg[4] = {0x00, 0x00, 0x00, 0x00};
 
 	// TX_Reg in little endian format
@@ -331,14 +357,14 @@ static uint32_t float_to_u(float number) {
 		number = 0.0;
 	}
 
-	int e = 0;
-	float sig = frexpf(number, &e);
-	float sig_abs = fabsf(sig);
+	int e          = 0;
+	float sig      = frexpf(number, &e);
+	float sig_abs  = fabsf(sig);
 	uint32_t sig_i = 0;
 
 	if (sig_abs >= 0.5) {
 		sig_i = (uint32_t)((sig_abs - 0.5f) * 2.0f * 8388608.0f);
-		e += 126;
+		e    += 126;
 	}
 
 	uint32_t res = ((e & 0xFF) << 23) | (sig_i & 0x7FFFFF);
@@ -435,8 +461,8 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 		cells_ic2 = lbm_dec_as_u32(args[1]);
 	}
 
-	if (cells_ic1 < 3 || cells_ic1 > 16 ||
-			cells_ic2 > 16 || cells_ic2 == 1 || cells_ic2 == 2) {
+	if (cells_ic1 < 3 || cells_ic1 > 16 || cells_ic2 > 16 || cells_ic2 == 1
+		|| cells_ic2 == 2) {
 		lbm_set_error_reason("Invalid cell combination");
 		return ENC_SYM_TERROR;
 	}
@@ -452,12 +478,12 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 	i2c_driver_delete(0);
 
 	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
-			.sda_io_num = PIN_SDA,
-			.scl_io_num = PIN_SCL,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = I2C_SPEED,
+		.mode             = I2C_MODE_MASTER,
+		.sda_io_num       = PIN_SDA,
+		.scl_io_num       = PIN_SCL,
+		.sda_pullup_en    = GPIO_PULLUP_ENABLE,
+		.scl_pullup_en    = GPIO_PULLUP_ENABLE,
+		.master.clk_speed = I2C_SPEED,
 	};
 
 	i2c_param_config(0, &conf);
@@ -506,7 +532,8 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 
 	xSemaphoreTake(bq_mutex, portMAX_DELAY);
 
@@ -552,11 +579,12 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 
 	lbm_value vc_list = ENC_SYM_NIL;
 
-	for (int i = 0;i < m_cells_ic1; i++) {
+	for (int i = 0; i < m_cells_ic1; i++) {
 		bool ok = false;
 		int res = command_read(BQ_ADDR_1, Cell1Voltage + i * 2, &ok);
 		if (ok) {
@@ -567,7 +595,7 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
-	for (int i = 0;i < m_cells_ic2; i++) {
+	for (int i = 0; i < m_cells_ic2; i++) {
 		bool ok = false;
 		int res = command_read(BQ_ADDR_2, Cell1Voltage + i * 2, &ok);
 		if (ok) {
@@ -581,64 +609,106 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 	return lbm_list_destructive_reverse(vc_list);
 }
 
-#define NTC_TEMP(res, beta)			(1.0 / ((logf((res) / 10000.0) / beta) + (1.0 / 298.15)) - 273.15)
-#define NTC_RES(volts)				(18.0e3 / (1.8 / volts - 1.0) - 500.0)
-#define NAN_TO_M1(x)				(UTILS_IS_NAN(x) ? -1.0 : x)
+#define NTC_TEMP(res, beta)                                                    \
+	(1.0 / ((logf((res) / 10000.0) / beta) + (1.0 / 298.15)) - 273.15)
+#define NTC_RES(volts) (18.0e3 / (1.8 / volts - 1.0) - 500.0)
+#define NAN_TO_M1(x)   (UTILS_IS_NAN(x) ? -1.0 : x)
 
 static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 
 	lbm_value ts_list = ENC_SYM_NIL;
-	bool ok = false;
-	ts_list = lbm_cons(lbm_enc_float((float)command_read(BQ_ADDR_1, IntTemperature, &ok) * 0.1 - 273.15), ts_list);
-	if (!ok) { goto exit_error1; }
+	bool ok           = false;
+	ts_list           = lbm_cons(
+        lbm_enc_float(
+            (float)command_read(BQ_ADDR_1, IntTemperature, &ok) * 0.1 - 273.15
+        ),
+        ts_list
+    );
+	if (!ok) {
+		goto exit_error1;
+	}
 
 	// Multiply by 256 as only 16 of the 24 bits are used
 	const float counts_to_volts = 0.358e-6 * 256.0;
 
-	float v1 = (float)command_read(BQ_ADDR_1, TS1Temperature, &ok) * counts_to_volts;
-	if (!ok) { goto exit_error1; }
-	float v2 = (float)command_read(BQ_ADDR_1, TS3Temperature, &ok) * counts_to_volts;
-	if (!ok) { goto exit_error1; }
-	float v3 = (float)command_read(BQ_ADDR_1, ALERTTemperature, &ok) * counts_to_volts;
-	if (!ok) { goto exit_error1; }
-	float v4 = (float)command_read(BQ_ADDR_1, DCHGTemperature, &ok) * counts_to_volts;
-	if (!ok) { goto exit_error1; }
-	float v5 = (float)command_read(BQ_ADDR_1, HDQTemperature, &ok) * counts_to_volts;
-	if (!ok) { goto exit_error1; }
+	float v1 = (float)command_read(BQ_ADDR_1, TS1Temperature, &ok)
+		* counts_to_volts;
+	if (!ok) {
+		goto exit_error1;
+	}
+	float v2 = (float)command_read(BQ_ADDR_1, TS3Temperature, &ok)
+		* counts_to_volts;
+	if (!ok) {
+		goto exit_error1;
+	}
+	float v3 = (float)command_read(BQ_ADDR_1, ALERTTemperature, &ok)
+		* counts_to_volts;
+	if (!ok) {
+		goto exit_error1;
+	}
+	float v4 = (float)command_read(BQ_ADDR_1, DCHGTemperature, &ok)
+		* counts_to_volts;
+	if (!ok) {
+		goto exit_error1;
+	}
+	float v5 = (float)command_read(BQ_ADDR_1, HDQTemperature, &ok)
+		* counts_to_volts;
+	if (!ok) {
+		goto exit_error1;
+	}
 
 	// TODO: Use config
 	float ntc_beta = 3380.0;
 
-	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v1), ntc_beta))), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v2), ntc_beta))), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v3), ntc_beta))), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v4), ntc_beta))), ts_list);
-	ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v5), ntc_beta))), ts_list);
+	ts_list = lbm_cons(
+		lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v1), ntc_beta))), ts_list
+	);
+	ts_list = lbm_cons(
+		lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v2), ntc_beta))), ts_list
+	);
+	ts_list = lbm_cons(
+		lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v3), ntc_beta))), ts_list
+	);
+	ts_list = lbm_cons(
+		lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v4), ntc_beta))), ts_list
+	);
+	ts_list = lbm_cons(
+		lbm_enc_float(NAN_TO_M1(NTC_TEMP(NTC_RES(v5), ntc_beta))), ts_list
+	);
 
 	if (m_cells_ic2 != 0) {
-		ts_list = lbm_cons(lbm_enc_float(
-				(float)command_read(BQ_ADDR_2, IntTemperature, &ok) * 0.1 - 273.15), ts_list);
-		if (!ok) { goto exit_error2; }
+		ts_list = lbm_cons(
+			lbm_enc_float(
+				(float)command_read(BQ_ADDR_2, IntTemperature, &ok) * 0.1
+				- 273.15
+			),
+			ts_list
+		);
+		if (!ok) {
+			goto exit_error2;
+		}
 	} else {
 		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
 	}
 
 	return lbm_list_destructive_reverse(ts_list);
 
-	exit_error1:
+exit_error1:
 	lbm_set_error_reason(error_comm_bq1);
 	return ENC_SYM_EERROR;
 
-	exit_error2:
+exit_error2:
 	lbm_set_error_reason(error_comm_bq2);
 	return ENC_SYM_EERROR;
 }
 
 static lbm_value ext_get_current(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 
-	bool ok = false;
+	bool ok       = false;
 	float current = ((float)command_read(BQ_ADDR_1, CC2Current, &ok) / 100.0);
 
 	if (!ok) {
@@ -654,17 +724,20 @@ static lbm_value ext_get_current(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_get_vout(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 	return lbm_enc_float(HW_GET_VOUT());
 }
 
 static lbm_value ext_get_vchg(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 	return lbm_enc_float(HW_GET_VCHG());
 }
 
 static lbm_value ext_get_btn(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 	return lbm_enc_i(gpio_get_level(PIN_ENABLE) == 0 ? 0 : 1);
 }
 
@@ -672,17 +745,21 @@ static lbm_value ext_set_btn_wakeup_state(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
 	switch (lbm_dec_as_i32(args[0])) {
-	case 0:
-		esp_deep_sleep_enable_gpio_wakeup(1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_LOW);
-		break;
+		case 0:
+			esp_deep_sleep_enable_gpio_wakeup(
+				1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_LOW
+			);
+			break;
 
-	case 1:
-		esp_deep_sleep_enable_gpio_wakeup(1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_HIGH);
-		break;
+		case 1:
+			esp_deep_sleep_enable_gpio_wakeup(
+				1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_HIGH
+			);
+			break;
 
-	default:
-		gpio_deep_sleep_wakeup_disable(PIN_ENABLE);
-		break;
+		default:
+			gpio_deep_sleep_wakeup_disable(PIN_ENABLE);
+			break;
 	}
 
 	return ENC_SYM_TRUE;
@@ -713,8 +790,8 @@ static lbm_value ext_set_bal(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 
 	unsigned int ch = lbm_dec_as_u32(args[0]);
-	int state = lbm_dec_as_i32(args[1]);
-	bool res = false;
+	int state       = lbm_dec_as_i32(args[1]);
+	bool res        = false;
 
 	if (ch < m_cells_ic1) {
 		if (state) {
@@ -747,20 +824,20 @@ static lbm_value ext_get_bal(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
 	unsigned int ch = lbm_dec_as_u32(args[0]);
-	int res = -1;
+	int res         = -1;
 
 	// Read from IC
-//	if (ch < m_cells_ic1) {
-//		uint16_t state;
-//		if (subcommands_read16(BQ_ADDR_1, CB_ACTIVE_CELLS, &state)) {
-//			res = (state >> ch) & 0x01;
-//		}
-//	} else if ((ch - m_cells_ic1) < m_cells_ic2) {
-//		uint16_t state;
-//		if (subcommands_read16(BQ_ADDR_2, CB_ACTIVE_CELLS, &state)) {
-//			res = (state >> (ch - m_cells_ic1)) & 0x01;
-//		}
-//	}
+	//	if (ch < m_cells_ic1) {
+	//		uint16_t state;
+	//		if (subcommands_read16(BQ_ADDR_1, CB_ACTIVE_CELLS, &state)) {
+	//			res = (state >> ch) & 0x01;
+	//		}
+	//	} else if ((ch - m_cells_ic1) < m_cells_ic2) {
+	//		uint16_t state;
+	//		if (subcommands_read16(BQ_ADDR_2, CB_ACTIVE_CELLS, &state)) {
+	//			res = (state >> (ch - m_cells_ic1)) & 0x01;
+	//		}
+	//	}
 
 	(void)subcommands_read16;
 
@@ -786,7 +863,9 @@ static lbm_value ext_direct_cmd(lbm_value *args, lbm_uint argn) {
 	if (ok) {
 		return lbm_enc_i(res);
 	} else {
-		lbm_set_error_reason(addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2);
+		lbm_set_error_reason(
+			addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2
+		);
 		return ENC_SYM_EERROR;
 	}
 }
@@ -814,12 +893,14 @@ static lbm_value ext_read_reg(lbm_value *args, lbm_uint argn) {
 	int len = lbm_dec_as_i32(args[2]);
 
 	uint32_t reg_data = 0;
-	bool ok = bq_read_reg(addr, reg, &reg_data, len);
+	bool ok           = bq_read_reg(addr, reg, &reg_data, len);
 
 	if (ok) {
 		return lbm_enc_u32(reg_data);
 	} else {
-		lbm_set_error_reason(addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2);
+		lbm_set_error_reason(
+			addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2
+		);
 		return ENC_SYM_EERROR;
 	}
 }
@@ -832,16 +913,18 @@ static lbm_value ext_write_reg(lbm_value *args, lbm_uint argn) {
 		addr = BQ_ADDR_2;
 	}
 
-	int reg = lbm_dec_as_i32(args[1]);
+	int reg       = lbm_dec_as_i32(args[1]);
 	uint32_t data = lbm_dec_as_u32(args[2]);
-	int len = lbm_dec_as_i32(args[3]);
+	int len       = lbm_dec_as_i32(args[3]);
 
 	bool ok = bq_set_reg(addr, reg, data, len);
 
 	if (ok) {
 		return ENC_SYM_TRUE;
 	} else {
-		lbm_set_error_reason(addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2);
+		lbm_set_error_reason(
+			addr == BQ_ADDR_1 ? error_comm_bq1 : error_comm_bq2
+		);
 		return ENC_SYM_EERROR;
 	}
 }
@@ -1005,7 +1088,7 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		argn--;
 
 		if (!lbm_is_number(set_arg)) {
-			lbm_set_error_reason((char*)lbm_error_str_no_number);
+			lbm_set_error_reason((char *)lbm_error_str_no_number);
 			return ENC_SYM_EERROR;
 		}
 	}
@@ -1018,8 +1101,8 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		return res;
 	}
 
-	lbm_uint name = lbm_dec_sym(args[0]);
-	main_config_t *cfg = (main_config_t*)&backup.config;
+	lbm_uint name      = lbm_dec_sym(args[0]);
+	main_config_t *cfg = (main_config_t *)&backup.config;
 
 	if (compare_symbol(name, &syms_vesc.cells_ic1)) {
 		res = get_or_set_i(set, &cfg->cells_ic1, &set_arg);
@@ -1107,7 +1190,8 @@ static lbm_value ext_bms_set_param(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 	main_store_backup_data();
 	return ENC_SYM_TRUE;
 }
@@ -1115,7 +1199,8 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 // I2C Overrides
 
 static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
+	(void)args;
+	(void)argn;
 	return ENC_SYM_TRUE;
 }
 
@@ -1124,9 +1209,9 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	uint16_t addr = 0;
-	size_t txlen = 0;
-	size_t rxlen = 0;
+	uint16_t addr  = 0;
+	size_t txlen   = 0;
+	size_t rxlen   = 0;
 	uint8_t *txbuf = 0;
 	uint8_t *rxbuf = 0;
 
@@ -1140,12 +1225,12 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 
 	if (lbm_is_array_r(args[1])) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
-		txbuf = (uint8_t*)array->data;
-		txlen = array->size;
+		txbuf                     = (uint8_t *)array->data;
+		txlen                     = array->size;
 	} else {
 		lbm_value curr = args[1];
 		while (lbm_is_cons(curr)) {
-			lbm_value  arg = lbm_car(curr);
+			lbm_value arg = lbm_car(curr);
 
 			if (lbm_is_number(arg)) {
 				to_send[txlen++] = lbm_dec_as_u32(arg);
@@ -1167,8 +1252,8 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 
 	if (argn >= 3 && lbm_is_array_rw(args[2])) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[2]);
-		rxbuf = (uint8_t*)array->data;
-		rxlen = array->size;
+		rxbuf                     = (uint8_t *)array->data;
+		rxlen                     = array->size;
 	}
 
 	return lbm_enc_i(i2c_tx_rx(addr, txbuf, txlen, rxbuf, rxlen));
@@ -1191,12 +1276,16 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-	main_store_backup_data();
-	return lbm_enc_i(5);
+	(void)args;
+	(void)argn;
+	return lbm_enc_i(6);
 }
 
-static void load_extensions(void) {
+static void load_extensions(bool main_found) {
+	if (main_found) {
+		return;
+	}
+
 	memset(&syms_vesc, 0, sizeof(syms_vesc));
 
 	// Wake up and initialize hardware
@@ -1260,7 +1349,7 @@ static void load_extensions(void) {
 
 void hw_init(void) {
 	i2c_mutex = xSemaphoreCreateMutex();
-	bq_mutex = xSemaphoreCreateMutex();
+	bq_mutex  = xSemaphoreCreateMutex();
 
 	gpio_config_t gpconf = {0};
 
@@ -1270,12 +1359,12 @@ void hw_init(void) {
 	gpio_set_level(PIN_PSW_EN, 0);
 	gpio_set_level(PIN_COM_EN, 1);
 
-	gpconf.pin_bit_mask = BIT(PIN_OUT_EN) | BIT(PIN_CHG_EN) | BIT(PIN_PCHG_EN) |
-			BIT(PIN_COM_EN) | BIT(PIN_PSW_EN);
-	gpconf.intr_type =  GPIO_FLOATING;
-	gpconf.mode = GPIO_MODE_INPUT_OUTPUT;
+	gpconf.pin_bit_mask = BIT(PIN_OUT_EN) | BIT(PIN_CHG_EN) | BIT(PIN_PCHG_EN)
+		| BIT(PIN_COM_EN) | BIT(PIN_PSW_EN);
+	gpconf.intr_type    = GPIO_FLOATING;
+	gpconf.mode         = GPIO_MODE_INPUT_OUTPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpconf.pull_up_en   = GPIO_PULLUP_DISABLE;
 	gpio_config(&gpconf);
 
 	gpio_set_level(PIN_OUT_EN, 0);
@@ -1285,19 +1374,19 @@ void hw_init(void) {
 	gpio_set_level(PIN_COM_EN, 1);
 
 	gpconf.pin_bit_mask = BIT(PIN_ENABLE);
-	gpconf.intr_type =  GPIO_FLOATING;
-	gpconf.mode = GPIO_MODE_INPUT;
+	gpconf.intr_type    = GPIO_FLOATING;
+	gpconf.mode         = GPIO_MODE_INPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpconf.pull_up_en   = GPIO_PULLUP_DISABLE;
 	gpio_config(&gpconf);
 
 	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
-			.sda_io_num = PIN_SDA,
-			.scl_io_num = PIN_SCL,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = 100000,
+		.mode             = I2C_MODE_MASTER,
+		.sda_io_num       = PIN_SDA,
+		.scl_io_num       = PIN_SCL,
+		.sda_pullup_en    = GPIO_PULLUP_ENABLE,
+		.scl_pullup_en    = GPIO_PULLUP_ENABLE,
+		.master.clk_speed = 100000,
 	};
 
 	i2c_param_config(0, &conf);

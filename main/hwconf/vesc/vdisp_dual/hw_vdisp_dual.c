@@ -67,7 +67,11 @@ static lbm_value ext_sel_disp_right(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static void load_extensions(void) {
+static void load_extensions(bool main_found) {
+	if (main_found) {
+		return;
+	}
+	
 	lbm_add_extension("sel-disp-left", ext_sel_disp_left);
 	lbm_add_extension("sel-disp-right", ext_sel_disp_right);
 }

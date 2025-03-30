@@ -71,7 +71,11 @@ static lbm_value ext_bt2(lbm_value *args, lbm_uint argn) {
 	return gpio_get_level(PIN_BT2) == 0 ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
-static void load_extensions(void) {
+static void load_extensions(bool main_found) {
+	if (main_found) {
+		return;
+	}
+	
 	lbm_add_extension("disp-init", ext_disp_init);
 	lbm_add_extension("bt1-pressed", ext_bt1);
 	lbm_add_extension("bt2-pressed", ext_bt2);

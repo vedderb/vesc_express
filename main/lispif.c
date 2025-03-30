@@ -81,7 +81,7 @@ const esp_timer_create_args_t periodic_timer_args = {
 };
 
 // Extension load callbacks
-void(*ext_load_callbacks[EXT_LOAD_CALLBACK_LEN])(void) = {0};
+void(*ext_load_callbacks[EXT_LOAD_CALLBACK_LEN])(bool) = {0};
 
 /*
  * TODO:
@@ -826,14 +826,12 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 		
 		lispif_load_vesc_extensions(main_found);
 
-		if (!main_found) {
-			for (int i = 0;i < EXT_LOAD_CALLBACK_LEN;i++) {
-				if (ext_load_callbacks[i] == 0) {
-					break;
-				}
-
-				ext_load_callbacks[i]();
+		for (int i = 0;i < EXT_LOAD_CALLBACK_LEN;i++) {
+			if (ext_load_callbacks[i] == 0) {
+				break;
 			}
+
+			ext_load_callbacks[i](main_found);
 		}
 
 		if (!main_found) {
@@ -885,7 +883,7 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	return res;
 }
 
-void lispif_add_ext_load_callback(void (*p_func)(void)) {
+void lispif_add_ext_load_callback(void (*p_func)(bool)) {
 	for (int i = 0;i < EXT_LOAD_CALLBACK_LEN;i++) {
 		if (ext_load_callbacks[i] == 0 || ext_load_callbacks[i] == p_func) {
 			ext_load_callbacks[i] = p_func;

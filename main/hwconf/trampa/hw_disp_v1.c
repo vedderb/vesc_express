@@ -263,7 +263,11 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static void load_extensions(void) {
+static void load_extensions(bool main_found) {
+	if (main_found) {
+		return;
+	}
+	
 	lbm_add_extension("v-ext", ext_v_ext);
 	lbm_add_extension("v-btn", ext_v_btn);
 	lbm_add_extension("hw-init", ext_hw_init);
