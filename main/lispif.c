@@ -24,12 +24,10 @@
 #include "main.h"
 #include "lispif.h"
 #include "commands.h"
-#include "terminal.h"
 #include "buffer.h"
 #include "lispbm.h"
 #include "mempools.h"
 #include "flash_helper.h"
-#include "conf_general.h"
 #include "lbm_prof.h"
 #include "esp_timer.h"
 #include "utils.h"
@@ -797,29 +795,23 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 				}
 			}
 
-			uint32_t t_start = xTaskGetTickCount();
 			lbm_image_boot();
-			commands_printf_lisp("Boot time: %d", xTaskGetTickCount() - t_start);
-
 			lbm_add_eval_symbols();
 			lbm_eval_init_events(20);
 
 			xTaskCreatePinnedToCore(eval_thread, "lbm_eval", 3072, NULL, 6, NULL, tskNO_AFFINITY);
 			lisp_thd_running = true;
 
-			t_start = xTaskGetTickCount();
 			lbm_pause_eval();
 			while (lbm_get_eval_state() != EVAL_CPS_STATE_PAUSED) {
 				vTaskDelay(1 / portTICK_PERIOD_MS);
 			}
-			commands_printf_lisp("Pause time: %d", xTaskGetTickCount() - t_start);
 
 		} else {
 			commands_printf_lisp("Not enough space to create image");
 			return false;
 		}
 
-		uint32_t t_start = xTaskGetTickCount();
 		bool main_found = false;
 		lbm_uint main_sym = ENC_SYM_NIL;
 		if (lbm_get_symbol_by_name("main", &main_sym)) {
@@ -831,9 +823,7 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 				}
 			}
 		}
-		commands_printf_lisp("Find main time: %d", xTaskGetTickCount() - t_start);
-
-		t_start = xTaskGetTickCount();
+		
 		lispif_load_vesc_extensions(main_found);
 
 		if (!main_found) {
@@ -845,8 +835,6 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 				ext_load_callbacks[i]();
 			}
 		}
-
-		commands_printf_lisp("Ext time total: %d", xTaskGetTickCount() - t_start);
 
 		if (!main_found) {
 			if (load_imports) {
