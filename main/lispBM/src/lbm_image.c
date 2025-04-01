@@ -150,7 +150,6 @@
 
 static lbm_image_write_fun image_write = NULL;
 
-static bool image_is_empty = true;
 static uint32_t *image_address = NULL;
 static int32_t write_index = 0;
 static uint32_t image_size = 0;
@@ -696,10 +695,6 @@ bool lbm_image_save_constant_heap_ix(void) {
   return r;
 }
 
-bool lbm_image_is_empty(void) {
-  return image_is_empty;
-}
-
 bool lbm_image_exists(void) {
   uint32_t val = read_u32((int32_t)image_size - 1);
   return val == IMAGE_INITIALIZED;
@@ -712,6 +707,8 @@ void lbm_image_init(uint32_t* image_mem_address,
   image_address = image_mem_address;
   image_size = image_size_words;
   write_index = (int32_t)image_size_words -1;
+  image_has_extensions = false;
+  image_version = NULL;
 }
 
 void lbm_image_create(char *version_str) {
@@ -755,7 +752,6 @@ bool lbm_image_boot(void) {
     pos --;
     switch(val) {
     case IMAGE_INITIALIZED: {
-      image_is_empty = false;
       image_const_heap_start_ix = 0; // const heap starts at 0
       lbm_const_heap_init(image_const_heap_write,
                           &image_const_heap,
@@ -817,7 +813,7 @@ bool lbm_image_boot(void) {
       pos -= s;
       lbm_flat_value_t fv;
       fv.buf = (uint8_t*)(image_address + pos);
-      fv.buf_size = (uint32_t)(s * 4); // GEQ than actual buf
+      fv.buf_size = (uint32_t)s * sizeof(lbm_uint); // GEQ to actual buf
       fv.buf_pos = 0;
       lbm_value unflattened;
       lbm_unflatten_value(&fv, &unflattened);
