@@ -32,6 +32,8 @@
 #include "esp_timer.h"
 #include "utils.h"
 #include "lbm_image.h"
+#include "esp_partition.h"
+#include "esp_ota_ops.h"
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
@@ -782,16 +784,24 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 
 			lbm_image_init((uint32_t*)image_ptr, image_len, image_write);
 
+			const esp_partition_t *running = esp_ota_get_running_partition();
+			esp_app_desc_t running_app_info;
+			esp_ota_get_partition_description(running, &running_app_info);
+			char ver_str[20];
+			sprintf(ver_str, "%02X%02X%02X%02X%02X%02X%02X%02X",
+				running_app_info.app_elf_sha256[0], running_app_info.app_elf_sha256[1], running_app_info.app_elf_sha256[2], running_app_info.app_elf_sha256[3],
+				running_app_info.app_elf_sha256[4], running_app_info.app_elf_sha256[5], running_app_info.app_elf_sha256[6], running_app_info.app_elf_sha256[7]);
+
 			if (!lbm_image_exists()) {
-				lbm_image_create(GIT_COMMIT_HASH);
+				lbm_image_create(ver_str);
 			} else {
-				if (strcmp(lbm_image_get_version(), GIT_COMMIT_HASH) != 0) {
+				if (strcmp(lbm_image_get_version(), ver_str) != 0) {
 					commands_printf_lisp("Image version mismatch, trying to recreate image...");
 					for (uint32_t i = 0; i < image_len;i++) {
 						image_write(0xffffffff, i, true);
 					}
 					image_max_ind = 0;
-					lbm_image_create(GIT_COMMIT_HASH);
+					lbm_image_create(ver_str);
 				}
 			}
 
