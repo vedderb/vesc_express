@@ -25,6 +25,12 @@
 
 #include HW_HEADER
 
+#ifdef OVR_CONF_DEFAULT
+#include OVR_CONF_DEFAULT
+#else
+#include "conf_default.h"
+#endif
+
 #ifndef HW_DEFAULT_ID
 #define HW_DEFAULT_ID				2
 #endif
