@@ -1,0 +1,7 @@
+services:
+  app:
+    image: esp-builder:5.2.2
+    container_name: vesc_express_builder
+    tty: true
+    volumes:
+      - /home/[username]/vesc:/home/vesc
