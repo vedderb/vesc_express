@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 typedef struct {
 	char key[25];
@@ -114,22 +115,48 @@ static void log_task(void *arg) {
 				vTaskDelay(configTICK_RATE_HZ / 100);
 				continue;
 			}
+			
+			char path[200];
 
-			if (date_valid) {
-				char path[200];
-				sprintf(path,
-						"%slog_can/date/%02d-%02d-%02d %02d-%02d-%02d.csv", file_basepath,
-						s->rmc.yy, s->rmc.mo, s->rmc.dd, s->rmc.hh, s->rmc.mm, s->rmc.ss);
-				f_log = fopen(path, "w");
-			} else {
-				char path[200];
-				for (int i = 0;i < 999;i++) {
-					sprintf(path, "%slog_can/no_date/log_%03d.csv", file_basepath, i);
-					if (access(path, F_OK) != 0) {
-						f_log = fopen(path, "w");
-						break;
+			// Note: This directory is created when COMM_LOG_START is
+			//   received.
+			sprintf(path, "%slog_can/", file_basepath);
+			DIR *dir = opendir(path);
+			if (dir) {
+				int highest_index = -1;
+				struct dirent *entry;
+				while ((entry = readdir(dir)) != NULL) {
+					// Log name example: "log_001_2025-04-07_17-37-00.csv"
+					if (entry->d_type == DT_REG
+						&& strncmp(entry->d_name, "log_", 4) == 0) {
+						const char *index_start =
+							&entry->d_name[strlen("log_")];
+
+						char *digits_end;
+
+						int index = (int)strtol(index_start, &digits_end, 10);
+						if (digits_end != index_start
+							&& index > highest_index) {
+							highest_index = index;
+						}
 					}
 				}
+				closedir(dir);
+
+				if (date_valid) {
+					sprintf(
+						path,
+						"%slog_can/log_%03d_%02d-%02d-%02d_%02d-%02d-%02d.csv",
+						file_basepath, highest_index + 1, s->rmc.yy, s->rmc.mo,
+						s->rmc.dd, s->rmc.hh, s->rmc.mm, s->rmc.ss
+					);
+				} else {
+					sprintf(
+						path, "%slog_can/log_%03d.csv", file_basepath,
+						highest_index + 1
+					);
+				}
+				f_log = fopen(path, "w");
 			}
 
 			if (f_log) {
@@ -460,10 +487,6 @@ void log_process_packet(unsigned char *data, unsigned int len) {
 
 		char path[30];
 		sprintf(path, "%slog_can", file_basepath);
-		mkdir(path, 0775);
-		sprintf(path, "%slog_can/date", file_basepath);
-		mkdir(path, 0775);
-		sprintf(path, "%slog_can/no_date", file_basepath);
 		mkdir(path, 0775);
 
 		int32_t ind = 0;
