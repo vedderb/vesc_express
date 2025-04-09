@@ -36,12 +36,14 @@
 #include "lbm_color_extensions.h"
 #include "lbm_constants.h"
 #include "lbm_vesc_utils.h"
+#include "lbm_flat_value.h"
 #include "commands.h"
 #include "comm_can.h"
 #include "conf_general.h"
 #include "mempools.h"
 #include "log.h"
 #include "buffer.h"
+#include "nvs.h"
 #include "utils.h"
 #include "rb.h"
 #include "crc.h"
@@ -1067,6 +1069,150 @@ static lbm_value ext_eeprom_read_i(lbm_value *args, lbm_uint argn) {
 	bool res = read_eeprom_var(&v, addr);
 	return res ? lbm_enc_i32(v.as_i32) : ENC_SYM_NIL;
 }
+
+static lbm_value ext_eeprom_erase(lbm_value *args, lbm_uint argn){
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int addr = lbm_dec_as_i32(args[0]);
+	if (!check_eeprom_addr(addr)) {
+		return ENC_SYM_EERROR;
+	}
+
+	char key[10];
+	sprintf(key, "v%d", addr);
+
+	nvs_handle_t nvs_handle;
+	esp_err_t ok_op = nvs_open("lbm", NVS_READWRITE, &nvs_handle);
+	if (ok_op != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	esp_err_t ok_set = nvs_erase_key(nvs_handle, key);
+	esp_err_t ok_com = nvs_commit(nvs_handle);
+	nvs_close(nvs_handle);
+
+	if (ok_set != ESP_OK || ok_com != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_kv_erase(lbm_value *args, lbm_uint argn){
+	char *key = lbm_dec_str(args[0]);
+	if (!key) {
+		return ENC_SYM_EERROR;
+	}
+	nvs_handle_t nvs_handle;
+	esp_err_t ok_op = nvs_open("lbm-kv", NVS_READWRITE, &nvs_handle);
+	if (ok_op != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	esp_err_t ok_set = nvs_erase_key(nvs_handle, key);
+	esp_err_t ok_com = nvs_commit(nvs_handle);
+	nvs_close(nvs_handle);
+
+	if (ok_set != ESP_OK || ok_com != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_kv_set(lbm_value *args, lbm_uint argn){
+	char *key = lbm_dec_str(args[0]);
+	if (!key) {
+		return ENC_SYM_EERROR;
+	}
+	lbm_value value = args[1];
+
+	lbm_value flat_value = flatten_value(value);
+	lbm_array_header_t *arr = lbm_dec_array_r(flat_value);
+	if (arr == NULL){
+		return ENC_SYM_EERROR;
+	}
+
+	nvs_handle_t nvs_handle;
+	esp_err_t ok_op = nvs_open("lbm-kv", NVS_READWRITE, &nvs_handle);
+	if (ok_op != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	esp_err_t ok_set = nvs_set_blob( nvs_handle, key, arr->data, arr->size);
+	if(ok_set != ESP_OK){
+		return ENC_SYM_EERROR;
+	}
+	esp_err_t ok_com = nvs_commit(nvs_handle);
+	nvs_close(nvs_handle);
+
+	if (ok_set != ESP_OK || ok_com != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_kv_get(lbm_value *args, lbm_uint argn){
+	if (argn < 1 || argn > 2) {
+		return ENC_SYM_EERROR;
+	}
+    char *key = lbm_dec_str(args[0]);
+    if (!key) {
+        return ENC_SYM_EERROR;
+    }
+    lbm_value default_value = ENC_SYM_NIL;
+    if (argn == 2){
+        default_value = args[1];
+    }
+
+    nvs_handle_t nvs_handle;
+    esp_err_t ok_op = nvs_open("lbm-kv", NVS_READONLY, &nvs_handle);
+    if (ok_op != ESP_OK) {
+        lbm_set_error_reason("nvs_open");
+        return ENC_SYM_EERROR;
+    }
+
+    size_t required_size;
+    esp_err_t ok_get = nvs_get_blob(nvs_handle, key, NULL, &required_size);
+    if (ok_get == ESP_ERR_NVS_NOT_FOUND){
+        nvs_close(nvs_handle);
+        return default_value;
+    }
+    if (ok_get != ESP_OK) {
+        nvs_close(nvs_handle);
+        lbm_set_error_reason("nvs_get_blob failed");
+        return ENC_SYM_EERROR;
+    }
+
+    lbm_flat_value_t v;
+    v.buf_size = required_size;
+    v.buf = lbm_malloc(required_size);
+    v.buf_pos = 0;
+
+    if (v.buf == NULL) {
+        nvs_close(nvs_handle);
+        return ENC_SYM_MERROR;
+    }
+
+    ok_get = nvs_get_blob(nvs_handle, key, v.buf, &required_size);
+    nvs_close(nvs_handle);
+
+    if (ok_get != ESP_OK) {
+        lbm_free(v.buf);
+        lbm_set_error_reason("nvs_get_blob failed");
+        return ENC_SYM_EERROR;
+    }
+
+    lbm_value out;
+    int unflatten_res = lbm_unflatten_value(&v, &out);
+    lbm_free(v.buf);
+    if (!unflatten_res){
+        lbm_set_error_reason("unflatten failed");
+        return ENC_SYM_EERROR;
+    }
+    return out;
+}
+
 
 static lbm_uint sym_hw_express;
 static lbm_uint sym_size;
@@ -5910,11 +6056,9 @@ static lbm_value ext_nvs_qml_erase_key(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static lbm_value ext_nvs_qml_list(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-
+static lbm_value nvs_list(char *partition, char *namespace, nvs_type_t type) {
 	nvs_iterator_t it = NULL;
-	esp_err_t esp_res = nvs_entry_find("qml", "lbm", NVS_TYPE_BLOB, &it);
+	esp_err_t esp_res = nvs_entry_find(partition, namespace, type, &it);
 	lbm_value res = ENC_SYM_NIL;
 
 	while (esp_res == ESP_OK) {
@@ -5964,6 +6108,14 @@ lbm_value ext_image_save(lbm_value *args, lbm_uint argn) {
 	r = r && lbm_image_save_extensions();
 	r = r && lbm_image_save_constant_heap_ix();
 	return r ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_nvs_qml_list(lbm_value *args, lbm_uint argn) {
+   return nvs_list("qml", "lbm", NVS_TYPE_BLOB);
+}
+
+static lbm_value ext_kv_list(lbm_value *args, lbm_uint argn) {
+   return nvs_list("nvs", "lbm-kv", NVS_TYPE_BLOB);
 }
 
 static const char* dyn_functions[] = {
@@ -6064,6 +6216,13 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("eeprom-read-f", ext_eeprom_read_f);
 		lbm_add_extension("eeprom-store-i", ext_eeprom_store_i);
 		lbm_add_extension("eeprom-read-i", ext_eeprom_read_i);
+		lbm_add_extension("eeprom-erase", ext_eeprom_erase);
+
+		// KV store
+		lbm_add_extension("kv-get", ext_kv_get);
+		lbm_add_extension("kv-set", ext_kv_set);
+		lbm_add_extension("kv-list", ext_kv_list);
+		lbm_add_extension("kv-erase", ext_kv_erase);
 
 		// CAN-comands
 		lbm_add_extension("can-start", ext_can_start);
