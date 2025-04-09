@@ -792,17 +792,13 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 				running_app_info.app_elf_sha256[0], running_app_info.app_elf_sha256[1], running_app_info.app_elf_sha256[2], running_app_info.app_elf_sha256[3],
 				running_app_info.app_elf_sha256[4], running_app_info.app_elf_sha256[5], running_app_info.app_elf_sha256[6], running_app_info.app_elf_sha256[7]);
 
-			if (!lbm_image_exists()) {
-				lbm_image_create(ver_str);
-			} else {
-				if (strcmp(lbm_image_get_version(), ver_str) != 0) {
-					commands_printf_lisp("Image version mismatch, trying to recreate image...");
-					for (uint32_t i = 0; i < image_len;i++) {
-						image_write(0xffffffff, i, true);
-					}
-					image_max_ind = 0;
-					lbm_image_create(ver_str);
+			if (!lbm_image_exists() || strcmp(lbm_image_get_version(), ver_str) != 0) {
+				commands_printf_lisp("Preparing new image...");
+				for (uint32_t i = 0; i < image_len;i++) {
+					image_write(0xffffffff, i, true);
 				}
+				image_max_ind = 0;
+				lbm_image_create(ver_str);
 			}
 
 			lbm_image_boot();
