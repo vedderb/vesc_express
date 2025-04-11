@@ -736,7 +736,6 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	bool res = false;
 
 	restart_cnt++;
-	prof_running = false;
 	string_tok_valid = false;
 
 	if (prof_running) {
