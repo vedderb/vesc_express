@@ -641,23 +641,20 @@ bool lbm_image_save_global_env(void) {
           write_lbm_value(name_field, &write_index, DOWNWARDS);
           write_lbm_value(val_field, &write_index, DOWNWARDS);
         } else {
-
           int fv_size = image_flatten_size(val_field);
           if (fv_size > 0) {
             fv_size = (fv_size % 4 == 0) ? (fv_size / 4) : (fv_size / 4) + 1; // num 32bit words
-            int tot_size =  fv_size; //+ 1 + (int)(sizeof(lbm_uint) / 4);
-
-            if (write_index + tot_size >= (int32_t)image_size) {
+            if ((write_index - fv_size) <= (int32_t)image_const_heap.next) {
               return false;
             }
             write_u32(BINDING_FLAT, &write_index, DOWNWARDS);
             write_u32((uint32_t)fv_size , &write_index, DOWNWARDS);
             write_lbm_value(name_field, &write_index, DOWNWARDS);
-            write_index = write_index - fv_size; // subtract fv_size
-            if (image_flatten_value(val_field)) {      // adds fv_size back
-	      // TODO: What error handling makes sense?
-	      fv_write_flush();
-	    }
+            write_index = write_index - fv_size;  // subtract fv_size
+            if (image_flatten_value(val_field)) { // adds fv_size backq
+              // TODO: What error handling makes sense?
+              fv_write_flush();
+            }
             write_index = write_index - fv_size - 1; // subtract fv_size
           } else {
             return false;
@@ -716,8 +713,7 @@ bool lbm_image_save_extensions(void) {
       r = r && write_u32((uint32_t)name_ptr, &write_index, DOWNWARDS);
       r = r && write_u32((uint32_t)extension_table[i].fptr, &write_index, DOWNWARDS);
 #endif
-    }
-  }
+    }  }
   return true;
 }
 
@@ -726,6 +722,7 @@ static uint32_t last_const_heap_ix = 0;
 bool lbm_image_save_constant_heap_ix(void) {
   bool r = true; // saved or no need to save it.
   if (image_const_heap.next != last_const_heap_ix) {
+    last_const_heap_ix = image_const_heap.next;
     r = write_u32(CONSTANT_HEAP_IX, &write_index, DOWNWARDS);
     r = r && write_u32((uint32_t)image_const_heap.next, &write_index, DOWNWARDS);
   }
@@ -881,10 +878,22 @@ bool lbm_image_boot(void) {
       // pos - 5 -> name_ptr_low_word      |
 #ifdef LBM64
       int32_t entry_pos = pos - 5;
+      lbm_uint *p = (lbm_uint*)(image_address + entry_pos);
+      uint32_t sym_id = (uint32_t)(p[1]);
+      lbm_uint next_id = lbm_symrepr_get_next_id();
+      if (sym_id >= RUNTIME_SYMBOLS_START && sym_id >= next_id ) {
+        lbm_symrepr_set_next_id(next_id + 1);
+      }
       lbm_symrepr_set_symlist((lbm_uint*)(image_address + entry_pos));
       pos -= 6;
 #else
       int32_t entry_pos = pos - 2;
+      lbm_uint *p = (lbm_uint*)(image_address + entry_pos);
+      uint32_t sym_id = (uint32_t)(p[1]);
+      lbm_uint next_id = lbm_symrepr_get_next_id();
+      if (sym_id >= RUNTIME_SYMBOLS_START && sym_id >= next_id ) {
+        lbm_symrepr_set_next_id(next_id + 1);
+      }
       lbm_symrepr_set_symlist((lbm_uint*)(image_address + entry_pos));
       pos -= 3;
 #endif
@@ -906,12 +915,20 @@ bool lbm_image_boot(void) {
       link_ptr = read_u64(pos-1);
       sym_id   = read_u64(pos-5);
       *((lbm_uint*)link_ptr) = sym_id;
+      lbm_uint next_id = lbm_symrepr_get_next_id();
+      if (sym_id >= RUNTIME_SYMBOLS_START && sym_id >= next_id ) {
+        lbm_symrepr_set_next_id(next_id + 1);
+      }
       lbm_symrepr_set_symlist((lbm_uint*)(image_address + (pos - 7)));
       pos -= 8;
 #else
       link_ptr = read_u32(pos);
       sym_id   = read_u32(pos-2);
       *((lbm_uint*)link_ptr) = sym_id;
+      lbm_uint next_id = lbm_symrepr_get_next_id();
+      if (sym_id >= RUNTIME_SYMBOLS_START && sym_id >= next_id ) {
+        lbm_symrepr_set_next_id(next_id + 1);
+      }
       lbm_symrepr_set_symlist((lbm_uint*)(image_address + (pos - 3)));
       pos -= 4;
 #endif
