@@ -467,6 +467,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 		s->rmc.mo = data8[ind++];
 		s->rmc.dd = data8[ind++];
 
+		int ms = s->gga.ms_today % 1000;
 		int ss = (s->gga.ms_today / 1000) % 60;
 		int mm = (s->gga.ms_today / 1000 / 60) % 60;
 		int hh = (s->gga.ms_today / 1000 / 60 / 60) % 24;
@@ -474,6 +475,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 		s->rmc.hh = hh;
 		s->rmc.mm = mm;
 		s->rmc.ss = ss;
+		s->rmc.ms = ms;
 
 		s->gga_cnt++;
 		s->rmc_cnt++;
