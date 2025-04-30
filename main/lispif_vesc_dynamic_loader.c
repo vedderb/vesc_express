@@ -71,6 +71,8 @@ static const char* functions[] = {
 "(defun abs (x) (if (< x 0) (- x) x))",
 
 "(defun str-merge () (str-join (rest-args)))",
+
+"(defun img-buffer-from-bin (x) x)",
 };
 
 static const char* macros[] = {

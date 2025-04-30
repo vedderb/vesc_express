@@ -27,9 +27,12 @@
 // Private variables
 static uint8_t packet_buffer[PACKET_MAX_PL_LEN];
 static SemaphoreHandle_t packet_buffer_mutex;
+static uint8_t lbm_packet_buffer[PACKET_MAX_PL_LEN];
+static SemaphoreHandle_t lbm_packet_buffer_mutex;
 
 void mempools_init(void) {
 	packet_buffer_mutex = xSemaphoreCreateMutex();
+	lbm_packet_buffer_mutex = xSemaphoreCreateMutex();
 }
 
 uint8_t *mempools_get_packet_buffer(void) {
@@ -37,8 +40,15 @@ uint8_t *mempools_get_packet_buffer(void) {
 	return packet_buffer;
 }
 
+uint8_t *mempools_get_lbm_packet_buffer(void) {
+	xSemaphoreTake(lbm_packet_buffer_mutex, portMAX_DELAY);
+	return lbm_packet_buffer;
+}
+
 void mempools_free_packet_buffer(uint8_t *buffer) {
 	if (buffer == packet_buffer) {
 		xSemaphoreGive(packet_buffer_mutex);
+	} else if (buffer == lbm_packet_buffer) {
+		xSemaphoreGive(lbm_packet_buffer_mutex);
 	}
 }

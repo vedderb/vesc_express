@@ -97,8 +97,7 @@ static jmp_buf critical_error_jmp_buf;
 #define POP_READER_FLAGS      CONTINUATION(47)
 #define EXCEPTION_HANDLER     CONTINUATION(48)
 #define RECV_TO               CONTINUATION(49)
-#define REBLOCK               CONTINUATION(50)
-#define NUM_CONTINUATIONS     51
+#define NUM_CONTINUATIONS     50
 
 #define FM_NEED_GC       -1
 #define FM_NO_MATCH      -2
@@ -173,6 +172,8 @@ static bool lbm_error_has_suspect = false;
 
 #endif
 
+/**************************************************************/
+/* */
 typedef struct {
   eval_context_t *first;
   eval_context_t *last;
@@ -253,12 +254,23 @@ static void critical_nonsense(void) {
   return;
 }
 
+static void user_callback_nonsense(void *arg) {
+  (void) arg;
+  return;
+}
+
 static void (*critical_error_callback)(void) = critical_nonsense;
 static void (*usleep_callback)(uint32_t) = usleep_nonsense;
 static uint32_t (*timestamp_us_callback)(void) = timestamp_nonsense;
 static void (*ctx_done_callback)(eval_context_t *) = ctx_done_nonsense;
 static int (*printf_callback)(const char *, ...) = printf_nonsense;
 static bool (*dynamic_load_callback)(const char *, const char **) = dynamic_load_nonsense;
+static void (*user_callback)(void *) = user_callback_nonsense;
+
+void lbm_set_user_callback(void (*fptr)(void *)) {
+  if (fptr == NULL) user_callback = user_callback_nonsense;
+  else user_callback = fptr;
+}
 
 void lbm_set_critical_error_callback(void (*fptr)(void)) {
   if (fptr == NULL) critical_error_callback = critical_nonsense;
@@ -334,6 +346,10 @@ static bool event_internal(lbm_event_type_t event_type, lbm_uint parameter, lbm_
 
 bool lbm_event_define(lbm_value key, lbm_flat_value_t *fv) {
   return event_internal(LBM_EVENT_DEFINE, key, (lbm_uint)fv->buf, fv->buf_size);
+}
+
+bool lbm_event_run_user_callback(void *arg) {
+  return event_internal(LBM_EVENT_RUN_USER_CALLBACK, (lbm_uint)arg, 0, 0);
 }
 
 bool lbm_event_unboxed(lbm_value unboxed) {
@@ -422,30 +438,33 @@ eval_context_t *lbm_get_current_context(void) {
 /****************************************************/
 /* Utilities used locally in this file              */
 
+static inline lbm_array_header_t *assume_array(lbm_value a){
+  return (lbm_array_header_t*)lbm_ref_cell(a)->car;
+}
+
 static lbm_value cons_with_gc(lbm_value head, lbm_value tail, lbm_value remember) {
 #ifdef LBM_ALWAYS_GC
-  lbm_value roots[3] = {head, tail, remember};
-  lbm_gc_mark_roots(roots, 3);
+  lbm_value always_gc_roots[3] = {head, tail, remember};
+  lbm_gc_mark_roots(always_gc_roots,3);
   gc();
-  lbm_value res = lbm_heap_allocate_cell(LBM_TYPE_CONS, head, tail);
-  res = lbm_heap_allocate_cell(LBM_TYPE_CONS, head, tail);
-  if (lbm_is_symbol_merror(res)) {
-    error_ctx(ENC_SYM_MERROR);
-  }
-  return res;
-#else
-  lbm_value res = lbm_heap_allocate_cell(LBM_TYPE_CONS, head, tail);
-  if (lbm_is_symbol_merror(res)) {
+#endif
+  lbm_value res = lbm_heap_state.freelist;
+  if (lbm_is_symbol_nil(res)) {
     lbm_value roots[3] = {head, tail, remember};
     lbm_gc_mark_roots(roots,3);
     gc();
-    res = lbm_heap_allocate_cell(LBM_TYPE_CONS, head, tail);
-    if (lbm_is_symbol_merror(res)) {
-        error_ctx(ENC_SYM_MERROR);
+    res = lbm_heap_state.freelist;
+    if (lbm_is_symbol_nil(res)) {
+      error_ctx(ENC_SYM_MERROR);
     }
   }
+  lbm_uint heap_ix = lbm_dec_ptr(res);
+  lbm_heap_state.freelist = lbm_heap_state.heap[heap_ix].cdr;
+  lbm_heap_state.num_alloc++;
+  lbm_heap_state.heap[heap_ix].car = head;
+  lbm_heap_state.heap[heap_ix].cdr = tail;
+  res = lbm_set_ptr_type(res, LBM_TYPE_CONS);
   return res;
-#endif
 }
 
 static lbm_uint *get_stack_ptr(eval_context_t *ctx, unsigned int n) {
@@ -494,7 +513,7 @@ static void lift_array_flash(lbm_value flash_cell, bool bytearray,  char *data, 
   lbm_array_header_t flash_array_header;
   flash_array_header.size = num_elt;
   flash_array_header.data = (lbm_uint*)data;
-  lbm_uint flash_array_header_ptr;
+  lbm_uint flash_array_header_ptr = 0;
   handle_flash_status(lbm_write_const_raw((lbm_uint*)&flash_array_header,
                                           sizeof(lbm_array_header_t) / sizeof(lbm_uint),
                                           &flash_array_header_ptr));
@@ -511,6 +530,7 @@ static void get_car_and_cdr(lbm_value a, lbm_value *a_car, lbm_value *a_cdr) {
   } else if (lbm_is_symbol_nil(a)) {
     *a_car = *a_cdr = ENC_SYM_NIL;
   } else {
+    *a_car = *a_cdr = ENC_SYM_NIL;
     error_ctx(ENC_SYM_TERROR);
   }
 }
@@ -820,7 +840,7 @@ bool create_string_channel(char *str, lbm_value *res) {
 
   lbm_create_string_char_channel(st, chan, str);
   lbm_value cell = lbm_heap_allocate_cell(LBM_TYPE_CHANNEL, (lbm_uint) chan, ENC_SYM_CHANNEL_TYPE);
-  if (lbm_type_of(cell) == LBM_TYPE_SYMBOL) {
+  if (cell == ENC_SYM_MERROR) {
     lbm_memory_free((lbm_uint*)st);
     lbm_memory_free((lbm_uint*)chan);
     return false;
@@ -832,7 +852,7 @@ bool create_string_channel(char *str, lbm_value *res) {
 
 bool lift_char_channel(lbm_char_channel_t *chan , lbm_value *res) {
   lbm_value cell = lbm_heap_allocate_cell(LBM_TYPE_CHANNEL, (lbm_uint) chan, ENC_SYM_CHANNEL_TYPE);
-  if (lbm_type_of(cell) == LBM_TYPE_SYMBOL) {
+  if (cell == ENC_SYM_MERROR) {
     return false;
   }
   *res = cell;
@@ -1087,7 +1107,7 @@ static void wake_up_ctxs_nm(void) {
   while (curr != NULL) {
     lbm_uint t_diff;
     eval_context_t *next = curr->next;
-    if (curr->state != LBM_THREAD_STATE_BLOCKED) {
+    if (LBM_IS_STATE_WAKE_UP_WAKABLE(curr->state)) {
       if ( curr->timestamp > t_now) {
         /* There was an overflow on the counter */
 #ifndef LBM64
@@ -1120,7 +1140,7 @@ static void wake_up_ctxs_nm(void) {
         }
         wake_ctx->next = NULL;
         wake_ctx->prev = NULL;
-        if (curr->state == LBM_THREAD_STATE_TIMEOUT) {
+        if (LBM_IS_STATE_TIMEOUT(curr->state)) {
           mailbox_add_mail(wake_ctx, ENC_SYM_TIMEOUT);
           wake_ctx->r = ENC_SYM_TIMEOUT;
         }
@@ -1295,11 +1315,18 @@ static bool mailbox_add_mail(eval_context_t *ctx, lbm_value mail) {
   return true;
 }
 
-/* Advance execution to the next expression in the program */
+/**************************************************************
+ * Advance execution to the next expression in the program.
+ * Assumes programs are not malformed. Apply_eval_program
+ * ensures programs are lists ending in nil. The reader
+ * ensures this likewise.
+ *************************************************************/
 static void advance_ctx(eval_context_t *ctx) {
-  if (lbm_is_cons(ctx->program)) {
-    stack_reserve(ctx, 1)[0] = DONE;;
-    get_car_and_cdr(ctx->program, &ctx->curr_exp, &ctx->program);
+  if (ctx->program) { // fast not-nil check,  assume cons if not nil.
+    stack_reserve(ctx, 1)[0] = DONE;
+    lbm_cons_t *cell = lbm_ref_cell(ctx->program);
+    ctx->curr_exp = cell->car;
+    ctx->program = cell->cdr;
     ctx->curr_env = ENC_SYM_NIL;
   } else {
     if (ctx_running == ctx) {  // This should always be the case because of odd historical reasons.
@@ -1318,11 +1345,9 @@ bool lbm_unblock_ctx_r(lbm_cid cid) {
   eval_context_t *found = NULL;
   mutex_lock(&qmutex);
   found = lookup_ctx_nm(&blocked, cid);
-  if (found) {
-    if (found->K.data[found->K.sp-1] == REBLOCK) {
-      pop_stack_ptr(found,2); // clear 2 fields.
-    }
+  if (found && (LBM_IS_STATE_UNBLOCKABLE(found->state))) {
     drop_ctx_nm(&blocked,found);
+    found->state = LBM_THREAD_STATE_READY;
     enqueue_ctx_nm(&queue,found);
     r = true;
   }
@@ -1338,16 +1363,14 @@ bool lbm_unblock_ctx_unboxed(lbm_cid cid, lbm_value unboxed) {
   eval_context_t *found = NULL;
   mutex_lock(&qmutex);
   found = lookup_ctx_nm(&blocked, cid);
-  if (found) {
-    if (found->K.data[found->K.sp-1] == REBLOCK) {
-      pop_stack_ptr(found,2); // clear 2 fields.
-    }
+  if (found && (LBM_IS_STATE_UNBLOCKABLE(found->state))) {
     drop_ctx_nm(&blocked,found);
     found->r = unboxed;
     if (lbm_is_error(unboxed)) {
       get_stack_ptr(found, 1)[0] = TERMINATE; // replace TOS
       found->app_cont = true;
     }
+    found->state = LBM_THREAD_STATE_READY;
     enqueue_ctx_nm(&queue,found);
     r = true;
   }
@@ -1404,8 +1427,9 @@ lbm_value lbm_find_receiver_and_send(lbm_cid cid, lbm_value msg) {
       return ENC_SYM_NIL;
     }
 
-    if (found_blocked){
+    if (found_blocked && LBM_IS_STATE_RECV(found->state)) {
       drop_ctx_nm(&blocked,found);
+      found->state = LBM_THREAD_STATE_READY;
       enqueue_ctx_nm(&queue,found);
     }
     mutex_unlock(&qmutex);
@@ -1425,59 +1449,52 @@ lbm_value lbm_find_receiver_and_send(lbm_cid cid, lbm_value msg) {
   return ENC_SYM_NIL;
 }
 
+// a match binder looks like (? x) or (? _) for example.
+// It is a list of two elements where the first is a ? and the second is a symbol.
+static inline lbm_value get_match_binder_variable(lbm_value exp) {
+  lbm_value var = ENC_SYM_NIL; // 0 false
+  if (lbm_is_cons(exp)) {
+    lbm_cons_t *e_cell = lbm_ref_cell(exp);
+    lbm_value bt = e_cell->car;
+    if (bt == ENC_SYM_MATCH_ANY && lbm_is_cons(e_cell->cdr)) {
+      var = lbm_ref_cell(e_cell->cdr)->car;
+    }
+  }
+  return var;
+}
+
 /* Pattern matching is currently implemented as a recursive
    function and make use of stack relative to the size of
    expressions that are being matched. */
 static bool match(lbm_value p, lbm_value e, lbm_value *env, bool *gc) {
-
-  lbm_value binding;
-
-  if (lbm_is_match_binder(p)) {
-    lbm_value var = get_cadr(p);
-    lbm_value bindertype = get_car(p);
-
-    if (!lbm_is_symbol(var)) return false;
-
-    switch (bindertype) {
-    case ENC_SYM_MATCH_ANY:
-      if ( var == ENC_SYM_DONTCARE) {
-        return true;
+  bool r = false;
+  lbm_value var = get_match_binder_variable(p);
+  if (var) {
+    lbm_value binding = lbm_cons(var, e);
+    if (lbm_is_cons(binding)) {
+      lbm_value new_env = lbm_cons(binding, *env);
+      if (lbm_is_cons(new_env)) {
+	*env = new_env;
+	r = true;
       }
-      break;
-    default: /* this should be an error case */
-      return false;
     }
-    binding = lbm_cons(var, e);
-    if ( lbm_type_of(binding) == LBM_TYPE_SYMBOL ) {
-      *gc = true;
-      return false;
-    }
-    *env = lbm_cons(binding, *env);
-    if ( lbm_type_of(*env) == LBM_TYPE_SYMBOL ) {
-      *gc = true;
-      return false;
-    }
-    return true;
+    *gc = !r;
+  } else  if (lbm_is_symbol(p)) {
+    if (p == ENC_SYM_DONTCARE) r = true;
+    else r = (p == e);
+  } else if (lbm_is_cons(p) && lbm_is_cons(e) ) {
+    lbm_cons_t *p_cell = lbm_ref_cell(p);
+    lbm_cons_t *e_cell = lbm_ref_cell(e);
+    lbm_value headp = p_cell->car;
+    lbm_value tailp = p_cell->cdr;
+    lbm_value heade = e_cell->car;
+    lbm_value taile = e_cell->cdr;
+    r = match(headp, heade, env, gc);
+    r = r && match (tailp, taile, env, gc);
+  } else {
+    r = struct_eq(p, e);
   }
-
-  if (lbm_is_symbol(p)) {
-    if (p == ENC_SYM_DONTCARE) return true;
-    return (p == e);
-  }
-  if (lbm_is_cons(p) &&
-      lbm_is_cons(e) ) {
-
-    lbm_value headp, tailp;
-    lbm_value heade, taile;
-    get_car_and_cdr(p, &headp, &tailp);
-    get_car_and_cdr(e, &heade, &taile); // Static analysis warns, but execution does not
-                                        // past this point unless head and tail get initialized.
-    if (!match(headp, heade, env, gc)) {
-      return false;
-    }
-    return match (tailp, taile, env, gc);
-  }
-  return struct_eq(p, e);
+  return r;
 }
 
 // Find match is not very picky about syntax.
@@ -1594,7 +1611,7 @@ static void eval_symbol(eval_context_t *ctx) {
     sptr[1] = ctx->curr_env;
     sptr[2] = RESUME;
 
-    lbm_value chan;
+    lbm_value chan = ENC_SYM_NIL;
     if (!create_string_channel((char *)code_str, &chan)) {
       gc();
       if (!create_string_channel((char *)code_str, &chan)) {
@@ -1635,13 +1652,16 @@ static void eval_progn(eval_context_t *ctx) {
   lbm_value exps = get_cdr(ctx->curr_exp);
 
   if (lbm_is_cons(exps)) {
-    lbm_uint *sptr = stack_reserve(ctx, 4);
-    sptr[0] = ctx->curr_env; // env to restore between expressions in progn
-    sptr[1] = lbm_enc_u(0);  // Has env been copied (needed for progn local bindings)
-    sptr[3] = PROGN_REST;
-    get_car_and_cdr(exps, &ctx->curr_exp, &sptr[2]);
-    if (lbm_is_symbol(sptr[2])) /* The only symbol it can be is nil */
-      lbm_stack_drop(&ctx->K, 4);
+    lbm_cons_t *cell = lbm_ref_cell(exps); // already checked that it's cons.
+    ctx->curr_exp = cell->car;
+    if (lbm_is_cons(cell->cdr)) { // malformed progn not ending in nil is tolerated
+      lbm_uint *sptr = stack_reserve(ctx, 4);
+      sptr[0] = ctx->curr_env; // env to restore between expressions in progn
+      sptr[1] = lbm_enc_u(0);  // Has env been copied (needed for progn local bindings)
+      sptr[2] = cell->cdr;     // Requirement: sptr[2] is a cons.
+      sptr[3] = PROGN_REST;
+    }
+    // Nothing is pushed to stack for final element in progn. (tail-call req)
   } else if (lbm_is_symbol_nil(exps)) {
     ctx->r = ENC_SYM_NIL;
     ctx->app_cont = true;
@@ -1662,22 +1682,24 @@ static void eval_callcc(eval_context_t *ctx) {
   lbm_value cont_array;
   if (!lbm_heap_allocate_lisp_array(&cont_array, ctx->K.sp)) {
     gc();
-    if (!lbm_heap_allocate_lisp_array(&cont_array, ctx->K.sp)) {
-      error_ctx(ENC_SYM_MERROR);
-      return; // dead return but static analysis doesn't know :)
-    }
+    lbm_heap_allocate_lisp_array(&cont_array, ctx->K.sp);
   }
-  lbm_array_header_t *arr = (lbm_array_header_t*)get_car(cont_array);
-  memcpy(arr->data, ctx->K.data, ctx->K.sp * sizeof(lbm_uint));
+  if (lbm_is_ptr(cont_array)) {
+    lbm_array_header_t *arr = assume_array(cont_array);
+    memcpy(arr->data, ctx->K.data, ctx->K.sp * sizeof(lbm_uint));
 
-  lbm_value acont = cons_with_gc(ENC_SYM_CONT, cont_array, ENC_SYM_NIL);
-  lbm_value arg_list = cons_with_gc(acont, ENC_SYM_NIL, ENC_SYM_NIL);
-  // Go directly into application evaluation without passing go
-  lbm_uint *sptr = stack_reserve(ctx, 3);
-  sptr[0] = ctx->curr_env;
-  sptr[1] = arg_list;
-  sptr[2] = APPLICATION_START;
-  ctx->curr_exp = get_cadr(ctx->curr_exp);
+    lbm_value acont = cons_with_gc(ENC_SYM_CONT, cont_array, ENC_SYM_NIL);
+    lbm_value arg_list = cons_with_gc(acont, ENC_SYM_NIL, ENC_SYM_NIL);
+    // Go directly into application evaluation without passing go
+    lbm_uint *sptr = stack_reserve(ctx, 3);
+    sptr[0] = ctx->curr_env;
+    sptr[1] = arg_list;
+    sptr[2] = APPLICATION_START;
+    ctx->curr_exp = get_cadr(ctx->curr_exp);
+  } else {
+    // failed to create continuation array.
+    error_ctx(ENC_SYM_MERROR);
+  }
 }
 
 // (define sym exp)
@@ -1845,17 +1867,18 @@ static void let_bind_values_eval(lbm_value binds, lbm_value exp, lbm_value env, 
       lbm_value curr = binds;
       while (lbm_is_cons(curr)) {
         lbm_value new_env_tmp = env;
-        lbm_value car_curr, cdr_curr;
-        get_car_and_cdr(curr, &car_curr, &cdr_curr);
+	lbm_cons_t *cell = lbm_ref_cell(curr); // already checked that cons.
+        lbm_value car_curr = cell->car;
+	lbm_value cdr_curr = cell->cdr;
         lbm_value key = get_car(car_curr);
         create_binding_location(key, &new_env_tmp);
         env = new_env_tmp;
         curr = cdr_curr;
       }
-      
-      lbm_value car_binds;
-      lbm_value cdr_binds;
-      get_car_and_cdr(binds, &car_binds, &cdr_binds);
+
+      lbm_cons_t *cell = lbm_ref_cell(binds); // already checked that cons.
+      lbm_value car_binds = cell->car;
+      lbm_value cdr_binds = cell->cdr;
       lbm_value key_val[2];
       extract_n(car_binds, key_val, 2);
       
@@ -2030,27 +2053,26 @@ static void eval_or(eval_context_t *ctx) {
 static void eval_match(eval_context_t *ctx) {
 
   lbm_value rest = get_cdr(ctx->curr_exp);
-  if (lbm_type_of(rest) == LBM_TYPE_SYMBOL &&
-      rest == ENC_SYM_NIL) {
-    // Someone wrote the program (match)
-    ctx->app_cont = true;
-    ctx->r = ENC_SYM_NIL;
-  } else {
-    lbm_value cdr_rest;
-    get_car_and_cdr(rest, &ctx->curr_exp, &cdr_rest);
+  if (lbm_is_cons(rest)) {
+    lbm_cons_t *cell = lbm_ref_cell(rest);
+    lbm_value cdr_rest = cell->cdr;
+    ctx->curr_exp = cell->car;
     lbm_value *sptr = stack_reserve(ctx, 3);
     sptr[0] = cdr_rest;
     sptr[1] = ctx->curr_env;
     sptr[2] = MATCH;
+  } else {
+    // syntax error to not include at least one pattern
+    error_ctx(ENC_SYM_EERROR);
   }
 }
 
 static void receive_base(eval_context_t *ctx, lbm_value pats, float timeout_time, bool timeout) {
    if (ctx->num_mail == 0) {
      if (timeout) {
-       block_current_ctx(LBM_THREAD_STATE_TIMEOUT, S_TO_US(timeout_time), false);
+       block_current_ctx(LBM_THREAD_STATE_RECV_TO, S_TO_US(timeout_time), false);
      } else {
-       block_current_ctx(LBM_THREAD_STATE_BLOCKED,0,false);
+       block_current_ctx(LBM_THREAD_STATE_RECV_BL,0,false);
      }
   } else {
     lbm_value *msgs = ctx->mailbox;
@@ -2083,9 +2105,9 @@ static void receive_base(eval_context_t *ctx, lbm_value pats, float timeout_time
       } else { /* No match  go back to sleep */
         ctx->r = ENC_SYM_NO_MATCH;
         if (timeout) {
-          block_current_ctx(LBM_THREAD_STATE_TIMEOUT,S_TO_US(timeout_time),false);
+          block_current_ctx(LBM_THREAD_STATE_RECV_TO,S_TO_US(timeout_time),false);
         } else {
-          block_current_ctx(LBM_THREAD_STATE_BLOCKED, 0,false);
+          block_current_ctx(LBM_THREAD_STATE_RECV_BL, 0,false);
         }
       }
     }
@@ -2149,19 +2171,20 @@ static void cont_resume(eval_context_t *ctx) {
 static void cont_progn_rest(eval_context_t *ctx) {
   lbm_value *sptr = get_stack_ptr(ctx, 3);
 
-  lbm_value rest = sptr[2];
   lbm_value env  = sptr[0];
+  // eval_progn and cont_progn_rest both ensure that sptr[2] is a list
+  // whenever cont_progn_rest is called.
 
-  lbm_value rest_car, rest_cdr;
-  get_car_and_cdr(rest, &rest_car, &rest_cdr);
-  ctx->curr_exp = rest_car;
+  lbm_cons_t *rest_cell = lbm_ref_cell(sptr[2]);
+  lbm_value rest_cdr = rest_cell->cdr;
+  ctx->curr_exp = rest_cell->car;;
   ctx->curr_env = env;
-  if (lbm_is_symbol_nil(rest_cdr)) {
+  if (lbm_is_cons(rest_cdr)) {
+    sptr[2] = rest_cdr; // Requirement: rest_cdr is a cons
+    stack_reserve(ctx, 1)[0] = PROGN_REST;
+  } else {
     // allow for tail recursion
     lbm_stack_drop(&ctx->K, 3);
-  } else {
-    sptr[2] = rest_cdr;
-    stack_reserve(ctx, 1)[0] = PROGN_REST;
   }
 }
 
@@ -2228,6 +2251,11 @@ static void apply_setvar(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   }
 }
 
+
+#define READING_EXPRESSION             ((0 << LBM_VAL_SHIFT) | LBM_TYPE_U)
+#define READING_PROGRAM                ((1 << LBM_VAL_SHIFT) | LBM_TYPE_U)
+#define READING_PROGRAM_INCREMENTALLY  ((2 << LBM_VAL_SHIFT) | LBM_TYPE_U)
+
 static void apply_read_base(lbm_value *args, lbm_uint nargs, eval_context_t *ctx, bool program, bool incremental) {
   if (nargs == 1) {
     lbm_value chan = ENC_SYM_NIL;
@@ -2257,11 +2285,19 @@ static void apply_read_base(lbm_value *args, lbm_uint nargs, eval_context_t *ctx
     // If we are inside a reader, its settings are stored.
     sptr[0] = lbm_enc_u(ctx->flags);  // flags stored.
     sptr[1] = chan;
-    lbm_value  *rptr = stack_reserve(ctx,1);
-    rptr[0] = READ_DONE;
+    lbm_value  *rptr = stack_reserve(ctx,2);
+    if (!program && !incremental) {
+      rptr[0] = READING_EXPRESSION;
+    } else if (program && !incremental) {
+      rptr[0] = READING_PROGRAM;
+    } else if (program && incremental) {
+      rptr[0] = READING_PROGRAM_INCREMENTALLY;
+    }  // the last combo is illegal
+    rptr[1] = READ_DONE;
 
     // Each reader starts in a fresh situation
     ctx->flags &= ~EVAL_CPS_CONTEXT_READER_FLAGS_MASK;
+    ctx->r = ENC_SYM_NIL; // set r to a known state.
 
     if (program) {
       if (incremental) {
@@ -2426,10 +2462,10 @@ static void apply_eval_program(lbm_value *args, lbm_uint nargs, eval_context_t *
   int prg_pos = 0;
   if (nargs == 2) {
     prg_pos = 1;
-    ctx->curr_env = args[0];
+    ctx->curr_env = args[0]; // No check that args[0] is an actual env.
   }
   if (nargs == 1 || nargs == 2) {
-    lbm_value prg = args[prg_pos];
+    lbm_value prg = args[prg_pos]; // No check that this is a program.
     lbm_value app_cont;
     lbm_value app_cont_prg;
     lbm_value new_prg;
@@ -2438,18 +2474,15 @@ static void apply_eval_program(lbm_value *args, lbm_uint nargs, eval_context_t *
     int len = -1;
     WITH_GC(prg_copy, lbm_list_copy(&len, prg));
     lbm_stack_drop(&ctx->K, nargs+1);
-
-    if (ctx->K.sp > nargs+2) { // if there is a continuation
-      app_cont = cons_with_gc(ENC_SYM_APP_CONT, ENC_SYM_NIL, prg_copy);
-      app_cont_prg = cons_with_gc(app_cont, ENC_SYM_NIL, prg_copy);
-      new_prg = lbm_list_append(app_cont_prg, ctx->program);
-      new_prg = lbm_list_append(prg_copy, new_prg);
-    } else {
-      new_prg = lbm_list_append(prg_copy, ctx->program);
-    }
-    if (!lbm_is_list(new_prg)) {
-      error_at_ctx(ENC_SYM_EERROR, ENC_SYM_EVAL_PROGRAM);
-    }
+    // There is always a continuation (DONE).
+    // If ctx->program is nil, the stack should contain DONE.
+    // after adding an intermediate done for prg, stack becomes DONE, DONE.
+    app_cont = cons_with_gc(ENC_SYM_APP_CONT, ENC_SYM_NIL, prg_copy);
+    app_cont_prg = cons_with_gc(app_cont, ENC_SYM_NIL, prg_copy);
+    new_prg = lbm_list_append(app_cont_prg, ctx->program);
+    new_prg = lbm_list_append(prg_copy, new_prg);
+    // new_prg is guaranteed to be a cons cell or nil
+    // even if the eval-program application is syntactically broken.
     stack_reserve(ctx, 1)[0] = DONE;
     ctx->program = get_cdr(new_prg);
     ctx->curr_exp = get_car(new_prg);
@@ -2502,8 +2535,9 @@ static void apply_map(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
     lbm_value *sptr = get_stack_ptr(ctx, 3);
 
     lbm_value f = args[0];
-    lbm_value h = get_car(args[1]);
-    lbm_value t = get_cdr(args[1]);
+    lbm_cons_t *args1_cell = lbm_ref_cell(args[1]);
+    lbm_value h = args1_cell->car;
+    lbm_value t = args1_cell->cdr;
 
     lbm_value appli_1;
     lbm_value appli;
@@ -2545,9 +2579,10 @@ static void apply_reverse(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) 
 
     lbm_value new_list = ENC_SYM_NIL;
     while (lbm_is_cons(curr)) {
-      lbm_value tmp = cons_with_gc(get_car(curr), new_list, ENC_SYM_NIL);
+      lbm_cons_t *curr_cell = lbm_ref_cell(curr); // known cons.
+      lbm_value tmp = cons_with_gc(curr_cell->car, new_list, ENC_SYM_NIL);
       new_list = tmp;
-      curr = get_cdr(curr);
+      curr = curr_cell->cdr;
     }
     lbm_stack_drop(&ctx->K, 2);
     ctx->r = new_list;
@@ -2625,6 +2660,7 @@ static void apply_kill(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
       found->K.data[found->K.sp - 1] = KILL;
       found->r = args[1];
       found->app_cont = true;
+      found->state = LBM_THREAD_STATE_READY;
       enqueue_ctx_nm(&queue,found);
       ctx->r = ENC_SYM_TRUE;
     } else {
@@ -2638,28 +2674,29 @@ static void apply_kill(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   error_at_ctx(ENC_SYM_TERROR, ENC_SYM_KILL);
 }
 
+static lbm_value cmp_to_clo(lbm_value cmp) {
+  lbm_value closure;
+  WITH_GC(closure, lbm_heap_allocate_list(4));
+  lbm_set_car(closure, ENC_SYM_CLOSURE);
+  lbm_value cl1 = lbm_cdr(closure);
+  lbm_value par;
+  WITH_GC_RMBR_1(par, lbm_heap_allocate_list_init(2, symbol_x, symbol_y), closure);
+  lbm_set_car(cl1, par);
+  lbm_value cl2 = lbm_cdr(cl1);
+  lbm_value body;
+  WITH_GC_RMBR_1(body, lbm_heap_allocate_list_init(3, cmp, symbol_x, symbol_y), closure);
+  lbm_set_car(cl2, body);
+  lbm_value cl3 = lbm_cdr(cl2);
+  lbm_set_car(cl3, ENC_SYM_NIL);
+  return closure;
+}
+
 // (merge comparator list1 list2)
 static void apply_merge(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   if (nargs == 3 && lbm_is_list(args[1]) && lbm_is_list(args[2])) {
 
     if (!lbm_is_closure(args[0])) {
-      lbm_value closure;
-      WITH_GC(closure, lbm_heap_allocate_list(4));
-      lbm_set_car(closure, ENC_SYM_CLOSURE);
-      lbm_value cl1 = lbm_cdr(closure);
-      lbm_value par;
-      WITH_GC_RMBR_1(par, lbm_heap_allocate_list_init(2, symbol_x, symbol_y), closure);
-      lbm_set_car(cl1, par);
-      lbm_value cl2 = lbm_cdr(cl1);
-      lbm_value body;
-      WITH_GC_RMBR_1(body, lbm_heap_allocate_list_init(3, args[0], symbol_x, symbol_y), closure);
-      lbm_set_car(cl2, body);
-      lbm_value cl3 = lbm_cdr(cl2);
-      lbm_set_car(cl3, ENC_SYM_NIL);
-
-      // Replace operator on stack with closure and rest of the code is
-      // compatible.
-      args[0] = closure;
+      args[0] = cmp_to_clo(args[0]);
     }
 
     // Copy input lists for functional behaviour at top-level
@@ -2737,23 +2774,7 @@ static void apply_sort(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   if (nargs == 2 && lbm_is_list(args[1])) {
 
     if (!lbm_is_closure(args[0])) {
-      lbm_value closure;
-      WITH_GC(closure, lbm_heap_allocate_list(4));
-      lbm_set_car(closure, ENC_SYM_CLOSURE);
-      lbm_value cl1 = lbm_cdr(closure);
-      lbm_value par;
-      WITH_GC_RMBR_1(par, lbm_heap_allocate_list_init(2, symbol_x, symbol_y), closure);
-      lbm_set_car(cl1, par);
-      lbm_value cl2 = lbm_cdr(cl1);
-      lbm_value body;
-      WITH_GC_RMBR_1(body, lbm_heap_allocate_list_init(3, args[0], symbol_x, symbol_y), closure);
-      lbm_set_car(cl2, body);
-      lbm_value cl3 = lbm_cdr(cl2);
-      lbm_set_car(cl3, ENC_SYM_NIL);
-
-      // Replace operator on stack with closure and rest of the code is
-      // compatible.
-      args[0] = closure;
+      args[0] = cmp_to_clo(args[0]);
     }
 
     int len = -1;
@@ -2846,7 +2867,7 @@ static void apply_rest_args(lbm_value *args, lbm_uint nargs, eval_context_t *ctx
 static void apply_rotate(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   if (nargs == 2 && lbm_is_list(args[0]) && lbm_is_number(args[1])) {
     int len = -1;
-    lbm_value ls = ENC_SYM_NIL;
+    lbm_value ls;
     WITH_GC(ls, lbm_list_copy(&len, args[0]));
     int dist = lbm_dec_as_i32(args[1]);
     if (len > 0 && dist != 0) {
@@ -2943,18 +2964,21 @@ static void application(eval_context_t *ctx, lbm_value *fun_args, lbm_uint arg_c
     ctx->app_cont = true;
     ctx->r = ext_res;
     
-    if (blocking_extension) { // block_current_ctx checks the atomic status and issues error.
+    if (blocking_extension) {
+      if (is_atomic) {
+        // Check atomic_error explicitly so that the mutex
+        // can be released if there is an error.
+        blocking_extension = false;
+        mutex_unlock(&blocking_extension_mutex);
+        atomic_error();
+      }
       blocking_extension = false;
-      lbm_value *rptr = stack_reserve(ctx, 2);
       if (blocking_extension_timeout) {
         blocking_extension_timeout = false;
         block_current_ctx(LBM_THREAD_STATE_TIMEOUT, blocking_extension_timeout_us,true);
-        rptr[0] = lbm_enc_i((lbm_int)blocking_extension_timeout_us);
       } else {
         block_current_ctx(LBM_THREAD_STATE_BLOCKED, 0,true);
-        rptr[0] = lbm_enc_i((lbm_int)-1);
       }
-      rptr[1] = REBLOCK;
       mutex_unlock(&blocking_extension_mutex);
     }
   }  break;
@@ -3264,8 +3288,9 @@ static void cont_map(eval_context_t *ctx) {
   lbm_value t   = sptr[3];
   lbm_set_car(t, ctx->r); // update car field tailmost position.
   if (lbm_is_cons(ls)) {
-    lbm_value next, rest;
-    get_car_and_cdr(ls, &next, &rest);
+    lbm_cons_t *cell = lbm_ref_cell(ls); // already checked that cons.
+    lbm_value next = cell->car;
+    lbm_value rest = cell->cdr;
     sptr[0] = rest;
     stack_reserve(ctx,1)[0] = MAP;
     lbm_set_car(sptr[5], next); // new arguments
@@ -3542,17 +3567,21 @@ static void read_finish(lbm_char_channel_t *str, eval_context_t *ctx) {
      The parser could be in a state where it needs
      more tokens to correctly finish an expression.
 
-     Three cases
+     Four cases
      1. The program / expression is malformed and the context should die.
      2. We are finished reading a program and should close off the
      internal representation with a closing parenthesis. Then
      apply continuation.
      3. We are finished reading an expression and should
-     apply the continuation.
+     apply the continuation
+     4. We are finished read-and-evaluating
 
-     In case 3, we should find the READ_DONE at sp - 1.
      In case 2, we should find the READ_DONE at sp - 5.
+     In case 3, we should find the READ_DONE at sp - 1.
+     In case 4, we should find the READ_DONE at sp - 4.
 
+     case 3 should not end up here, but rather end up in
+     cont_read_done.
   */
 
   if (lbm_is_symbol(ctx->r)) {
@@ -3563,33 +3592,30 @@ static void read_finish(lbm_char_channel_t *str, eval_context_t *ctx) {
     }
   }
 
-  if (ctx->K.data[ctx->K.sp-1] == READ_DONE &&
-      lbm_dec_u(ctx->K.data[ctx->K.sp-3]) == 0) {
-    /* successfully finished reading an expression  (CASE 3) */
-    ctx->app_cont = true;
-  } else if (ctx->K.sp > 4  && ctx->K.data[ctx->K.sp - 4] == READ_DONE) {
+  if (ctx->K.sp > 4  && (ctx->K.data[ctx->K.sp - 4] == READ_DONE) &&
+      (ctx->K.data[ctx->K.sp - 5] == READING_PROGRAM_INCREMENTALLY)) {
+    /* read and evaluate is done */
     lbm_value env;
     lbm_value s;
     lbm_value sym;
     lbm_pop_3(&ctx->K, &sym, &env, &s);
     ctx->curr_env = env;
     ctx->app_cont = true; // Program evaluated and result is in ctx->r.
-  } else if (ctx->K.sp > 5 && ctx->K.data[ctx->K.sp - 5] == READ_DONE) {
+  } else if (ctx->K.sp > 5 && (ctx->K.data[ctx->K.sp - 5] == READ_DONE) &&
+	     (ctx->K.data[ctx->K.sp - 6] == READING_PROGRAM)) {
     /* successfully finished reading a program  (CASE 2) */
     ctx->r = ENC_SYM_CLOSEPAR;
     ctx->app_cont = true;
   } else {
-    /* Parsing failed */
-    if (lbm_channel_row(str) == 1 &&
-        lbm_channel_column(str) == 1 ){
-      // eof at empty stream.
+    if (lbm_channel_row(str) == 1 && lbm_channel_column(str) == 1) {
+      // (read "") evaluates to nil.
       ctx->r = ENC_SYM_NIL;
       ctx->app_cont = true;
     } else {
+      lbm_channel_reader_close(str);
       lbm_set_error_reason((char*)lbm_error_str_parse_eof);
       read_error_ctx(lbm_channel_row(str), lbm_channel_column(str));
     }
-    lbm_channel_reader_close(str);
   }
 }
 
@@ -3717,12 +3743,12 @@ static void cont_read_next_token(eval_context_t *ctx) {
       lbm_stack_drop(&ctx->K, 2);
       ctx->r = ENC_SYM_CLOSEPAR;
       return;
+    case TOKCONSTSYMSTR: /* fall through */
     case TOKCONSTSTART: /* fall through */
-    case TOKCONSTEND:
-    case TOKCONSTSYMSTR: {
+    case TOKCONSTEND: {
+      if (match == TOKCONSTSYMSTR)  printf_callback("WARNING: @const-symbol-string does nothing!");
       if (match == TOKCONSTSTART)  ctx->flags |= EVAL_CPS_CONTEXT_FLAG_CONST;
       if (match == TOKCONSTEND)    ctx->flags &= ~EVAL_CPS_CONTEXT_FLAG_CONST;
-      if (match == TOKCONSTSYMSTR) ctx->flags |= EVAL_CPS_CONTEXT_FLAG_CONST_SYMBOL_STRINGS;
       sptr[0] = stream;
       sptr[1] = lbm_enc_u(0);
       stack_reserve(ctx,1)[0] = READ_NEXT_TOKEN;
@@ -3748,19 +3774,20 @@ static void cont_read_next_token(eval_context_t *ctx) {
     lbm_channel_drop(chan, (unsigned int)n);
     if (!lbm_heap_allocate_array(&res, (unsigned int)(string_len+1))) {
       gc();
-      if (!lbm_heap_allocate_array(&res, (unsigned int)(string_len+1))) {
-        error_ctx(ENC_SYM_MERROR);
-        return; // dead return but static analysis does not know that.
-      }
+      lbm_heap_allocate_array(&res, (unsigned int)(string_len+1));
     }
-    lbm_array_header_t *arr = (lbm_array_header_t*)get_car(res);
-    char *data = (char*)arr->data;
-    memset(data,0, string_len + 1);
-    memcpy(data, tokpar_sym_str, string_len);
-    lbm_stack_drop(&ctx->K, 2);
-    ctx->r = res;
-    ctx->app_cont = true;
-    return;
+    if (lbm_is_ptr(res)) {
+      lbm_array_header_t *arr = assume_array(res);
+      char *data = (char*)arr->data;
+      memset(data,0, string_len + 1);
+      memcpy(data, tokpar_sym_str, string_len);
+      lbm_stack_drop(&ctx->K, 2);
+      ctx->r = res;
+      ctx->app_cont = true;
+      return;
+    } else {
+      error_ctx(ENC_SYM_MERROR);
+    }
   } else if (n < 0) goto retry_token;
 
   /*
@@ -3858,10 +3885,10 @@ static void cont_read_next_token(eval_context_t *ctx) {
           error_ctx(ENC_SYM_MERROR);
         }
       } else {
-        if (ctx->flags & EVAL_CPS_CONTEXT_FLAG_CONST_SYMBOL_STRINGS &&
+        if (ctx->flags & EVAL_CPS_CONTEXT_FLAG_CONST &&
             ctx->flags & EVAL_CPS_CONTEXT_FLAG_INCREMENTAL_READ) {
           r = lbm_add_symbol_base(tokpar_sym_str, &symbol_id, true); //flash
-           if (!r) {
+          if (!r) {
             lbm_set_error_reason((char*)lbm_error_str_flash_error);
             error_ctx(ENC_SYM_FATAL_ERROR);
           }
@@ -3981,12 +4008,9 @@ static void cont_read_append_array(eval_context_t *ctx) {
     error_ctx(ENC_SYM_MERROR);
   }
 
-  // get_car can return nil. Whose value is 0!
-  // So static Analysis is right about this being a potential NULL pointer.
-  // However, if the array was created correcly to begin with, it should be fine.
-  lbm_value arr_car = get_car(array);
-  lbm_array_header_t *arr = (lbm_array_header_t*)arr_car;
-
+  // if sptr[0] is not an array something is very very wrong.
+  // Not robust against a garbage on stack. But how would garbage get onto stack?
+  lbm_array_header_t *arr = assume_array(array);
   if (lbm_is_number(ctx->r)) {
     ((uint8_t*)arr->data)[ix] = (uint8_t)lbm_dec_as_u32(ctx->r);
 
@@ -4078,42 +4102,35 @@ static void cont_read_eval_continue(eval_context_t *ctx) {
   lbm_pop_2(&ctx->K, &env, &stream);
 
   lbm_char_channel_t *str = lbm_dec_channel(stream);
-  if (str == NULL || str->state == NULL) {
+  if (str && str->state) {
+    ctx->row1 = (lbm_int)str->row(str);
+    if (lbm_type_of(ctx->r) == LBM_TYPE_SYMBOL) {
+      switch(ctx->r) {
+      case ENC_SYM_CLOSEPAR:
+	ctx->app_cont = true;
+	return;
+      case ENC_SYM_DOT:
+	// A dot here is a syntax error.
+	lbm_set_error_reason((char*)lbm_error_str_parse_dot);
+	read_error_ctx(lbm_channel_row(str),lbm_channel_column(str));
+	return;
+      }
+    }
+    lbm_value *rptr = stack_reserve(ctx, 6);
+    rptr[0] = stream;
+    rptr[1] = env;
+    rptr[2] = READ_EVAL_CONTINUE;
+    rptr[3] = stream;
+    rptr[4] = lbm_enc_u(1);
+    rptr[5] = READ_NEXT_TOKEN;
+    rptr[6] = lbm_enc_u(ctx->flags);
+    rptr[7] = POP_READER_FLAGS;
+
+    ctx->curr_env = env;
+    ctx->curr_exp = ctx->r;
+  } else {
     error_ctx(ENC_SYM_FATAL_ERROR);
   }
-
-  ctx->row1 = (lbm_int)str->row(str);
-
-  if (lbm_type_of(ctx->r) == LBM_TYPE_SYMBOL) {
-
-    switch(ctx->r) {
-    case ENC_SYM_CLOSEPAR:
-      ctx->app_cont = true;
-      return;
-    case ENC_SYM_DOT: {
-      // This case is a bit mysterious.
-      // A dot, may in reality be an error in this location.
-      lbm_value *rptr = stack_reserve(ctx, 4);
-      rptr[0] = READ_DOT_TERMINATE;
-      rptr[1] = stream;
-      rptr[2] = lbm_enc_u(0);
-      rptr[3] = READ_NEXT_TOKEN;
-      ctx->app_cont = true;
-    } return;
-    }
-  }
-
-  lbm_value *rptr = stack_reserve(ctx, 6);
-  rptr[0] = stream;
-  rptr[1] = env;
-  rptr[2] = READ_EVAL_CONTINUE;
-  rptr[3] = stream;
-  rptr[4] = lbm_enc_u(1);
-  rptr[5] = READ_NEXT_TOKEN;
-  rptr[6] = lbm_enc_u(ctx->flags);
-  rptr[7] = POP_READER_FLAGS;
-  ctx->curr_env = env;
-  ctx->curr_exp = ctx->r;
 }
 
 static void cont_read_expect_closepar(eval_context_t *ctx) {
@@ -4181,7 +4198,8 @@ static void cont_read_dot_terminate(eval_context_t *ctx) {
 static void cont_read_done(eval_context_t *ctx) {
   lbm_value stream;
   lbm_value f_val;
-  lbm_pop_2(&ctx->K, &stream ,&f_val);
+  lbm_value reader_mode;
+  lbm_pop_3(&ctx->K, &reader_mode, &stream ,&f_val);
 
   uint32_t flags = lbm_dec_as_u32(f_val);
   ctx->flags &= ~EVAL_CPS_CONTEXT_READER_FLAGS_MASK;
@@ -4304,8 +4322,7 @@ static void cont_application_start(eval_context_t *ctx) {
       }
       lbm_stack_clear(&ctx->K);
 
-      lbm_array_header_t *arr = (lbm_array_header_t*)get_car(c);
-
+      lbm_array_header_t *arr = assume_array(c);
       ctx->K.sp = arr->size / sizeof(lbm_uint);
       memcpy(ctx->K.data, arr->data, arr->size);
 
@@ -4326,10 +4343,12 @@ static void cont_application_start(eval_context_t *ctx) {
       lbm_value expand_env = env;
       while (lbm_is_cons(curr_param) &&
              lbm_is_cons(curr_arg)) {
-        lbm_value car_curr_param, cdr_curr_param;
-        lbm_value car_curr_arg, cdr_curr_arg;
-        get_car_and_cdr(curr_param, &car_curr_param, &cdr_curr_param);
-        get_car_and_cdr(curr_arg, &car_curr_arg, &cdr_curr_arg);
+	lbm_cons_t *param_cell = lbm_ref_cell(curr_param); // already checked that cons.
+	lbm_cons_t *arg_cell = lbm_ref_cell(curr_arg);
+        lbm_value car_curr_param = param_cell->car;
+	lbm_value cdr_curr_param = param_cell->cdr;
+        lbm_value car_curr_arg = arg_cell->car;
+	lbm_value cdr_curr_arg = arg_cell->cdr;
 
         lbm_value entry = cons_with_gc(car_curr_param, car_curr_arg, expand_env);
         lbm_value aug_env = cons_with_gc(entry, expand_env,ENC_SYM_NIL);
@@ -4465,11 +4484,11 @@ static void cont_move_val_to_flash_dispatch(eval_context_t *ctx) {
       case ENC_SYM_RAW_I_TYPE: /* fall through */
       case ENC_SYM_RAW_U_TYPE:
       case ENC_SYM_RAW_F_TYPE: {
-	lbm_value flash_cell = ENC_SYM_NIL;
-	handle_flash_status(request_flash_storage_cell(val, &flash_cell));
+        lbm_value flash_cell = ENC_SYM_NIL;
+        handle_flash_status(request_flash_storage_cell(val, &flash_cell));
         handle_flash_status(write_const_car(flash_cell, ref->car));
         handle_flash_status(write_const_cdr(flash_cell, ref->cdr));
-	ctx->r = flash_cell;
+        ctx->r = flash_cell;
       } break;
       case ENC_SYM_IND_I_TYPE: /* fall through */
       case ENC_SYM_IND_U_TYPE:
@@ -4480,11 +4499,11 @@ static void cont_move_val_to_flash_dispatch(eval_context_t *ctx) {
         lbm_uint flash_ptr;
 
         handle_flash_status(lbm_write_const_raw(lbm_mem_ptr, 2, &flash_ptr));
-	lbm_value flash_cell = ENC_SYM_NIL;
-	handle_flash_status(request_flash_storage_cell(val, &flash_cell));
+        lbm_value flash_cell = ENC_SYM_NIL;
+        handle_flash_status(request_flash_storage_cell(val, &flash_cell));
         handle_flash_status(write_const_car(flash_cell, flash_ptr));
         handle_flash_status(write_const_cdr(flash_cell, ref->cdr));
-	ctx->r = flash_cell;
+        ctx->r = flash_cell;
 #else
         // There are no indirect types in LBM64
         error_ctx(ENC_SYM_FATAL_ERROR);
@@ -4493,10 +4512,10 @@ static void cont_move_val_to_flash_dispatch(eval_context_t *ctx) {
       case ENC_SYM_LISPARRAY_TYPE: {
         lbm_array_header_t *arr = (lbm_array_header_t*)ref->car;
         lbm_uint size = arr->size / sizeof(lbm_uint);
-        lbm_uint flash_addr;
+        lbm_uint flash_addr = 0;
         lbm_value *arrdata = (lbm_value *)arr->data;
-	lbm_value flash_cell = ENC_SYM_NIL;
-	handle_flash_status(request_flash_storage_cell(val, &flash_cell));
+        lbm_value flash_cell = ENC_SYM_NIL;
+        handle_flash_status(request_flash_storage_cell(val, &flash_cell));
         handle_flash_status(lbm_allocate_const_raw(size, &flash_addr));
         lift_array_flash(flash_cell,
                          false,
@@ -4516,15 +4535,15 @@ static void cont_move_val_to_flash_dispatch(eval_context_t *ctx) {
       case ENC_SYM_ARRAY_TYPE: {
         lbm_array_header_t *arr = (lbm_array_header_t*)ref->car;
         // arbitrary address: flash_arr.
-        lbm_uint flash_arr;
+        lbm_uint flash_arr = 0;
         handle_flash_status(lbm_write_const_array_padded((uint8_t*)arr->data, arr->size, &flash_arr));
-	lbm_value flash_cell = ENC_SYM_NIL;
-	handle_flash_status(request_flash_storage_cell(val, &flash_cell));
+        lbm_value flash_cell = ENC_SYM_NIL;
+        handle_flash_status(request_flash_storage_cell(val, &flash_cell));
         lift_array_flash(flash_cell,
                          true,
                          (char *)flash_arr,
                          arr->size);
-	ctx->r = flash_cell;
+        ctx->r = flash_cell;
       } break;
       case ENC_SYM_CHANNEL_TYPE: /* fall through */
       case ENC_SYM_CUSTOM_TYPE:
@@ -4553,9 +4572,9 @@ static void cont_move_list_to_flash(eval_context_t *ctx) {
 
 
   lbm_value new_lst = ENC_SYM_NIL;
-  // Allocate element ptr storage after storing the element to flash. 
+  // Allocate element ptr storage after storing the element to flash.
   handle_flash_status(request_flash_storage_cell(lbm_enc_cons_ptr(LBM_PTR_NULL), &new_lst)); 
-  
+
   if (lbm_is_symbol_nil(fst)) {
     lst = new_lst;
     fst = new_lst;
@@ -4563,7 +4582,7 @@ static void cont_move_list_to_flash(eval_context_t *ctx) {
   } else {
     handle_flash_status(write_const_cdr(lst, new_lst)); // low before high
     handle_flash_status(write_const_car(new_lst, ctx->r));
-    lst = new_lst;	
+    lst = new_lst;
   }
 
   if (lbm_is_cons(val)) {
@@ -4599,11 +4618,11 @@ static void cont_move_array_elts_to_flash(eval_context_t *ctx) {
   // sptr[2] = source array in RAM
   // sptr[1] = current index
   // sptr[0] = target array in flash
-  lbm_array_header_t *src_arr = (lbm_array_header_t*)get_car(sptr[2]);
+  lbm_array_header_t *src_arr = assume_array(sptr[2]);
   lbm_uint size = src_arr->size / sizeof(lbm_uint);
   lbm_value *srcdata = (lbm_value *)src_arr->data;
 
-  lbm_array_header_t *tgt_arr = (lbm_array_header_t*)get_car(sptr[0]);
+  lbm_array_header_t *tgt_arr = assume_array(sptr[0]);
   lbm_uint *tgtdata = (lbm_value *)tgt_arr->data;
   lbm_uint ix = lbm_dec_as_u32(sptr[1]);
   handle_flash_status(lbm_const_write(&tgtdata[ix], ctx->r));
@@ -4806,7 +4825,7 @@ static void cont_qq_list(eval_context_t *ctx) {
 
 static void cont_kill(eval_context_t *ctx) {
   (void) ctx;
-  ok_ctx(); 
+  ok_ctx();
 }
 
 static void cont_pop_reader_flags(eval_context_t *ctx) {
@@ -4823,7 +4842,7 @@ static void cont_exception_handler(eval_context_t *ctx) {
   lbm_value retval = sptr[0];
   lbm_value flags = sptr[1];
   lbm_set_car(get_cdr(retval), ctx->r);
-  ctx->flags = flags;
+  ctx->flags = (uint32_t)flags;
   ctx->r = retval;
   ctx->app_cont = true;
 }
@@ -4837,17 +4856,6 @@ static void cont_recv_to(eval_context_t *ctx) {
     receive_base(ctx, pats, timeout_time, true);
   } else {
     error_ctx(ENC_SYM_TERROR);
-  }
-}
-
-static void cont_reblock(eval_context_t *ctx) {
-  lbm_value *sptr = get_stack_ptr(ctx, 1);
-  lbm_int timeout = lbm_dec_as_int(sptr[0]);
-  lbm_push(&ctx->K, REBLOCK);
-  if (timeout > 0) {
-    block_current_ctx(LBM_THREAD_STATE_TIMEOUT, blocking_extension_timeout_us,true); 
-  } else {
-    block_current_ctx(LBM_THREAD_STATE_BLOCKED, 0,true);
   }
 }
 
@@ -4906,7 +4914,6 @@ static const cont_fun continuations[NUM_CONTINUATIONS] =
     cont_pop_reader_flags,
     cont_exception_handler,
     cont_recv_to,
-    cont_reblock
   };
 
 /*********************************************************/
@@ -4993,6 +5000,15 @@ static void evaluation_step(void){
   return;
 }
 
+
+// Reset has a built in pause.
+// so after reset, continue.
+void lbm_reset_eval(void) {
+  eval_cps_next_state_arg = 0;
+  eval_cps_next_state = EVAL_CPS_STATE_RESET;
+  if (eval_cps_next_state != eval_cps_run_state) eval_cps_state_changed = true;
+}
+
 void lbm_pause_eval(void ) {
   eval_cps_next_state_arg = 0;
   eval_cps_next_state = EVAL_CPS_STATE_PAUSED;
@@ -5026,16 +5042,14 @@ static void handle_event_unblock_ctx(lbm_cid cid, lbm_value v) {
   mutex_lock(&qmutex);
 
   found = lookup_ctx_nm(&blocked, cid);
-  if (found) {
+  if (found && LBM_IS_STATE_UNBLOCKABLE(found->state)){
     drop_ctx_nm(&blocked,found);
     if (lbm_is_error(v)) {
       get_stack_ptr(found, 1)[0] = TERMINATE; // replace TOS
       found->app_cont = true;
     }
     found->r = v;
-    if (found->K.data[found->K.sp-1] == REBLOCK) {
-      pop_stack_ptr(found,2); // clear 2 fields.
-    }
+    found->state = LBM_THREAD_STATE_READY;
     enqueue_ctx_nm(&queue,found);
   }
   mutex_unlock(&qmutex);
@@ -5092,6 +5106,9 @@ static void process_events(void) {
         lbm_find_receiver_and_send(lbm_event_handler_pid, event_val);
       }
       break;
+    case LBM_EVENT_RUN_USER_CALLBACK:
+      user_callback((void*)e.parameter);
+      break;
     }
   }
 }
@@ -5115,16 +5132,33 @@ void lbm_run_eval(void){
     if (eval_cps_state_changed  || eval_cps_run_state == EVAL_CPS_STATE_PAUSED) {
       eval_cps_state_changed = false;
       switch (eval_cps_next_state) {
+      case EVAL_CPS_STATE_RESET:
+        if (eval_cps_run_state != EVAL_CPS_STATE_RESET) {
+          is_atomic = false;
+          blocked.first = NULL;
+          blocked.last = NULL;
+          queue.first = NULL;
+          queue.last = NULL;
+          ctx_running = NULL;
+          eval_steps_quota = eval_steps_refill;
+          eval_cps_run_state = EVAL_CPS_STATE_RESET;
+          if (blocking_extension) {
+            blocking_extension = false;
+            mutex_unlock(&blocking_extension_mutex);
+          }
+        }
+        usleep_callback(EVAL_CPS_MIN_SLEEP);
+        continue;
       case EVAL_CPS_STATE_PAUSED:
         if (eval_cps_run_state != EVAL_CPS_STATE_PAUSED) {
           if (lbm_heap_num_free() < eval_cps_next_state_arg) {
             gc();
           }
           eval_cps_next_state_arg = 0;
+          eval_cps_run_state = EVAL_CPS_STATE_PAUSED;
         }
-        eval_cps_run_state = EVAL_CPS_STATE_PAUSED;
         usleep_callback(EVAL_CPS_MIN_SLEEP);
-        continue; /* jump back to start of eval_running loop */
+        continue;
       case EVAL_CPS_STATE_KILL:
         eval_cps_run_state = EVAL_CPS_STATE_DEAD;
         eval_running = false;
@@ -5141,7 +5175,7 @@ void lbm_run_eval(void){
       } else {
         if (eval_cps_state_changed) break;
         eval_steps_quota = eval_steps_refill;
-        if (!is_atomic) { 
+        if (!is_atomic) {
           if (gc_requested) {
             gc();
           }

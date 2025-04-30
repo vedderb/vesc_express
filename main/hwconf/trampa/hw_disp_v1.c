@@ -26,6 +26,7 @@
 #include "soc/gpio_sig_map.h"
 #include "driver/gpio.h"
 #include "lispif_disp_extensions.h"
+#include "extensions/display_extensions.h"
 #include "disp_st7789.h"
 #include "esp_wifi.h"
 #include "esp_bt.h"
@@ -212,7 +213,7 @@ static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
 
 	disp_st7789_init(7, 6, 10, 20, 8, 40);
 
-	lispif_disp_set_callbacks(
+	lbm_display_extensions_set_callbacks(
 			disp_st7789_render_image,
 			disp_st7789_clear,
 			disp_st7789_reset

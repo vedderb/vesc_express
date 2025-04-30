@@ -34,6 +34,7 @@
 
 #include "lispif.h"
 #include "lispbm.h"
+#include "extensions/display_extensions.h"
 #include "terminal.h"
 #include "commands.h"
 #include "utils.h"
@@ -43,7 +44,7 @@ static lbm_value ext_sel_disp_left(lbm_value *args, lbm_uint argn) {
 
 	disp_st7789_init(7, 6, 5, -1, 8, 40);
 
-	lispif_disp_set_callbacks(
+	lbm_display_extensions_set_callbacks(
 			disp_st7789_render_image,
 			disp_st7789_clear,
 			disp_st7789_reset
@@ -57,7 +58,7 @@ static lbm_value ext_sel_disp_right(lbm_value *args, lbm_uint argn) {
 
 	disp_st7789_init(7, 6, 2, -1, 8, 40);
 
-	lispif_disp_set_callbacks(
+	lbm_display_extensions_set_callbacks(
 			disp_st7789_render_image,
 			disp_st7789_clear,
 			disp_st7789_reset

@@ -1,3 +1,10 @@
+
+; If in deepsleep, this will return 4
+; (bms-direct-cmd 0x10 0x00)
+
+; Exit deepsleep
+; (bms-subcmd-cmdonly 0x10 0x000e)
+
 (def trigger-bal-after-charge false)
 (def bal-ok false)
 (def is-balancing false)
@@ -90,6 +97,9 @@
 
     (loopwhile (not (main-init-done)) (sleep 0.1))
     (loopwhile (not (bms-init (bms-get-param 'cells_ic1) (bms-get-param 'cells_ic2))) (sleep 1))
+
+    ; Extra attempt to exit deepsleep. Seems to be unreliable sometimes...
+    (bms-subcmd-cmdonly 0x10 0x000e)
 
     ; For some reason a second init is sometimes needed to get the BQs started reliably. We
     ; should try to figure out what is going on here...

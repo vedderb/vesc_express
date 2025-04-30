@@ -8,7 +8,7 @@ PLATFORM_INCLUDE = -I$(LISPBM)/platform/linux/include
 PLATFORM_SRC     = $(LISPBM)/platform/linux/src/platform_mutex.c
 
 #CCFLAGS = -g -O2 -Wall -Wextra -Wshadow -Wconversion -Wclobbered -pedantic -std=c99
-CCFLAGS = -Wall -Wextra -Wshadow -Wconversion -Wclobbered -pedantic -std=c99
+CCFLAGS = -Wall -Wextra -Wshadow -Wconversion -Wclobbered -pedantic -std=c99 -DFULL_RTS_LIB
 # -DLBM_ALWAYS_GC
 CC=gcc
 
@@ -47,8 +47,9 @@ allrev: $(EXECS)
 
 
 clean:
-	rm *.gcda
-	rm *.gcno
-	rm *.exe
-	rm test_lisp_code_cps
+	rm -f *.exe
+	rm -f test_lisp_code_cps
+	rm -f test_heap_alloc
+	rm -f *.gcda
+	rm -f *.gcno
 

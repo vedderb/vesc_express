@@ -75,6 +75,7 @@
 #include "sdmmc_cmd.h"
 #include "esp_vfs.h"
 #include "lowzip.h"
+#include "aes/esp_aes.h"
 
 #include <math.h>
 #include <ctype.h>
@@ -153,7 +154,7 @@ typedef struct {
 	// Arrays
 	lbm_uint copy;
 	lbm_uint mut;
-	
+
 	// Other
 	lbm_uint half_duplex;
 } vesc_syms;
@@ -293,7 +294,7 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 		} else if (comp == &syms_vesc.mut) {
 			lbm_add_symbol_const("mut", comp);
 		}
-		
+
 		else if (comp == &syms_vesc.half_duplex) {
 			lbm_add_symbol_const("half-duplex", comp);
 		}
@@ -331,35 +332,35 @@ static char print_prefix[50] = {0};
 
 static lbm_value ext_set_print_prefix(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(1);
-	
+
 	if (!lbm_is_array_r(args[0])) {
 		return ENC_SYM_TERROR;
 	}
-	
+
 	const char *string = lbm_dec_str(args[0]);
 	strncpy(print_prefix, string, sizeof(print_prefix) - 1);
-	
+
 	return ENC_SYM_TRUE;
 }
 
 /**
  * signature: (puts string)
- * 
+ *
  * Print string without surrounding it with "quotes" first.
- * 
+ *
  * @param string The string to print. Strings longer than 400 characters will be
  * trimmed.
 */
 static lbm_value ext_puts(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(1);
-	
+
 	if (!lbm_is_array_r(args[0])) {
 		return ENC_SYM_TERROR;
 	}
-	
+
 	const char *string = lbm_dec_str(args[0]);
 	commands_printf_lisp("%s", string);
-	
+
 	return ENC_SYM_TRUE;
 }
 
@@ -735,7 +736,7 @@ static lbm_value ext_secs_since(lbm_value *args, lbm_uint argn) {
 
 static void send_app_data(unsigned char *data, unsigned int len, int interface, int can_id) {
 	int32_t index = 0;
-	uint8_t *send_buffer_global = mempools_get_packet_buffer();
+	uint8_t *send_buffer_global = mempools_get_lbm_packet_buffer();
 	send_buffer_global[index++] = COMM_CUSTOM_APP_DATA;
 	memcpy(send_buffer_global + index, data, len);
 	index += len;
@@ -1032,7 +1033,7 @@ static lbm_value ext_can_cmd(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	uint8_t *send_buf = mempools_get_packet_buffer();
+	uint8_t *send_buf = mempools_get_lbm_packet_buffer();
 	send_buf[0] = COMM_LISP_REPL_CMD;
 	memcpy(send_buf + 1, array->data, array->size);
 	comm_can_send_buffer(id, send_buf, array->size + 1, 2);
@@ -2885,7 +2886,7 @@ static lbm_value ext_crc32(lbm_value *args, lbm_uint argn) {
  * If the new size is smaller than the current size, the array is just shrunk in
  * place without allocating a new buffer. Either delta-size or new-size must not
  * be nil.
- * 
+ *
  * Either way, the passed array is resized mutably, with the returned reference
  * only for convenience, unless the symbol 'copy at the end. This makes it
  * always allocate a new buffer with the new size. You can also pass the symbol
@@ -2894,7 +2895,7 @@ static lbm_value ext_crc32(lbm_value *args, lbm_uint argn) {
  */
 static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_RANGE(2, 4);
-	
+
 	bool should_copy = false;
 	if (argn > 2 && lbm_is_symbol(args[argn - 1])) {
 		lbm_uint sym = lbm_dec_sym(args[argn - 1]);
@@ -2913,21 +2914,21 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 		lbm_set_error_suspect(args[0]);
 		return ENC_SYM_TERROR;
 	}
-	
+
 	bool delta_size_passed = !lbm_is_symbol_nil(args[1]);
 	bool new_size_passed   = argn > 2 && lbm_is_number(args[2]);
-	
+
 	if (delta_size_passed && !lbm_is_number(args[1])) {
 		lbm_set_error_suspect(args[1]);
 		return ENC_SYM_TERROR;
 	}
-	
+
 	if (argn == 4 && !lbm_is_number(args[2])) {
 		// The case where argn is 3 is covered by the first check.
 		lbm_set_error_suspect(args[2]);
 		return ENC_SYM_TERROR;
 	}
-	
+
 	if (!delta_size_passed && !new_size_passed) {
 		lbm_set_error_reason(
 			"delta-size (arg 2) was nil while new-size wasn't provided (arg 3)"
@@ -2940,7 +2941,7 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 		// Should be impossible, unless it contained null pointer to header.
 		return ENC_SYM_FATAL_ERROR;
 	}
-	
+
 	uint32_t new_size;
 	{
 		int32_t new_size_signed;
@@ -2949,25 +2950,25 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 		} else {
 			new_size_signed = lbm_dec_as_i32(args[2]);
 		}
-		
+
 		if (new_size_signed < 0) {
 			lbm_set_error_reason("resulting size was negative");
 			return ENC_SYM_EERROR;
 		}
 		new_size = (uint32_t)new_size_signed;
 	}
-	
+
 	if (should_copy) {
 		void *buffer = lbm_malloc(new_size);
 		if (!buffer) {
 			return ENC_SYM_MERROR;
 		}
-		
+
 		memcpy(buffer, header->data, MIN(header->size, new_size));
 		if (new_size > header->size) {
 			memset(buffer + header->size, 0, new_size - header->size);
 		}
-		
+
 		lbm_value result;
 		if (!lbm_lift_array(&result, buffer, new_size)) {
 			return ENC_SYM_MERROR;
@@ -2985,7 +2986,7 @@ static lbm_value ext_buf_resize(lbm_value *args, lbm_uint argn) {
 			// We sadly can't trust the return value, as it fails if the allocation
 			// was previously a single word long. So we just throw it away.
 			lbm_memory_shrink_bytes(header->data, allocated_size);
-			
+
 			header->size = new_size;
 
 			return args[0];
@@ -3118,7 +3119,7 @@ static lbm_value log_send_fxx(bool is_64, lbm_value *args, lbm_uint argn) {
 	}
 
 	int32_t ind = 0;
-	uint8_t *buffer = mempools_get_packet_buffer();
+	uint8_t *buffer = mempools_get_lbm_packet_buffer();
 
 	buffer[ind++] = is_64 ? COMM_LOG_DATA_F64 : COMM_LOG_DATA_F32;
 	buffer_append_int16(buffer, field_start, &ind);
@@ -3432,7 +3433,7 @@ static lbm_value ext_canmsg_send(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	uint8_t *buf = mempools_get_packet_buffer();
+	uint8_t *buf = mempools_get_lbm_packet_buffer();
 	buf[0] = COMM_LISP_RMSG;
 	buf[1] = slot;
 	memcpy(buf + 2, array->data, array->size);
@@ -4052,7 +4053,7 @@ static lbm_value fw_lbm_qml_write(lbm_value *args, lbm_uint argn, COMM_PACKET_ID
 			return ENC_SYM_TERROR;
 		}
 
-		uint8_t *buf = mempools_get_packet_buffer();
+		uint8_t *buf = mempools_get_lbm_packet_buffer();
 		int32_t ind = 0;
 
 		if (can_id >= 0) {
@@ -5381,6 +5382,72 @@ static lbm_value ext_connected_usb(lbm_value *args, lbm_uint argn) {
 	#endif
 }
 
+// Crypto
+
+// (aes-ctr-crypt key counter data start-offset length) -> t
+static lbm_value ext_aes_ctr_crypt(lbm_value *args, lbm_uint argn) {
+    if (!lbm_check_argn_range(argn, 5, 5)) {
+        return ENC_SYM_EERROR;
+    }
+
+    if (!lbm_is_array_r(args[0]) || !lbm_is_array_rw(args[1]) || !lbm_is_array_rw(args[2])) {
+        lbm_set_error_reason("Invalid array types");
+        return ENC_SYM_EERROR;
+    }
+
+    lbm_array_header_t *key_header = (lbm_array_header_t *)lbm_car(args[0]);
+    lbm_array_header_t *counter_header = (lbm_array_header_t *)lbm_car(args[1]);
+    lbm_array_header_t *data_header = (lbm_array_header_t *)lbm_car(args[2]);
+
+    // Check key size (128, 192, or 256 bits)
+    if (key_header->size != 16 && key_header->size != 24 && key_header->size != 32) {
+        lbm_set_error_reason("Key must be 16, 24, or 32 bytes (128, 192, or 256 bits)");
+        return ENC_SYM_EERROR;
+    }
+
+    if (counter_header->size != 16) {
+        lbm_set_error_reason("Counter must be 16 bytes");
+        return ENC_SYM_EERROR;
+    }
+
+    lbm_int start_offset = lbm_dec_as_i32(args[3]);
+    lbm_int length = lbm_dec_as_i32(args[4]);
+
+    if (start_offset < 0 || length < 0 || (start_offset + length) > (lbm_int)data_header->size) {
+        lbm_set_error_reason("Invalid start offset or length");
+        return ENC_SYM_EERROR;
+    }
+
+    uint8_t *key = (uint8_t*)key_header->data;
+    uint8_t *counter = (uint8_t*)counter_header->data;
+    uint8_t *data = (uint8_t*)data_header->data + start_offset;
+
+    // Perform in-place encryption/decryption
+    esp_aes_context ctx;
+    esp_aes_init(&ctx);
+
+    int ret = esp_aes_setkey(&ctx, key, key_header->size * 8);
+    if (ret != 0) {
+        esp_aes_free(&ctx);
+        lbm_set_error_reason("AES key setup failed");
+        return ENC_SYM_EERROR;
+    }
+
+    uint8_t stream_block[16];
+    size_t nc_off = 0;
+
+    ret = esp_aes_crypt_ctr(&ctx, length, &nc_off, counter, stream_block, data, data);
+
+    esp_aes_free(&ctx);
+
+    if (ret != 0) {
+        lbm_set_error_reason("AES-CTR encryption/decryption failed");
+        return ENC_SYM_EERROR;
+    }
+
+    return ENC_SYM_TRUE;
+}
+
 void lispif_load_vesc_extensions(void) {
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
@@ -5408,14 +5475,14 @@ void lispif_load_vesc_extensions(void) {
 	}
 
 	lbm_add_symbol_const("hw-express", &sym_hw_express);
-	
+
 	lbm_add_symbol_const("a01", &sym_res);
 	lbm_add_symbol_const("a02", &sym_loop);
 	lbm_add_symbol_const("break", &sym_break);
 	lbm_add_symbol_const("a03", &sym_brk);
 	lbm_add_symbol_const("a04", &sym_rst);
 	lbm_add_symbol_const("return", &sym_return);
-	
+
 	lispif_events_load_symbols();
 
 	memset(&syms_vesc, 0, sizeof(syms_vesc));
@@ -5576,7 +5643,7 @@ void lispif_load_vesc_extensions(void) {
 	lispif_load_disp_extensions();
 	lispif_load_wifi_extensions();
 	lispif_load_rgbled_extensions();
-	
+
 	if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
 		lispif_load_ble_extensions();
 	}
@@ -5656,6 +5723,9 @@ void lispif_load_vesc_extensions(void) {
 	lbm_add_extension("connected-wifi", ext_connected_wifi);
 	lbm_add_extension("connected-ble", ext_connected_ble);
 	lbm_add_extension("connected-usb", ext_connected_usb);
+
+	// Crypto
+	lbm_add_extension("aes-ctr-crypt", ext_aes_ctr_crypt);
 
 	// Extension libraries
 	lbm_array_extensions_init();

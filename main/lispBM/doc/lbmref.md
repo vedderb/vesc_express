@@ -2078,6 +2078,259 @@ nil
 
 ---
 
+## Predicates
+
+
+---
+
+
+### list?
+
+the `list?` predicate is true for all lists, empty (nil) or not. 
+
+<table>
+<tr>
+<td> Example </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+```clj
+(list? nil)
+```
+
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(list? 'nil)
+```
+
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(list? (list 1 2 3))
+```
+
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(list? '(1 2 3))
+```
+
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(list? 2)
+```
+
+
+</td>
+<td>
+
+```clj
+nil
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(list? 'kurt-russel)
+```
+
+
+</td>
+<td>
+
+```clj
+nil
+```
+
+
+</td>
+</tr>
+</table>
+
+
+
+
+---
+
+
+### number?
+
+the `number?` predicate is true for all numbers. 
+
+<table>
+<tr>
+<td> Example </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+```clj
+(number? nil)
+```
+
+
+</td>
+<td>
+
+```clj
+nil
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(number? 1)
+```
+
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(number? 2u)
+```
+
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(number? 3.140000f32)
+```
+
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(number? 'michael-shanks)
+```
+
+
+</td>
+<td>
+
+```clj
+nil
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(number? 'james-spader)
+```
+
+
+</td>
+<td>
+
+```clj
+nil
+```
+
+
+</td>
+</tr>
+</table>
+
+
+
+
+---
+
 ## Bit level operations
 
 
@@ -5929,7 +6182,7 @@ apa
 
 ### rotate
 
-`rotate` creates a list containing the same elements as an existing list but rotated some number of step along a direction. The form of a `reverse` expression is `(rotate list-exp dist-expr)`. The sign of the value dist-expr evaluates to, decides direction of rotation. 
+`rotate` creates a list containing the same elements as an existing list but rotated some number of step along a direction. The form of a `rotate` expression is `(rotate list-exp dist-expr)`. The sign of the value dist-expr evaluates to, decides direction of rotation. 
 
 <table>
 <tr>
@@ -7386,7 +7639,7 @@ Use `self` to obtain the thread-id of the thread in which `self` is evaluated. T
 <td>
 
 ```clj
-660
+2616
 ```
 
 
@@ -7535,6 +7788,79 @@ The `exit-error` function terminates the thread with an error specified by the p
 
 ---
 
+
+### kill
+
+The `kill` function allows you to force terminate another thread. It has the signature `(kill thread-id-expr val-expr)`, where `thread-id-expr` is the thread that you want to terminate, and `val-expr` is the final result the thread dies with. 
+
+<table>
+<tr>
+<td> Example </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(defun f nil (f))
+(define id (spawn f))
+(kill id nil)
+
+```
+
+
+</td>
+<td>
+
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+</table>
+
+The `val-expr` can be observed if the thread exit status is captured using `spawn-trap` 
+
+<table>
+<tr>
+<td> Example </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(defun f nil (f))
+(define id (spawn-trap f))
+(kill id 'kurt-russel)
+(recv ((? x) x))
+
+```
+
+
+</td>
+<td>
+
+
+```clj
+(exit-ok 175107 kurt-russel)
+```
+
+
+</td>
+</tr>
+</table>
+
+The `val-expr` could be used to communicate to a thread monitor that the thread it monitors has been intentionally but externally killed. 
+
+
+
+
+---
+
 ## Message-passing
 
 
@@ -7588,7 +7914,7 @@ To receive a message use the `recv` command. A process will block on a `recv` un
 
 ### recv-to
 
-Like [recv](#recv), `recv-to` is used to receive messages but `recv-to` takes an extra timeout argument. 
+Like [recv](#recv), `recv-to` is used to receive messages but `recv-to` takes an extra timeout argument. It then receives a message containing the symbol `timeout` after the timeout period ends. 
 
 The form of an `recv-to` expression is ```clj (recv-to timeout-secs                 (pattern1 exp1)                 ...                 (patternN expN)) ``` 
 
@@ -7615,6 +7941,36 @@ The form of an `recv-to` expression is ```clj (recv-to timeout-secs             
 
 ```clj
 29
+```
+
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td> Example </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(send (self) 'not-foo)
+(recv-to 0.100000f32
+         (foo 'got-foo)
+         (timeout 'no-message))
+
+```
+
+
+</td>
+<td>
+
+
+```clj
+0.100000f32
 ```
 
 
@@ -8148,7 +8504,9 @@ Flash memory can be used to store data and functions that are constant. Things c
 
 ### @const-symbol-strings
 
-if `@const-symbol-strings` directive is placed in a file, symbols will be created in flash memory instead of the arrays memory. 
+`@const-symbol-strings` functionality have been combined with `@const-start` and `@const-end`. Now symbols created while in a const block, end up in flash storage. 
+
+~~if `@const-symbol-strings` directive is placed in a file, symbols will be created in flash memory instead of the arrays memory.~~ 
 
 
 
