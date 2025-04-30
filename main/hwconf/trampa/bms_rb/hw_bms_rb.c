@@ -706,7 +706,11 @@ static lbm_value ext_bms_store_cfg(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static void load_extensions(void) {
+static void load_extensions(bool main_found) {
+	if (main_found) {
+		return;
+	}
+	
 	memset(&syms_vesc, 0, sizeof(syms_vesc));
 
 	// Wake up and initialize hardware

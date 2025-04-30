@@ -5,7 +5,7 @@
 
 // CAN ID
 #ifndef CONF_CONTROLLER_ID
-#define CONF_CONTROLLER_ID -1
+#define CONF_CONTROLLER_ID 3
 #endif
 
 // CAN Baud Rate
@@ -75,7 +75,7 @@
 
 // Bluetooth Mode
 #ifndef CONF_BLE_MODE
-#define CONF_BLE_MODE 0
+#define CONF_BLE_MODE 1
 #endif
 
 // Name
@@ -113,14 +113,34 @@
 #define CONF_CELLS_IC2 16
 #endif
 
-// Distributed Balancing
-#ifndef CONF_DIST_BAL
-#define CONF_DIST_BAL 1
+// Temperature Sensors
+#ifndef CONF_TEMP_NUM
+#define CONF_TEMP_NUM 1
 #endif
 
-// Balancing Mode
-#ifndef CONF_BALANCE_MODE
-#define CONF_BALANCE_MODE 2
+// Ah Columb Counting
+#ifndef CONF_BATT_AH
+#define CONF_BATT_AH 10
+#endif
+
+// Use Columb Counting
+#ifndef CONF_SOC_USE_AH
+#define CONF_SOC_USE_AH 0
+#endif
+
+// Block Sleep Mode
+#ifndef CONF_BLOCK_SLEEP
+#define CONF_BLOCK_SLEEP 1
+#endif
+
+// Cell Voltage Empty
+#ifndef CONF_VC_EMPTY
+#define CONF_VC_EMPTY 3.1
+#endif
+
+// Cell Voltage Full
+#ifndef CONF_VC_FULL
+#define CONF_VC_FULL 4.2
 #endif
 
 // Balance Starting Voltage
@@ -153,6 +173,16 @@
 #define CONF_BALANCE_MIN 3.5
 #endif
 
+// Max Cell Temp Balancing
+#ifndef CONF_T_BAL_MAX_CELL
+#define CONF_T_BAL_MAX_CELL 45
+#endif
+
+// Max BMS Temp Balancing
+#ifndef CONF_T_BAL_MAX_IC
+#define CONF_T_BAL_MAX_IC 85
+#endif
+
 // Balance Maximum Current
 #ifndef CONF_BALANCE_MAX_CURRENT
 #define CONF_BALANCE_MAX_CURRENT 1
@@ -168,14 +198,19 @@
 #define CONF_MIN_CURRENT_SLEEP 0.3
 #endif
 
-// Charge Max Temp
+// Charger Detection Voltage
+#ifndef CONF_V_CHARGE_DETECT
+#define CONF_V_CHARGE_DETECT 5
+#endif
+
+// Charge Temp Max
 #ifndef CONF_T_CHARGE_MAX
 #define CONF_T_CHARGE_MAX 45
 #endif
 
-// Current Measurement Mode
-#ifndef CONF_I_MEASURE_MODE
-#define CONF_I_MEASURE_MODE 0
+// Charge Temp Max Mos
+#ifndef CONF_T_CHARGE_MAX_MOS
+#define CONF_T_CHARGE_MAX_MOS 85
 #endif
 
 // Min Charge Current
@@ -188,9 +223,14 @@
 #define CONF_MAX_CHARGE_CURRENT 16
 #endif
 
-// Sleep Timeout Reset Time
-#ifndef CONF_SLEEP_TIMEOUT_MS
-#define CONF_SLEEP_TIMEOUT_MS 240000
+// Sleep Time Regular
+#ifndef CONF_SLEEP_REGULAR
+#define CONF_SLEEP_REGULAR 10
+#endif
+
+// Sleep Time Long
+#ifndef CONF_SLEEP_LONG
+#define CONF_SLEEP_LONG 30
 #endif
 
 // SoC Filter Constant
@@ -198,24 +238,39 @@
 #define CONF_SOC_FILTER_CONST 1e-05
 #endif
 
-// Temp Bal Lim Start
-#ifndef CONF_T_BAL_LIM_START
-#define CONF_T_BAL_LIM_START 60
-#endif
-
-// Temp Bal Lim End
-#ifndef CONF_T_BAL_LIM_END
-#define CONF_T_BAL_LIM_END 75
-#endif
-
-// Charge Min Temp
+// Charge Temp Min
 #ifndef CONF_T_CHARGE_MIN
 #define CONF_T_CHARGE_MIN 0
 #endif
 
-// Charge Temp Mon
-#ifndef CONF_T_CHARGE_MON_EN
-#define CONF_T_CHARGE_MON_EN 1
+// Precharge Time Max
+#ifndef CONF_PSW_T_PCHG
+#define CONF_PSW_T_PCHG 3
+#endif
+
+// Shortcircuit Protection Enabled
+#ifndef CONF_PSW_SCD_EN
+#define CONF_PSW_SCD_EN 1
+#endif
+
+// Shortcircuit Protection Threshold
+#ifndef CONF_PSW_SCD_TRES
+#define CONF_PSW_SCD_TRES 4
+#endif
+
+// Temperature Protection Enabled
+#ifndef CONF_T_PSW_EN
+#define CONF_T_PSW_EN 1
+#endif
+
+// PSW Temp Max Mos
+#ifndef CONF_T_PSW_MAX_MOS
+#define CONF_T_PSW_MAX_MOS 105
+#endif
+
+// Wait for Init
+#ifndef CONF_PSW_WAIT_INIT
+#define CONF_PSW_WAIT_INIT 0
 #endif
 
 // VBMS32_CONF_DEFAULT_H_

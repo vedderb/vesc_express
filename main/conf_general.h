@@ -39,10 +39,4 @@
 #include "main.h"
 #include "hw.h"
 
-#ifdef OVR_CONF_DEFAULT
-#include OVR_CONF_DEFAULT
-#else
-#include "conf_default.h"
-#endif
-
 #endif /* MAIN_CONF_GENERAL_H_ */

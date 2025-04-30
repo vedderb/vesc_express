@@ -106,20 +106,23 @@ static EventGroupHandle_t s_ftm_event_group;
 static const int FTM_REPORT_BIT = BIT0;
 static wifi_event_ftm_report_t ftm_report;
 
+typedef enum precheck_flags {
+    PRECHECK_MODE_NOT_DISABLED = 0b00,
+    PRECHECK_MODE_STATION_ONLY = 0b01,
+    PRECHECK_NOT_WAITING       = 0b10,
+} precheck_flags_t;
+
 /**
- * Checks that the correct WIFI was configured in the custom config, and sets
- * the error reason if it wasn't.
- *
- * Also checks that no other lbm thread is currently executing parts of the WIFI
- * API.
+ * Checks that the state is correct for the operation to proceed.
+ * The specific checks are determined by the flags.
  */
-static bool check_mode(bool station_only) {
-	if (is_waiting) {
+static bool wifi_precheck(precheck_flags_t flags) {
+	if (flags & PRECHECK_NOT_WAITING && is_waiting) {
 		lbm_set_error_reason(error_thread_waiting);
 		return false;
 	}
 
-	if (station_only) {
+	if (flags & PRECHECK_MODE_STATION_ONLY) {
 		if (comm_wifi_get_mode() != WIFI_MODE_STATION) {
 			lbm_set_error_reason(error_mode_invalid);
 			return false;
@@ -473,7 +476,7 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
  * the VESC Express config or if the ssid or password are too long.
  */
 static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(true)) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING | PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -524,7 +527,7 @@ static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
  * Disconnect from any currently connected WIFI networks.
  */
 static lbm_value ext_wifi_disconnect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(true)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY|PRECHECK_NOT_WAITING)) {
 		return ENC_SYM_EERROR;
 	}
 	comm_wifi_disconnect_network();
@@ -540,7 +543,7 @@ static lbm_value ext_wifi_disconnect(lbm_value *args, lbm_uint argn) {
  * Check the current WIFI connection status.
  */
 static lbm_value ext_wifi_status(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(true)) {
+	if (!wifi_precheck(PRECHECK_MODE_NOT_DISABLED)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -573,7 +576,7 @@ static lbm_value ext_wifi_status(lbm_value *args, lbm_uint argn) {
  * passed.
  */
 static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(true)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -593,6 +596,32 @@ static lbm_value ext_wifi_auto_reconnect(lbm_value *args, lbm_uint argn) {
 	comm_wifi_set_auto_reconnect(should_reconnect);
 
 	return lbm_enc_bool(current_value);
+}
+
+static lbm_value ext_wifi_max_tx_power(lbm_value *args, lbm_uint argn) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
+		return ENC_SYM_EERROR;
+	}
+
+    int8_t power;
+    if (esp_wifi_get_max_tx_power(&power) != ESP_OK) {
+        return ENC_SYM_EERROR;
+    }
+
+	if (argn == 0) {
+		return lbm_enc_i(power);
+	}
+
+	if (!lbm_is_number(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+	
+	int8_t new_power = lbm_dec_as_i32(args[0]);
+    if (esp_wifi_set_max_tx_power(new_power) != ESP_OK) {
+        return ENC_SYM_EERROR;
+    }
+
+	return lbm_enc_i(new_power);
 }
 
 typedef struct {
@@ -753,7 +782,7 @@ static bool custom_socket_valid(int socket) {
  * @return todo
  */
 static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(false)) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -856,7 +885,7 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
  * (@todo: be more precise).
  */
 static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(false)) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -914,7 +943,7 @@ static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
  * internal process, that shouldn't happen).
  */
 static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(false)) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -974,7 +1003,7 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
  * @todo: Document this
  */
 static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(false)) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1207,7 +1236,7 @@ recv_cleanup:
  * writing this) network error occurred.
  */
 static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(false)) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1348,7 +1377,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
  * this) network error occurred.
  */
 static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
-	if (!check_mode(false)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY|PRECHECK_NOT_WAITING)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1450,6 +1479,7 @@ void lispif_load_wifi_extensions(void) {
 	lbm_add_extension("wifi-connect", ext_wifi_connect);
 	lbm_add_extension("wifi-disconnect", ext_wifi_disconnect);
 	lbm_add_extension("wifi-status", ext_wifi_status);
+	lbm_add_extension("wifi-max-tx-power", ext_wifi_max_tx_power);
 	lbm_add_extension("wifi-auto-reconnect", ext_wifi_auto_reconnect);
 	lbm_add_extension("wifi-ftm-measure", ext_wifi_ftm_measure);
 	lbm_add_extension("tcp-connect", ext_tcp_connect);

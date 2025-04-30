@@ -38,10 +38,10 @@ p, li { white-space: pre-wrap; }
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
             <maxInt>254</maxInt>
-            <minInt>-1</minInt>
+            <minInt>1</minInt>
             <showDisplay>0</showDisplay>
             <stepInt>1</stepInt>
-            <valInt>-1</valInt>
+            <valInt>2</valInt>
             <suffix></suffix>
             <vTx>4</vTx>
         </controller_id>
@@ -84,6 +84,7 @@ p, li { white-space: pre-wrap; }
             <enumNames>CAN_BAUD_20K</enumNames>
             <enumNames>CAN_BAUD_50K</enumNames>
             <enumNames>CAN_BAUD_75K</enumNames>
+            <enumNames>CAN_BAUD_100K</enumNames>
         </can_baud_rate>
         <wifi_mode>
             <longName>WiFi Mode</longName>
@@ -105,7 +106,7 @@ p, li { white-space: pre-wrap; }
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NOTE:&lt;/span&gt;&lt;/p&gt;
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Wifi-settings will be applied after a reboot.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
             <cDefine>CONF_WIFI_MODE</cDefine>
-            <valInt>2</valInt>
+            <valInt>0</valInt>
             <enumNames>WiFi Disabled</enumNames>
             <enumNames>Station</enumNames>
             <enumNames>Access Point</enumNames>
@@ -268,7 +269,7 @@ p, li { white-space: pre-wrap; }
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NOTE:&lt;/span&gt;&lt;/p&gt;
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Bluetooth settings will be applied after a reboot.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
             <cDefine>CONF_BLE_MODE</cDefine>
-            <valInt>0</valInt>
+            <valInt>1</valInt>
             <enumNames>Disabled</enumNames>
             <enumNames>Enabled</enumNames>
             <enumNames>Enabled and Encrypted</enumNames>

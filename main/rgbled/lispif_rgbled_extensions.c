@@ -377,6 +377,13 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 				led_pixels[led * 4 + 3] = w;
 				break;
 
+			case 4: // WRGB
+				led_pixels[led * 4 + 0] = w;
+				led_pixels[led * 4 + 1] = r;
+				led_pixels[led * 4 + 2] = g;
+				led_pixels[led * 4 + 3] = b;
+				break;
+
 			default:
 				break;
 			}

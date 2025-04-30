@@ -25,6 +25,7 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "soc/gpio_reg.h"
+#include "conf_general.h"
 
 #if CONFIG_IDF_TARGET_ESP32S3
 	#define SET_CS() 		(GPIO.out_w1ts = 1 << m_pin_cs)
@@ -57,8 +58,6 @@ static spi_device_interface_config_t m_devcfg = {0};
 // Global variables
 uint8_t *hwspi_buffer_pointer = 0;
 int *hwspi_buffer_pos = 0;
-
-#include "commands.h"
 
 void hwspi_init(int clk_mhz, int mode,
 		int pin_miso, int pin_mosi, int pin_clk, int pin_cs) {
@@ -100,10 +99,14 @@ void hwspi_init(int clk_mhz, int mode,
 		spi_device_get_trans_result(m_spi, &tmp_ptr, 0);
 		spi_device_get_trans_result(m_spi, &tmp_ptr, 0);
 		spi_bus_remove_device(m_spi);
+#ifndef SD_PIN_MOSI
 		spi_bus_free(SPI2_HOST);
+#endif
 	}
 
+#ifndef SD_PIN_MOSI
 	spi_bus_initialize(SPI2_HOST, &m_buscfg, SPI_DMA_CH_AUTO);
+#endif
 	spi_bus_add_device(SPI2_HOST, &m_devcfg, &m_spi);
 
 	m_init_done = true;

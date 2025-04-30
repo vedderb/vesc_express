@@ -75,6 +75,8 @@ const char* utils_hw_type_to_string(HW_TYPE hw) {
 }
 
 void terminal_process_string(char *str) {
+	commands_printf("-> %s\n", str);
+	
 	enum { kMaxArgs = 64 };
 	int argc = 0;
 	char *argv[kMaxArgs];
@@ -94,8 +96,6 @@ void terminal_process_string(char *str) {
 	for(int i = 0; argv[0][i] != '\0'; i++){
 		argv[0][i] = tolower(argv[0][i]);
 	}
-	
-	commands_printf("> %s", argv[0]);
 
 	for (int i = 0;i < callback_write;i++) {
 		if (callbacks[i].cbf != 0 && strcmp(argv[0], callbacks[i].command) == 0) {
@@ -189,8 +189,6 @@ void terminal_process_string(char *str) {
 		commands_printf("Firmware          : %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
 		commands_printf("Hardware          : %s", HW_NAME);
 
-		commands_printf("IDF Version       : %s", IDF_VER);
-
 		commands_printf("BLE MTU           : %d", comm_ble_mtu_now());
 		commands_printf("BLE Connected     : %d", comm_ble_is_connected());
 		commands_printf("Custom BLE Started: %d", custom_ble_started());
@@ -223,6 +221,7 @@ void terminal_process_string(char *str) {
 			if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
 				commands_printf("App running ver   : %s", running_app_info.version);
 				commands_printf("App running proj  : %s", running_app_info.project_name);
+				commands_printf("App partition     : %s", running->label);
 			}
 		} else {
 			commands_printf("Could not get running partition.");
@@ -230,6 +229,20 @@ void terminal_process_string(char *str) {
 
 		commands_printf("Reset Reason      : %d", esp_reset_reason());
 
+		commands_printf(" ");
+	} else if (strcmp(argv[0], "fw_info") == 0) {
+		commands_printf("Firmware   : %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
+		commands_printf("Hardware   : %s", HW_NAME);
+		commands_printf("Git Branch : %s", GIT_BRANCH_NAME);
+		commands_printf("Git Hash   : %s", GIT_COMMIT_HASH);
+		commands_printf("IDF Version: %s", IDF_VER);
+	
+#ifdef USER_GIT_BRANCH_NAME
+		commands_printf("User Git Branch: %s", USER_GIT_BRANCH_NAME);
+#endif
+#ifdef USER_GIT_COMMIT_HASH
+		commands_printf("User Git Hash  : %s", USER_GIT_COMMIT_HASH);
+#endif
 		commands_printf(" ");
 	} else if (strcmp(argv[0], "can_scan") == 0) {
 		bool found = false;
@@ -274,6 +287,9 @@ void terminal_process_string(char *str) {
 
 		commands_printf("hw_status");
 		commands_printf("  Print some hardware status information.");
+
+		commands_printf("fw_info");
+		commands_printf("  Print detailed firmware info.");
 
 		commands_printf("can_scan");
 		commands_printf("  Scan CAN-bus using ping commands, and print all devices that are found.");

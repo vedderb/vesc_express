@@ -1,4 +1,6 @@
 
+(set-pic-prefix "lbmref")
+
 (def ch-symbols
      (section 2 "About Symbols"
               ( list
@@ -112,7 +114,7 @@
             (para (list "The chart below shows the time it takes to perform 10 million"
                         "additions on the x86 architecture (a i7-6820HQ) in 32 and 64 Bit mode."
                         ))
-            (image "Perfomance of 10 million additions at various types on X86"
+            (image "Performance of 10 million additions at various types on X86"
                    "./images/lbm_arith_pc.png"
                    )
             (para (list "In 64Bit mode the x86 version of LBM shows negligible differences in"
@@ -319,10 +321,10 @@
 			"`if` evaluates first the condition expression and then"
 			"either the true or false branch. `progn` evaluates all of the expressions in sequence."
 			"In the case of `and`, `or`, `progn` and `if`, the constituent expressions are all evaluated in the same local environment."
-			"Any extensions to the local environment performed by an expresison in the sequence is only visible within that expression itself."
+			"Any extensions to the local environment performed by an expression in the sequence is only visible within that expression itself."
 			))
 	    (bullet (list "**let**: `(let ((s1 e1) (s2 e2) ... (sN eN) e)` eI are evaluated in order into `vI`. The local environment is extended with `(sI . vI)`. `sI` is visible in `eJ` for `J >= I`. `e` is then evaluated in the extended local environment."
-			  "**setq**: `(setq s e)' is evaluated by first evaluating `e` into `v`. The environments are then scanned for a bining of `s`. local environment is searched first followed by global. If a binding of `s` is found it is modified into `(s . v)`."
+			  "**setq**: `(setq s e)` is evaluated by first evaluating `e` into `v`. The environments are then scanned for a bining of `s`. local environment is searched first followed by global. If a binding of `s` is found it is modified into `(s . v)`."
 			  ))
 	    (para (list "If no binding of `s` is found when evaluating `(setq s e)` a `variable_not_bound` error is triggered."
 			))
@@ -336,8 +338,19 @@
             (para (list "**Function application evaluation**"
                         ))
             (para (list "The evaluation strategies explained here are applied to composite expressions"
-                        "of the `(e1 ... eN)` form."
+                        "of the `(e1 ... eN)` form where `e1` does not fall into the category of \"special forms\"."
                         ))
+            (para (list "In LispBM an `(e1 ... eN)` is evaluated by first evaluating `e1`. This is because depending on"
+                        "what kind of function object `e1` evaluates into, the application if evaluated in different ways."
+                        ))
+            (para (list "`e1` should evaluate into a `closure`, a \"fundamental operation\" or an \"extension\"."
+                        "fundamental operations and extensions take their arguments passed on the stack while a closure"
+                        "is applied in an environment extended with the argument value bindings."
+                        ))
+            (para (list "Depending on the value of `e1` the arguments are either evaluated left to right and the results are"
+                        "pushed onto the stack, or they are evaluated left to right and used to extend the environment."
+                        ))
+            
             (para (list "**The quote and the quasiquote**"
                         ))
             (para (list "The LBM parser (Reader) expands usages of the character sequences:"
@@ -395,7 +408,7 @@
             (para (list "There are no two different trees that correspond to a given S-expression and thus parsing of S-expressions is unambiguous."
                         "The unambiguous nature of S-expressions is useful in areas other than lisp programming as well."
                         "[KiCad](https://dev-docs.kicad.org/en/file-formats/sexpr-intro/) uses S-expressions to represent tree data in some of its"
-                        "file formats. Apperantly [WebAssembly](https://developer.mozilla.org/en-US/docs/WebAssembly/Understanding_the_text_format)"
+                        "file formats. Apparently [WebAssembly](https://developer.mozilla.org/en-US/docs/WebAssembly/Understanding_the_text_format)"
                         "uses S-expressions as well to describe WebAssembly modules"
                         ))
             (newline)
@@ -440,11 +453,11 @@
                         "Most languages are a mix of functional and imperative and"
                         "differ in what style it makes most convenient."
                         "At one end of this spectrum we find C which makes imperative easy and functional hard, "
-                        "and in the other end Haskell with the opposite favouritism."
+                        "and in the other end Haskell with the opposite favoritism."
                         "In LispBM we try to not unfairly favour any particular style over the other."
                         ))
             (para (list "Picking a functional or an imperative style does have consequences though."
-                        "Functional LispBM programs have properties such as persistance of data, that"
+                        "Functional LispBM programs have properties such as persistence of data, that"
                         "can be broken using the imperative part of the language."
                         ))
             (para (list "With the imperative features of the language it is also in some "
@@ -474,7 +487,7 @@
 (define arith-add
   (ref-entry "+"
            (list
-            (para (list "Adds up an aribtrary number of values. The form of a `+` expression is `(+ expr1 ... exprN)`."
+            (para (list "Adds up an arbitrary number of values. The form of a `+` expression is `(+ expr1 ... exprN)`."
                         ))
 
             (code '((+ 1 2)
@@ -513,10 +526,12 @@
   (ref-entry "/"
              (list
               (para (list "Division. The form of a `/` expression is `(/ expr1 ... exprN)`."
+                          "The resulting type is the same as the inputs (after their types have been promoted of course)."
                           ))
               (code '((/ 128 2)
                       (read-eval "(/ 6.28 2)")
-                      (/ 256 2 2 2 2 2 2 2)))
+                      (/ 256 2 2 2 2 2 2 2)
+                      (/ 5 2)))
               end)))
 
 (define arith-mod
@@ -529,6 +544,24 @@
                       (mod 1024 100)
                       (mod -7 5)))
               end)))
+              
+(define arith-int-div
+  (ref-entry "//"
+             (list
+              (para (list "Integer division operation. Like normal division except if the result is a floating point value"
+                          "it is cast to an integer, which floors the result. The form of a `//` expression is"
+                          "`(// expr1 ... exprN)`."
+                          "Can be used as a elegant complement to `mod`, with `//` returning the quotient and `mod`"
+                          "returning the remainder of a division."
+                          ))
+              (code '((// 5.0 2)
+                      {
+                        (var total-seconds 62.5)
+                        (var minutes (// total-seconds 60))
+                        (var seconds (mod total-seconds 60))
+                        (str-join (list (str-from-n minutes) "m " (str-from-n seconds) "s") "")
+                      })
+              end))))
 
 (define arithmetic
   (section 2 "Arithmetic"
@@ -538,7 +571,7 @@
                  arith-mul
                  arith-div
                  arith-mod
-                 )
+                 arith-int-div)
            ))
 
 ;; Comaprisons section
@@ -547,7 +580,7 @@
   (ref-entry "eq"
             (list
              (para (list "Compare values for equality. The `eq` operation implements structural"
-                         "equiality. The form of an 'eq` expression is `(eq expr1 ... exprN)`."
+                         "equality. The form of an 'eq` expression is `(eq expr1 ... exprN)`."
                          "\n"
                          "Structural equality means that the values must have the identical in"
                          "memory representations to be considered equal."
@@ -675,11 +708,11 @@
 ;; Boolean operators
 
 (define bool-and
-  (ref-entry "and"
+  (ref-entry "and" '("Special form")
              (list
               (para (list "Boolean `and` operation between n arguments. The form of an `and`"
                           "expression is `(and expr1 ... exprN)`.  This operation treats all"
-                          "non-nil values as true. Boolean `and` is \"shirt-circuiting\" and only"
+                          "non-nil values as true. Boolean `and` is \"short-circuiting\" and only"
                           "evaluates until a false is encountered."
                           ))
               (code '((and t t)
@@ -689,7 +722,7 @@
               end)))
 
 (define bool-or
-  (ref-entry "or"
+  (ref-entry "or" '("Special form")
              (list
               (para (list "Boolean `or` operation between n arguments. The form of an `or`"
                           "expression is `(or expr1 ... exprN)`.  This operation treats all"
@@ -909,14 +942,14 @@
                  )
            ))
 
-;; Quotes and quasiqoutation
+;; Quotes and quasiquotation
 
 (define op-quote
-  (ref-entry "quote"
+  (ref-entry "quote" '("Special form")
              (list
-              (para (list "Usages of the `'` quote symbol in input code is replaced with the"
-                          "symbol quote by the reader.  Evaluating a quoted expression, (quote"
-                          "a), results in a unevaluated."
+              (para (list "When the `'` quote operator is encountered by the reader it is removed"
+                          "and the code to the right is wrapped in `(quote ...)`. Evaluating a"
+                          "quoted expression `(quote a)` results in `a` unevaluated."
                           ))
               (code '((read-eval "'(+ 1 2)")
                       (read-eval "(eval '(+ 1 2))")
@@ -930,9 +963,10 @@
 (define op-quasi
   (ref-entry "`"
              (list
-              (para (list "The backwards tick `` ` `` is called the quasiquote. It is similar to"
-                          "the `'` but allows splicing in results of computations using the <a"
-                          "href=\"#,\">,</a> and the <a href=\"#commaat\">,@</a> operators."
+              (para (list "The backwards tick operator `` ` `` is called the quasiquote. It is similar to"
+                          "`'` but allows splicing in results of computations using the"
+                          (code-entry-ref "," "comma") "and the" (code-entry-ref ",@" "commaat")
+                          "operators."
                           ))
               (para (list "The result of `'(+ 1 2)` and `` `(+ 1 2)`` are similar in effect. Both"
                           "result in the result value of `(+ 1 2)`, that is a list containing +,"
@@ -947,7 +981,7 @@
               end)))
 
 (define op-comma
-  (ref-entry ","
+  (ref-entry ", <a name=\"comma\"></a>"
              (list
               (para (list "The comma is used to splice the result of a computation into a quasiquotation."
                           ))
@@ -960,7 +994,7 @@
               end)))
 
 (define op-commaat
-  (ref-entry ",@"
+  (ref-entry ",@ <a name=\"commaat\"></a>"
              (list
               (para (list "The comma-at operation is used to splice in the result of a computation (that"
                           "returns a list) into a list when quasiquoting."
@@ -984,6 +1018,79 @@
                  )))
 
 ;; Built-in operations
+
+(define built-in-identity
+  (ref-entry "identity"
+             (list
+              (para (list "The identity function takes one argument which it directly returns."
+                          "The form of an `identity` expression is `(identity expr)`, where expr is an arbitrary lisp expression."
+                          "`(identity expr)` is a function application so all normal function application rules apply."
+                          "The most important property of function applications in this case is that the argument is evaluated which"
+                          "differentiates `identity` from `quote` which returns the argument unevaluated."
+                          ))
+              (code '((identity 1)
+                      (identity (+ 1 2))
+                      (identity 'apa)
+                      (identity 'kurt-russel)
+                      (identity '(+ 1 2))
+                      ))
+              end)))
+
+(define built-in-set
+  (ref-entry "set"
+             (list
+              (para (list "The `set` form is used to change the value of some variable in an environment."
+                          "You can use `set` to change the value of a global definition or a local definition."
+                          "An application of the `set` form looks like `(set var-expr val-expr)` where"
+                          "`var-expr` should evaluate to a symbol. The `val-expr` is evaluated before"
+                          "rebinding the variable. `set` returns the value that `val-expr` evaluates to."
+                          ))
+              (program '(((define a 10)
+                          (set 'a 20)
+                          a)
+                         ))
+              (para (list "`set` works in local environments too such as in the body of a `let`"
+                          "or in a `progn`-local variable created using `var`."
+                          ))
+              (program '(((progn (var a 10) (set 'a 20) a))
+                          ))
+              (para (list "See " (code-entry-ref "setq") " for a version which does't evaluate"
+                          "`var-expr`, similarly to "
+                          (str-merge (code-entry-ref "define") ".")
+                          ))
+
+              end)))
+
+(define built-in-setvar
+  (ref-entry "setvar"
+             (list
+              (para (list "`setvar` is an alias of " (str-merge (code-entry-ref "set") ".")
+                          ))
+              end)))
+
+(define built-in-undefine
+  (ref-entry "undefine"
+             (list
+              (para (list "A definition in the global environment can be removed using undefine. "
+                          "The form of an undefine expression is `(undefine name-expr)` where"
+                          "`name-expr` should evaluate to a symbol (for example `'apa`)."
+                          ))
+              {
+              (define apa 10)
+              (code '((undefine 'apa)
+                      ))
+              }
+              (para (list "It is also possible to undefine several bindings at the same time by"
+                          "providing a list of names."
+                          ))
+              {
+              (define apa 10)
+              (define bepa 20)
+              (define cepa 30)
+              (code '((undefine '(apa bepa cepa))
+                      ))
+              }
+              end)))
 
 (define built-in-eval
   (ref-entry "eval"
@@ -1009,13 +1116,122 @@
                           "A `program-expr` is a list of expressions where each element in the list"
                           "can be evaluated by `eval`."
                           ))
-              (para (list "An optional environment can be passed in as the first arguement:"
+              (para (list "An optional environment can be passed in as the first argument:"
                           "`(eval-program env-expr program-expr)`."
                           ))
               (code '((eval-program (list (list + 1 2) (list + 3 4)))
                       (eval-program '( (+ 1 2) (+ 3 4)))
                       (eval-program (list (list define 'a 10) (list + 'a 1)))
                       (read-eval "(eval-program '( (define a 10) (+ a 1)))")
+                      ))
+              end)))
+
+(define built-in-apply
+  (ref-entry "apply"
+             (list
+              (para (list "An apply expression has the form `(apply fun-expr args-expr)`, and it "
+                          "applies `args-expr` to `fun-expr`. It can loosely be emulated by "
+                          "`(eval (cons fun-expr args-expr))`, except for the property that the"
+                          "elements of `args-expr` aren't evaluated when you use `apply`. "
+                          "`args-expr` itself is of course evaluated, but given the emulated form,"
+                          "the individual elements of the list would be evaluated again. This is a"
+                          "problem when your argument list may include symbols or any other values"
+                          "which change when evaluated."
+                          ))
+              (para (list "Note that `fun-expr` doesn't necessarily have to be a user defined"
+                          "function, but can be any value which can be applied, that is, a value"
+                          "which can be the first item in a list expression: `(fun ...)`. This"
+                          "includes (but is not limited to) user define functions (which end up as"
+                          (code-entry-ref "closure") "values), built-in functions, extensions,"
+                          (str-merge (code-entry-ref "macro") "s,") "and even special forms"
+                          " (but see **Footgun: Special forms**"
+                          "below)."
+                          ))
+              (code '((defun my-fun (arg1 arg2) (str-join (list (to-str arg1) (to-str arg2)) " "))
+                      (apply my-fun '(a b))
+                      (apply + (list 1 2 3 4 5))
+                      (apply list '(a b c))
+                      (trap (eval (cons my-fun '(symbol-a symbol-b))))
+                      (call-cc (fn (return) (apply return '(return-through-apply))))
+                      ))
+              (para (list "**Footgun: Special forms** "
+                          "\n[Special forms](#special-forms) are built in functions which control how"
+                          "their arguments are evaluated. This means that their implementations has"
+                          "custom logic for how to evaluate the arguments, which has the"
+                          "unfortunate consequence that to apply a list of arguments to them"
+                          "\"without evaluating\" said arguments would require specific logic for"
+                          "each special form's implementation. Given LispBM's nature of running in"
+                          "an embedded environment where binary size is a luxury this becomes"
+                          "highly impractical. Therefore the argument list is passed on unmodified"
+                          "to special forms. So `(apply def '(a 'symbol))` is *precisely*"
+                          "equivalent to `(eval (cons def '(a 'symbol)))`, `'symbol` will be"
+                          "evaluated!."
+                          ))
+              (para (list "This is most noticeable with `and` and `or`. They are special forms due"
+                          "to their short-circuiting behavior, where later arguments may not be"
+                          "evaluated depending on the previous arguments. Given that you only given"
+                          "them the symbol `t` or `nil` their special form status isn't a problem"
+                          "when it comes to `apply` since those symbols evaluate to themselves."
+                          "The problem appears when you give `and` or `or` other \"unstable\""
+                          "values like arbitrary symbols. Since they're special forms they will"
+                          "evaluate them another time."
+                          ))
+              (para (list "This behavior may be changed in the future, so please avoid writing"
+                          "programs which depend on this behavior. For the case of `and` and `or`"
+                          "you can define your own function which re-implement their behavior,"
+                          "which would be subject to `apply`'s non-evaluating property (see example"
+                          "below)."))
+              (program '(((apply or '(false true)))
+                         ((trap (apply and '(symbol-a symbol-b))))
+                         ((trap (apply or '(false symbol-b))))
+                         ((defun safe-and ()
+                            (foldl (fn (acc x) (and acc x))
+                                   true
+                                   (rest-args)))
+                          (apply safe-and '(symbol-a symbol-b))
+                          )
+                         ))
+              end)))
+
+(define built-in-read
+  (ref-entry "read"
+             (list
+              (para (list "Parses a string resulting in either an expression or the <a href=\"#read_error\">read_error</a> in case"
+                          "the string can not be parsed into an expression. The form of a read expression is"
+                          "`(read string)`."
+                          ))
+              (code '((read-eval "(read \"1\")")
+                      (read-eval "(read \"(+ 1 2)\")")
+                      (read-eval "(read \"(lambda (x) (+ x 1))\")")
+                      ))
+              end)))
+
+
+(define built-in-read-program
+  (ref-entry "read-program"
+             (list
+              (para (list "Parses a string containing multiple sequenced expressions. The resulting list of"
+                          "expressions can be evaluated as a program using <a href=\"#eval-program\">eval-program</a>."
+                          "The form of a read-program expression is `(read-program string)`."
+                          ))
+              (code '((read-eval "(read-program \"(define apa 1) (+ 2 apa)\")")
+                      ))
+              end)))
+
+(define built-in-read-eval-program
+  (ref-entry "read-eval-program"
+             (list
+              (para (list "Parses and evaluates a program incrementally. `read-eval-program` reads a top-level expression"
+                          "then evaluates it before reading the next."
+                          ))
+              (code '((read-eval "(read-eval-program \"(define a 10) (+ a 10)\")")
+                      ))
+              (para (list "`read-eval-program` supports the "
+                          (code-entry-ref "@const-start" "const-start") "and"
+                          (code-entry-ref "@const-end" "const-end") "annotations which move all"
+                          "global definitions created in the program to constant memory (flash)."
+                          ))
+              (code '((read-eval "(read-eval-program \"@const-start (define a 10) (+ a 10) @const-end\")")
                       ))
               end)))
 
@@ -1085,7 +1301,7 @@
   (ref-entry "gc"
              (list
               (para (list "The `gc` function runs the garbage collector so that it can reclaim"
-                          "values from the heap and LBM memory that are nolonger needed."
+                          "values from the heap and LBM memory that are no longer needed."
                           ))
               (para (list "**Note** that one should not need to run this function. GC is run"
                           "automatically when needed."
@@ -1158,9 +1374,17 @@
 (define built-ins
   (section 2 "Built-in operations"
            (list 'hline
+                 built-in-identity
                  built-in-rest-args
+                 built-in-set
+                 built-in-setvar
+                 built-in-undefine
                  built-in-eval
                  built-in-eval-program
+                 built-in-apply
+                 built-in-read
+                 built-in-read-program
+                 built-in-read-eval-program
                  built-in-type-of
                  built-in-sym2str
                  built-in-str2sym
@@ -1172,11 +1396,11 @@
 ;; Special forms
 
 (define special-form-if
-  (ref-entry "if"
+  (ref-entry "if" '("Special form")
              (list
-              (para (list "Conditionals are written as `(if cond-expr then-expr else-exp)`.  If"
-                          "the cond-expr evaluates to <a href=\"#nil\"> nil </a> the else-expr will"
-                          "be evaluated.  for any other value of cond-expr the then-expr will be"
+              (para (list "Conditionals are written as `(if cond-expr then-expr else-exp)`. If"
+                          "the `cond-expr` evaluates to" (code-entry-ref "nil") "the `else-expr` will"
+                          "be evaluated. For any other value of `cond-expr` the `then-expr` will be"
                           "evaluated."
                           ))
               (code '((if t 1 2)
@@ -1185,7 +1409,7 @@
               end)))
 
 (define special-form-cond
-  (ref-entry "cond"
+  (ref-entry "cond" '("Special form")
              (list
               (para (list "`cond` is a generalization of `if` to discern between n different cases"
                           "based on boolean expressions. The form of a `cond` expression is:"
@@ -1210,7 +1434,7 @@
               end)))
 
 (define special-form-lambda
-  (ref-entry "lambda"
+  (ref-entry "lambda" '("Special form")
              (list
               (para (list "You create an anonymous function with lambda. The function can be given a name by binding the lambda expression using <a href=\"#define\">define</a>"
                           "or <a href=\"#let\">let</a>. A lambda expression has the form `(lambda param-list body-expr)`."
@@ -1235,7 +1459,7 @@
               end)))
 
 (define special-form-closure
-  (ref-entry "closure"
+  (ref-entry "closure" '("Special form")
              (list
               (para (list "A <a href=\"#lambda\"> lambda </a> expression evaluates into a closure"
                           "which is very similar to a <a href=\"#lambda\">lambda</a> but extended"
@@ -1250,7 +1474,7 @@
               end)))
 
 (define special-form-let
-  (ref-entry "let"
+  (ref-entry "let" '("Special form")
              (list
               (para (list "Local environments are created using let. The let binding in lispbm"
                           "allows for mutually recursive bindings. The form of a let is `(let"
@@ -1274,7 +1498,7 @@
               end)))
 
 (define special-form-loop
-  (ref-entry "loop"
+  (ref-entry "loop" '("Special form")
              (list
               (para (list "loop allows to repeatedly evaluate an expression for as long as a condition"
                           "holds. The form of a loop is `(loop list-of-local-bindings condition-exp body-exp)`."
@@ -1290,64 +1514,21 @@
               end)))
 
 (define special-form-define
-  (ref-entry "define"
+  (ref-entry "define" '("Special form")
              (list
               (para (list "You can give names to values in a global scope by using define."
-                          "The form of define is `(define name expr)`. The expr is evaluated and it is the"
-                          "result of the evaluated expr that is stored in the environment."
-                          "In lispbm you can redefine already defined values."
+                          "The form of define is `(define name expr)`. The given expression is"
+                          "evaluated and the result is stored in the global environment under"
+                          "`name`. In lispbm you can redefine already defined values. It is also"
+                          "possible to remove bindings from the global environment, see"
+                          (str-merge (code-entry-ref "undefine") ".")
                           ))
               (code '((define apa 10)
                       ))
               end)))
 
-(define special-form-undefine
-  (ref-entry "undefine"
-             (list
-              (para (list "A definition in the global can be removed using undefine.  The form of"
-                          "an undefine expression is `(undefine name-expr)` where name-expr"
-                          "should evaluate to a symbol (for example `'apa`)."
-                          ))
-              {
-              (define apa 10)
-              (code '((undefine 'apa)
-                      ))
-              }
-              (para (list "It is also possible to undefine several bindings at the same time by"
-                          "providing a list of names."
-                          ))
-              {
-              (define apa 10)
-              (define bepa 20)
-              (define cepa 30)
-              (code '((undefine '(apa bepa cepa))
-                      ))
-              }
-              end)))
-
-(define special-form-set
-  (ref-entry "set"
-             (list
-              (para (list "The `set` form is used to change the value of some variable in an environment."
-                          "You can use `set` to change the value of a global definition or a local definition."
-                          "An application of the `set` form looks like `(set var-expr val-expr)` where"
-                          "`var-expr` should evaluate to a symbol. The `val-expr` is evaluated before"
-                          "rebinding the variable. `set` returns the value that `val-expr` evaluates to."
-                          ))
-              (program '(((define a 10)
-                          (set 'a 20)
-                          a)
-                         ))
-              (para (list "`set` works in local environments too such as in the body of a `let`"
-                          "or in a `progn`-local variable created using `var`."
-                          ))
-              (program '(((progn (var a 10) (set 'a 20) a))
-                          ))
-
-              end)))
-
 (define special-form-setq
-  (ref-entry "setq"
+  (ref-entry "setq" '("Special form")
              (list
               (para (list "The `setq` special-form is similar to `set` and to `setvar` but expects the first argument"
                           "to be a symbol. The first argument to `setq` is NOT evaluated."
@@ -1364,15 +1545,8 @@
                          ))
               end)))
 
-(define special-form-setvar
-  (ref-entry "setvar"
-             (list
-              (para (list "`setvar` is the exact same thing as `set`"
-                          ))
-              end)))
-
 (define special-form-progn
-  (ref-entry "progn"
+  (ref-entry "progn" '("Special form")
              (list
               (para (list "The progn special form allows you to sequence a number of expressions."
                           "The form of a progn expression is `(progn expr1 ... exprN)`."
@@ -1386,10 +1560,10 @@
               end)))
 
 (define special-form-brack
-  (ref-entry "{"
+  (ref-entry "{" '("Special form")
              (list
               (para (list "The curlybrace `{` syntax is a short-form (syntactic sugar) for `(progn`."
-                          "The parser replaces occurrences of `{` with `(progn`. The `{` should be"
+                          "The reader replaces occurrences of `{` with `(progn`. The `{` should be"
                           "closed with an `}`."
                           ))
               (para (list "These two programs are thus equivalent:"
@@ -1417,7 +1591,7 @@
   (ref-entry "}"
              (list
               (para (list "The closing curlybrace `}` should be used to close an opening `{` but purely"
-                          "for esthetical reasons. The `}` is treated identically to a regular closing parenthesis `)`."
+                          "for esthetic reasons. The `}` is treated identically to a regular closing parenthesis `)`."
                           ))
               (para (list
                           "The opening `{` and closing `}` curlybraces are used as a short-form for `progn`-blocks"
@@ -1427,7 +1601,7 @@
 
 
 (define special-form-var
-  (ref-entry "var"
+  (ref-entry "var" '("Special form")
              (list
               (para (list "The var special form allows local bindings in a progn expression. A"
                           "var expression is of the form (var symbol expr) and the symbol `symbol`"
@@ -1444,54 +1618,14 @@
                       ))
               end)))
 
-
-(define special-form-read
-  (ref-entry "read"
-             (list
-              (para (list "Parses a string resulting in either an expression or the <a href=\"#read_error\">read_error</a> in case"
-                          "the string can not be parsed into an expression. The form of a read expression is"
-                          "`(read string)`."
-                          ))
-              (code '((read-eval "(read \"1\")")
-                      (read-eval "(read \"(lambda (x) (+ x 1))\"")
-                      ))
-              end)))
-
-
-(define special-form-read-program
-  (ref-entry "read-program"
-             (list
-              (para (list "Parses a string containing multiple sequenced expressions. The resulting list of"
-                          "expressions can be evaluated as a program using <a href=\"#eval-program\">eval-program</a>."
-                          "The form of a read-program expression is `(read-program string)`."
-                          ))
-              (code '((read-eval "(read-program \"(define apa 1) (+ 2 apa)\")")
-                      ))
-              end)))
-
-(define special-form-read-eval-program
-  (ref-entry "read-eval-program"
-             (list
-              (para (list "Parses and evaluates a program incrementally. `read-eval-program` reads a top-level expression"
-                          "then evaluates it before reading the next."
-                          ))
-              (code '((read-eval "(read-eval-program \"(define a 10) (+ a 10)\")")
-                      ))
-              (para (list "`read-eval-program` supports the `@const-start` and `@const-end` annotations which move all"
-                          "global definitions created in the program to constant memory (flash)."
-                          ))
-              (code '((read-eval "(read-eval-program \"@const-start (define a 10) (+ a 10) @const-end\")")
-                      ))
-              end)))
-
 (define special-form-trap
-  (ref-entry "trap"
+  (ref-entry "trap" '("Special form")
              (list
               (para (list "`trap` lets you catch an error rather than have the evaluation context terminate."
                           "The form of a trap expression is `(trap expr)`."
                           "If expr crashes with an error `e` then `(trap expr)` evaluates"
                           "to `(exit-error e)`. If expr successfully runs and returns `r`,"
-                          "then `(trap expr)` evaluates to (exit-ok r)."
+                          "then `(trap expr)` evaluates to `(exit-ok r)`."
                           ))
               (code '((trap (/ 1 0))
                       (trap (+ 1 2))
@@ -1504,11 +1638,25 @@
 (define special-forms
   (section 2 "Special forms"
            (list
-            (para (list "Special forms looks a lot like functions but they are allowed to"
-                        "break the norms when it comes to evaluation order of arguments."
-                        "a special form may choose to evaluate or not, freely, from its"
-                        "list of arguments."
+            (para (list "Special forms are like functions except that they choose what arguments"
+                        "are evaluated. This is in contrast to \"normal functions\", usually"
+                        "referred to as *\"forms\"* in other Lisps, which always evaluate every"
+                        "argument they are given."
                         ))
+            (para (list "Note that some special forms are located in other sections to improve the"
+                        "document flow. These are:"))
+            (bullet (list (code-entry-ref "quote")
+                          (code-entry-ref "and")
+                          (code-entry-ref "or")
+                          (code-entry-ref "match")
+                          (code-entry-ref "recv")
+                          (code-entry-ref "recv-to")
+                          (code-entry-ref "call-cc")
+                          (code-entry-ref "call-cc-unsafe")
+                          (code-entry-ref "atomic")
+                          (code-entry-ref "macro")
+                          (code-entry-ref "move-to-flash")
+                          ))
             (list 'hline
                   special-form-if
                   special-form-cond
@@ -1517,17 +1665,11 @@
                   special-form-let
                   special-form-loop
                   special-form-define
-                  special-form-undefine
-                  special-form-set
                   special-form-setq
-                  special-form-setvar
                   special-form-progn
                   special-form-brack
                   special-form-close-brack
                   special-form-var
-                  special-form-read
-                  special-form-read-program
-                  special-form-read-eval-program
                   special-form-trap
                   )
             )))
@@ -1669,7 +1811,7 @@
   (ref-entry "setix"
              (list
               (para (list "Destructively update an element in a list. The form of a `setix` expression"
-                          "is `(setix list-expr index-extr value-expr)`. Indexing starts from 0 and"
+                          "is `(setix list-expr index-expr value-expr)`. Indexing starts from 0 and"
                           "if you index out of bounds the result is nil."
                           "A negative value -n will update the nth value from the end of the list."
                           ))
@@ -1816,7 +1958,7 @@
                         "and the cdr fields hold pointers (the last cdr field is nil). The list below"
                         "can be created either as `'(1 2 3)` or as `(list 1 2 3)`."
                         ))
-            (image "list" "images/list.png")
+            (s-exp-graph "list_1_2_3" (list 1 2 3))
             lists-car
             lists-first
             lists-cdr
@@ -1911,19 +2053,26 @@
             assoc-setassoc
             )))
 
-;; Arrays Byte buffers
+;; Byte buffers
 
-(define arrays-bufcreate
+(define bb-bufcreate
   (ref-entry "bufcreate"
              (list
-              (para (list "Create an array of bytes. The form of a `bufcreate` expression is `(bufcreate size-expr)`"
+              (para (list "Create an array of bytes. The form of a `bufcreate` expression is `(bufcreate size-expr)`."
                           ))
               (code '((define data (bufcreate 10))
 		      (define empty-array (bufcreate 0))
                       ))
+              (para (list "Alternatively a buffer can be allocated from a compactable memory region (defrag mem)."
+                          ))
+              (code '((define dm (dm-create 1000))
+                      (define data-in-dm (bufcreate dm 10))
+                      ))
+              (para (list "For more information about defragmentable memory see <a href=#Defragmentable_memory>Defragmentable memory</a>."
+                          ))
               end)))
 
-(define arrays-buflen
+(define bb-buflen
   (ref-entry "buflen"
              (list
               (para (list "Returns the size of a buffer in number of bytes. The form"
@@ -1934,7 +2083,7 @@
                       ))
               end)))
 
-(define arrays-bufget
+(define bb-bufget
   (ref-entry "bufget-[X]"
              (list
               (para (list "Read a value from a buffer. The contents of a buffer can be read"
@@ -1954,7 +2103,7 @@
                       ))
               end)))
 
-(define arrays-bufset
+(define bb-bufset
   (ref-entry "bufset-[X]"
              (list
               (para (list "The `bufset` functions performs a destructive updates to a buffer."
@@ -1978,7 +2127,7 @@
                       ))
               end)))
 
-(define arrays-bufclear
+(define bb-bufclear
   (ref-entry "bufclear"
              (list
               (para (list "To clear a byte array the function bufclear can be used `(bufclear arr optByte optStart optLen)`"
@@ -2002,12 +2151,12 @@
                       ))
               end)))
 
-(define arrays-literal
-  (ref-entry "Byte-array literal syntax"
+(define bb-literal
+  (ref-entry "Byte buffer literal syntax"
              (list
-              (para (list "Byte-array (buffer) literals can be created using the `[` and `]` syntax to enclose"
+              (para (list "Byte buffer literals can be created using the `[` and `]` syntax to enclose"
                           "values to initialize the array with. The `[` and `]` syntax is complete"
-                          "resolved in the parser and thus cannot contain arbitrary lisp terms."
+                          "resolved in the reader and thus cannot contain arbitrary lisp terms."
                           "the values listed between the `[` and the `]` must be literals!"
                           ))
               (para (list "The form of the `[` and `]` syntax is `[ val1 ... valN ]`."
@@ -2016,16 +2165,128 @@
                       ))
               end)))
 
-(define arrays
-  (section 2 "Arrays (byte buffers)"
+(define bytebuffers
+  (section 2 "Byte buffers"
            (list 'hline
-                 arrays-bufcreate
-                 arrays-buflen
-                 arrays-bufget
-                 arrays-bufset
-                 arrays-bufclear
-                 arrays-literal
+                 bb-bufcreate
+                 bb-buflen
+                 bb-bufget
+                 bb-bufset
+                 bb-bufclear
+                 bb-literal
                  )))
+
+(define array-literals
+  (ref-entry "array literals"
+             (list
+              (para (list "An array literal are specified as a sequence of lisp values between `[|` and `|]`."
+                          "Values in a literal array are not evaluated."
+                          ))
+              (code '((define my-arr [| 1 2 3 |])
+                      (define my-arr [| daniel jackson |])
+                      (define my-arr [| (apa . bepa) (1 . 2) |])
+                      (define my-arr [| (+ 1 2) (+ 3 4) |])
+                      (define my-arr [| [| 1 2 3|] [|4 5 6|]|])
+                      (ix my-arr 0)
+                      (ix my-arr 1)
+                      (ix (ix my-arr 0) 1)
+                      (ix (ix my-arr 1) 2)
+                      ))
+              (para (list "All arrays have an associated heap-cell that acts as a liaison in relation"
+                          "to the garbage collector."
+                          "When garbage collection frees the liaison, it also frees the array data in"
+                          "buffers and arrays memory (lbm_memory)."
+                          ))
+              (s-exp-graph "array_literal" [| 1 2 3 |] "In memory representation of an array")
+              end
+              )
+             )
+  )
+
+(define array-array
+  (ref-entry "array"
+             (list
+              (para (list "`array` takes n arguments and creates an array holding those arguments as values."
+                          "The form of an `array` expression is `(array expr1 ... exprN)`."
+                          ))
+              (code '((define my-arr (array 1 2 3))
+                      (define my-arr (array (+ 1 2) (+ 3 4)))
+                      ))
+              end
+              )
+             )
+  )
+
+(define array-mkarray
+  (ref-entry "mkarray"
+   (list
+    (para (list "Allocate an array with `mkarray`. Arrays are allocated in arrays and byte buffer memory."
+                "The form an `mkarray` expression is `(mkarray num-expr)`."
+                ;;"but can also be allocated in a compactable (defrag mem) area."
+                ;;"The form of an `mkarray` expression is either `(mkarray num)` or `(mkarray dm num)` where"
+                ;;"`dm` is a defrag-mem area and num is the size of the array to allocate."
+                ))
+    (para (list "Note that there is currently no literal syntax for arrays."
+                ))
+    (para (list "The example below allocates an array in \"lbm_memory\" (arrays and byte-buffer memory)."
+                ))
+    (code '((define my-arr (mkarray 10))
+            ))
+    ;;(para (list "Below is an example allocating an array from a compactable memory area."
+    ;;            ))
+    ;;(code '((define my-dm (dm-create 1000))
+    ;;        (define my-arr (mkarray my-dm 10))
+    ;;        ))
+    end
+    )
+   )
+  )
+
+(define array-ix
+  (ref-entry "ix"
+             (list
+              (para (list "Index into an array using the `ix` function. The form of an `ix` expression"
+                          "is `(ix array-expr index-expr)`. Indexing starts from 0 and if you index out of bounds the result is nil."
+                          "A negative index accesses values starting from the end of the array."
+                          ))
+              (code '((ix [| 1 2 3 4 |] 1)
+                      (ix [| 1 2 3 4 |] -1)
+                      ))
+              end
+              )
+             )
+  )
+
+(define array-setix
+  (ref-entry "setix"
+             (list
+               (para (list "Destructively update an element in an array. The form of a `setix` expression"
+                          "is `(setix arr-expr index-expr value-expr)`. Indexing starts from 0 and"
+                          "if you index out of bounds the result is nil."
+                          "A negative value -n will update the nth value from the end of the list."
+                          ))
+              (code '((setix [| 1 2 3 4 5 |] 2 77)
+                      (setix [| 1 2 3 4 5 |] -2 66)
+                      ))
+              end
+              )
+             )
+  )
+
+;; High level arrays
+(define arrays
+  (section 2 "Arrays"
+           (list
+            (para (list "LispBM supports arrays of arbitrary lisp values (including other arrays)."
+                        ))
+            array-literals
+            array-array
+            array-mkarray
+            array-ix
+            array-setix
+            )
+           )
+  )
 
 ;; Defragmentable memory
 
@@ -2033,8 +2294,8 @@
     (list 
      (para (list "LBM has two types of memory, the HEAP and the LBM_MEMORY. Lists and pairs are all stored on the heap."
 		 "Arrays and large values (such as 64bit numbers are stored on LBM_MEMORY."
-		 "The HEAP has a nice property that all allocations on it are the same size and therefore the HEAP is imune"
-		 "the problems caused by fragmentation."
+		 "The HEAP has a nice property that all allocations on it are the same size and therefore the HEAP is immune"
+		 "to the problems caused by fragmentation."
 		 "On LBM_MEMORY arbitrarily sized arrays can be allocated and fragmentation can cause an allocation to fail even"
 		 "though there is enough free bytes."
 		 ))
@@ -2068,7 +2329,7 @@
 		(para (list "`dm-alloc` is used to allocate a byte-array from a region of defragmentable memory."
 			    "The form of a `dm-alloc` expression is `(dm-alloc DM-expr size-expr)`."
 			    "where `DM-expr` evaluates to the defragmentable region to allocate from and `size-expr` is the number of bytes to allocate."
-			    "Each allocation uses up 12 extre bytes of header that you do not include in `size-expr`."
+			    "Each allocation uses up 12 extra bytes of header that you do not include in `size-expr`."
 		      ))
 		(code '((define arr10 (dm-alloc dm 10))
 			(define arr100 (dm-alloc dm 100))))
@@ -2086,7 +2347,7 @@
 ;; Pattern matching
 
 (define pm-match
-  (ref-entry "match"
+  (ref-entry "match" '("Special form")
              (list
               (para (list "Pattern-matching is expressed using match. The form of a match expression is"
                           "`(match expr (pat1 expr1) ... (patN exprN))`. Pattern-matching compares"
@@ -2247,11 +2508,11 @@
               end)))
 
 (define conc-atomic
-  (ref-entry "atomic"
+  (ref-entry "atomic" '("Special form")
              (list
               (para (list "`atomic` can be used to execute a LispBM one or more expression without allowing"
                           "the runtime system to switch process during that time. `atomic` is similar to"
-                          "progn with the addition of being uninterruptable."
+                          "progn with the addition of being uninterruptible."
                           ))
               (code '((atomic (+ 1 2) (+ 3 4) (+ 4 5))
                       ))
@@ -2261,7 +2522,7 @@
   (ref-entry "exit-ok"
              (list
               (para (list "The `exit-ok` function terminates the thread in a \"successful\" way and"
-                          "returnes a result specified by the programmer. The form of an"
+                          "returns a result specified by the programmer. The form of an"
                           "`exit-ok` expression is `(exit-ok value)`.  If the process that calls"
                           "`exit-ok` was created using `spawn-trap` a message of the form"
                           "`(exit-ok tid value)` is be sent to the parent of this process."
@@ -2312,7 +2573,7 @@
   (section 2 "Concurrency"
            (list
             (para (list "The concurrency support in LispBM is provided by the set of functions,"
-                        "`spawn`, `wait`, `yeild` and `atomic` described below.  Concurrency in"
+                        "`spawn`, `wait`, `yield` and `atomic` described below.  Concurrency in"
                         "LispBM is scheduled by a round-robin scheduler that splits the runtime"
                         "system evaluator fairly (with caveats, below) between all running processes."
                         ))
@@ -2353,7 +2614,7 @@
               end)))
 
 (define mp-recv
-  (ref-entry "recv"
+  (ref-entry "recv" '("Special form")
              (list
               (para (list "To receive a message use the `recv` command. A process"
                           "will block on a `recv` until there is a matching message in"
@@ -2367,7 +2628,7 @@
               end)))
 
 (define mp-recv-to
-  (ref-entry "recv-to"
+  (ref-entry "recv-to" '("Special form")
              (list
               (para (list "Like [recv](#recv), `recv-to` is used to receive"
                           "messages but `recv-to` takes an extra timeout argument."
@@ -2375,18 +2636,12 @@
                           "`timeout` after the timeout period ends."
                           ))
               (para (list "The form of an `recv-to` expression is"
-                          "```clj"
-                          "(recv-to timeout-secs"
-                          "                (pattern1 exp1)"
-                          "                ..."
-                          "                (patternN expN))"
-                          "```"
+                          "`(recv-to timeout-secs (pattern1 exp1) ... (patternN expN))`"
                           ))
               (program '(((send (self) 28)
                           (recv-to 0.1
-                                   ((? n) (+ n 1))
-                                   (timeout 'no-message))
-
+                                   (timeout 'no-message)
+                                   ((? n) (+ n 1)))
                           )
                          ))
               (program '(((send (self) 'not-foo)
@@ -2519,7 +2774,7 @@
 ;; MACRO!
 
 (define m-macro
-  (ref-entry "macro"
+  (ref-entry "macro" '("Special form")
              (list
               (para (list "The form of a `macro` expression is: `(macro args body)`"
                           ))
@@ -2532,8 +2787,8 @@
 (define macros
   (section 2 "Macros"
            (list
-            (para (list "lispBM macros are created using the `macro` keyword. A macro"
-                        "is quite similar to [lambda](#lambda) in lispBM except that"
+            (para (list "LispBM macros are created using the `macro` keyword. A macro"
+                        "is quite similar to" (code-entry-ref "lambda") "in lispBM except that"
                         "arguments are passed in unevaluated. Together with the code-splicing"
                         "capabilities given by [quasiquotation](#quasiquotation), this"
                         "provides a powerful code-generation tool."
@@ -2553,7 +2808,7 @@
            ))
 
 (define cc
-  (section 2 "Call with current continutation"
+  (section 2 "Call with current continuation"
            (list
             (para (list "\"Call with current continuation\" is called `call-cc` in LBM."
                         "Call with current continuation saves the \"current continuation\", which encodes what"
@@ -2570,22 +2825,22 @@
                         "which will allow some pretty arbitrary control flow."
                         ))
             (para (list "The example below creates a macro for a `progn` facility that"
-                        "allows returning at an arbitrary point.\n"
+                        "allows returning at an arbitrary point.\n\n"
                         "```clj\n"
                         "(define do (macro (body)\n"
                         "                  `(call-cc (lambda (return) (progn ,@body)))))\n"
-                        "```\n"
+                        "```\n\n"
                         "The example using `do` below makes use of `print` which is not a"
                         "built-in feature of lispBM. There are just to many different ways a programmer may"
                         "want to implement `print` on an microcontroller. Use the lispBM extensions"
-                        "framework to implement your own version of `print`\n"
+                        "framework to implement your own version of `print`\n\n"
                         "```clj\n"
                         "(do ((print 10)\n"
                         "     (return 't)\n"
                         "     (print 20)))\n"
-                        "```\n"
+                        "```\n\n"
                         "In the example above only \"10\" will be printed."
-                        "Below is an example that conditionally returns.\n"
+                        "Below is an example that conditionally returns.\n\n"
                         "```clj\n"
                         "(define f (lambda (x)\n"
                         "            (do ((print \"hello world\")\n"
@@ -2593,10 +2848,30 @@
                         "                     (return 't)\n"
                         "                     nil)\n"
                         "                 (print \"Gizmo!\")))))\n"
-                        "```\n"
+                        "```\n\n"
                         ))
-            )
+                  
+            (ref-entry "call-cc" '("Special form")
+                       (list
+                        (para (list "The form of a `call-cc` expression is `(call-cc f)`, where f is a function taking a continuation k."
+                                    "In code most uses of call-cc will have the form `(call-cc (lambda (k) expr ))`."
+                                    "When using `call-cc` the expr above is allowed to bind `k` to a global variable."
+                                    ))
+                        )
+                       )           
+           (ref-entry "call-cc-unsafe" '("Special form")
+                      (list
+                       (para (list "`call-cc-unsafe` is similar to `call-cc` in form. `(call-cc-unsafe f)`"
+                                   "and in code usually as `(call-cc-unsafe (lambda (k) expr))`."
+                                   "When using call-cc-unsafe you must NOT let the `k` leak out of the scope created"
+                                   "by the enclosing `call-cc-unsafe`! That is, if `k` is used at all, it must be within `expr`."
+                                   "Binding `k` (directly or indirectly) to a global is a violation of the trust I am putting in you."
+                                   ))
+                       )
+                      )
            ))
+  )
+
 
 ;; Error handling
 
@@ -2704,16 +2979,16 @@
 
 ;; Flash memory
 
-(define const-symbol-strings
-  (ref-entry "@const-symbol-strings"
-             (list
-              (para (list "`@const-symbol-strings` functionality have been combined with `@const-start` and `@const-end`."
-                          "Now symbols created while in a const block, end up in flash storage."
-                          ))
-              (para (list "~~if `@const-symbol-strings` directive is placed in a file, symbols will be created"
-                          "in flash memory instead of the arrays memory.~~"
-                          ))
-              end)))
+;; (define const-symbol-strings
+;;   (ref-entry "@const-symbol-strings"
+;;              (list
+;;               (para (list "`@const-symbol-strings` functionality have been combined with `@const-start` and `@const-end`."
+;;                           "Now symbols created while in a const block, end up in flash storage."
+;;                           ))
+;;               (para (list "~~if `@const-symbol-strings` directive is placed in a file, symbols will be created"
+;;                           "in flash memory instead of the arrays memory.~~"
+;;                           ))
+;;               end)))
 
 (define const-start
   (ref-entry "@const-start"
@@ -2743,7 +3018,7 @@
               end)))
 
 (define flash-move
-  (ref-entry "move-to-flash"
+  (ref-entry "move-to-flash" '("Special form")
              (list
               (para (list "A value can be moved to flash storage to save space on the normal"
                           "evaluation heap or lbm memory.  A `move-to-flash` expression is of the"
@@ -2779,7 +3054,7 @@
                         "reading, there are `@`directives."
                         ))
             'hline
-            const-symbol-strings
+            ;const-symbol-strings
             const-start
             const-end
             flash-move
@@ -2788,7 +3063,7 @@
 
 ;; Type convertion function
 
-(define type-conv
+(define type-convertions
   (section 2 "Type convertions"
            (list
             (ref-entry "to-byte"
@@ -2885,12 +3160,6 @@
 
 ;; Manual
 
-(define info
-  (let (((major minor patch) (lbm-version))
-        (version-str (str-merge (to-str major) "." (to-str minor) "." (to-str patch))))
-        (para (list (str-merge "This document was generated by LispBM version " version-str))
-        )))
-
 (define manual
   (list
    (section 1 "LispBM Reference Manual"
@@ -2910,6 +3179,7 @@
                                  special-forms
                                  lists
                                  assoc-lists
+                                 bytebuffers
                                  arrays
 				 defrag-mem
                                  pattern-matching
@@ -2920,7 +3190,7 @@
                                  cc
                                  error-handling
                                  flash
-                                 type-conv
+                                 type-convertions
                                  info
                                  ))
                   )

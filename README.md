@@ -22,10 +22,7 @@ cd esp-idf-v5.2.2/
 
 At the moment development is done using the stable 5.2.2-release.
 
-Additionally you may want to add export.sh to your .bashrc file.
-```echo "source /path/to/esp-idf-v5.2.2/export.sh" >> ~/.bashrc```
-
-## Compiling
+## Building
 
 Once the toolchain is set up in the current path, the project can be built with
 
@@ -33,14 +30,20 @@ Once the toolchain is set up in the current path, the project can be built with
 idf.py build
 ```
 
-To build a specific target
+That will create vesc_express.bin in the build directory, which can be used with the bootloader in VESC Tool. If the ESP32c3 does not come with firmware preinstalled, the USB-port can be used for flashing firmware using the built-in bootloader. That also requires bootloader.bin and partition-table.bin which also can be found in the build directory. This can be done from VESC Tool or using idf.py.
+
+### Custom Hardware Targets
+
+If you wish to build the project with custom hardware config files you have two options:
+1. Add the hardware files to the "**main/hwconf**" directory.
+2. Use the HW_NAME build flag
 ```bash
 idf.py build -DHW_NAME="VESC Express T"
 ```
 
-That will create vesc_express.$target.bin in the bin directory, which can be used with the bootloader in VESC Tool. If the ESP32, ESP32c3 or ESP32s3 does not come with firmware preinstalled, the USB-port can be used for flashing firmware using the built-in bootloader. That also requires bootloader.bin and partition-table.bin which also can be found in the build directory. This can be done from VESC Tool or using idf.py.
+For option 1. you could for instance add you're two files `hw_my_device.c` and `hw_my_device.h` into "**main/hw_conf**", and then edit the `HW_SOURCE` and `HW_HEADER` macro definitions in "**main/conf_general.h**" to the names of your new files. This method is ideal if you may want to contribute back these hardware configurations to the vesc_express repository!
 
-When switching targets, you need to clean the build directory
-```bash
-idf.py fullclean
-```
+Option 2. is instead better if you have hardware configuration files in a directory which is outside the vesc_express source tree. You would then, for instance, set the environment variables `HW_SRC=/my/path/to/hw_my_device.c` and `HW_HEADER=/my/path/to/hw_my_device.h` when running `idf.py build`.
+
+
+**Note:** If you ever change the environment variables, or if when you first start using them, you need to first run `idf.py reconfigure` before building (with the environment variables still set of course!), as the build system unfortunately can't automatically detect this change. Running `idf.py fullclean` has the same effect as this forces cmake to rebuild the build configurations.

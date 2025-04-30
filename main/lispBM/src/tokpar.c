@@ -28,16 +28,13 @@
 #include "heap.h"
 #include "env.h"
 
-char tokpar_sym_str[TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH];
-
-static void clear_sym_str(void) {
-  memset(tokpar_sym_str,0,TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH);
-}
+// +1 to ensure there is always a zero at last ix
+char tokpar_sym_str[TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH+1];
 
 typedef struct {
   const char *str;
-  uint32_t token;
-  uint32_t len;
+  uint16_t token;
+  uint16_t len;
 } matcher;
 
 /*
@@ -68,10 +65,11 @@ const char special_chars[NUM_SPECIAL_CHARS][2] =
    {'\\', '\\'},
    {'d', 127}};
 
-#define NUM_FIXED_SIZE_TOKENS 16
+#define NUM_FIXED_SIZE_TOKENS 18
 const matcher fixed_size_tokens[NUM_FIXED_SIZE_TOKENS] = {
   {"(", TOKOPENPAR, 1},
   {")", TOKCLOSEPAR, 1},
+  {"[|", TOKOPENARRAY, 2},
   {"[", TOKOPENBRACK, 1},
   {"]", TOKCLOSEBRACK, 1},
   {".", TOKDOT, 1},
@@ -83,9 +81,9 @@ const matcher fixed_size_tokens[NUM_FIXED_SIZE_TOKENS] = {
   {"?", TOKMATCHANY, 1},
   {"{", TOKOPENCURL, 1},
   {"}", TOKCLOSECURL, 1},
+  {"|]", TOKCLOSEARRAY, 2},
   {"@const-start", TOKCONSTSTART, 12},
   {"@const-end", TOKCONSTEND, 10},
-  {"@const-symbol-strings", TOKCONSTSYMSTR, 21},
 };
 
 #define NUM_TYPE_QUALIFIERS 9
@@ -106,12 +104,10 @@ static int tok_match_fixed_size_tokens(lbm_char_channel_t *chan, const matcher *
   for (unsigned int i = 0; i < num; i ++) {
     uint32_t tok_len = m[i].len;
     const char *match_str = m[i].str;
-    uint32_t tok = m[i].token;
     char c;
     int char_pos;
-    int r;
     for (char_pos = 0; char_pos < (int)tok_len; char_pos ++) {
-      r = lbm_channel_peek(chan,(unsigned int)char_pos + start_pos, &c);
+      int r = lbm_channel_peek(chan,(unsigned int)char_pos + start_pos, &c);
       if (r == CHANNEL_SUCCESS) {
         if (c != match_str[char_pos]) break;
       } else if (r == CHANNEL_MORE ) {
@@ -122,7 +118,7 @@ static int tok_match_fixed_size_tokens(lbm_char_channel_t *chan, const matcher *
     }
 
     if (char_pos == (int)tok_len) { //match
-      *res = tok;
+      *res = m[i].token;
       return (int)tok_len;
     }
   }
@@ -177,7 +173,7 @@ int tok_symbol(lbm_char_channel_t *chan) {
   if (r == CHANNEL_SUCCESS && !symchar0(c)) {
     return TOKENIZER_NO_TOKEN;
   }
-  clear_sym_str();
+  memset(tokpar_sym_str,0,TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH+1);
   tokpar_sym_str[0] = (char)tolower(c);
 
   int len = 1;
@@ -224,12 +220,12 @@ int tok_string(lbm_char_channel_t *chan, unsigned int *string_len) {
   if (c != '\"') return TOKENIZER_NO_TOKEN;;
   n++;
 
-  memset(tokpar_sym_str, 0 , TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH);
+  memset(tokpar_sym_str,0,TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH+1);
 
   // read string into buffer
   r = lbm_channel_peek(chan,n,&c);
-  while (r == CHANNEL_SUCCESS && (c != '\"' || (c == '\"' && encode)) &&
-         len < TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH) {
+  while (r == CHANNEL_SUCCESS && (c != '\"' || encode) &&
+	 len < TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH) {
     if (c == '\\' && !encode) {
       encode = true;
     } else {
@@ -517,10 +513,9 @@ int tok_integer(lbm_char_channel_t *chan, token_int *result) {
   }
 
   if ((result->negative && n > 1) ||
-      (!result->negative && n > 0)) valid_num = true;
+      !result->negative) valid_num = true;
 
   if (valid_num) {
-    //lbm_channel_drop(chan,n + drop_type_str);
     result->value = acc;
     return (int)n + type_len;
   }

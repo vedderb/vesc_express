@@ -230,7 +230,7 @@ typedef struct {
 
 extern lbm_heap_state_t lbm_heap_state;
 
-typedef bool (*const_heap_write_fun)(lbm_uint ix, lbm_uint w);
+  typedef bool (*const_heap_write_fun)(lbm_uint w, lbm_uint ix);
 
 typedef struct {
   lbm_uint *heap;
@@ -337,6 +337,26 @@ lbm_value lbm_heap_allocate_list_init(unsigned int n, ...);
  * \return allocated list or error symbol
  */
 char *lbm_dec_str(lbm_value val);
+/** Decode a readable array, if the argument is not an array the result is NULL
+  * \param val value to decode.
+  * \return array pointer or NULL.
+  */
+lbm_array_header_t *lbm_dec_array_r(lbm_value val);
+/** Decode an a read/write array, if the argument is not an array the result is NULL
+ * \param val value to decode.
+ * \return array pointer or NULL.
+ */
+lbm_array_header_t *lbm_dec_array_rw(lbm_value val);
+/** Decode a readable lisp array, if the argument is not an array the result is NULL
+  * \param val value to decode.
+  * \return array pointer or NULL.
+  */
+lbm_array_header_t *lbm_dec_lisp_array_r(lbm_value val);
+/** Decode an a read/write lisp array, if the argument is not an array the result is NULL
+ * \param val value to decode.
+ * \return array pointer or NULL.
+ */
+lbm_array_header_t *lbm_dec_lisp_array_rw(lbm_value val);
 /** Decode an lbm_value representing a char channel into an lbm_char_channel_t pointer.
  *
  * \param val Value
@@ -644,8 +664,7 @@ lbm_uint lbm_size_of(lbm_type t);
 
 int lbm_const_heap_init(const_heap_write_fun w_fun,
                         lbm_const_heap_t *heap,
-                        lbm_uint *addr,
-                        lbm_uint num_words);
+                        lbm_uint *addr);
 
 lbm_flash_status lbm_allocate_const_cell(lbm_value *res);
 lbm_flash_status lbm_write_const_raw(lbm_uint *data, lbm_uint n, lbm_uint *res);
@@ -803,7 +822,7 @@ static inline int32_t lbm_dec_i32(lbm_value x) {
  * \return decoded int64_t.
  */
 extern int64_t lbm_dec_i64(lbm_value x);
-
+  
 /**
  * Check if a value is a heap pointer
  * \param x Value to check
@@ -811,6 +830,11 @@ extern int64_t lbm_dec_i64(lbm_value x);
  */
 static inline bool lbm_is_ptr(lbm_value x) {
   return (x & LBM_PTR_BIT);
+}
+
+static inline bool lbm_is_constant(lbm_value x) {
+  return ((x & LBM_PTR_BIT && x & LBM_PTR_TO_CONSTANT_BIT) ||
+          (!(x & LBM_PTR_BIT)));
 }
 
 /**
@@ -971,6 +995,15 @@ static inline lbm_cons_t* lbm_ref_cell(lbm_value addr) {
   return &lbm_dec_heap(addr)[lbm_dec_cons_cell_ptr(addr)];
   //return &lbm_heap_state.heap[lbm_dec_ptr(addr)];
 }
+
+
+ /**
+  * \param f pointer to function to execute at each node in tree.
+  * \param v Tree to traverses.
+  * \param arg Extra argument to pass to f when applied.
+  * \return true if successful traversal and false if there is a cycle in the data.
+  */
+bool lbm_ptr_rev_trav(void (*f)(lbm_value, void*), lbm_value v, void* arg);
 
 
 // lbm_uint a = lbm_heaps[0];

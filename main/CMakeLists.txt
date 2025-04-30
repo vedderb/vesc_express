@@ -31,7 +31,6 @@ set(COMPONENT_SRCS
 "lispif.c"
 "lispif_events.c"
 "lbm_vesc_utils.c"
-"lispif_vesc_dynamic_loader.c"
 "lispif_vesc_extensions.c"
 "lbm_color_extensions.c"
 "lispBM/src/env.c"
@@ -53,12 +52,16 @@ set(COMPONENT_SRCS
 "lispBM/src/lbm_flags.c"
 "lispBM/src/lbm_prof.c"
 "lispBM/src/lbm_defrag_mem.c"
+"lispBM/src/lbm_image.c"
 "lispBM/src/extensions/array_extensions.c"
 "lispBM/src/extensions/math_extensions.c"
 "lispBM/src/extensions/string_extensions.c"
 "lispBM/src/extensions/display_extensions.c"
 "lispBM/src/extensions/tjpgd.c"
-
+"lispBM/src/extensions/mutex_extensions.c"
+"lispBM/src/extensions/lbm_dyn_lib.c"
+"lispBM/src/extensions/ttf_extensions.c"
+"lispBM/src/extensions/schrift.c"
 
 "wifi/lispif_wifi_extensions.c"
 
@@ -100,6 +103,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/vesc"
 "hwconf/vesc/vbms32"
 "hwconf/vesc/vdisp_dual"
+"hwconf/vesc/scope"
 
 "lispBM"
 "lispBM/include"
@@ -115,3 +119,28 @@ set(COMPONENT_ADD_INCLUDEDIRS
 )
 
 register_component()
+
+add_compile_definitions(
+    LBM_USE_DYN_FUNS
+    LBM_USE_DYN_MACROS
+    LBM_USE_DYN_LOOPS
+    LBM_USE_DYN_ARRAYS
+    LBM_USE_TIME_QUOTA
+    LBM_USE_ERROR_LINENO
+)
+
+if((DEFINED ENV{HW_SRC}) OR (DEFINED ENV{HW_HEADER}))
+    if(NOT DEFINED ENV{HW_SRC})
+        message(FATAL_ERROR "HW_SRC not defined while HW_HEADER is set. You must either set both or none.")
+    endif()
+    if(NOT DEFINED ENV{HW_HEADER})
+        message(FATAL_ERROR "HW_HEADER not defined while HW_SRC is set. You must either set both or none.")
+    endif()
+    
+    message(STATUS "Setting HW_SOURCE=\"$ENV{HW_SRC}\" and HW_HEADER=\"$ENV{HW_HEADER}\" definitions")
+    
+    add_compile_definitions(
+        HW_SOURCE=\"$ENV{HW_SRC}\"
+        HW_HEADER=\"$ENV{HW_HEADER}\"
+    )
+endif()

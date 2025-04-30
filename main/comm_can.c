@@ -467,6 +467,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 		s->rmc.mo = data8[ind++];
 		s->rmc.dd = data8[ind++];
 
+		int ms = s->gga.ms_today % 1000;
 		int ss = (s->gga.ms_today / 1000) % 60;
 		int mm = (s->gga.ms_today / 1000 / 60) % 60;
 		int hh = (s->gga.ms_today / 1000 / 60 / 60) % 24;
@@ -474,6 +475,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 		s->rmc.hh = hh;
 		s->rmc.mm = mm;
 		s->rmc.ss = ss;
+		s->rmc.ms = ms;
 
 		s->gga_cnt++;
 		s->rmc_cnt++;
@@ -532,6 +534,19 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 		s->rmc_cnt++;
 		s->gga.update_time = xTaskGetTickCount();
 		s->rmc.update_time = xTaskGetTickCount();
+	} break;
+
+	case CAN_PACKET_UPDATE_BAUD: {
+		ind = 0;
+		int kbits = buffer_get_int16(data8, &ind);
+		int delay_msec = buffer_get_int16(data8, &ind);
+		CAN_BAUD baud = comm_can_kbits_to_baud(kbits);
+
+		if (baud != CAN_BAUD_INVALID) {
+			backup.config.can_baud_rate = baud;
+			main_store_backup_data();
+			comm_can_update_baudrate(delay_msec);
+		}
 	} break;
 
 	default:
@@ -743,6 +758,11 @@ static void update_baud(CAN_BAUD baudrate) {
 		// Invalid
 	} break;
 
+	case CAN_BAUD_100K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_100KBITS();
+		t_config = t_config2;
+	} break;
+
 	default:
 		break;
 	}
@@ -845,7 +865,24 @@ void comm_can_use_vesc_decoder(bool use_vesc_dec) {
 	use_vesc_decoder = use_vesc_dec;
 }
 
-void comm_can_update_baudrate(void) {
+CAN_BAUD comm_can_kbits_to_baud(int kbits) {
+	CAN_BAUD new_baud = CAN_BAUD_INVALID;
+	switch (kbits) {
+	case 125: new_baud = CAN_BAUD_125K; break;
+	case 250: new_baud = CAN_BAUD_250K; break;
+	case 500: new_baud = CAN_BAUD_500K; break;
+	case 1000: new_baud = CAN_BAUD_1M; break;
+	case 10: new_baud = CAN_BAUD_10K; break;
+	case 20: new_baud = CAN_BAUD_20K; break;
+	case 50: new_baud = CAN_BAUD_50K; break;
+	case 75: new_baud = CAN_BAUD_75K; break;
+	case 100: new_baud = CAN_BAUD_100K; break;
+	default: new_baud = CAN_BAUD_INVALID; break;
+	}
+	return new_baud;
+}
+
+void comm_can_update_baudrate(int delay_msec) {
 	if (!init_done) {
 		return;
 	}
@@ -855,6 +892,11 @@ void comm_can_update_baudrate(void) {
 
 	twai_stop();
 	twai_driver_uninstall();
+
+	if (delay_msec > 0) {
+		vTaskDelay(delay_msec / portTICK_PERIOD_MS);
+	}
+
 	update_baud(backup.config.can_baud_rate);
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
@@ -925,7 +967,7 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 	}
 
 	twai_transmit(&tx_msg, 5);
-	
+
 	xSemaphoreGive(send_mutex);
 }
 
@@ -953,7 +995,7 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 	}
 
 	twai_transmit(&tx_msg, 5);
-	
+
 	xSemaphoreGive(send_mutex);
 }
 
@@ -1162,6 +1204,15 @@ void comm_can_set_handbrake_rel(uint8_t controller_id, float current_rel) {
 	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
 	comm_can_transmit_eid(controller_id |
 			((uint32_t)CAN_PACKET_SET_CURRENT_HANDBRAKE_REL << 8), buffer, send_index);
+}
+
+void comm_can_send_update_baud(int kbits, int delay_msec) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+	buffer_append_int16(buffer, kbits, &send_index);
+	buffer_append_int16(buffer, delay_msec, &send_index);
+	comm_can_transmit_eid(255 |
+			((uint32_t)CAN_PACKET_UPDATE_BAUD << 8), buffer, send_index);
 }
 
 can_status_msg *comm_can_get_status_msg_index(int index) {

@@ -1,4 +1,5 @@
 
+(set-pic-prefix "disp")
 
 (define font-file (fopen "font_15_18.bin" "r"))
 (define font (load-file font-file))
@@ -8,9 +9,9 @@
 (define llama-bin (load-file llama-file))
 
 
-(display-to-image)
+(display-to-img)
 (define render-target (img-buffer 'rgb888 320 200))
-(set-active-image render-target)
+(set-active-img render-target)
 (disp-clear)
 
 (define img-rgb888 (img-buffer 'rgb888 320 200))
@@ -22,11 +23,18 @@
 (img-blit img-100-100 llama-bin 0 0 -1 '(scale 0.3))
 
 (defun code-disp-str (xs) (code-disp (map (lambda (x) (list 'read-eval x)) xs)))
+(defun code-png-str (img c xs) (code-png img c (map (lambda (x) (list 'read-eval x)) xs)))
+
+
+;; VESC style import emulator
+(define import (macro (file sym)
+                      `(define ,(eval sym) (load-file (fopen ,file "r")))))
+
 
 (define create_image1
   (ref-entry "img-buffer"
              (list
-              (para (list "Allocate an image buffer from lbm memory or from a compactible region."
+              (para (list "Allocate an image buffer from lbm memory or from a compactable region."
                           "The form of an `img-buffer` expression is `(img-buffer opt-dm format width height)`."
                           ))
               (code '((define my-img (img-buffer 'indexed2 320 200))
@@ -119,9 +127,11 @@
 (define texts
   (ref-entry "img-text"
              (list
-              (code-png 'my-img '(0x00 0xffffff)
-                        '((img-text my-img 10 10 1 0 font "LispBM")
-                          ))
+              (code-png-str 'my-img '(0x00 0xffffff)
+                            '("(img-text my-img 40 40 1 0 font \"LispBM\")"
+                              "(img-text my-img 40 120 1 0 font \"LispBM\" 'up)"
+                              "(img-text my-img 40 40 1 0 font \"LispBM\" 'down)"
+                              ))
               end)))
 
 (define setpixel
@@ -146,12 +156,115 @@
 (define blitting
   (ref-entry "img-blit"
              (list
+              (para (list "```clj\n (img-blit dest src x y transparent ..option)\n```"))
+              (para (list "Copy pixels from `src` to `dest`. " 
+                          " `x` and `y` are coordinates in `dest`."
+                          "Pixels colored `transparent` in `src` will be skipped"
+                          "`transparent` can be set to `-1` to indicate no transparency"))
+              (para (list "|Options||\n"
+                          "|----|----|\n"
+                          "`'(rotate x y deg)` | Rotate `deg` degrees around `x` `y`\n"
+                          "`'(scale s)` | Scale by `s`\n"
+                          "`'(tile)` | Tile to fill `dest`\n"
+                          "`'(clip x y w h)`  | Clip output in destination coords"))
               (code-png 'my-img '(0x00 0xffffff)
                         '((img-blit my-img llama-bin 10 10 -1)
-                          (img-blit my-img llama-bin 10 10 -1 '(rotate 128 128 45))
-                          (img-blit my-img llama-bin 10 10 -1 '(scale 0.5))
+                          (img-blit my-img llama-bin 10 10 -1 
+                            '(rotate 128 128 45))
+                          (img-blit my-img llama-bin 10 10 -1 
+                            '(scale 0.5))
+                          (img-blit my-img llama-bin 10 10 -1 
+                            '(tile) 
+                            '(scale 0.2))
+                          (img-blit my-img llama-bin 10 10 -1 
+                            '(tile) 
+                            '(scale 0.2) 
+                            '(rotate 10 10 45))
+                          (img-blit my-img llama-bin 10 10 -1 
+                            '(tile) 
+                            '(scale 0.2) 
+                            '(rotate 10 10 45) 
+                            '(clip 50 50 250 150))
+                        ))
+              end)))
+
+(define sierpinski
+  (ref-entry "Example: Sierpinski triangle"
+             (list
+              (program-disp '(((define w 320)
+                               (define h 200)
+                               (define corners (list (cons 10 (- h 10))
+                                                     (cons (- w 10) (- h 10))
+                                                     (cons (/ w 2) 10)))
+                               (define s-img (img-buffer 'indexed2 w h))
+                               (defun point (p) (img-setpix s-img (car p) (cdr p) 1))
+                               (defun mid-point (p1 p2)
+                                 { (let ((x (/ (+ (car p1) (car p2)) 2))
+                                         (y (/ (+ (cdr p1) (cdr p2)) 2)))
+                                     (cons x y))
+                                 })
+                               (defun sierp (n corners p)
+                                 (if (= n 0) ()
+                                   (let ((i (mod (rand) 3))
+                                         (target (ix corners i))
+                                         (mid    (mid-point p target)))
+                                     { (point mid)
+                                       (sierp (- n 1) corners mid)
+                                       })))
+                               (sierp 25000 corners (car corners))
+                               (disp-render s-img 0 0 '(0x000000 0xFFFFFF))
+                               ))
+                            )
+              end)))
+
+(define rotated-llama
+  (ref-entry "Example: rotated llama"
+             (list
+              (program-disp '((
+                               (import "images/lama2.bin" 'pic)
+                               (define img (img-buffer 'indexed2 320 200))
+                               (img-blit img pic 10 10 -1 '(rotate 128 128 45))
+                               (disp-render img 0 0 '(0x000000 0xFF0000))
+                               ))
+                            )
+              (para (list "Note that `import` is a feature of the VESC integration of LispBM"
+                          "and not really a part of core LispBM."
+                          "The LispBM REPL does not have an import feature currently."
                           ))
-             end)))
+              (para (list "In the \"Desktop\" LispBM REPL the rotated llama examples looks"
+                          "as follows."
+                          ))
+              (program-disp '((
+                               (define pic (load-file (fopen  "images/lama2.bin" "r")))
+                               (define img (img-buffer 'indexed2 320 200))
+                               (img-blit img pic 10 10 -1 '(rotate 128 128 45))
+                               (disp-render img 100 0 '(0x000000 0xFF0000))
+                               )
+                              (
+                               (disp-clear)
+                               (define pic (load-file (fopen  "images/lama2.bin" "r")))
+                               (define img128x128 (img-buffer 'indexed2 128 128))
+                               (img-blit img128x128 pic 0 0 -1 '(scale 0.5) '(rotate 128 128 45))
+                               (disp-render img128x128 10 10 '(0x000000 0xFF0000))
+                               (img-clear img128x128)
+                               (img-blit img128x128 pic 0 0 -1 '(scale 0.5) '(rotate 128 128 -45))
+                               (disp-render img128x128 148 10 '(0x000000 0x00FF00))
+                               ))
+                            )
+              (program-gif '( (100 ((define pic (load-file (fopen  "images/lama2.bin" "r")))
+                                    (define img (img-buffer 'indexed2 128 128))
+                                    (define m (/ 360.0 100.0))
+                                    (disp-clear)
+                                    (loopfor i 0 (< i 100) (+ i 1) {
+                                             (var rot (list 'rotate 128 128 (* i m)))
+                                             (img-blit img pic 0 0 -1 '(scale 0.5) rot)
+                                             (disp-render-mac img 10 10 '(0x000000 0xFF0000))
+                                             })
+                                    )
+                                   )
+                              ))
+              end)))
+             
 
 
 (define manual
@@ -174,7 +287,7 @@
 		       "rgb565 : 16bit color"
 		       "rgb888 : 24bit color"
 		       ))
-	     (para (list "Note that the RAM requirenment of a 100x100 image is;"
+	     (para (list "Note that the RAM requirement of a 100x100 image is;"
 			 ))
 	     (bullet '("at indexed2: 1250 Bytes"
 		       "at indexed4: 2500 Bytes"
@@ -195,7 +308,7 @@
 	     (para (list "the display library is specifically designed to allow for using many"
 			 "colors simultaneously on screen, without needing to use full screen high-color"
 			 "buffers."
-			 "This is done by delaying the choice of collor mapping in the `indexed2`, `indexed4` and `indexed16`"
+			 "This is done by delaying the choice of color mapping in the `indexed2`, `indexed4` and `indexed16`"
 			 "images until they are presented on screen."
 			 ))
 	     (para (list "images are rendered onto a display using the function `disp-render`."
@@ -233,8 +346,20 @@
                   rectangles
                   setpixel
                   texts
-                  triangles)
+                  triangles
+                  )
             )
+   (section 1 "Examples"
+            (list
+             (para (list "These examples are leaving out the details on how to setup and initialize"
+                         "any particular display you may have connected to your embedded system."
+                         "For information on how to initialize a display on a VESC EXPRESS platform"
+                         "see [vesc_express display documentation](https://github.com/vedderb/vesc_express/tree/main/main/display)."
+                         ))
+             
+             sierpinski
+             rotated-llama))
+   info
    )
   )
 

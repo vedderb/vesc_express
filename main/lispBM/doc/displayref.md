@@ -11,7 +11,7 @@ The values stored in image buffers represents colors via an encoding determined 
    - rgb565 : 16bit color
    - rgb888 : 24bit color
 
-Note that the RAM requirenment of a 100x100 image is; 
+Note that the RAM requirement of a 100x100 image is; 
 
    - at indexed2: 1250 Bytes
    - at indexed4: 2500 Bytes
@@ -24,7 +24,7 @@ So on an embedded platform you most likely not be able to be working with rgb565
 
 At the low-level end of things you will want to display graphics onto an display. The interface towards the low-level end needs to be implemented for the particular hardware platform and display. For examples of this see [vesc_express](https://github.com/vedderb/vesc_express/tree/main/main/display). The LBM linux REPL has SDL and png backends for the display library. 
 
-the display library is specifically designed to allow for using many colors simultaneously on screen, without needing to use full screen high-color buffers. This is done by delaying the choice of collor mapping in the `indexed2`, `indexed4` and `indexed16` images until they are presented on screen. 
+the display library is specifically designed to allow for using many colors simultaneously on screen, without needing to use full screen high-color buffers. This is done by delaying the choice of color mapping in the `indexed2`, `indexed4` and `indexed16` images until they are presented on screen. 
 
 images are rendered onto a display using the function `disp-render`. `disp-render` takes an image, a position (x,y) where to draw the image, and a colormapping that can be expressed as a list of colors. for example: 
 
@@ -43,7 +43,7 @@ images are rendered onto a display using the function `disp-render`. `disp-rende
 </td>
 <td>
 
-<img src=./images/img1.png >
+<img src=./images/disp-img1.png >
 
 </td>
 <td>
@@ -66,7 +66,7 @@ t
 </td>
 <td>
 
-<img src=./images/img2.png >
+<img src=./images/disp-img2.png >
 
 </td>
 <td>
@@ -89,7 +89,7 @@ t
 </td>
 <td>
 
-<img src=./images/img3.png >
+<img src=./images/disp-img3.png >
 
 </td>
 <td>
@@ -112,7 +112,7 @@ t
 </td>
 <td>
 
-<img src=./images/img4.png >
+<img src=./images/disp-img4.png >
 
 </td>
 <td>
@@ -135,7 +135,7 @@ t
 </td>
 <td>
 
-<img src=./images/img5.png >
+<img src=./images/disp-img5.png >
 
 </td>
 <td>
@@ -164,7 +164,7 @@ t
 </td>
 <td>
 
-<img src=./images/img6.png >
+<img src=./images/disp-img6.png >
 
 </td>
 <td>
@@ -187,7 +187,7 @@ t
 </td>
 <td>
 
-<img src=./images/img7.png >
+<img src=./images/disp-img7.png >
 
 </td>
 <td>
@@ -210,7 +210,7 @@ t
 </td>
 <td>
 
-<img src=./images/img8.png >
+<img src=./images/disp-img8.png >
 
 </td>
 <td>
@@ -233,7 +233,7 @@ t
 </td>
 <td>
 
-<img src=./images/img9.png >
+<img src=./images/disp-img9.png >
 
 </td>
 <td>
@@ -256,7 +256,7 @@ t
 </td>
 <td>
 
-<img src=./images/img10.png >
+<img src=./images/disp-img10.png >
 
 </td>
 <td>
@@ -279,7 +279,7 @@ t
 </td>
 <td>
 
-<img src=./images/img11.png >
+<img src=./images/disp-img11.png >
 
 </td>
 <td>
@@ -299,7 +299,7 @@ t
 
 ### img-buffer
 
-Allocate an image buffer from lbm memory or from a compactible region. The form of an `img-buffer` expression is `(img-buffer opt-dm format width height)`. 
+Allocate an image buffer from lbm memory or from a compactable region. The form of an `img-buffer` expression is `(img-buffer opt-dm format width height)`. 
 
 <table>
 <tr>
@@ -336,7 +336,6 @@ Allocate an image buffer from lbm memory or from a compactible region. The form 
 ```clj
 (define my-dm (dm-create 10000))
 (define my-img (img-buffer my-dm 'indexed2 320 200))
-
 ```
 
 
@@ -413,6 +412,19 @@ nil
 
 ### img-blit
 
+```clj
+ (img-blit dest src x y transparent ..option)
+``` 
+
+Copy pixels from `src` to `dest`.   `x` and `y` are coordinates in `dest`. Pixels colored `transparent` in `src` will be skipped `transparent` can be set to `-1` to indicate no transparency 
+
+|Options||
+ |----|----|
+ `'(rotate x y deg)` | Rotate `deg` degrees around `x` `y`
+ `'(scale s)` | Scale by `s`
+ `'(tile)` | Tile to fill `dest`
+ `'(clip x y w h)`  | Clip output in destination coords 
+
 <table>
 <tr>
 <td> Example </td> <td> Image </td> <td> Result </td>
@@ -428,7 +440,7 @@ nil
 </td>
 <td>
 
-<img src=./images/img12.png >
+<img src=./images/disp-img12.png >
 
 </td>
 <td>
@@ -451,7 +463,7 @@ t
 </td>
 <td>
 
-<img src=./images/img13.png >
+<img src=./images/disp-img13.png >
 
 </td>
 <td>
@@ -474,7 +486,76 @@ t
 </td>
 <td>
 
-<img src=./images/img14.png >
+<img src=./images/disp-img14.png >
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(img-blit my-img llama-bin 10 10 -1 '(tile) '(scale 0.200000f32))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img15.png >
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(img-blit my-img llama-bin 10 10 -1 '(tile) '(scale 0.200000f32) '(rotate 10 10 45))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img16.png >
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(img-blit my-img llama-bin 10 10 -1 '(tile) '(scale 0.200000f32) '(rotate 10 10 45) '(clip 50 50 250 150))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img17.png >
 
 </td>
 <td>
@@ -511,7 +592,7 @@ t
 </td>
 <td>
 
-<img src=./images/img15.png >
+<img src=./images/disp-img18.png >
 
 </td>
 <td>
@@ -534,7 +615,7 @@ t
 </td>
 <td>
 
-<img src=./images/img16.png >
+<img src=./images/disp-img19.png >
 
 </td>
 <td>
@@ -557,7 +638,7 @@ t
 </td>
 <td>
 
-<img src=./images/img17.png >
+<img src=./images/disp-img20.png >
 
 </td>
 <td>
@@ -580,7 +661,7 @@ t
 </td>
 <td>
 
-<img src=./images/img18.png >
+<img src=./images/disp-img21.png >
 
 </td>
 <td>
@@ -603,7 +684,7 @@ t
 </td>
 <td>
 
-<img src=./images/img19.png >
+<img src=./images/disp-img22.png >
 
 </td>
 <td>
@@ -632,7 +713,7 @@ t
 </td>
 <td>
 
-<img src=./images/img20.png >
+<img src=./images/disp-img23.png >
 
 </td>
 <td>
@@ -655,7 +736,7 @@ t
 </td>
 <td>
 
-<img src=./images/img21.png >
+<img src=./images/disp-img24.png >
 
 </td>
 <td>
@@ -692,7 +773,7 @@ t
 </td>
 <td>
 
-<img src=./images/img22.png >
+<img src=./images/disp-img25.png >
 
 </td>
 <td>
@@ -715,7 +796,7 @@ t
 </td>
 <td>
 
-<img src=./images/img23.png >
+<img src=./images/disp-img26.png >
 
 </td>
 <td>
@@ -738,7 +819,7 @@ t
 </td>
 <td>
 
-<img src=./images/img24.png >
+<img src=./images/disp-img27.png >
 
 </td>
 <td>
@@ -761,7 +842,7 @@ t
 </td>
 <td>
 
-<img src=./images/img25.png >
+<img src=./images/disp-img28.png >
 
 </td>
 <td>
@@ -790,7 +871,7 @@ t
 </td>
 <td>
 
-<img src=./images/img26.png >
+<img src=./images/disp-img29.png >
 
 </td>
 <td>
@@ -827,7 +908,7 @@ t
 </td>
 <td>
 
-<img src=./images/img27.png >
+<img src=./images/disp-img30.png >
 
 </td>
 <td>
@@ -850,7 +931,7 @@ t
 </td>
 <td>
 
-<img src=./images/img28.png >
+<img src=./images/disp-img31.png >
 
 </td>
 <td>
@@ -887,7 +968,7 @@ t
 </td>
 <td>
 
-<img src=./images/img29.png >
+<img src=./images/disp-img32.png >
 
 </td>
 <td>
@@ -910,7 +991,7 @@ t
 </td>
 <td>
 
-<img src=./images/img30.png >
+<img src=./images/disp-img33.png >
 
 </td>
 <td>
@@ -947,7 +1028,7 @@ t
 </td>
 <td>
 
-<img src=./images/img31.png >
+<img src=./images/disp-img34.png >
 
 </td>
 <td>
@@ -970,7 +1051,7 @@ t
 </td>
 <td>
 
-<img src=./images/img32.png >
+<img src=./images/disp-img35.png >
 
 </td>
 <td>
@@ -993,7 +1074,7 @@ t
 </td>
 <td>
 
-<img src=./images/img33.png >
+<img src=./images/disp-img36.png >
 
 </td>
 <td>
@@ -1030,7 +1111,7 @@ t
 </td>
 <td>
 
-<img src=./images/img34.png >
+<img src=./images/disp-img37.png >
 
 </td>
 <td>
@@ -1053,7 +1134,7 @@ t
 </td>
 <td>
 
-<img src=./images/img35.png >
+<img src=./images/disp-img38.png >
 
 </td>
 <td>
@@ -1076,7 +1157,7 @@ t
 </td>
 <td>
 
-<img src=./images/img36.png >
+<img src=./images/disp-img39.png >
 
 </td>
 <td>
@@ -1113,7 +1194,7 @@ t
 </td>
 <td>
 
-<img src=./images/img37.png >
+<img src=./images/disp-img40.png >
 
 </td>
 <td>
@@ -1143,14 +1224,60 @@ t
 <td>
 
 ```clj
-(img-text my-img 10 10 1 0 font LispBM)
+(img-text my-img 40 40 1 0 font "LispBM")
 ```
 
 
 </td>
 <td>
 
-<img src=./images/img38.png >
+<img src=./images/disp-img41.png >
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(img-text my-img 40 120 1 0 font "LispBM" 'up)
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img42.png >
+
+</td>
+<td>
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+```clj
+(img-text my-img 40 40 1 0 font "LispBM" 'down)
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img43.png >
 
 </td>
 <td>
@@ -1187,7 +1314,7 @@ t
 </td>
 <td>
 
-<img src=./images/img39.png >
+<img src=./images/disp-img44.png >
 
 </td>
 <td>
@@ -1210,7 +1337,7 @@ t
 </td>
 <td>
 
-<img src=./images/img40.png >
+<img src=./images/disp-img45.png >
 
 </td>
 <td>
@@ -1233,7 +1360,7 @@ t
 </td>
 <td>
 
-<img src=./images/img41.png >
+<img src=./images/disp-img46.png >
 
 </td>
 <td>
@@ -1251,4 +1378,210 @@ t
 
 
 ---
+
+# Examples
+
+These examples are leaving out the details on how to setup and initialize any particular display you may have connected to your embedded system. For information on how to initialize a display on a VESC EXPRESS platform see [vesc_express display documentation](https://github.com/vedderb/vesc_express/tree/main/main/display). 
+
+
+### Example: Sierpinski triangle
+
+<table>
+<tr>
+<td> Example </td> <td> Image </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(define w 320)
+(define h 200)
+(define corners (list (cons 10 (- h 10)) (cons (- w 10) (- h 10)) (cons (/ w 2) 10)))
+(define s-img (img-buffer 'indexed2 w h))
+(defun point (p)
+  (img-setpix s-img (car p) (cdr p) 1))
+(defun mid-point (p1 p2)
+  (progn 
+      (let ((x (/ (+ (car p1) (car p2)) 2))
+            (y (/ (+ (cdr p1) (cdr p2)) 2)))
+           (cons x y))))
+(defun sierp (n corners p)
+  (if (= n 0) nil (let ((i (mod (rand) 3))
+                        (target (ix corners i))
+                        (mid (mid-point p target)))
+                       (progn 
+                           (point mid)
+                           (sierp (- n 1) corners mid)))))
+(sierp 25000 corners (car corners))
+(disp-render s-img 0 0 '(0 16777215))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img47.png >
+
+</td>
+<td>
+
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+</table>
+
+
+
+
+---
+
+
+### Example: rotated llama
+
+<table>
+<tr>
+<td> Example </td> <td> Image </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(import "images/lama2.bin" 'pic)
+(define img (img-buffer 'indexed2 320 200))
+(img-blit img pic 10 10 -1 '(rotate 128 128 45))
+(disp-render img 0 0 '(0 16711680))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img48.png >
+
+</td>
+<td>
+
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+</table>
+
+Note that `import` is a feature of the VESC integration of LispBM and not really a part of core LispBM. The LispBM REPL does not have an import feature currently. 
+
+In the "Desktop" LispBM REPL the rotated llama examples looks as follows. 
+
+<table>
+<tr>
+<td> Example </td> <td> Image </td> <td> Result </td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(define pic (load-file (fopen "images/lama2.bin" "r")))
+(define img (img-buffer 'indexed2 320 200))
+(img-blit img pic 10 10 -1 '(rotate 128 128 45))
+(disp-render img 100 0 '(0 16711680))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img49.png >
+
+</td>
+<td>
+
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(disp-clear)
+(define pic (load-file (fopen "images/lama2.bin" "r")))
+(define img128x128 (img-buffer 'indexed2 128 128))
+(img-blit img128x128 pic 0 0 -1 '(scale 0.500000f32) '(rotate 128 128 45))
+(disp-render img128x128 10 10 '(0 16711680))
+(img-clear img128x128)
+(img-blit img128x128 pic 0 0 -1 '(scale 0.500000f32) '(rotate 128 128 -45))
+(disp-render img128x128 148 10 '(0 65280))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-img50.png >
+
+</td>
+<td>
+
+
+```clj
+t
+```
+
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td> Example </td> <td> Animation </td>
+</tr>
+<tr>
+<td>
+
+
+```clj
+(define pic (load-file (fopen "images/lama2.bin" "r")))
+(define img (img-buffer 'indexed2 128 128))
+(define m (/ 360.000000f32 100.000000f32))
+(disp-clear)
+(loopfor i 0 (< i 100) (+ i 1)
+         (progn 
+             (var rot (list 'rotate 128 128 (* i m)))
+             (img-blit img pic 0 0 -1 '(scale 0.500000f32) rot)
+             (disp-render img 10 10 '(0 16711680))))
+```
+
+
+</td>
+<td>
+
+<img src=./images/disp-anm1.gif >
+
+</td>
+</tr>
+</table>
+
+
+
+
+---
+
+This document was generated by LispBM version 0.32.0 
 

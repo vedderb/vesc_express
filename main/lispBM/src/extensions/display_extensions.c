@@ -1,8 +1,9 @@
 /*
-  Copyright 2023, 2024 Benjamin Vedder		benjamin@vedder.se
-  Copyright 2023, 2024 Joel Svensson		svenssonjoel@yahoo.se
-  Copyright 2023       Rasmus Söderhielm	rasmus.soderhielm@gmail.com
-
+  Copyright 2023 - 2025 Benjamin Vedder            benjamin@vedder.se
+  Copyright 2023 - 2025 Joel Svensson              svenssonjoel@yahoo.se
+  Copyright 2023        Rasmus Söderhielm          rasmus.soderhielm@gmail.com
+  Copyright 2025        Joakim Lundborg            joakim.lundborg@gmail.com
+  
   This file is part of LispBM. (Originally a part of the vesc_express FW)
 
   LispBM is free software: you can redistribute it and/or modify
@@ -19,36 +20,42 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "sys/types.h"
 #include "tjpgd.h"
 
 #include <math.h>
 
 #include <extensions/display_extensions.h>
 #include <lbm_utils.h>
-#include <lbm_custom_type.h>
 #include <lbm_defrag_mem.h>
+
+#ifdef LBM_OPT_DISPLAY_EXTENSIONS_SIZE
+#pragma GCC optimize ("-Os")
+#endif
+#ifdef LBM_OPT_DISPLAY_EXTENSIONS_SIZE_AGGRESSIVE
+#pragma GCC optimize ("-Oz")
+#endif
+
 
 #define MAX_WIDTH 32000
 #define MAX_HEIGHT 32000
 
-static const uint8_t cos_tab_256[] = {
-  255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251,
-  250, 250, 249, 248, 246, 245, 244, 243, 241, 240, 238, 237, 235, 234,
-  232, 230, 228, 226, 224, 222, 220, 218, 215, 213, 211, 208, 206, 203,
-  201, 198, 196, 193, 190, 188, 185, 182, 179, 176, 173, 170, 167, 165,
-  162, 158, 155, 152, 149, 146, 143, 140, 137, 134, 131, 127, 124, 121,
-  118, 115, 112, 109, 106, 103, 100, 97, 93, 90, 88, 85, 82, 79, 76, 73,
-  70, 67, 65, 62, 59, 57, 54, 52, 49, 47, 44, 42, 40, 37, 35, 33, 31, 29,
-  27, 25, 23, 21, 20, 18, 17, 15, 14, 12, 11, 10, 9, 7, 6, 5, 5, 4, 3, 2,
-  2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 4, 5, 5, 6, 7, 9, 10,
-  11, 12, 14, 15, 17, 18, 20, 21, 23, 25, 27, 29, 31, 33, 35, 37, 40, 42,
-  44, 47, 49, 52, 54, 57, 59, 62, 65, 67, 70, 73, 76, 79, 82, 85, 88, 90,
-  93, 97, 100, 103, 106, 109, 112, 115, 118, 121, 124, 128, 131, 134, 137,
-  140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173, 176, 179,
-  182, 185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215,
-  218, 220, 222, 224, 226, 228, 230, 232, 234, 235, 237, 238, 240, 241,
-  243, 244, 245, 246, 248, 249, 250, 250, 251, 252, 253, 253, 254, 254,
-  254, 255, 255, 255
+// a single quadrant...
+static const uint8_t cos_tab_128[] =
+  {
+   255, 255, 255, 255, 254, 254, 254, 253, 253, 252, // 0 - 9
+   251, 250, 250, 249, 248, 246, 245, 244, 243, 241, //10 - 19
+   240, 238, 237, 235, 234, 232, 230, 228, 226, 224, //20 - 29
+   222, 220, 218, 215, 213, 211, 208, 206, 203, 201, //30 - 39
+   198, 196, 193, 190, 188, 185, 182, 179, 176, 173, //40 - 49
+   170, 167, 165, 162, 158, 155, 152, 149, 146, 143, //50 - 59
+   140, 137, 134, 131, 127, 124, 121, 118, 115, 112, //60 - 69
+   109, 106, 103, 100, 97,  93,  90,  88,  85,  82,  //70 - 79
+   79,  76,  73,  70,  67,  65,  62,  59,  57,  54,  //80 - 89
+   52,  49,  47,  44,  42,  40,  37,  35,  33,  31,  //90 - 99
+   29,  27,  25,  23,  21,  20,  18,  17,  15,  14,  //100 - 109
+   12,  11,  10,  9,   7,   6,   5,   5,   4,   3,   //110 - 119
+   2,   2,   1,   1,   1,   0,   0,   0              //120 - 127
 };
 
 uint32_t lbm_display_rgb888_from_color(color_t color, int x, int y) {
@@ -76,7 +83,7 @@ uint32_t lbm_display_rgb888_from_color(color_t color, int x, int y) {
       tab_pos += used_len;
     }
 
-    uint32_t tab_val = (uint32_t)cos_tab_256[tab_pos];
+    uint32_t tab_val = (uint32_t)cos_tab_128[tab_pos <= 127 ? tab_pos : 128 - (tab_pos - 127)];
 
     uint32_t r = (r1 * tab_val + r2 * (255 - tab_val)) / 255;
     uint32_t g = (g1 * tab_val + g2 * (255 - tab_val)) / 255;
@@ -90,8 +97,6 @@ uint32_t lbm_display_rgb888_from_color(color_t color, int x, int y) {
     return 0;
   }
 }
-
-static const char *color_desc = "Color";
 
 static lbm_uint symbol_indexed2 = 0;
 static lbm_uint symbol_indexed4 = 0;
@@ -107,6 +112,9 @@ static lbm_uint symbol_dotted = 0;
 static lbm_uint symbol_scale = 0;
 static lbm_uint symbol_rotate = 0;
 static lbm_uint symbol_resolution = 0;
+static lbm_uint symbol_tile = 0;
+static lbm_uint symbol_clip = 0;
+
 
 static lbm_uint symbol_regular = 0;
 static lbm_uint symbol_gradient_x = 0;
@@ -125,7 +133,23 @@ static lbm_uint symbol_repeat_type = 0;
 static lbm_uint symbol_down = 0;
 static lbm_uint symbol_up = 0;
 
-static color_format_t sym_to_color_format(lbm_value v) {
+bool display_is_symbol_up(lbm_value v) {
+  if (lbm_is_symbol(v)) {
+    lbm_uint s = lbm_dec_sym(v);
+    return (s == symbol_up);
+  }
+  return false;
+}
+
+bool display_is_symbol_down(lbm_value v) {
+  if (lbm_is_symbol(v)) {
+    lbm_uint s = lbm_dec_sym(v);
+    return (s == symbol_down);
+  }
+  return false;
+}
+
+color_format_t sym_to_color_format(lbm_value v) {
   lbm_uint s = lbm_dec_sym(v);
   if (s == symbol_indexed2) return indexed2;
   if (s == symbol_indexed4) return indexed4;
@@ -136,7 +160,7 @@ static color_format_t sym_to_color_format(lbm_value v) {
   return format_not_supported;
 }
 
-static uint32_t image_dims_to_size_bytes(color_format_t fmt, uint16_t width, uint16_t height) {
+uint32_t image_dims_to_size_bytes(color_format_t fmt, uint16_t width, uint16_t height) {
   uint32_t num_pix = (uint32_t)width * (uint32_t)height;
   switch(fmt) {
   case indexed2:
@@ -176,14 +200,20 @@ static lbm_value image_buffer_lift(uint8_t *buf, color_format_t fmt, uint16_t wi
   return res;
 }
 
-static bool color_destructor(lbm_uint value) {
-  color_t *color = (color_t*)value;
-  if (color->precalc) {
-    lbm_free((void*)color->precalc);
-  }
-  lbm_free((void*)color);
-  return true;
+static inline bool is_color_sized(lbm_uint size) {
+  size_t color_size = sizeof(color_t);
+  return (size == color_size);
 }
+
+static inline bool is_color(uint8_t *data, lbm_uint size) {
+  bool res = false;
+  if (is_color_sized(size)) {
+    color_t *color = (color_t*)data;
+    res = (color->magic == COLOR_MAGIC);
+  }
+  return res;
+}
+
 
 static lbm_value color_allocate(COLOR_TYPE type, int32_t color1, int32_t color2, uint16_t param1, uint16_t param2, bool mirrored) {
   color_t *color = lbm_malloc(sizeof(color_t));
@@ -200,41 +230,39 @@ static lbm_value color_allocate(COLOR_TYPE type, int32_t color1, int32_t color2,
     }
   }
 
-  lbm_value res;
-  if (!lbm_custom_type_create((lbm_uint)color,
-                              color_destructor, color_desc, &res)) {
-    lbm_free(color);
+  lbm_value res = ENC_SYM_MERROR;
+
+  if (lbm_lift_array(&res, (char*)color, sizeof(color_t))) {
+    color->magic = COLOR_MAGIC;
+    color->type = type;
+    color->color1 = color1;
+    color->color2 = color2;
+    color->param1 = param1;
+    color->param2 = param2;
+    color->mirrored = mirrored;
+    color->precalc = pre;
+
     if (pre) {
-      lbm_free(pre);
+      COLOR_TYPE type_old = color->type;
+      if (type == COLOR_PRE_X) {
+        color->type = COLOR_GRADIENT_X;
+      } else if (type == COLOR_PRE_Y) {
+        color->type = COLOR_GRADIENT_Y;
+      }
+
+      if (color->param1 > COLOR_PRECALC_LEN) {
+        color->param1 = COLOR_PRECALC_LEN;
+      }
+
+      for (int i = 0;i < color->param1;i++) {
+        pre[i] = lbm_display_rgb888_from_color(*color, i + color->param2, i + color->param2);
+      }
+
+      color->type = type_old;
     }
-    return ENC_SYM_MERROR;
-  }
-
-  color->type = type;
-  color->color1 = color1;
-  color->color2 = color2;
-  color->param1 = param1;
-  color->param2 = param2;
-  color->mirrored = mirrored;
-  color->precalc = pre;
-
-  if (pre) {
-    COLOR_TYPE type_old = color->type;
-    if (type == COLOR_PRE_X) {
-      color->type = COLOR_GRADIENT_X;
-    } else if (type == COLOR_PRE_Y) {
-      color->type = COLOR_GRADIENT_Y;
-    }
-
-    if (color->param1 > COLOR_PRECALC_LEN) {
-      color->param1 = COLOR_PRECALC_LEN;
-    }
-
-    for (int i = 0;i < color->param1;i++) {
-      pre[i] = lbm_display_rgb888_from_color(*color, i + color->param2, i + color->param2);
-    }
-
-    color->type = type_old;
+  } else {
+    lbm_free(pre);
+    lbm_free(color);
   }
 
   return res;
@@ -259,23 +287,38 @@ static lbm_value image_buffer_allocate_dm(lbm_uint *dm, color_format_t fmt, uint
   uint32_t size_bytes = image_dims_to_size_bytes(fmt, width, height);
 
   lbm_value res = lbm_defrag_mem_alloc(dm, IMAGE_BUFFER_HEADER_SIZE + size_bytes);
-  if (lbm_is_symbol(res)) {
-    return res;
+  lbm_array_header_t *arr = lbm_dec_array_r(res);
+  if (arr) {
+    uint8_t *buf = (uint8_t*)arr->data;
+    buf[0] = (uint8_t)(width >> 8);
+    buf[1] = (uint8_t)width;
+    buf[2] = (uint8_t)(height >> 8);
+    buf[3] = (uint8_t)height;
+    buf[4] = color_format_to_byte(fmt);
   }
-  lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
-  uint8_t *buf = (uint8_t*)arr->data;
-  buf[0] = (uint8_t)(width >> 8);
-  buf[1] = (uint8_t)width;
-  buf[2] = (uint8_t)(height >> 8);
-  buf[3] = (uint8_t)height;
-  buf[4] = color_format_to_byte(fmt);  
   return res;
 }
 
 // Exported interface
 bool display_is_color(lbm_value v) {
-  return (lbm_is_custom(v) && ((lbm_uint)lbm_get_custom_descriptor(v) == (lbm_uint)color_desc));
+  lbm_array_header_t *array = lbm_dec_array_r(v);
+  bool res = false;
+  if (array && is_color_sized(array->size)) {
+    res = (is_color((uint8_t*)array->data, array->size));
+  }
+  return res;
 }
+
+static color_t *get_color(lbm_value v) {
+  color_t *res = NULL;
+  lbm_array_header_t *array = lbm_dec_array_r(v);
+  if (array && is_color_sized(array->size)
+      && (is_color((uint8_t*)array->data, array->size))) {
+    res = (color_t*)array->data;
+  }
+  return res;
+}
+
 
 // Register symbols
 
@@ -295,6 +338,8 @@ static bool register_symbols(void) {
   res = res && lbm_add_symbol_const("scale", &symbol_scale);
   res = res && lbm_add_symbol_const("rotate", &symbol_rotate);
   res = res && lbm_add_symbol_const("resolution", &symbol_resolution);
+  res = res && lbm_add_symbol_const("tile", &symbol_tile);
+  res = res && lbm_add_symbol_const("clip", &symbol_clip);
 
   res = res && lbm_add_symbol_const("regular", &symbol_regular);
   res = res && lbm_add_symbol_const("gradient_x", &symbol_gradient_x);
@@ -371,8 +416,8 @@ static uint8_t rgb888to332(uint32_t rgb) {
   uint8_t r = (uint8_t)(rgb >> (16 + 5));
   uint8_t g = (uint8_t)(rgb >> (8 + 5));
   uint8_t b = (uint8_t)(rgb >> 6);
-  r <<= 5;
-  g = (g & 0x7) << 2;  ;
+  r = (r & 0x7) << 5;
+  g = (g & 0x7) << 2;
   b = (b & 0x3);
   uint8_t res_rgb332 = r | g | b;
   return res_rgb332;
@@ -382,20 +427,57 @@ static uint16_t rgb888to565(uint32_t rgb) {
   uint16_t r = (uint16_t)(rgb >> (16 + 3));
   uint16_t g = (uint16_t)(rgb >> (8 + 2));
   uint16_t b = (uint16_t)(rgb >> 3);
-  r <<= 11;
+  r = r << 11;
   g = (g & 0x3F) << 5;
   b = (b & 0x1F);
   uint16_t res_rgb565 = r | g | b;
   return res_rgb565;
 }
 
+// One problem with rgb332 is that
+// if you take 3 most significant bits of 255 you get 7.
+// There is no whole number that you can multiply 7 with to get 255.
+// This is fundamental for any conversion from RGB888 that just uses the
+// N < 8 most significant bits. And it means that conversion to this format
+// and then back to rgb888 will not (without tricks) map highest intensity
+// back to highest intensity.
+//
+// Another issue is that 2 bits (the blue channel) yields steps of 85 (255 / 3)
+// while 3 bits yields steps of 36.4 (255 / 7)
+//
+// 36.4 72.8 109.3 145.7 182.1 218.6 254.99
+//         85          170               255
+//
+// The multiples of 85 never coincide with the multiples of 36.4 except
+// for at 0 and 255
 static uint32_t rgb332to888(uint8_t rgb) {
   uint32_t r = (uint32_t)((rgb>>5) & 0x7);
   uint32_t g = (uint32_t)((rgb>>2) & 0x7);
+
+  // turn 2 bits into 3 having value 0 3 5 or 7
+  // so that 4 points match up when doing greyscale.
   uint32_t b = (uint32_t)(rgb & 0x3);
-  uint32_t res_rgb888 = r << (16 + 5) | g << (8 + 5) | b << 6;
+
+  b = (b > 0) ? (2 * b) + 1 : 0;
+  r = (r == 7) ? 255 : 36 * r; // 36 is an approximation (36.4)
+  g = (g == 7) ? 255 : 36 * g;
+  b = (b == 7) ? 255 : 36 * b;
+  uint32_t res_rgb888 = r << 16 | g << 8 | b;
   return res_rgb888;
 }
+
+// RGB 565
+// 2^5 = 32
+// 2^6 = 64
+// 255 / 31 = 8.226
+// 255 / 63 = 4.18
+//         0   1     2     3     4     5     6     7     8       ...  31   63
+// 5 bits  0   8.226 16.45 24.67 32.9  41.13 49.35 57.58 65.81   ...  254.9
+// 6 bits  0   4.047 8.09  12.14 16.19 20.24 24.29 28.33 32.38      ...    254.9
+//
+// For RGB 565 the 6 and 5 bit channels match up very nicely such
+// index i in the 5 bit channel is equal to index (2 * i) in the 6 bit channel.
+// RGB 565 will have nice grayscales.
 
 static uint32_t  rgb565to888(uint16_t rgb) {
   uint32_t r = (uint32_t)(rgb >> 11);
@@ -428,7 +510,7 @@ void image_buffer_clear(image_buffer_t *img, uint32_t cc) {
   case indexed16: {
     uint32_t bytes = (img_size / 2) + (img_size % 2 ? 1 : 0);
     uint8_t ix = (uint8_t)(cc & 0xF);
-    uint8_t color = (ix | ix << 4);  // create a color based on duplication of index
+    uint8_t color = (uint8_t)(ix | ix << 4);  // create a color based on duplication of index
     memset(data, color, bytes);
   }
     break;
@@ -465,14 +547,14 @@ static const uint8_t indexed16_mask[4] = {0x0F, 0xF0};
 static const uint8_t indexed16_shift[4] = {0, 4};
 
 
-static void putpixel(image_buffer_t* img, int x_i, int y_i, uint32_t c) {
-  color_format_t fmt = img->fmt;
+void putpixel(image_buffer_t* img, int x_i, int y_i, uint32_t c) {
   uint16_t w = img->width;
   uint16_t h = img->height;
   uint16_t x = (uint16_t)x_i; // negative numbers become really large.
   uint16_t y = (uint16_t)y_i;
 
   if (x < w && y < h) {
+    color_format_t fmt = img->fmt;
     uint8_t *data = img->data;
     switch(fmt) {
     case indexed2: {
@@ -490,14 +572,14 @@ static void putpixel(image_buffer_t* img, int x_i, int y_i, uint32_t c) {
       uint32_t pos = (uint32_t)y*w + x;
       uint32_t byte = pos >> 2;
       uint32_t ix  = 3 - (pos & 0x3);
-      data[byte] = (uint8_t)(data[byte] & ~indexed4_mask[ix]) | (uint8_t)c << indexed4_shift[ix];
+      data[byte] = (uint8_t)((uint8_t)(data[byte] & ~indexed4_mask[ix]) | (uint8_t)(c << indexed4_shift[ix]));
       break;
     }
     case indexed16: {
       uint32_t pos = (uint32_t)y*w + x;
       uint32_t byte = pos >> 1;
       uint32_t ix  = 1 - (pos & 0x1);
-      data[byte] = (uint8_t)(data[byte] & ~indexed16_mask[ix]) | (uint8_t)c << indexed16_shift[ix];
+      data[byte] = (uint8_t)((uint8_t)(data[byte] & ~indexed16_mask[ix]) | (uint8_t)(c << indexed16_shift[ix]));
       break;
     }
     case rgb332: {
@@ -525,14 +607,14 @@ static void putpixel(image_buffer_t* img, int x_i, int y_i, uint32_t c) {
   }
 }
 
-static uint32_t getpixel(image_buffer_t* img, int x_i, int y_i) {
-  color_format_t fmt = img->fmt;
+uint32_t getpixel(image_buffer_t* img, int x_i, int y_i) {
   uint16_t w = img->width;
   uint16_t h = img->height;
   uint16_t x = (uint16_t)x_i;
   uint16_t y = (uint16_t)y_i;
 
   if (x < w && y < h) {
+    color_format_t fmt = img->fmt;
     uint8_t *data = img->data;
     switch(fmt) {
     case indexed2: {
@@ -559,7 +641,7 @@ static uint32_t getpixel(image_buffer_t* img, int x_i, int y_i) {
     }
     case rgb565: {
       int pos = y*(w<<1) + (x<<1);
-      uint16_t c = ((uint16_t)data[pos] << 8) | (uint16_t)data[pos+1];
+      uint16_t c = (uint16_t)(((uint16_t)data[pos] << 8) | (uint16_t)data[pos+1]);
       return rgb565to888(c);
     }
     case rgb888: {
@@ -1232,9 +1314,6 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
     int x_start = x;
     int x_end = x_start + width - 1;
 
-    int x_start1;
-    int x_end1;
-
     // when a point is "past" a line, it is on the wrong cleared side of it
     int start_is_past0 = point_past_line(x_start, outer_y,
                                          0, 0,
@@ -1250,6 +1329,9 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
                                         0, 0,
                                         outer_x1, outer_y1);
 
+    // TODO: look into this:
+    // end_is_past0!=0 is always true.
+    // end_is_part1!=0 is always true.
     bool slice_overlaps0 = start_is_past0 != end_is_past0
       && (start_is_past0 != 0 || end_is_past0 != 0);
     bool slice_overlaps1 = start_is_past1 != end_is_past1
@@ -1340,8 +1422,8 @@ static void handle_arc_slice(image_buffer_t *img, int outer_x, int outer_y, int 
 
         slice_is_split = true;
 
-        x_start1 = x_start;
-        x_end1 = x_end;
+        int x_start1 = x_start;
+        int x_end1 = x_end;
 
         if (angle0 < M_PI) {
           while (end_is_past0 == 1) {
@@ -1655,10 +1737,11 @@ static void img_putc(image_buffer_t *img, int x, int y, uint32_t *colors, int nu
     bytes_per_char += 1;
   }
 
+  // There are some expectations on ch that are not documented here.
   if (char_num == 10) {
-    ch -= '0';
+    ch = (uint8_t)(ch - '0');
   } else {
-    ch -= ' ';
+    ch = (uint8_t)(ch - ' ');
   }
 
   if (ch >= char_num) {
@@ -1699,7 +1782,7 @@ static void img_putc(image_buffer_t *img, int x, int y, uint32_t *colors, int nu
     for (int i = 0; i < w * h; i++) {
       uint8_t byte = font_data[4 + bytes_per_char * ch + (i / 8)];
       uint8_t bit_pos = (uint8_t)(i % 8);
-      uint8_t bit = byte & (1 << bit_pos);
+      uint8_t bit = (uint8_t)(byte & (1 << bit_pos));
       if (bit || bg >= 0) {
         int x0 = i % w;
         int y0 = i / w;
@@ -1716,113 +1799,115 @@ static void img_putc(image_buffer_t *img, int x, int y, uint32_t *colors, int nu
   }
 }
 
-static void blit_rot_scale(
-                           image_buffer_t *img_dest,
-                           image_buffer_t *img_src,
-                           int x, int y, // Where on display
-                           float xr, float yr, // Pixel to rotate around
-                           float rot, // Rotation angle in degrees
-                           float scale, // Scale factor
-                           int32_t transparent_color) {
+static inline void copy_pixel(
+	image_buffer_t *img_dest, 
+    image_buffer_t *img_src, 
+    int dest_x, int dest_y, 
+    int src_x, int src_y, 
+    int src_w, int src_h,
+    int transparent_color,
+    bool tile
+) {
+    if (tile) {
+        src_x = src_x % src_w;
+        if (src_x < 0) src_x = src_x + src_w;
+        src_y = src_y % src_h;
+        if (src_y < 0) src_y = src_y + src_h;
+    }
+    
+    if (src_x >= 0 && src_x < src_w && src_y >= 0 && src_y < src_h) {
+        uint32_t p = getpixel(img_src, src_x, src_y);
+        if (transparent_color == -1 || p != (uint32_t)transparent_color) {
+            putpixel(img_dest, dest_x, dest_y, p);
+        }
+    }
+}
 
+// Copy pixels from source to destination with transformations
+void blit(
+    image_buffer_t *img_dest,  // Destination image buffer
+    image_buffer_t *img_src,   // Source image buffer
+    int dest_offset_x, int dest_offset_y,              // Where on dest to start writing pixels
+    float rot_x, float rot_y,  // Coordinate in src to rotate around
+    float rot_angle,           // Rotation angle in degrees
+    float scale,               // Scale factor
+    int32_t transparent_color, // Color that will not be drawn -1 to disable
+    bool tile,                 // Tile src to fill dest
+    int clip_x, int clip_y,    // Clip start in dest
+    int clip_w, int clip_h     // Clip width and height
+) {
   int src_w = img_src->width;
   int src_h = img_src->height;
-  int des_w = img_dest->width;
-  int des_h = img_dest->height;
 
-  int des_x_start = 0;
-  int des_y_start = 0;
-  int des_x_end = (des_x_start + des_w);
-  int des_y_end = (des_y_start + des_h);
+  int dest_x_start = clip_x;
+  int dest_y_start = clip_y;
+  int dest_x_end = clip_w;
+  int dest_y_end = clip_h;
 
-  if (des_x_start < 0) des_x_start = 0;
-  if (des_x_end > des_w) des_x_end = des_w;
-  if (des_y_start < 0) des_y_start = 0;
-  if (des_y_end > des_h) des_y_end = des_h;
+  if (rot_angle == 0.0 && scale == 1.0) {
+    if (dest_offset_x > 0) dest_x_start += dest_offset_x;
+    if (dest_offset_y > 0) dest_y_start += dest_offset_y;
+    if (!tile) {
+        if ((dest_x_end - dest_offset_x) > src_w) dest_x_end = src_w + dest_offset_x;
+        if ((dest_y_end - dest_offset_y) > src_h) dest_y_end = src_h + dest_offset_y;
+    }
 
-  if (rot == 0.0 && scale == 1.0) {
-    if (x > 0) des_x_start += x;
-    if (y > 0) des_y_start += y;
-    if ((des_x_end - x) > src_w) des_x_end = src_w + x;
-    if ((des_y_end - y) > src_h) des_y_end = src_h + y;
-
-    for (int j = des_y_start; j < des_y_end; j++) {
-      for (int i = des_x_start; i < des_x_end; i++) {
-        int px = i - x;
-        int py = j - y;
-
-        if (px >= 0 && px < src_w && py >= 0 && py < src_h) {
-          uint32_t p = getpixel(img_src, px, py);
-
-          if (p != (uint32_t) transparent_color) {
-            putpixel(img_dest, i, j, p);
-          }
-        }
+    for (int dest_y = dest_y_start; dest_y < dest_y_end; dest_y++) {
+      for (int dest_x = dest_x_start; dest_x < dest_x_end; dest_x++) {
+        int src_x = dest_x - dest_offset_x;
+        int src_y = dest_y - dest_offset_y;
+        copy_pixel(img_dest, img_src, dest_x, dest_y, src_x, src_y, src_w, src_h, transparent_color, tile);
       }
     }
-  } else if (rot == 0.0) {
-    xr *= scale;
-    yr *= scale;
+  } else if (rot_angle == 0.0) {
+    rot_x *= scale;
+    rot_y *= scale;
 
     const int fp_scale = 1000;
 
-    int xr_i = (int)xr;
-    int yr_i = (int)yr;
+    int rot_x_x = (int)rot_x;
+    int rot_y_i = (int)rot_y;
     int scale_i = (int)(scale * (float) fp_scale);
 
-    for (int j = des_y_start; j < des_y_end; j++) {
-      for (int i = des_x_start; i < des_x_end; i++) {
-        int px = (i - x - xr_i) * fp_scale;
-        int py = (j - y - yr_i) * fp_scale;
+    for (int dest_y = dest_y_start; dest_y < dest_y_end; dest_y++) {
+      for (int dest_x = dest_x_start; dest_x < dest_x_end; dest_x++) {
+        int src_x = (dest_x - dest_offset_x - rot_x_x) * fp_scale;
+        int src_y = (dest_y - dest_offset_y - rot_y_i) * fp_scale;
 
-        px += xr_i * fp_scale;
-        py += yr_i * fp_scale;
+        src_x += rot_x_x * fp_scale;
+        src_y += rot_y_i * fp_scale;
 
-        px /= scale_i;
-        py /= scale_i;
-
-        if (px >= 0 && px < src_w && py >= 0 && py < src_h) {
-          uint32_t p = getpixel(img_src, px, py);
-
-          if (p != (uint32_t) transparent_color) {
-            putpixel(img_dest, i, j, p);
-          }
-        }
+        src_x /= scale_i;
+        src_y /= scale_i;
+        copy_pixel(img_dest, img_src, dest_x, dest_y, src_x, src_y, src_w, src_h, transparent_color, tile);
       }
     }
   } else {
-    float sr = sinf(-rot * (float)M_PI / 180.0f);
-    float cr = cosf(-rot * (float)M_PI / 180.0f);
+    float sin_rot_angle = sinf(-rot_angle * (float)M_PI / 180.0f);
+    float cos_rot_angle = cosf(-rot_angle * (float)M_PI / 180.0f);
 
-    xr *= scale;
-    yr *= scale;
+    rot_x *= scale;
+    rot_y *= scale;
 
     const int fp_scale = 1000;
 
-    int sr_i = (int)(sr * (float)fp_scale);
-    int cr_i = (int)(cr * (float)fp_scale);
-    int xr_i = (int)xr;
-    int yr_i = (int)yr;
+    int sin_rot_angle_i = (int)(sin_rot_angle * (float)fp_scale);
+    int cos_rot_angle_i = (int)(cos_rot_angle * (float)fp_scale);
+    int rot_x_i = (int)rot_x;
+    int rot_y_i = (int)rot_y;
     int scale_i = (int)(scale * (float) fp_scale);
 
-    for (int j = des_y_start; j < des_y_end; j++) {
-      for (int i = des_x_start; i < des_x_end; i++) {
-        int px = (i - x - xr_i) * cr_i + (j - y - yr_i) * sr_i;
-        int py = -(i - x - xr_i) * sr_i + (j - y - yr_i) * cr_i;
+    for (int dest_y = dest_y_start; dest_y < dest_y_end; dest_y++) {
+      for (int dest_x = dest_x_start; dest_x < dest_x_end; dest_x++) {
+        int src_x =  (dest_x - dest_offset_x - rot_x_i) * cos_rot_angle_i + (dest_y - dest_offset_y - rot_y_i) * sin_rot_angle_i;
+        int src_y = -(dest_x - dest_offset_x - rot_x_i) * sin_rot_angle_i + (dest_y - dest_offset_y - rot_y_i) * cos_rot_angle_i;
 
-        px += xr_i * fp_scale;
-        py += yr_i * fp_scale;
+        src_x += rot_x_i * fp_scale;
+        src_y += rot_y_i * fp_scale;
 
-        px /= scale_i;
-        py /= scale_i;
-
-        if (px >= 0 && px < src_w && py >= 0 && py < src_h) {
-          uint32_t p = getpixel(img_src, px, py);
-
-          if (p != (uint32_t) transparent_color) {
-            putpixel(img_dest, i, j, p);
-          }
-        }
+        src_x /= scale_i;
+        src_y /= scale_i;
+        copy_pixel(img_dest, img_src, dest_x, dest_y, src_x,  src_y, src_w, src_h, transparent_color, tile);
       }
     }
   }
@@ -1830,7 +1915,7 @@ static void blit_rot_scale(
 
 // Extensions
 
-#define ATTR_MAX_ARGS	3
+#define ATTR_MAX_ARGS	4
 #define ARG_MAX_NUM		8
 
 typedef struct {
@@ -1850,112 +1935,114 @@ typedef struct {
   attr_t attr_scale;
   attr_t attr_rotate;
   attr_t attr_resolution;
+  attr_t attr_tile;
+  attr_t attr_clip;
 } img_args_t;
 
 static img_args_t decode_args(lbm_value *args, lbm_uint argn, int num_expected) {
   img_args_t res;
   memset(&res, 0, sizeof(res));
+  res.is_valid = false;
 
-  if (!lbm_is_array_r(args[0])) {
-    return res;
-  }
-  lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(args[0]);
-
-  if (!image_buffer_is_valid((uint8_t*)arr->data, arr->size)) {
-    res.is_valid = false;
-    return res;
-  }
-
-  res.img.width = image_buffer_width((uint8_t*)arr->data);
-  res.img.height = image_buffer_height((uint8_t*)arr->data);
-  res.img.fmt = image_buffer_format((uint8_t*)arr->data);
-  res.img.mem_base = (uint8_t*)arr->data;
-  res.img.data = image_buffer_data((uint8_t*)arr->data);
+  lbm_array_header_t *arr;
+  if (argn >= 1 && (arr = get_image_buffer(args[0]))) {
+    // at least one argument which is an image buffer.
+    res.img.width = image_buffer_width((uint8_t*)arr->data);
+    res.img.height = image_buffer_height((uint8_t*)arr->data);
+    res.img.fmt = image_buffer_format((uint8_t*)arr->data);
+    res.img.mem_base = (uint8_t*)arr->data;
+    res.img.data = image_buffer_data((uint8_t*)arr->data);
 
 
-  int num_dec = 0;
-  for (unsigned int i = 1;i < argn;i++) {
-    if (!lbm_is_number(args[i]) && !lbm_is_cons(args[i])) {
-      return res;
-    }
-
-    if (lbm_is_number(args[i])) {
-      res.args[num_dec] = args[i];
-      num_dec++;
-
-      if (num_dec > ARG_MAX_NUM) {
+    int num_dec = 0;
+    for (unsigned int i = 1;i < argn;i++) {
+      if (!lbm_is_number(args[i]) && !lbm_is_cons(args[i])) {
         return res;
       }
-    } else {
-      lbm_value curr = args[i];
-      int attr_ind = 0;
-      attr_t *attr_now = 0;
-      while (lbm_is_cons(curr)) {
-        lbm_value  arg = lbm_car(curr);
 
-        if (attr_ind == 0) {
-          if (!lbm_is_symbol(arg)) {
-            return res;
-          }
+      if (lbm_is_number(args[i])) {
+        res.args[num_dec] = args[i];
+        num_dec++;
 
-          if (lbm_dec_sym(arg) == symbol_thickness) {
-            attr_now = &res.attr_thickness;
-            attr_now->arg_num = 1;
-          } else if (lbm_dec_sym(arg) == symbol_filled) {
-            attr_now = &res.attr_filled;
-            attr_now->arg_num = 0;
-          } else if (lbm_dec_sym(arg) == symbol_rounded) {
-            attr_now = &res.attr_rounded;
-            attr_now->arg_num = 1;
-          } else if (lbm_dec_sym(arg) == symbol_dotted) {
-            attr_now = &res.attr_dotted;
-            attr_now->arg_num = 2;
-          } else if (lbm_dec_sym(arg) == symbol_scale) {
-            attr_now = &res.attr_scale;
-            attr_now->arg_num = 1;
-          } else if (lbm_dec_sym(arg) == symbol_rotate) {
-            attr_now = &res.attr_rotate;
-            attr_now->arg_num = 3;
-          } else if (lbm_dec_sym(arg) == symbol_resolution) {
-            attr_now = &res.attr_resolution;
-            attr_now->arg_num = 1;
-          } else {
-            return res;
-          }
-        } else {
-          if (!lbm_is_number(arg)) {
-            return res;
-          }
-
-          attr_now->args[attr_ind - 1] = arg;
-        }
-
-        attr_ind++;
-        if (attr_ind > (ATTR_MAX_ARGS + 1)) {
+        if (num_dec > ARG_MAX_NUM) {
           return res;
         }
-
-        curr = lbm_cdr(curr);
-      }
-
-      // does this really compare the pointer addresses?
-      if (attr_now == &res.attr_rounded && attr_ind == 1) {
-        attr_now->arg_num = 0; // the `rounded` attribute may be empty
-      }
-
-
-      if ((attr_ind - 1) == attr_now->arg_num) {
-        attr_now->is_valid = true;
       } else {
-        return res;
+        lbm_value curr = args[i];
+        int attr_ind = 0;
+        attr_t *attr_now = 0;
+        while (lbm_is_cons(curr)) {
+          lbm_value  arg = lbm_car(curr);
+
+          if (attr_ind == 0) {
+            if (!lbm_is_symbol(arg)) {
+              return res;
+            }
+
+            if (lbm_dec_sym(arg) == symbol_thickness) {
+              attr_now = &res.attr_thickness;
+              attr_now->arg_num = 1;
+            } else if (lbm_dec_sym(arg) == symbol_filled) {
+              attr_now = &res.attr_filled;
+              attr_now->arg_num = 0;
+            } else if (lbm_dec_sym(arg) == symbol_rounded) {
+              attr_now = &res.attr_rounded;
+              attr_now->arg_num = 1;
+            } else if (lbm_dec_sym(arg) == symbol_dotted) {
+              attr_now = &res.attr_dotted;
+              attr_now->arg_num = 2;
+            } else if (lbm_dec_sym(arg) == symbol_scale) {
+              attr_now = &res.attr_scale;
+              attr_now->arg_num = 1;
+            } else if (lbm_dec_sym(arg) == symbol_rotate) {
+              attr_now = &res.attr_rotate;
+              attr_now->arg_num = 3;
+            } else if (lbm_dec_sym(arg) == symbol_resolution) {
+              attr_now = &res.attr_resolution;
+              attr_now->arg_num = 1;
+            } else if (lbm_dec_sym(arg) == symbol_tile) {
+              attr_now = &res.attr_tile;
+              attr_now->arg_num = 0;
+            } else if (lbm_dec_sym(arg) == symbol_clip) {
+              attr_now = &res.attr_clip;
+              attr_now->arg_num = 4;
+            }
+            else {
+              return res;
+            }
+          } else {
+            if (!lbm_is_number(arg)) {
+              return res;
+            }
+
+            attr_now->args[attr_ind - 1] = arg;
+          }
+
+          attr_ind++;
+          if (attr_ind > (ATTR_MAX_ARGS + 1)) {
+            return res;
+          }
+
+          curr = lbm_cdr(curr);
+        }
+
+        // does this really compare the pointer addresses?
+        if (attr_now == &res.attr_rounded && attr_ind == 1) {
+          attr_now->arg_num = 0; // the `rounded` attribute may be empty
+        }
+
+
+        if ((attr_ind - 1) == attr_now->arg_num) {
+          attr_now->is_valid = true;
+        } else {
+          return res;
+        }
       }
     }
+    if (num_dec != num_expected) {
+      return res;
+    }
   }
-
-  if (num_dec != num_expected) {
-    return res;
-  }
-
   res.is_valid = true;
   return res;
 }
@@ -1984,7 +2071,7 @@ static lbm_value ext_image_buffer(lbm_value *args, lbm_uint argn) {
   color_format_t fmt = indexed2;
   lbm_uint w = 0;
   lbm_uint h = 0;
-  
+
   if (argn == 4 &&
       lbm_is_defrag_mem(args[0]) &&
       lbm_is_symbol(args[1]) &&
@@ -1995,15 +2082,15 @@ static lbm_value ext_image_buffer(lbm_value *args, lbm_uint argn) {
     h = lbm_dec_as_u32(args[3]);
     args_ok = true;
   } else if (argn == 3 &&
-	     lbm_is_symbol(args[0]) &&
-	     lbm_is_number(args[1]) &&
-	     lbm_is_number(args[2])) {
+             lbm_is_symbol(args[0]) &&
+             lbm_is_number(args[1]) &&
+             lbm_is_number(args[2])) {
     fmt = sym_to_color_format(args[0]);
     w = lbm_dec_as_u32(args[1]);
     h = lbm_dec_as_u32(args[2]);
     args_ok = true;
   }
-    
+
   if (args_ok && fmt != format_not_supported && w > 0 && h > 0 && w < MAX_WIDTH && h < MAX_HEIGHT) {
     if (argn == 3) {
       res = image_buffer_allocate(fmt, (uint16_t)w, (uint16_t)h);
@@ -2020,12 +2107,11 @@ static lbm_value ext_is_image_buffer(lbm_value *args, lbm_uint argn) {
 
   if (argn == 1) {
     res = ENC_SYM_NIL;
-    if (lbm_is_array_r(args[0])) {
-      lbm_value arr = args[0];
-      lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(arr);
+    lbm_array_header_t *array = lbm_dec_array_r(args[0]);
+    if (array) {
       uint8_t *data = (uint8_t*)array->data;
       if (image_buffer_is_valid(data, array->size)) {
-	res = ENC_SYM_TRUE;;
+        res = ENC_SYM_TRUE;;
       }
     }
   }
@@ -2109,12 +2195,11 @@ static lbm_value ext_color(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_color_set(lbm_value *args, lbm_uint argn) {
-  if (argn != 3 || !display_is_color(args[0]) ||
+  color_t *color;
+  if (argn != 3 || !(color = get_color(args[0])) || // color assignment
       !lbm_is_symbol(args[1])) {
     return ENC_SYM_TERROR;
   }
-
-  color_t *color = (color_t*)lbm_get_custom_value(args[0]);
 
   bool is_regular = color->type == COLOR_REGULAR;
   bool is_gradient = color->type == COLOR_GRADIENT_X || color->type == COLOR_GRADIENT_Y;
@@ -2161,12 +2246,11 @@ static lbm_value ext_color_set(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_color_get(lbm_value *args, lbm_uint argn) {
-  if (argn != 2 || !display_is_color(args[0]) ||
+  color_t *color;
+  if (argn != 2 || !(color = get_color(args[0])) || // color assignment
       !lbm_is_symbol(args[1])) {
     return ENC_SYM_TERROR;
   }
-
-  color_t *color = (color_t*)lbm_get_custom_value(args[0]);
 
   bool is_gradient = color->type == COLOR_GRADIENT_X || color->type == COLOR_GRADIENT_Y;
   bool is_pre = color->type == COLOR_PRE_X || color->type == COLOR_PRE_Y;
@@ -2203,12 +2287,11 @@ static lbm_value ext_color_get(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_color_setpre(lbm_value *args, lbm_uint argn) {
-  if (argn != 3 || !display_is_color(args[0]) ||
+  color_t *color;
+  if (argn != 3 || !(color = get_color(args[0])) ||
       !lbm_is_number(args[1]) || !lbm_is_number(args[2])) {
     return ENC_SYM_TERROR;
   }
-
-  color_t *color = (color_t*)lbm_get_custom_value(args[0]);
 
   uint32_t pos = lbm_dec_as_u32(args[1]);
   int new_color = lbm_dec_as_i32(args[2]);
@@ -2223,13 +2306,11 @@ static lbm_value ext_color_setpre(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_color_getpre(lbm_value *args, lbm_uint argn) {
-  if (argn != 2 || !display_is_color(args[0]) ||
+  color_t *color;
+  if (argn != 2 || !(color = get_color(args[0])) ||
       !lbm_is_number(args[1])) {
     return ENC_SYM_TERROR;
   }
-
-  color_t *color = (color_t*)lbm_get_custom_value(args[0]);
-
   uint32_t pos = lbm_dec_as_u32(args[1]);
 
   if (color->precalc == 0 || pos >= COLOR_PRECALC_LEN) {
@@ -2240,28 +2321,28 @@ static lbm_value ext_color_getpre(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_clear(lbm_value *args, lbm_uint argn) {
-  if ((argn != 1 && argn != 2) ||
-      !array_is_image_buffer(args[0]) ||
-      (argn == 2 && !lbm_is_number(args[1]))) {
-    return ENC_SYM_TERROR;
+
+  lbm_value res = ENC_SYM_TERROR;
+  lbm_array_header_t *arr;
+  if ((argn == 1 || argn == 2) &&
+      (arr = get_image_buffer(args[0])) &&   // assignment
+      (argn != 2 || lbm_is_number(args[1]))) { // ( argn == 2 -> lbm_is_number(args[1]))
+    image_buffer_t img_buf;
+    img_buf.width = image_buffer_width((uint8_t*)arr->data);
+    img_buf.height = image_buffer_height((uint8_t*)arr->data);
+    img_buf.fmt = image_buffer_format((uint8_t*)arr->data);
+    img_buf.mem_base = (uint8_t*)arr->data;
+    img_buf.data = image_buffer_data((uint8_t*)arr->data);
+
+    uint32_t color = 0;
+    if (argn == 2) {
+      color = lbm_dec_as_u32(args[1]);
+    }
+
+    image_buffer_clear(&img_buf, color);
+    res = ENC_SYM_TRUE;
   }
-
-  lbm_array_header_t *arr = (lbm_array_header_t *)lbm_car(args[0]);
-  image_buffer_t img_buf;
-  img_buf.width = image_buffer_width((uint8_t*)arr->data);
-  img_buf.height = image_buffer_height((uint8_t*)arr->data);
-  img_buf.fmt = image_buffer_format((uint8_t*)arr->data);
-  img_buf.mem_base = (uint8_t*)arr->data;
-  img_buf.data = image_buffer_data((uint8_t*)arr->data);
-
-  uint32_t color = 0;
-  if (argn == 2) {
-    color = lbm_dec_as_u32(args[1]);
-  }
-
-  image_buffer_clear(&img_buf, color);
-
-  return ENC_SYM_TRUE;
+  return res;
 }
 
 static lbm_value ext_putpixel(lbm_value *args, lbm_uint argn) {
@@ -2578,7 +2659,8 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
   img_buf.data = image_buffer_data((uint8_t*)arr->data);
 
   lbm_array_header_t *font = 0;
-  if (lbm_type_of(args[5]) == LBM_TYPE_ARRAY) {
+  // Allow both const and non-const fonts.
+  if (lbm_type_of_functional(args[argn - 2]) == LBM_TYPE_ARRAY) {
     font = (lbm_array_header_t *)lbm_car(args[argn - 2]);
   }
 
@@ -2604,8 +2686,15 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 
   int ind = 0;
   while (txt[ind] != 0) {
-    img_putc(&img_buf, x + ind * w * incx, y + ind * h * incy,
-      (uint32_t *)colors, 4, font_data, (uint8_t)txt[ind], up, down);
+    img_putc(&img_buf,
+      x + ind * ((up || down) ? h : w) * incx,
+      y + ind * ((up || down) ? w : h) * incy,
+      (uint32_t *)colors,
+      4,
+      font_data,
+      (uint8_t)txt[ind],
+      up,
+      down);
     ind++;
   }
 
@@ -2615,38 +2704,40 @@ static lbm_value ext_text(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_blit(lbm_value *args, lbm_uint argn) {
   img_args_t arg_dec = decode_args(args + 1, argn - 1, 3);
 
-  if (!arg_dec.is_valid) {
-    return ENC_SYM_TERROR;
+  lbm_value res = ENC_SYM_TERROR;
+  lbm_array_header_t *arr;
+  if (arg_dec.is_valid && (arr = get_image_buffer(args[0]))) { //assignment
+    image_buffer_t dest_buf;
+    dest_buf.width = image_buffer_width((uint8_t*)arr->data);
+    dest_buf.height = image_buffer_height((uint8_t*)arr->data);
+    dest_buf.fmt = image_buffer_format((uint8_t*)arr->data);
+    dest_buf.mem_base = (uint8_t*)arr->data;
+    dest_buf.data = image_buffer_data((uint8_t*)arr->data);
+
+    float scale = 1.0;
+    if (arg_dec.attr_scale.is_valid) {
+      scale = lbm_dec_as_float(arg_dec.attr_scale.args[0]);
+    }
+    
+    blit(
+        &dest_buf,
+        &arg_dec.img,
+        lbm_dec_as_i32(arg_dec.args[0]),
+        lbm_dec_as_i32(arg_dec.args[1]),
+        lbm_dec_as_float(arg_dec.attr_rotate.args[0]),
+        lbm_dec_as_float(arg_dec.attr_rotate.args[1]),
+        lbm_dec_as_float(arg_dec.attr_rotate.args[2]),
+        scale,
+        lbm_dec_as_i32(arg_dec.args[2]),
+        arg_dec.attr_tile.is_valid,
+        arg_dec.attr_clip.is_valid ? lbm_dec_as_i32(arg_dec.attr_clip.args[0]) : 0,
+        arg_dec.attr_clip.is_valid ? lbm_dec_as_i32(arg_dec.attr_clip.args[1]) : 0,
+        arg_dec.attr_clip.is_valid ? lbm_dec_as_i32(arg_dec.attr_clip.args[2]) : dest_buf.width,
+        arg_dec.attr_clip.is_valid ? lbm_dec_as_i32(arg_dec.attr_clip.args[3]) : dest_buf.height
+    );
+    res = ENC_SYM_TRUE;
   }
-
-  if (!array_is_image_buffer(args[0])) {
-    return ENC_SYM_TERROR;
-  }
-  lbm_array_header_t *arr = (lbm_array_header_t *)lbm_car(args[0]);
-  image_buffer_t dest_buf;
-  dest_buf.width = image_buffer_width((uint8_t*)arr->data);
-  dest_buf.height = image_buffer_height((uint8_t*)arr->data);
-  dest_buf.fmt = image_buffer_format((uint8_t*)arr->data);
-  dest_buf.mem_base = (uint8_t*)arr->data;
-  dest_buf.data = image_buffer_data((uint8_t*)arr->data);
-
-  float scale = 1.0;
-  if (arg_dec.attr_scale.is_valid) {
-    scale = lbm_dec_as_float(arg_dec.attr_scale.args[0]);
-  }
-
-  blit_rot_scale(
-                 &dest_buf,
-                 &arg_dec.img,
-                 lbm_dec_as_i32(arg_dec.args[0]),
-                 lbm_dec_as_i32(arg_dec.args[1]),
-                 lbm_dec_as_float(arg_dec.attr_rotate.args[0]),
-                 lbm_dec_as_float(arg_dec.attr_rotate.args[1]),
-                 lbm_dec_as_float(arg_dec.attr_rotate.args[2]),
-                 scale,
-                 lbm_dec_as_i32(arg_dec.args[2]));
-
-  return ENC_SYM_TRUE;
+  return res;
 }
 
 void display_dummy_reset(void) {
@@ -2717,53 +2808,50 @@ static lbm_value ext_disp_render(lbm_value *args, lbm_uint argn) {
     return ENC_SYM_EERROR;
   }
 
-  if ((argn != 3 && argn != 4) ||
-      !array_is_image_buffer(args[0]) ||
-      !lbm_is_number(args[1]) ||
-      !lbm_is_number(args[2])) {
-    return ENC_SYM_TERROR;
-  }
+  lbm_value res = ENC_SYM_TERROR;
+  lbm_array_header_t *arr;
+  if ((argn == 3 || argn == 4) &&
+      (arr = get_image_buffer(args[0])) &&
+      lbm_is_number(args[1]) &&
+      lbm_is_number(args[2])) {
+    image_buffer_t img_buf;
+    img_buf.fmt = image_buffer_format((uint8_t*)arr->data);
+    img_buf.width = image_buffer_width((uint8_t*)arr->data);
+    img_buf.height = image_buffer_height((uint8_t*)arr->data);
+    img_buf.mem_base = (uint8_t*)arr->data;
+    img_buf.data = image_buffer_data((uint8_t*)arr->data);
 
-  lbm_array_header_t *arr = (lbm_array_header_t *)lbm_car(args[0]);
+    color_t colors[16];
+    memset(colors, 0, sizeof(color_t) * 16);
 
-  image_buffer_t img_buf;
-  img_buf.fmt = image_buffer_format((uint8_t*)arr->data);
-  img_buf.width = image_buffer_width((uint8_t*)arr->data);
-  img_buf.height = image_buffer_height((uint8_t*)arr->data);
-  img_buf.mem_base = (uint8_t*)arr->data;
-  img_buf.data = image_buffer_data((uint8_t*)arr->data);
+    if (argn == 4 && lbm_is_list(args[3])) {
+      int i = 0;
+      lbm_value curr = args[3];
+      while (lbm_is_cons(curr) && i < 16) {
+        lbm_value arg = lbm_car(curr);
+        color_t *color;
+        if (lbm_is_number(arg)) {
+          colors[i].color1 = (int)lbm_dec_as_u32(arg);
+        } else if ((color = get_color(arg))) { // color assignment
+          colors[i] = *color;
+        } else {
+          return ENC_SYM_TERROR;
+        }
 
-  color_t colors[16];
-  memset(colors, 0, sizeof(color_t) * 16);
-
-  if (argn == 4 && lbm_is_list(args[3])) {
-    int i = 0;
-    lbm_value curr = args[3];
-    while (lbm_is_cons(curr) && i < 16) {
-      lbm_value arg = lbm_car(curr);
-
-      if (lbm_is_number(arg)) {
-        colors[i].color1 = (int)lbm_dec_as_u32(arg);
-      } else if (display_is_color(arg)) {
-        colors[i] = *((color_t*)lbm_get_custom_value(arg));
-      } else {
-        return ENC_SYM_TERROR;
+        curr = lbm_cdr(curr);
+        i++;
       }
-
-      curr = lbm_cdr(curr);
-      i++;
     }
+
+    // img_buf is a stack allocated image_buffer_t.
+    bool render_res = disp_render_image(&img_buf, (uint16_t)lbm_dec_as_u32(args[1]), (uint16_t)lbm_dec_as_u32(args[2]), colors);
+    if (!render_res) {
+      lbm_set_error_reason("Could not render image. Check if the format and location is compatible with the display.");
+      return ENC_SYM_EERROR;
+    }
+    res = ENC_SYM_TRUE;
   }
-
-  // img_buf is a stack allocated image_buffer_t.
-  bool render_res = disp_render_image(&img_buf, (uint16_t)lbm_dec_as_u32(args[1]), (uint16_t)lbm_dec_as_u32(args[2]), colors);
-
-  if (!render_res) {
-    lbm_set_error_reason("Could not render image. Check if the format and location is compatible with the display.");
-    return ENC_SYM_EERROR;
-  }
-
-  return ENC_SYM_TRUE;
+  return res;
 }
 
 // Jpg decoder
@@ -2811,35 +2899,38 @@ int jpg_output_func (	/* 1:Ok, 0:Aborted */
 
 static lbm_value ext_disp_render_jpg(lbm_value *args, lbm_uint argn) {
 
-  if (argn != 3 ||
-      !lbm_is_array_r(args[0]) ||
-      !lbm_is_number(args[1]) ||
-      !lbm_is_number(args[2])) {
-    return ENC_SYM_TERROR;
+  lbm_array_header_t *array;
+  lbm_value res = ENC_SYM_TERROR;
+
+  if (argn == 3 &&
+      (array = lbm_dec_array_r(args[0])) && //asignment
+      lbm_is_number(args[1]) &&
+      lbm_is_number(args[2])) {
+
+    JDEC jd;
+    void *jdwork;
+    // make a bit of room before the buffer.
+    const size_t sz_work = 4096 + IMAGE_BUFFER_HEADER_SIZE;
+
+    jdwork = lbm_malloc(sz_work);
+    if (!jdwork) {
+      return ENC_SYM_MERROR;
+    }
+
+
+
+    jpg_bufdef iodev;
+    iodev.data = (uint8_t*)(array->data);
+    iodev.size = (int)array->size;
+    iodev.pos = 0;
+    iodev.ofs_x = lbm_dec_as_i32(args[1]);
+    iodev.ofs_y = lbm_dec_as_i32(args[2]);
+    jd_prepare(&jd, jpg_input_func, jdwork, sz_work + IMAGE_BUFFER_HEADER_SIZE, &iodev);
+    jd_decomp(&jd, jpg_output_func, 0);
+    lbm_free(jdwork);
+    res = ENC_SYM_TRUE;
   }
-
-  JDEC jd;
-  void *jdwork;
-  // make a bit of room before the buffer.
-  const size_t sz_work = 4096 + IMAGE_BUFFER_HEADER_SIZE;
-
-  jdwork = lbm_malloc(sz_work);
-  if (!jdwork) {
-    return ENC_SYM_MERROR;
-  }
-
-  lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
-
-  jpg_bufdef iodev;
-  iodev.data = (uint8_t*)(array->data);
-  iodev.size = (int)array->size;
-  iodev.pos = 0;
-  iodev.ofs_x = lbm_dec_as_i32(args[1]);
-  iodev.ofs_y = lbm_dec_as_i32(args[2]);
-  jd_prepare(&jd, jpg_input_func, jdwork, sz_work + IMAGE_BUFFER_HEADER_SIZE, &iodev);
-  jd_decomp(&jd, jpg_output_func, 0);
-  lbm_free(jdwork);
-  return ENC_SYM_TRUE;
+  return res;
 }
 
 void lbm_display_extensions_init(void) {

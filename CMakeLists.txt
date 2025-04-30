@@ -90,4 +90,32 @@ message("Processing target ${HW_NAME} on ${HW_TARGET} for file ${HW_FILE_NAME}")
 get_filename_component(ProjectId ${CMAKE_CURRENT_LIST_DIR} NAME)
 string(REPLACE " " "_" ProjectId ${ProjectId})
 project(${ProjectId})
+
+include(cmake/git_rev_parse.cmake)
+
+git_describe(GIT_COMMIT_HASH ".")
+# get_git_head_revision(GIT_COMMIT_REF GIT_COMMIT_HASH ".")
+
+if(DEFINED ENV{GIT_COMMIT_HASH})
+    set(GIT_COMMIT_HASH $ENV{GIT_COMMIT_HASH})
+else()
+    git_describe(GIT_COMMIT_HASH ".")
+endif()
+
+if(DEFINED ENV{GIT_BRANCH_NAME})
+    set(GIT_BRANCH_NAME $ENV{GIT_BRANCH_NAME})
+else()
+    git_rev_parse(GIT_BRANCH_NAME "." "--abbrev-ref" "HEAD")
+endif()
+
+idf_build_set_property(COMPILE_DEFINITIONS "GIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\"" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "GIT_BRANCH_NAME=\"${GIT_BRANCH_NAME}\"" APPEND)
+
+if(DEFINED ENV{USER_GIT_COMMIT_HASH})
+    idf_build_set_property(COMPILE_DEFINITIONS "USER_GIT_COMMIT_HASH=\"$ENV{USER_GIT_COMMIT_HASH}\"" APPEND)
+endif()
+if(DEFINED ENV{USER_GIT_BRANCH_NAME})
+    idf_build_set_property(COMPILE_DEFINITIONS "USER_GIT_BRANCH_NAME=\"$ENV{USER_GIT_BRANCH_NAME}\"" APPEND)
+endif()
+
 idf_build_set_property(COMPILE_OPTIONS "-fdiagnostics-color=always" APPEND)

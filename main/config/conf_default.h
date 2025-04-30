@@ -5,7 +5,7 @@
 
 // CAN ID
 #ifndef CONF_CONTROLLER_ID
-#define CONF_CONTROLLER_ID -1
+#define CONF_CONTROLLER_ID 2
 #endif
 
 // CAN Baud Rate
@@ -20,7 +20,7 @@
 
 // WiFi Mode
 #ifndef CONF_WIFI_MODE
-#define CONF_WIFI_MODE 2
+#define CONF_WIFI_MODE 0
 #endif
 
 // Station Mode SSID
@@ -75,7 +75,7 @@
 
 // Bluetooth Mode
 #ifndef CONF_BLE_MODE
-#define CONF_BLE_MODE 0
+#define CONF_BLE_MODE 1
 #endif
 
 // Name

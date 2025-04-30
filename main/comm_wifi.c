@@ -572,7 +572,11 @@ esp_ip4_addr_t comm_wifi_get_ip_client(void) {
 }
 
 bool comm_wifi_is_client_connected(void) {
-	return comm_local.socket >= 0 || comm_hub.socket >= 0;
+	return comm_local.socket >= 0;
+}
+
+bool comm_wifi_is_connected_hub(void) {
+	return comm_hub.socket >= 0;
 }
 
 bool comm_wifi_is_connecting(void) {

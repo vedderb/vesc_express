@@ -43,13 +43,6 @@
 
 #define HW_NAME						"VBMS32"
 
-/*
- * PCB-versions
- *
- * 1: First prototype, PCB says 1.0
- * 2: Second prototype, PCB says 1.1
- *
- */
 #define PCB_VERSION					2
 
 #define HW_EARLY_LBM_INIT
@@ -68,18 +61,6 @@
 #define OVR_CONF_SET_DEFAULTS		vbms32_confparser_set_defaults_main_config_t
 #define OVR_CONF_MAIN_CONFIG
 #define VAR_INIT_CODE				259763459
-
-typedef enum {
-	BALANCE_MODE_DISABLED = 0,
-	BALANCE_MODE_CHARGING_ONLY,
-	BALANCE_MODE_DURING_AND_AFTER_CHARGING,
-	BALANCE_MODE_ALWAYS
-} BMS_BALANCE_MODE;
-
-typedef enum {
-	I_MEASURE_MODE_BMS = 0,
-	I_MEASURE_MODE_VESC
-} I_MEASURE_MODE;
 
 typedef struct {
 	int controller_id;
@@ -107,15 +88,27 @@ typedef struct {
 
 	// Cells on second balance IC
 	int cells_ic2;
+	
+	// Number of external temperature sensors
+	int temp_num;
 
-	// Cell balancing mode
-	BMS_BALANCE_MODE balance_mode;
+	// Battery amp hours
+	float batt_ah;
 
 	// Maximum simultaneous balancing channels
 	int max_bal_ch;
 
-	// Distributed balancing
-	bool dist_bal;
+	// Use amp hours for columb counting
+	bool soc_use_ah;
+
+	// Block sleep mode
+	bool block_sleep;
+
+	// Cell voltage when empty
+	float vc_empty;
+
+	// Cell voltage when full
+	float vc_full;
 
 	// Start balancing if cell voltage is this much above the minimum cell voltage
 	float vc_balance_start;
@@ -149,12 +142,15 @@ typedef struct {
 
 	// Only allow charging when the cell temperature is below this value
 	float t_charge_max;
+	
+	// Only allow charging when the MOSFET temperature is below this value
+	float t_charge_max_mos;
 
-	// Current measurement mode
-	I_MEASURE_MODE i_measure_mode;
+	// Regular sleep time
+	float sleep_regular;
 
-	// Reset sleep timeout to this value at events that prevent sleeping
-	int sleep_timeout_reset_ms;
+	// Long sleep time, for when SOC is low
+	float sleep_long;
 
 	// Stop charging when the charge current goes below this value
 	float min_charge_current;
@@ -165,18 +161,39 @@ typedef struct {
 	// Filter constant for SoC filter
 	float soc_filter_const;
 
-	// Start limiting the number of balancing channels at this temperature
-	float t_bal_lim_start;
-
-	// Disable all balancing channels above this temperature
-	float t_bal_lim_end;
+	// Do not allow balancing above this cell temperature
+	float t_bal_max_cell;
+	
+	// Do not allow balancing above this balance IC temperature
+	float t_bal_max_ic;
 
 	// Only allow charging when the cell temperature is above this value
 	float t_charge_min;
 
 	// Enable temperature monitoring during charging
 	bool t_charge_mon_en;
+	
+	// Maximum precharge time
+	float psw_t_pchg;
+	
+	// Shortcircuit protection enabled
+	bool psw_scd_en;
+	
+	// Shortcircuit protection threshold
+	int psw_scd_tres;
+	
+	// Enable overtemperature protection
+	bool t_psw_en;
+	
+	// Turn off power switch when MOSFET temperature is above this value
+	float t_psw_max_mos;
+	
+	// Wait for init done before enabling power switch
+	bool psw_wait_init;
 } main_config_t;
+
+// Default setting Overrides
+#define HW_DEFAULT_ID				3
 
 // CAN
 #define CAN_TX_GPIO_NUM				7
