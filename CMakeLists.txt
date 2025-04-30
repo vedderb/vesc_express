@@ -5,7 +5,108 @@ if(NOT DEFINED HW_NAME)
     set(HW_NAME "VESC Express T")
 endif()
 
-# Set build directory to be target-specific
+# Check for buildall target in a different way
+if(DEFINED BUILDALL AND BUILDALL)
+    # Make sure the build directory exists
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
+    
+    # Find all available hardware targets
+    file(GLOB_RECURSE HW_HEADER_PATHS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+        main/hwconf/hw_*.h
+    )
+    
+    set(ALL_HW_NAMES "")
+    foreach(HW_HEADER_PATH ${HW_HEADER_PATHS})
+        file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/${HW_HEADER_PATH}" FILE_CONTENTS)
+        
+        foreach(LINE IN LISTS FILE_CONTENTS)
+            string(REGEX MATCH "^#define[ \t]+HW_NAME[ \t]+\"(.*)\"$" MATCHES "${LINE}")
+            if(MATCHES)
+                list(APPEND ALL_HW_NAMES ${CMAKE_MATCH_1})
+            endif()
+        endforeach()
+    endforeach()
+    
+    message("Found hardware targets, building them all...")
+    
+    # Create a Python script in the build directory to safely build all targets
+    set(BUILD_ALL_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/build/build_all.py")
+    file(WRITE ${BUILD_ALL_SCRIPT} "#!/usr/bin/env python3\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "import os\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "import sys\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "import subprocess\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "import platform\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "# Project directory\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "project_dir = '${CMAKE_CURRENT_SOURCE_DIR}'\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "# List of targets to build\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "targets = [\n")
+    foreach(TARGET_NAME ${ALL_HW_NAMES})
+        file(APPEND ${BUILD_ALL_SCRIPT} "    '${TARGET_NAME}',\n")
+    endforeach()
+    file(APPEND ${BUILD_ALL_SCRIPT} "]\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "# Clear main build cache to avoid conflicts\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "cache_file = os.path.join(project_dir, 'build', 'CMakeCache.txt')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "if os.path.exists(cache_file):\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    os.remove(cache_file)\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "cache_dir = os.path.join(project_dir, 'build', 'CMakeFiles')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "if os.path.exists(cache_dir):\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    import shutil\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    shutil.rmtree(cache_dir)\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "success = True\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "for target in targets:\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    print(f'\\nBuilding target: {target}')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    # Create exact target directory name without any added characters\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    build_dir = os.path.join(project_dir, 'build', target)\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    os.makedirs(build_dir, exist_ok=True)\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "    # Prepare command arguments as a list (preserves spaces properly)\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    cmd = ['idf.py']\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    cmd.extend(['-B', build_dir])\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    cmd.append(f'-DHW_NAME={target}')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    cmd.append('build')\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "    print(f'Command: {\" \".join(cmd)}')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    # Run the build process\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    result = subprocess.run(cmd, cwd=project_dir)\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    if result.returncode != 0:\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "        success = False\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "        print(f'Failed to build target: {target}')\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "if success:\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    print('All targets built successfully!')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    sys.exit(0)\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "else:\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    print('Some targets failed to build. Check the build logs for details.')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    sys.exit(1)\n")
+    
+    # Make the script executable on Unix-like systems
+    if(NOT CMAKE_HOST_WIN32)
+        execute_process(COMMAND chmod +x ${BUILD_ALL_SCRIPT})
+    endif()
+    
+    # Run the Python script
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env python3 ${BUILD_ALL_SCRIPT}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        RESULT_VARIABLE BUILD_ALL_RESULT
+    )
+    
+    # Report result
+    if(BUILD_ALL_RESULT EQUAL 0)
+        message("All targets built successfully!")
+    else()
+        message(FATAL_ERROR "Some targets failed to build. Check the build logs for details.")
+    endif()
+    
+    # Stop CMake processing since we've handled all builds
+    return()
+endif()
+
+# For single target build, set build directory to be target-specific
 set(TARGET_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/${HW_NAME}")
 
 # Create the build directory if it doesn't exist
