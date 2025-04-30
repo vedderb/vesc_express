@@ -24,6 +24,7 @@
 #include "adc.h"
 
 #define HW_NAME						"VESC_Duet"
+#define HW_TARGET					"esp32c3"
 
 #define HW_NO_UART
 
