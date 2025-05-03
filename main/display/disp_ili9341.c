@@ -40,21 +40,13 @@ static int m_pin_dc    = -1;
 #if CONFIG_IDF_TARGET_ESP32S3
 	#define DISP_REG_SET		GPIO.out_w1ts
 	#define DISP_REG_CLR		GPIO.out_w1tc
-#elif CONFIG_IDF_TARGET_ESP32
-	#define DISP_REG_SET    GPIO_OUT_W1TS_REG
-	#define DISP_REG_CLR    GPIO_OUT_W1TC_REG
 #else
 	#define DISP_REG_SET		GPIO.out_w1ts.val
 	#define DISP_REG_CLR		GPIO.out_w1tc.val
 #endif
 
-#if CONFIG_IDF_TARGET_ESP32
-	#define COMMAND() 	    REG_WRITE(DISP_REG_SET, (1 << m_pin_dc))
-	#define DATA() 	        REG_WRITE(GPIO_OUT_W1TC_REG, (1 << m_pin_dc))
-#else
-	#define COMMAND() 	    (DISP_REG_CLR = 1 << m_pin_dc)
-	#define DATA() 	        (DISP_REG_SET = 1 << m_pin_dc)
-#endif
+#define COMMAND() 	    (DISP_REG_CLR = 1 << m_pin_dc)
+#define DATA() 	        (DISP_REG_SET = 1 << m_pin_dc)
 
 static void command_start(uint8_t cmd) {
 	COMMAND();
