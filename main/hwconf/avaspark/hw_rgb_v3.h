@@ -17,7 +17,28 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#include "hw_mini.h"
+#ifndef MAIN_HWCONF_AVASPARK_HW_RGB_V3_H_
+#define MAIN_HWCONF_AVASPARK_HW_RGB_V3_H_
 
-void hw_init(void) {
-}
+#define HW_NAME						"Avaspark RGB V3"
+#define HW_TARGET                   "esp32s3"
+#define HW_PSRAM                    "oct"
+#define HW_NO_UART
+
+#define HW_INIT_HOOK()				hw_init()
+
+// CAN
+#define CAN_TX_GPIO_NUM				11
+#define CAN_RX_GPIO_NUM				10
+
+// UART
+//#define UART_NUM					0
+//#define UART_BAUDRATE				115200
+//#define UART_TX						44
+//#define UART_RX						43
+
+
+// Functions
+void hw_init(void);
+
+#endif /* MAIN_HWCONF_AVASPARK_HW_RGB_S3_H_ */

@@ -1,6 +1,6 @@
 # VESC Express
 
-The is the codebase for the VESC Express, which is a WiFi and Bluetooth-enabled logger and IO-board. At the moment it is tested and runs on the ESP32C3, but it might work on other ESP32-devices too.
+The is the codebase for the VESC Express, which is a WiFi and Bluetooth-enabled logger and IO-board. At the moment it is tested and runs on the ESP32C3 and ESP32S3 but other ESP32 devices can be added.
 
 ## Toolchain
 
@@ -17,7 +17,7 @@ The instructions linked above will install the master branch of ESP-IDF. To inst
 ```bash
 git clone -b v5.2.2 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.2.2
 cd esp-idf-v5.2.2/
-./install.sh esp32c3 esp32 esp32s3
+./install.sh esp32c3 esp32s3
 ```
 
 At the moment development is done using the stable 5.2.2-release.

@@ -25,9 +25,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include "esp_log.h"
-#if !CONFIG_IDF_TARGET_ESP32
-	#include "hal/usb_serial_jtag_ll.h"
-#endif
+#include "hal/usb_serial_jtag_ll.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/ringbuf.h"
@@ -77,11 +75,6 @@ static void send_packet_raw(unsigned char *buffer, unsigned int len) {
 }
 
 void comm_usb_init(void) {
-	#if CONFIG_IDF_TARGET_ESP32
-		return;
-	#endif
-
-
 	usb_serial_jtag_driver_config_t usb_serial_jtag_config;
 	usb_serial_jtag_config.rx_buffer_size = 1024;
 	usb_serial_jtag_config.tx_buffer_size = 256;

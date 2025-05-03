@@ -17,28 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_HWCONF_RESCUE_HW_MINI_H_
-#define MAIN_HWCONF_RESCUE_HW_MINI_H_
+#include "hw_rgb_v3.h"
 
-#include "driver/gpio.h"
-
-#define HW_NAME						"rESCue Mini"
-#define HW_TARGET                   "esp32"
-#define HW_NO_UART
-
-#define HW_INIT_HOOK()				hw_init()
-
-// CAN
-#define CAN_TX_GPIO_NUM				26
-#define CAN_RX_GPIO_NUM				27
-
-// UART
-#define UART_NUM					0
-#define UART_BAUDRATE				115200
-#define UART_TX						16
-#define UART_RX						17
-
-// Functions
-void hw_init(void);
-
-#endif /* MAIN_HWCONF_RESCUE_HW_MINI_H_ */
+void hw_init(void) {
+}

@@ -6,6 +6,7 @@ esp_idf_components
 sdkconfig.old
 sdkconfig
 .vscode
+.DS_Store
 
 # These should maybe be committed instead, but they weren't before and I don't
 # feel like making that decision right now...

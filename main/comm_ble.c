@@ -42,22 +42,14 @@
 #include "conf_general.h"
 #include "main.h"
 
-#if CONFIG_IDF_TARGET_ESP32
-	#define GATTS_CHAR_VAL_LEN_MAX 23
-#else
-	#define GATTS_CHAR_VAL_LEN_MAX 255
-#endif
+
+#define GATTS_CHAR_VAL_LEN_MAX 255
 #define DEFAULT_BLE_MTU 20 // 23 for default mtu and 3 bytes for ATT headers
 #define BLE_CHAR_COUNT 2
 #define BLE_SERVICE_HANDLE_NUM (1 + (3 * BLE_CHAR_COUNT))
 #define ADV_CFG_FLAG (1 << 0)
 #define SCAN_RSP_CFG_FLAG (1 << 1)
-
-#if CONFIG_IDF_TARGET_ESP32
-	#define ESP_PWR_LVL ESP_PWR_LVL_P9
-#else
-	#define ESP_PWR_LVL ESP_PWR_LVL_P18
-#endif
+#define ESP_PWR_LVL ESP_PWR_LVL_P18
 
 static bool is_connected = false;
 static uint16_t ble_current_mtu = DEFAULT_BLE_MTU;
