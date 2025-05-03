@@ -1,15 +1,19 @@
 cmake_minimum_required(VERSION 3.5)
 
+# First, ensure the build directory exists
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
+
+# Create a dummy project_description.json file at the beginning
+file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/build/project_description.json" 
+"{\"project_name\": \"vesc_express\", \"version\": \"1.0\"}")
+
 # Default build target if not provided
 if(NOT DEFINED HW_NAME)
     set(HW_NAME "VESC Express T")
 endif()
 
-# Check for buildall target in a different way
+# Check for buildall target
 if(DEFINED BUILDALL AND BUILDALL)
-    # Make sure the build directory exists
-    file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
-    
     # Find all available hardware targets
     file(GLOB_RECURSE HW_HEADER_PATHS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
         main/hwconf/hw_*.h
@@ -35,7 +39,7 @@ if(DEFINED BUILDALL AND BUILDALL)
     file(APPEND ${BUILD_ALL_SCRIPT} "import os\n")
     file(APPEND ${BUILD_ALL_SCRIPT} "import sys\n")
     file(APPEND ${BUILD_ALL_SCRIPT} "import subprocess\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "import platform\n\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "import json\n\n")
     
     file(APPEND ${BUILD_ALL_SCRIPT} "# Project directory\n")
     file(APPEND ${BUILD_ALL_SCRIPT} "project_dir = '${CMAKE_CURRENT_SOURCE_DIR}'\n\n")
@@ -47,14 +51,12 @@ if(DEFINED BUILDALL AND BUILDALL)
     endforeach()
     file(APPEND ${BUILD_ALL_SCRIPT} "]\n\n")
     
-    file(APPEND ${BUILD_ALL_SCRIPT} "# Clear main build cache to avoid conflicts\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "cache_file = os.path.join(project_dir, 'build', 'CMakeCache.txt')\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "if os.path.exists(cache_file):\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "    os.remove(cache_file)\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "cache_dir = os.path.join(project_dir, 'build', 'CMakeFiles')\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "if os.path.exists(cache_dir):\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "    import shutil\n")
-    file(APPEND ${BUILD_ALL_SCRIPT} "    shutil.rmtree(cache_dir)\n\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "# Create dummy project_description.json if needed\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "main_build_dir = os.path.join(project_dir, 'build')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "project_desc_path = os.path.join(main_build_dir, 'project_description.json')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "if not os.path.exists(project_desc_path):\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    with open(project_desc_path, 'w') as f:\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "        json.dump({'project_name': 'vesc_express', 'version': '1.0'}, f)\n\n")
     
     file(APPEND ${BUILD_ALL_SCRIPT} "success = True\n")
     file(APPEND ${BUILD_ALL_SCRIPT} "for target in targets:\n")
@@ -75,6 +77,15 @@ if(DEFINED BUILDALL AND BUILDALL)
     file(APPEND ${BUILD_ALL_SCRIPT} "    if result.returncode != 0:\n")
     file(APPEND ${BUILD_ALL_SCRIPT} "        success = False\n")
     file(APPEND ${BUILD_ALL_SCRIPT} "        print(f'Failed to build target: {target}')\n\n")
+    
+    file(APPEND ${BUILD_ALL_SCRIPT} "    # Ensure project_description.json exists in main build dir after each build\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    target_desc_path = os.path.join(build_dir, 'project_description.json')\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "    if os.path.exists(target_desc_path):\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "        try:\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "            import shutil\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "            shutil.copy(target_desc_path, project_desc_path)\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "        except Exception as e:\n")
+    file(APPEND ${BUILD_ALL_SCRIPT} "            print(f'Warning: Could not copy project_description.json: {e}')\n")
     
     file(APPEND ${BUILD_ALL_SCRIPT} "if success:\n")
     file(APPEND ${BUILD_ALL_SCRIPT} "    print('All targets built successfully!')\n")
@@ -222,3 +233,13 @@ if(DEFINED ENV{USER_GIT_BRANCH_NAME})
 endif()
 
 idf_build_set_property(COMPILE_OPTIONS "-fdiagnostics-color=always" APPEND)
+
+# Ensure project_description.json exists in main build dir
+add_custom_target(create_project_description ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/build"
+    COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_SOURCE_DIR}/build/project_description.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${TARGET_BUILD_DIR}/project_description.json" 
+        "${CMAKE_CURRENT_SOURCE_DIR}/build/project_description.json" || 
+        echo "Using placeholder project_description.json"
+)
