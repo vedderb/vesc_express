@@ -23,6 +23,7 @@
 #include "driver/gpio.h"
 
 #define HW_NAME						"STR365 IO"
+#define HW_TARGET					"esp32c3"
 
 #define HW_INIT_HOOK()				hw_init()
 
