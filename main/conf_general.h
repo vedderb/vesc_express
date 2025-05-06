@@ -73,6 +73,9 @@
 
 //#define HW_HEADER					"hw_stick.h"
 //#define HW_SOURCE					"hw_stick.c"
+
+//#define HW_HEADER					"hw_duet.h"
+//#define HW_SOURCE					"hw_duet.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
