@@ -814,7 +814,7 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 
 			lbm_image_boot();
 			lbm_add_eval_symbols();
-			lbm_eval_init_events(20);
+			lbm_eval_init_events(30);
 
 			xTaskCreatePinnedToCore(eval_thread, "lbm_eval", 3072, NULL, 6, NULL, tskNO_AFFINITY);
 			lisp_thd_running = true;
