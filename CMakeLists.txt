@@ -234,6 +234,13 @@ endif()
 
 idf_build_set_property(COMPILE_OPTIONS "-fdiagnostics-color=always" APPEND)
 
+# Copy config.env to the main build directory if it exists
+if(EXISTS "${TARGET_BUILD_DIR}/config.env")
+    file(COPY "${TARGET_BUILD_DIR}/config.env" 
+         DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/build/")
+    message("Copied config.env to main build directory")
+endif()
+
 # Ensure project_description.json exists in main build dir
 add_custom_target(create_project_description ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/build"
