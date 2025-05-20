@@ -3369,7 +3369,7 @@ static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 }
 
 // Remote Messages
-#define RMSG_SLOT_NUM	5
+#define RMSG_SLOT_NUM	8
 
 typedef struct {
 	lbm_cid cid;
@@ -6566,11 +6566,11 @@ void lispif_process_rmsg(int slot, unsigned char *data, unsigned int len) {
 		f_lbm_array(&v, len, data);
 		lbm_finish_flatten(&v);
 
-		if (!lbm_unblock_ctx(rmsg_slots[slot].cid, &v)) {
+		if (lbm_unblock_ctx(rmsg_slots[slot].cid, &v)) {
+			rmsg_slots[slot].cid = -1;
+		} else {
 			lbm_free(v.buf);
 		}
-
-		rmsg_slots[slot].cid = -1;
 	}
 
 	xSemaphoreGive(rmsg_mutex);

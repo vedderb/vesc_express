@@ -31,6 +31,7 @@ void lispif_init(void);
 int lispif_get_restart_cnt(void);
 void lispif_lock_lbm(void);
 void lispif_unlock_lbm(void);
+void lispif_stop(void);
 bool lispif_restart(bool print, bool load_code, bool load_imports);
 void lispif_disable_all_events(void);
 void lispif_free(void *ptr);

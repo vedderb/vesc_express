@@ -206,8 +206,6 @@ void commands_init(void) {
 	init_done = true;
 }
 
-void lispif_stop(void);
-
 void commands_process_packet(unsigned char *data, unsigned int len,
 		send_func_t reply_func) {
 	if (!len) {
@@ -830,7 +828,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if (packet_id == COMM_LISP_ERASE_CODE) {
 			// Only restart if erase size is not -2. This is a hack to maintain backwards compatibility.
 			if (erase_size != -2) {
-				//lispif_restart(false, false, false);
 				lispif_stop();
 			}
 		}
