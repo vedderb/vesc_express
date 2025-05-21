@@ -179,6 +179,10 @@ static void prof_timer_callback(void* arg) {
 }
 
 static bool pause_eval(uint32_t num_free, uint32_t timeout_ms) {
+	if (!lisp_thd_running) {
+		return false;
+	}
+	
 	int timeout_cnt = timeout_ms;
 
 	if (num_free > 0) {
@@ -730,9 +734,20 @@ void lispif_stop(void) {
 	lispif_lock_lbm();
 
 	lbm_kill_eval();
+	int timeout = 2000;
 	while (lisp_thd_running) {
 		lbm_kill_eval();
 		vTaskDelay(1 / portTICK_PERIOD_MS);
+		timeout--;
+		if (timeout == 0) {
+			break;
+		}
+	}
+	
+	if (lisp_thd_running) {
+		vTaskDelete(eval_task);
+		lisp_thd_running = false;
+		commands_printf_lisp("Killed eval task as it didn't stop when asked to");
 	}
 
 	lispif_unlock_lbm();
