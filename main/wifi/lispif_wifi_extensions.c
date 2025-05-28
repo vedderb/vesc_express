@@ -74,6 +74,8 @@ static lbm_uint symbol_connecting     = 0;
 static lbm_uint symbol_disconnected   = 0;
 static lbm_uint symbol_socket_error   = 0;
 static lbm_uint symbol_connect_error  = 0;
+static lbm_uint symbol_wait           = 0;
+static lbm_uint symbol_no_wait        = 0;
 
 static volatile bool init_done = false;
 
@@ -87,7 +89,8 @@ static bool register_symbols(void) {
 	res = res && lbm_add_symbol_const("connecting", &symbol_connecting);
 	res = res && lbm_add_symbol_const("disconnected", &symbol_disconnected);
 	res = res && lbm_add_symbol_const("socket-error", &symbol_socket_error);
-	res = res && lbm_add_symbol_const("connect-error", &symbol_connect_error);
+	res = res && lbm_add_symbol_const("wait", &symbol_wait);
+	res = res && lbm_add_symbol_const("no-wait", &symbol_no_wait);
 
 	return res;
 }
@@ -404,6 +407,10 @@ static void event_listener(
  * networks.
  */
 static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING | PRECHECK_MODE_STATION_ONLY)) {
+		return ENC_SYM_EERROR;
+	}
+	
 	uint32_t scan_time = 120;
 	if (argn >= 1) {
 		scan_time = (uint32_t)(lbm_dec_as_float(args[0]) * 1000);
@@ -458,7 +465,7 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 }
 
 /**
- * signature: (wifi-connect ssid:string password:string|nil) -> bool
+ * signature: (wifi-connect ssid:string password:string|nil [wait-flag:'wait|'no-wait]) -> bool
  *
  * Connect to the specified wifi network.
  *
@@ -467,6 +474,8 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
  * @param password The network's password. Pass nil if the network
  * doesn't have a password. Must not be longer than 63 characters
  * (excluding the null byte).
+ * @param wait-flag [optional] If the extension should wait for the connection
+ * result. (default: 'wait)
  * @return True if the connection was successfull (the connection is
  * then ready for opening tcp sockets at this point). Otherwise
  * 'wrong_password is returned if the password or ssid was incorrect
@@ -479,8 +488,8 @@ static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
 	if (!wifi_precheck(PRECHECK_NOT_WAITING | PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
-
-	LBM_CHECK_ARGN(2);
+	
+	LBM_CHECK_ARGN_RANGE(2, 3)
 
 	if (!lbm_is_array_r(args[0])
 		|| !(lbm_is_array_r(args[1]) || lbm_is_symbol_nil(args[1]))) {
@@ -507,18 +516,86 @@ static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
 		lbm_set_error_reason(error_esp_too_long_password);
 		return ENC_SYM_EERROR;
 	}
-
-	waiting_cid = lbm_get_current_cid();
-	waiting_op  = WAITING_OP_CHANGE_NETWORK;
-	is_waiting  = true;
-
-	bool result = comm_wifi_change_network(ssid, password);
-	if (!result) {
-		return ENC_SYM_NIL;
+	
+	bool should_wait = true;
+	if (argn >= 3) {
+		if (!lbm_is_symbol(args[2])) {
+			lbm_set_error_suspect(args[2]);
+			return ENC_SYM_TERROR;
+		}
+		lbm_uint symbol = lbm_dec_sym(args[2]);
+		if (symbol == symbol_wait) {
+			should_wait = true;
+		} else if (symbol == symbol_no_wait) {
+			should_wait = false;
+		} else {
+			lbm_set_error_suspect(args[2]);
+			return ENC_SYM_TERROR;
+		}
 	}
+	
+	if (should_wait) {		
+		waiting_cid = lbm_get_current_cid();
+		waiting_op  = WAITING_OP_CHANGE_NETWORK;
+		is_waiting  = true;
+		
+		bool result = comm_wifi_change_network(ssid, password);
+		
+		if (!result) {
+			is_waiting = false;
+			return ENC_SYM_NIL;
+		}
+		
+		lbm_block_ctx_from_extension();
+		return ENC_SYM_NIL;
+	} else {
+		bool result = comm_wifi_change_network(ssid, password);
+		return lbm_enc_bool(result);
+	}
+}
 
-	lbm_block_ctx_from_extension();
-	return ENC_SYM_NIL;
+static lbm_value ext_wifi_connect_last(lbm_value *args, lbm_uint argn) {
+	if (!wifi_precheck(PRECHECK_NOT_WAITING | PRECHECK_MODE_STATION_ONLY)) {
+		return ENC_SYM_EERROR;
+	}
+	
+	LBM_CHECK_ARGN_RANGE(0, 1)
+	
+	bool should_wait = true;
+	if (argn >= 1) {
+		if (!lbm_is_symbol(args[0])) {
+			lbm_set_error_suspect(args[0]);
+			return ENC_SYM_TERROR;
+		}
+		lbm_uint symbol = lbm_dec_sym(args[0]);
+		if (symbol == symbol_wait) {
+			should_wait = true;
+		} else if (symbol == symbol_no_wait) {
+			should_wait = false;
+		} else {
+			lbm_set_error_suspect(args[0]);
+			return ENC_SYM_TERROR;
+		}
+	}
+	
+	if (should_wait) {
+		waiting_cid = lbm_get_current_cid();
+		waiting_op  = WAITING_OP_CHANGE_NETWORK;
+		is_waiting  = true;
+		
+		bool result = comm_wifi_reconnect_network();
+		
+		if (!result) {
+			is_waiting = false;
+			return ENC_SYM_NIL;
+		} 
+		
+		lbm_block_ctx_from_extension();
+		return ENC_SYM_NIL;
+	} else {
+		bool result = comm_wifi_reconnect_network();
+		return lbm_enc_bool(result);
+	}
 }
 
 /**
@@ -782,7 +859,7 @@ static bool custom_socket_valid(int socket) {
  * @return todo
  */
 static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
-	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -885,7 +962,7 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
  * (@todo: be more precise).
  */
 static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
-	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -943,7 +1020,7 @@ static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
  * internal process, that shouldn't happen).
  */
 static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
-	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1003,7 +1080,7 @@ static lbm_value ext_tcp_status(lbm_value *args, lbm_uint argn) {
  * @todo: Document this
  */
 static lbm_value ext_tcp_send(lbm_value *args, lbm_uint argn) {
-	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1236,7 +1313,7 @@ recv_cleanup:
  * writing this) network error occurred.
  */
 static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
-	if (!wifi_precheck(PRECHECK_NOT_WAITING)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1377,7 +1454,7 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
  * this) network error occurred.
  */
 static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
-	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY|PRECHECK_NOT_WAITING)) {
+	if (!wifi_precheck(PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
 	}
 
@@ -1477,6 +1554,7 @@ void lispif_load_wifi_extensions(void) {
 
 	lbm_add_extension("wifi-scan-networks", ext_wifi_scan_networks);
 	lbm_add_extension("wifi-connect", ext_wifi_connect);
+	lbm_add_extension("wifi-connect-last", ext_wifi_connect_last);
 	lbm_add_extension("wifi-disconnect", ext_wifi_disconnect);
 	lbm_add_extension("wifi-status", ext_wifi_status);
 	lbm_add_extension("wifi-max-tx-power", ext_wifi_max_tx_power);
