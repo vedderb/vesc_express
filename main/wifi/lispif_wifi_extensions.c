@@ -514,6 +514,7 @@ static lbm_value ext_wifi_connect(lbm_value *args, lbm_uint argn) {
 
 	bool result = comm_wifi_change_network(ssid, password);
 	if (!result) {
+		is_waiting = false;
 		return ENC_SYM_NIL;
 	}
 

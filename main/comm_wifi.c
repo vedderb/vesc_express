@@ -659,9 +659,20 @@ bool comm_wifi_change_network(const char *ssid, const char *password) {
 		}
 	} else {
 		esp_err_t result = esp_wifi_connect();
-		if (result != ESP_OK) {
+		// It seems like esp_wifi_connect returns ESP_ERR_WIFI_CONN if the wifi
+		// stack is currently in the connecting state. The error is returned
+		// regardless of if the new network has valid credentials or not.
+		// However, the connection attempt is still started as if ESP_OK was
+		// returned, with the appropriate events generated some time later as
+		// normal. Therefore we just ignore the error.
+		// This could be a bug, so if we update ESP-IDF from 5.2.2 we should
+		// reconsider this implementation.
+		if (result != ESP_OK && result != ESP_ERR_WIFI_CONN) {
 			STORED_LOGF("esp_wifi_connect failed, result: %d", result);
 			return false;
+		}
+		if (result == ESP_ERR_WIFI_CONN) {
+			STORED_LOGF("ignoring ESP_ERR_WIFI_CONN (%d) error from esp_wifi_connect", result);
 		}
 		is_connecting = true;
 	}
