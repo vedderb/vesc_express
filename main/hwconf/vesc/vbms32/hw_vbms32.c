@@ -378,11 +378,12 @@ static uint32_t float_to_u(float number) {
 static void bq_init(uint8_t dev_addr) {
 	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
 	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
-	vTaskDelay(500);
+	vTaskDelay(10);
 
-	command_subcommands(dev_addr, BQ769x2_RESET);
-	vTaskDelay(60);
+	//command_subcommands(dev_addr, BQ769x2_RESET);
+	//vTaskDelay(60);
 
+	command_subcommands(dev_addr, SET_CFGUPDATE);
 	command_subcommands(dev_addr, SET_CFGUPDATE);
 
 	// DPSLP_OT: 1
@@ -396,6 +397,8 @@ static void bq_init(uint8_t dev_addr) {
 	// CB_LOOP_SLOW: 0
 	// LOOP_SLOW: 0
 	// WK_SPD: 0
+	bq_set_reg(dev_addr, PowerConfig, 0b0010011010000000, 2);
+	// Sometimes the first write has no effect. Do a few extra writes just in case...
 	bq_set_reg(dev_addr, PowerConfig, 0b0010011010000000, 2);
 
 	// REG0_EN: 1
@@ -557,15 +560,22 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
-	// Disable temperature measurement pull-ups
-	if (!bq_set_reg(BQ_ADDR_1, TS1Config, 0x00, 1) ||
-		!bq_set_reg(BQ_ADDR_1, TS3Config, 0x00, 1)) {
+	// Disable temperature measurement pull-ups and ensure that regulator is kept on in DEEP SLEEP
+	
+	if (!command_subcommands(BQ_ADDR_1, SET_CFGUPDATE) ||
+		!bq_set_reg(BQ_ADDR_1, PowerConfig, 0b0010011010000000, 2) ||
+		!bq_set_reg(BQ_ADDR_1, TS1Config, 0x00, 1) ||
+		!bq_set_reg(BQ_ADDR_1, TS3Config, 0x00, 1) ||
+		!command_subcommands(BQ_ADDR_1, EXIT_CFGUPDATE)) {
 		goto exit_error1;
 	}
 
 	if (m_cells_ic2 != 0) {
-		if (!bq_set_reg(BQ_ADDR_2, TS1Config, 0x00, 1) ||
-			!bq_set_reg(BQ_ADDR_2, TS3Config, 0x00, 1)) {
+		if (!command_subcommands(BQ_ADDR_2, SET_CFGUPDATE) ||
+			!bq_set_reg(BQ_ADDR_2, PowerConfig, 0b0010011010000000, 2) ||
+			!bq_set_reg(BQ_ADDR_2, TS1Config, 0x00, 1) ||
+			!bq_set_reg(BQ_ADDR_2, TS3Config, 0x00, 1) ||
+			!command_subcommands(BQ_ADDR_2, EXIT_CFGUPDATE)) {
 				goto exit_error2;
 			}
 	}
