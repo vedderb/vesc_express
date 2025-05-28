@@ -84,6 +84,19 @@ void comm_wifi_disconnect(void);
 bool comm_wifi_change_network(const char *ssid, const char *password);
 
 /**
+ * Disconnect and reconnect from the latest configured WIFI network.
+ * 
+ * This will close all existing TCP sockets!
+ * 
+ * The process has finshed when the IP_EVENT_STA_GOT_IP has fired in the event
+ * listener.
+ * 
+ * @return If the wifi_mode isn't WIFI_MODE_STATION, false is returned and this
+ * function is a no-op. Otherwise if false is returned some ESP function failed.
+*/
+bool comm_wifi_reconnect_network();
+
+/**
  * Disconnect from the currently connected network, without automatically
  * reconnecting afterwards.
  * 
