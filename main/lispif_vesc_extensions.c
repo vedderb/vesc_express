@@ -20,6 +20,7 @@
  */
 
 #include "eval_cps.h"
+#include "heap.h"
 #include "lbm_defines.h"
 #include "lbm_types.h"
 #include "main.h"
@@ -2258,8 +2259,19 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (argn != 1 || !lbm_is_list(args[0])) {
-		return ENC_SYM_EERROR;
+	if ((argn != 1 && argn != 2) || !lbm_is_list(args[0])) {
+		lbm_set_error_reason(lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	int rate = -1;
+	if (argn >= 2) {
+		if (!lbm_is_number(args[1]) || lbm_dec_as_i32(args[2]) > 15) {
+			lbm_set_error_reason(lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+
+		rate = lbm_dec_as_i32(args[2]);
 	}
 
 	uint8_t addr[ESP_NOW_ETH_ALEN] = {255, 255, 255, 255, 255, 255};
@@ -2290,6 +2302,15 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	memcpy(peer.peer_addr, addr, ESP_NOW_ETH_ALEN);
 
 	esp_err_t res = esp_now_add_peer(&peer);
+
+	if (rate >= 0) {
+		esp_now_rate_config_t rate_cfg;
+		rate_cfg.phymode = WIFI_PHY_MODE_HT20;
+		rate_cfg.dcm = false;
+		rate_cfg.ersu = false;
+		rate_cfg.rate = rate;
+		esp_now_set_peer_rate_config(addr, &rate_cfg);
+	}
 
 	if (res == ESP_OK || res == ESP_ERR_ESPNOW_EXIST) {
 		return ENC_SYM_TRUE;
