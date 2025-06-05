@@ -45,9 +45,8 @@ following capabilities:
 - Checking the status of a TCP socket.
 - Sending and receiving data over an open TCP socket.
 
-The entire TCP API can only be used by a single LispBM thread at a time, and
-will throw an `eval_error` when calling any functions from different threads
-at the same time.
+Some of the WiFi extensions can only be called by a single LispBM thread at a
+time, and will throw an `eval_error` when called incorrectly.
 
 ## The WiFi Library
 
@@ -76,6 +75,12 @@ form `(ssid rssi channel ftm-responder (mac-addr))`.
 The same network SSID might appear multiple times for reasons I'm not entirely
 sure of at the moment. Just make sure you're aware of it!
 
+> [!IMPORTANT]
+> Calling this function while another thread is executing this function,
+> [`wifi-connect`](#wifi-connect), or
+> [`wifi-connect-last`](#wifi-connect-last)
+> will result in an `eval_error`.
+
 Example that scans the available network on all WiFi channels:
 ```clj
 (loopforeach i (wifi-scan-networks) (print i))
@@ -85,15 +90,36 @@ Example that scans the available network on all WiFi channels:
 ```
 (The SSIDs are of course fictional)
 
+**Note** that this function will throw an `eval_error` if you call it while the
+VESC is connecting (you can test for this by checking if
+[`wifi-status`](#wifi-status) returns `'connecting`). You therefore need to
+first call wifi-disconnect before calling this function. If you want the VESC to
+resume attempting to connect to the previously configured network after scanning
+you can use [`wifi-connect-last`](#wifi-connect-last). Here is an example where
+automatic reconnection was configured beforehand. We first disconnects and
+disables reconnection so that we can scan, then reenabling auto reconnection by
+calling `wifi-connect-last`. `'no-wait` is passed so that it doesn't block for
+the result, since you most likely don't care about the connection status at this
+point, and only want the system to attempt reconnecting as it did before
+[`wifi-disconnect`](#wifi-disconnect) was called.
+```clj
+(wifi-disconnect)
+
+(print (wifi-scan-networks))
+
+(wifi-connect-last 'no-wait)
+```
+
 ### `wifi-connect`
 
 ```clj
-(wifi-connect ssid password)
+(wifi-connect ssid password [wait-flag])
 ```
 
 Connect to the specificed WiFi network. `ssid` should be a string and
 `password` should be a string or `nil`. Pass `nil` if the network is open and
-doesn't have a password.
+doesn't have a password. `wait-flag` is optional and should either be the
+symbol `'wait` or `'no-wait`, defaulting to `'wait` (see below).
 
 On success `true` is returned. The VESC is then fully connected to the network
 and you're able to immediately open TCP connections using
@@ -106,6 +132,12 @@ to be sure.
 Note that a negative returned result doesn't always mean that the VESC isn't
 connected. See [`wifi-auto-reconnect`](#wifi-auto-reconnect).
 
+> [!IMPORTANT]
+> Calling this function while another thread is executing the same function,
+> [`wifi-scan-networks`](#wifi-scan-networks), or
+> [`wifi-connect-last`](#wifi-connect-last)
+> will result in an `eval_error`.
+
 Example where we connect to the network 'Example 1':
 ```clj
 (wifi-connect "Example 1" "wordpass")
@@ -114,6 +146,39 @@ Example where we connect to the network 'Example 1':
 (wifi-status)
 > connected
 ```
+
+If the `'no-wait` flag is passed this only dispatches the command to connect,
+without waiting to check if it was successful or not. This is useful to restart
+the automatic reconnection system after [`wifi-disconnect`](#wifi-disconnect)
+has been called, in which case you may not care about the connection result
+right now. This flag makes this function return almost immediately.
+
+Example where we try and connect to a network which doesn't exist:
+```clj
+(wifi-connect "Non-existant network" "nonsense" 'no-wait)
+> t
+```
+Note that true was returned despite the fact that the connection will fail
+eventually.
+
+### `wifi-connect-last`
+
+```clj
+(wifi-connect-last [wait-flag])
+```
+
+Connect to the wifi network set by the last call to
+[`wifi-disconnect`](#wifi-disconnect), or if it hasn't been called yet, the
+network configured in the VESC config.
+
+The optional `wait-flag` argument has the same behavior as in
+[`wifi-disconnect`](#wifi-disconnect).
+
+> [!IMPORTANT]
+> Calling this function while another thread is executing this function,
+> [`wifi-scan-networks`](#wifi-scan-networks), or
+> [`wifi-connect`](#wifi-connect)
+> will result in an `eval_error`.
 
 ### `wifi-disconnect`
 
@@ -124,8 +189,20 @@ Example where we connect to the network 'Example 1':
 Disconnect from the currently connected network, leaving the VESC entirely
 unconnected. This function always returns `true`.
 
-Example where we were connected to a network
+This sets a flag internally which disables automatic reconnection, separate from
+the one set using [`wifi-auto-reconnect`](#wifi-auto-reconnect). This flag is
+cleared the next time [`wifi-connect`](#wifi-connect) or
+[`wifi-connect-last`](#wifi-connect-last) is called, and if automatic
+reconnection has been configured it will start again.
 
+> [!IMPORTANT]
+> Calling this function while another thread is executing
+> [`wifi-scan-networks`](#wifi-scan-networks),
+> [`wifi-connect`](#wifi-connect), or
+> [`wifi-connect-last`](#wifi-connect-last)
+> will result in an `eval_error`.
+
+Example where we were connected to a network:
 ```clj
 (print (wifi-status))
 > connected

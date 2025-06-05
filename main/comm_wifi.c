@@ -54,6 +54,7 @@ static bool wifi_reconnect_disabled = true;
 static bool wifi_auto_reconnect = true;
 static WIFI_MODE wifi_mode = WIFI_MODE_DISABLED;
 static volatile bool wifi_config_changed = false;
+// The currently applied wifi config
 static wifi_config_t wifi_config = {0};
 
 static comm_wifi_event_cb_t event_listener = NULL;
@@ -531,9 +532,10 @@ void comm_wifi_init(void) {
 		esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 
 		// Enable FTM responder
-		esp_wifi_get_config(WIFI_IF_AP, &wifi_config);
-		wifi_config.ap.ftm_responder = true;
-		esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
+		wifi_config_t ap_wifi_config;
+		esp_wifi_get_config(WIFI_IF_AP, &ap_wifi_config);
+		ap_wifi_config.ap.ftm_responder = true;
+		esp_wifi_set_config(WIFI_IF_AP, &ap_wifi_config);
 
 		wifi_reconnect_disabled = false;
 	}
@@ -620,17 +622,25 @@ bool comm_wifi_change_network(const char *ssid, const char *password) {
 	memcpy(wifi_config.sta.password, password, password_len);
 	wifi_config.sta.password[password_len] = '\0';
 
+	STORED_LOGF("Changing network, ssid: '%s', password: '%s'", ssid, password);
+	
+	return comm_wifi_reconnect_network();
+}
+
+bool comm_wifi_reconnect_network() {
+	if (wifi_mode != WIFI_MODE_STATION) {
+		return false;
+	}
+	
 	wifi_config_changed = true;
-	wifi_reconnect_disabled       = false;
+	wifi_reconnect_disabled = false;
 
 	{
+		STORED_LOGF("Reconnecting to configured network, ssid: '%s', password: '%s'", wifi_config.sta.ssid, wifi_config.sta.password);
 		esp_err_t result = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 		if (result == ESP_ERR_WIFI_PASSWORD) {
-			STORED_LOGF(
-				"incorrect wifi password, ssid: %p, password: %p", ssid,
-				password
-			);
-			STORED_LOGF("ssid: '%s', password: '%s'", ssid, password);
+			STORED_LOGF("incorrect wifi password");
+			
 			// TODO: Report incorrect password correctly. (Is incorrect password
 			// even ever reported here?)
 			return false;
@@ -659,9 +669,20 @@ bool comm_wifi_change_network(const char *ssid, const char *password) {
 		}
 	} else {
 		esp_err_t result = esp_wifi_connect();
-		if (result != ESP_OK) {
+		// It seems like esp_wifi_connect returns ESP_ERR_WIFI_CONN if the wifi
+		// stack is currently in the connecting state. The error is returned
+		// regardless of if the new network has valid credentials or not.
+		// However, the connection attempt is still started as if ESP_OK was
+		// returned, with the appropriate events generated some time later as
+		// normal. Therefore we just ignore the error.
+		// This could be a bug, so if we update ESP-IDF from 5.2.2 we should
+		// reconsider this implementation.
+		if (result != ESP_OK && result != ESP_ERR_WIFI_CONN) {
 			STORED_LOGF("esp_wifi_connect failed, result: %d", result);
 			return false;
+		}
+		if (result == ESP_ERR_WIFI_CONN) {
+			STORED_LOGF("ignoring ESP_ERR_WIFI_CONN (%d) error from esp_wifi_connect", result);
 		}
 		is_connecting = true;
 	}
