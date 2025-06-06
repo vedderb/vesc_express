@@ -30,6 +30,7 @@
 #define DISP_HW_VERSION DISP_V1_3
 
 #define HW_NAME						"VDisp"
+#define HW_TARGET					"esp32c3"
 
 #define HW_NO_UART
 
