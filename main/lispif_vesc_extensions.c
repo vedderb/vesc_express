@@ -6220,7 +6220,7 @@ static lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-lbm_value ext_cmds_proc(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_cmds_proc(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(1);
 
 	lbm_array_header_t *arr = lbm_dec_array_header(args[0]);
