@@ -7,6 +7,7 @@ extern volatile bool event_data_rx_en;
 extern volatile bool event_esp_now_rx_en;
 extern volatile bool event_ble_rx_en;
 extern volatile bool event_wifi_disconnect_en;
+extern volatile bool event_cmds_data_tx_en;
 
 extern volatile bool event_bms_bal_ovr_en;
 extern volatile bool event_bms_chg_allow_en;
@@ -20,6 +21,7 @@ extern lbm_uint sym_event_data_rx;
 extern lbm_uint sym_event_esp_now_rx;
 extern lbm_uint sym_event_ble_rx;
 extern lbm_uint sym_event_wifi_disconnect;
+extern lbm_uint sym_event_cmds_data_tx;
 
 extern lbm_uint sym_bms_chg_allow;
 extern lbm_uint sym_bms_bal_ovr;

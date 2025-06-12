@@ -38,7 +38,7 @@
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
 #ifndef EXTENSION_STORAGE_SIZE
-#define EXTENSION_STORAGE_SIZE	346
+#define EXTENSION_STORAGE_SIZE	348
 #endif
 #ifndef USER_EXTENSION_STORAGE_SIZE
 #define USER_EXTENSION_STORAGE_SIZE 0
@@ -64,7 +64,7 @@ static lbm_buffered_channel_state_t buffered_tok_state;
 static lbm_char_channel_t buffered_string_tok;
 static bool string_tok_valid = false;
 
-static TaskHandle_t eval_task;
+static TaskHandle_t eval_task = 0;
 static volatile bool lisp_thd_running = false;
 static SemaphoreHandle_t lbm_mutex;
 
@@ -930,6 +930,10 @@ void lispif_add_ext_load_callback(void (*p_func)(bool)) {
 			break;
 		}
 	}
+}
+
+bool lispif_is_eval_task(void) {
+	return eval_task == xTaskGetCurrentTaskHandle();
 }
 
 static uint32_t timestamp_callback(void) {

@@ -20,8 +20,11 @@
  */
 
 #include "eval_cps.h"
+#include "extensions.h"
 #include "heap.h"
 #include "lbm_defines.h"
+#include "lbm_flat_value.h"
+#include "lbm_memory.h"
 #include "lbm_types.h"
 #include "main.h"
 #include "lispif.h"
@@ -62,6 +65,7 @@
 #include "comm_uart.h"
 #include "comm_ble.h"
 #include "lbm_image.h"
+#include "packet.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -357,6 +361,10 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 }
 
 static bool start_flatten_with_gc(lbm_flat_value_t *v, size_t buffer_size) {
+	if (lispif_is_eval_task()) {
+		return lbm_start_flatten(v, buffer_size);
+	}
+
 	if (lbm_start_flatten(v, buffer_size)) {
 		return true;
 	}
@@ -1805,7 +1813,7 @@ static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
 	case COMM_BMS_SET_CHARGE_ALLOWED: {
 		if (event_bms_chg_allow_en) {
 			lbm_flat_value_t v;
-			if (lbm_start_flatten(&v, 50)) {
+			if (start_flatten_with_gc(&v, 50)) {
 				f_cons(&v);
 				f_sym(&v, sym_bms_chg_allow);
 				f_cons(&v);
@@ -1822,7 +1830,7 @@ static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
 	case COMM_BMS_SET_BALANCE_OVERRIDE: {
 		if (event_bms_bal_ovr_en) {
 			lbm_flat_value_t v;
-			if (lbm_start_flatten(&v, 50)) {
+			if (start_flatten_with_gc(&v, 50)) {
 				f_cons(&v);
 				f_sym(&v, sym_bms_bal_ovr);
 				f_cons(&v);
@@ -1841,7 +1849,7 @@ static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
 	case COMM_BMS_RESET_COUNTERS: {
 		if (event_bms_reset_cnt_en) {
 			lbm_flat_value_t v;
-			if (lbm_start_flatten(&v, 50)) {
+			if (start_flatten_with_gc(&v, 50)) {
 				f_cons(&v);
 				f_sym(&v, sym_bms_reset_cnt);
 				f_cons(&v);
@@ -1860,7 +1868,7 @@ static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
 	case COMM_BMS_FORCE_BALANCE: {
 		if (event_bms_force_bal_en) {
 			lbm_flat_value_t v;
-			if (lbm_start_flatten(&v, 50)) {
+			if (start_flatten_with_gc(&v, 50)) {
 				f_cons(&v);
 				f_sym(&v, sym_bms_force_bal);
 				f_cons(&v);
@@ -1877,7 +1885,7 @@ static void bms_cmd_handler(COMM_PACKET_ID cmd, int param1, int param2) {
 	case COMM_BMS_ZERO_CURRENT_OFFSET: {
 		if (event_bms_zero_ofs_en) {
 			lbm_flat_value_t v;
-			if (lbm_start_flatten(&v, 50)) {
+			if (start_flatten_with_gc(&v, 50)) {
 				f_sym(&v, sym_bms_zero_ofs);
 
 				if (!lbm_event(&v)) {
@@ -1920,6 +1928,8 @@ static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 		event_ble_rx_en = en;
 	} else if (name == sym_event_wifi_disconnect) {
 		event_wifi_disconnect_en = en;
+	} else if (name == sym_event_cmds_data_tx) {
+		event_cmds_data_tx_en = en;
 	} else if (name == sym_bms_chg_allow) {
 		event_bms_chg_allow_en = en;
 	} else if (name == sym_bms_bal_ovr) {
@@ -2126,7 +2136,7 @@ static void esp_rx_fun(void *arg) {
 		}
 
 		lbm_flat_value_t v;
-		if (lbm_start_flatten(&v, 150 + data.len)) {
+		if (start_flatten_with_gc(&v, 150 + data.len)) {
 			if (esp_now_recv_cid < 0) {
 				f_cons(&v);
 				f_sym(&v, sym_event_esp_now_rx);
@@ -6119,6 +6129,118 @@ static lbm_value ext_nvs_list(lbm_value *args, lbm_uint argn) {
    return nvs_list("nvs",NVS_DEFAULT_NS, NVS_TYPE_BLOB);
 }
 
+// Commands interface
+
+static PACKET_STATE_t *cmds_packet_state = 0;
+static volatile TaskHandle_t cmds_task = 0;
+
+typedef struct {
+	unsigned char buffer[PACKET_MAX_PL_LEN + 8];
+	unsigned int len;
+} cmds_send_data;
+
+static void cmds_send_raw(unsigned char *buffer, unsigned int len) {
+	if (event_cmds_data_tx_en) {
+		lbm_flat_value_t v;
+		if (start_flatten_with_gc(&v, len + 30)) {
+			f_cons(&v);
+			f_sym(&v, sym_event_cmds_data_tx);
+			f_cons(&v);
+			f_lbm_array(&v, len, buffer);
+			f_sym(&v, ENC_SYM_NIL);
+			lbm_finish_flatten(&v);
+
+			int timeout = 500;
+			while (!lbm_event(&v)) {
+				if (timeout == 0 || lispif_is_eval_task()) {
+					lbm_free(v.buf);
+					return;
+				}
+
+				vTaskDelay(1);
+				timeout--;
+			}
+		}
+	}
+}
+
+static void cmds_send_packet(unsigned char *buffer, unsigned int len) {
+	if (cmds_packet_state) {
+		packet_send_packet(buffer, len, cmds_packet_state);
+	}
+}
+
+static void cmds_send_task(void *arg) {
+	cmds_send_data *sd = (cmds_send_data*)arg;
+	commands_process_packet(sd->buffer, sd->len, cmds_send_packet);
+	free(sd);
+	cmds_task = 0;
+	vTaskDelete(NULL);
+}
+
+static void cmds_proc(unsigned char *data, unsigned int len) {
+	if (cmds_task != 0) {
+		return;
+	}
+	cmds_send_data *sd = malloc(sizeof(cmds_send_data));
+	memcpy(sd->buffer, data, len);
+	sd->len = len;
+	xTaskCreatePinnedToCore(cmds_send_task, "lbm_cmds", 3500, sd, 8, (TaskHandle_t*)&cmds_task, tskNO_AFFINITY);
+}
+
+lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
+	if (argn != 0 && argn != 1) {
+		lbm_set_error_reason(lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	bool start = true;
+
+	if (argn >= 1) {
+		if (!is_symbol_true_false(args[0])) {
+			return ENC_SYM_TERROR;
+		}
+
+		start = lbm_is_symbol_true(args[0]);
+	}
+
+	if (cmds_packet_state) {
+		lbm_free(cmds_packet_state);
+		cmds_packet_state = 0;
+	}
+
+	if (start) {
+		cmds_packet_state = lbm_malloc(sizeof(PACKET_STATE_t));
+		if (!cmds_packet_state) {
+			return ENC_SYM_MERROR;
+		}
+		packet_init(cmds_send_raw, cmds_proc, cmds_packet_state);
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+lbm_value ext_cmds_proc(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(1);
+
+	lbm_array_header_t *arr = lbm_dec_array_header(args[0]);
+	if (!arr) {
+		lbm_set_error_reason(lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	if (!cmds_packet_state) {
+		lbm_set_error_reason("Cmds not started");
+		return ENC_SYM_EERROR;
+	}
+
+	for (int i = 0;i < arr->size;i++) {
+		packet_process_byte(((unsigned char *)arr->data)[i],cmds_packet_state);
+	}
+
+	return ENC_SYM_TRUE;
+}
+
 static const char* dyn_functions[] = {
 		"(defun uart-read-bytes (buffer n ofs)"
 		"(let ((rd (uart-read buffer n ofs)))"
@@ -6158,7 +6280,6 @@ void lispif_load_vesc_extensions(bool main_found) {
 		m_uart_mutex = xSemaphoreCreateMutex();
 		uart_mutex_init_done = true;
 	}
-
 
 	if (!event_task_running) {
 		rmsg_mutex = xSemaphoreCreateMutex();
@@ -6437,6 +6558,10 @@ void lispif_load_vesc_extensions(bool main_found) {
 		// Image
 		lbm_add_extension("image-save", ext_image_save);
 
+		// Commands
+		lbm_add_extension("cmds-start-stop", ext_cmds_start_stop);
+		lbm_add_extension("cmds-proc", ext_cmds_proc);
+
 		// Extension libraries
 		lbm_math_extensions_init();
 		lbm_color_extensions_init();
@@ -6466,6 +6591,7 @@ void lispif_disable_all_events(void) {
 	event_esp_now_rx_en = false;
 	event_ble_rx_en = false;
 	event_wifi_disconnect_en = false;
+	event_cmds_data_tx_en = false;
 
 	event_bms_chg_allow_en = false;
 	event_bms_bal_ovr_en = false;
@@ -6491,6 +6617,8 @@ void lispif_disable_all_events(void) {
 		enc_as504x_deinit(&as504x);
 		as504x_init_done = false;
 	}
+
+	cmds_packet_state = 0;
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
