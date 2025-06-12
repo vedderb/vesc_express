@@ -6188,7 +6188,7 @@ static void cmds_proc(unsigned char *data, unsigned int len) {
 	xTaskCreatePinnedToCore(cmds_send_task, "lbm_cmds", 3500, sd, 8, (TaskHandle_t*)&cmds_task, tskNO_AFFINITY);
 }
 
-lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
+static lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
 	if (argn != 0 && argn != 1) {
 		lbm_set_error_reason(lbm_error_str_num_args);
 		return ENC_SYM_TERROR;
@@ -6234,7 +6234,7 @@ lbm_value ext_cmds_proc(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	for (int i = 0;i < arr->size;i++) {
+	for (unsigned int i = 0;i < arr->size;i++) {
 		packet_process_byte(((unsigned char *)arr->data)[i],cmds_packet_state);
 	}
 
