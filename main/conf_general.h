@@ -76,6 +76,9 @@
 
 //#define HW_HEADER					"hw_duet.h"
 //#define HW_SOURCE					"hw_duet.c"
+
+//#define HW_HEADER					"hw_link.h"
+//#define HW_SOURCE					"hw_link.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
