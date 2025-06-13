@@ -17,26 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_CONF_GENERAL_H_
-#define MAIN_CONF_GENERAL_H_
+#include "hw_rgb_v3.h"
 
-#include "datatypes.h"
-
-// Firmware version
-#define FW_VERSION_MAJOR			6
-#define FW_VERSION_MINOR			06
-// Set to 0 for building a release and iterate during beta test builds
-#define FW_TEST_VERSION_NUMBER		0
-
-#if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
-#error "No hardware source file set"
-#endif
-
-#ifndef HW_HEADER
-#error "No hardware header file set"
-#endif
-
-#include "main.h"
-#include "hw.h"
-
-#endif /* MAIN_CONF_GENERAL_H_ */
+void hw_init(void) {
+}

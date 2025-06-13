@@ -21,13 +21,20 @@
 #include "soc/gpio_struct.h"
 #include "driver/gpio.h"
 #include "utils.h"
+#include "soc/gpio_reg.h"
 
 // Software SPI
 
-#define SET_PIN(pin) 			(GPIO.out_w1ts.val = 1 << (pin))
-#define CLEAR_PIN(pin) 			(GPIO.out_w1tc.val = 1 << (pin))
+#if CONFIG_IDF_TARGET_ESP32S3
+	#define SET_PIN(pin) 			(GPIO.out_w1ts = 1 << (pin))
+	#define CLEAR_PIN(pin) 			(GPIO.out_w1tc = 1 << (pin))
+	#define READ_PIN(pin)			((GPIO.in >> (pin)) & 0x1)
+#else
+	#define SET_PIN(pin) 			(GPIO.out_w1ts.val = 1 << (pin))
+	#define CLEAR_PIN(pin) 			(GPIO.out_w1tc.val = 1 << (pin))
+	#define READ_PIN(pin)			((GPIO.in.data >> (pin)) & 0x1)
+#endif
 #define WRITE_PIN(pin, level)	{if (level) SET_PIN(pin); else CLEAR_PIN(pin);}
-#define READ_PIN(pin)			((GPIO.in.data >> (pin)) & 0x1)
 
 void spi_bb_init(spi_bb_state *s) {
 	gpio_reset_pin(s->miso_pin);

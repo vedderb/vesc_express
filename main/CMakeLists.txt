@@ -103,6 +103,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/vesc/vdisp_dual"
 "hwconf/vesc/scope"
 "hwconf/vesc/duet"
+"hwconf/rescue"
+"hwconf/avaspark"
 
 "lispBM"
 "lispBM/include"

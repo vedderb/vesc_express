@@ -22,6 +22,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "soc/gpio_struct.h"
+#include "soc/gpio_reg.h"
 
 #include "disp_ili9488.h"
 #include "hwspi.h"
@@ -36,8 +37,13 @@ static int display_height;
 static int m_pin_reset = -1;
 static int m_pin_dc    = -1;
 
-#define DISP_REG_SET		GPIO.out_w1ts.val
-#define DISP_REG_CLR		GPIO.out_w1tc.val
+#if CONFIG_IDF_TARGET_ESP32S3
+	#define DISP_REG_SET		GPIO.out_w1ts
+	#define DISP_REG_CLR		GPIO.out_w1tc
+#else
+	#define DISP_REG_SET		GPIO.out_w1ts.val
+	#define DISP_REG_CLR		GPIO.out_w1tc.val
+#endif
 
 #define COMMAND() 	    (DISP_REG_CLR = 1 << m_pin_dc)
 #define DATA() 	        (DISP_REG_SET = 1 << m_pin_dc)
