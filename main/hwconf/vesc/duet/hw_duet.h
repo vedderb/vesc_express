@@ -23,7 +23,7 @@
 #include "driver/gpio.h"
 #include "adc.h"
 
-#define HW_NAME						"VESC_Duet"
+#define HW_NAME						"Duet Expr"
 
 #define HW_NO_UART
 
