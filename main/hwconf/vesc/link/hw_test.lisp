@@ -1,5 +1,9 @@
 (print (f-fatinfo)) ; Should show the size and free space
 
+; Enable CAN
+(gpio-configure 6 'pin-mode-out)
+(gpio-write 6 0)
+
 ; Enable LED and GNSS power
 (gpio-configure 7 'pin-mode-out)
 (gpio-write 7 1)
