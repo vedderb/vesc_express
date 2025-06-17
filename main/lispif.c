@@ -111,13 +111,13 @@ void lispif_init(void) {
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
 			backup.config.ble_mode == BLE_MODE_DISABLED) {
 		heap_size *= 2;
-		mem_size *= LBM_MEMORY_SIZE_KB(86);
-		bitmap_size *= LBM_BITMAP_SIZE_KB(86);
+		mem_size = LBM_MEMORY_SIZE_KB(86);
+		bitmap_size = LBM_BITMAP_SIZE_KB(86);
 	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
 			backup.config.ble_mode == BLE_MODE_DISABLED) {
 		heap_size *= 2;
-		mem_size *= LBM_MEMORY_SIZE_KB(64);
-		bitmap_size *= LBM_BITMAP_SIZE_KB(64);
+		mem_size = LBM_MEMORY_SIZE_KB(64);
+		bitmap_size = LBM_BITMAP_SIZE_KB(64);
 	}
 
 	heap = memalign(8, heap_size * sizeof(lbm_cons_t));
