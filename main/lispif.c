@@ -100,21 +100,24 @@ static void eval_thread(void *arg);
 // Global
 extern lbm_const_heap_t *lbm_const_heap_state;
 
+#define LBM_MEMORY_SIZE_KB(kb) LBM_MEMORY_SIZE_64BYTES_TIMES_X((kb * 16))
+#define LBM_BITMAP_SIZE_KB(kb) LBM_MEMORY_BITMAP_SIZE((kb * 16))
+
 void lispif_init(void) {
 	heap_size = (2048 + 512);
-	mem_size = LBM_MEMORY_SIZE_32K;
-	bitmap_size = LBM_MEMORY_BITMAP_SIZE_32K;
+	mem_size = LBM_MEMORY_SIZE_KB(32);
+	bitmap_size = LBM_BITMAP_SIZE_KB(32);
 
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
 			backup.config.ble_mode == BLE_MODE_DISABLED) {
 		heap_size *= 2;
-		mem_size *= 3;
-		bitmap_size *= 3;
+		mem_size *= LBM_MEMORY_SIZE_KB(86);
+		bitmap_size *= LBM_BITMAP_SIZE_KB(86);
 	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
 			backup.config.ble_mode == BLE_MODE_DISABLED) {
 		heap_size *= 2;
-		mem_size *= 2;
-		bitmap_size *= 2;
+		mem_size *= LBM_MEMORY_SIZE_KB(64);
+		bitmap_size *= LBM_BITMAP_SIZE_KB(64);
 	}
 
 	heap = memalign(8, heap_size * sizeof(lbm_cons_t));
