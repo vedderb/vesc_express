@@ -267,7 +267,7 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
-	if ((argn != 3 && argn != 4) || !lbm_is_array_r(args[0]) ||
+	if ((argn != 3 && argn != 4) || !lbm_is_array_rw(args[0]) ||
 			!lbm_is_number(args[1]) || (!lbm_is_number(args[2]) && !lbm_is_list(args[2]))) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
