@@ -4941,10 +4941,12 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
+	m_uart_number = -1;
+
+	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	ublox_stop(uart_num);
 	comm_uart_stop(uart_num);
 
-	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	if (uart_is_driver_installed(uart_num)) {
 		uart_driver_delete(uart_num);
 	}
