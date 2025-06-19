@@ -746,7 +746,7 @@ void lispif_stop(void) {
 			break;
 		}
 	}
-	
+
 	if (lisp_thd_running) {
 		vTaskDelete(eval_task);
 		lisp_thd_running = false;
@@ -773,9 +773,11 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	if (!load_code || (code_data != 0 && code_len > 0)) {
 		lispif_disable_all_events();
 
+		bool save_heap = lisp_thd_running && lbm_image_exists();
+
 		lispif_stop();
 
-		if (lbm_image_exists()) {
+		if (save_heap) {
 			lbm_image_save_constant_heap_ix();
 		}
 
