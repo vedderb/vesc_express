@@ -773,11 +773,11 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	if (!load_code || (code_data != 0 && code_len > 0)) {
 		lispif_disable_all_events();
 
-		if (lisp_thd_running && lbm_image_exists()) {
+		lispif_stop();
+
+		if (lbm_image_exists()) {
 			lbm_image_save_constant_heap_ix();
 		}
-
-		lispif_stop();
 
 		int code_chars = 0;
 		if (code_data) {
