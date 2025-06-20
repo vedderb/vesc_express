@@ -6241,13 +6241,11 @@ static lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
 		start = lbm_is_symbol_true(args[0]);
 	}
 
-	if (cmds_running) {
-		while (cmds_running) {
-			vTaskDelay(1);
-		}
-
-		cmds_running = false;
+	while (cmds_running) {
+		vTaskDelay(1);
 	}
+
+	cmds_running = false;
 
 	if (cmds_state) {
 		lbm_free(cmds_state->cmds_thd_stack);
