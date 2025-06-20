@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <dirent.h>
 
+#include "comm_usb.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -1178,6 +1179,9 @@ int commands_printf_lisp(const char* format, ...) {
 		}
 
 		commands_send_packet((unsigned char*)print_buffer, len_to_print);
+
+		// Uncomment to always print to USB. Useful when debugging code that redirects prints
+//		comm_usb_send_packet((unsigned char*)print_buffer, len_to_print);
 	}
 
 	free(print_buffer);

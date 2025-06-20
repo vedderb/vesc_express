@@ -6132,17 +6132,22 @@ static lbm_value ext_nvs_list(lbm_value *args, lbm_uint argn) {
 }
 
 // Commands interface
-
-static PACKET_STATE_t *cmds_packet_state = 0;
-static volatile TaskHandle_t cmds_task = 0;
-
 typedef struct {
+	PACKET_STATE_t cmds_packet_state;
+	void *cmds_thd_stack;
+	size_t cmds_thd_stack_size;
 	unsigned char buffer[PACKET_MAX_PL_LEN + 8];
 	unsigned int len;
 } cmds_send_data;
 
+static cmds_send_data *cmds_state = 0;
+static StaticTask_t cmds_thd;
+static volatile bool cmds_running = false;
+
 static void cmds_send_raw(unsigned char *buffer, unsigned int len) {
 	if (event_cmds_data_tx_en) {
+		int restart_cnt = lispif_get_restart_cnt();
+
 		lbm_flat_value_t v;
 		if (start_flatten_with_gc(&v, len + 30)) {
 			f_cons(&v);
@@ -6154,7 +6159,11 @@ static void cmds_send_raw(unsigned char *buffer, unsigned int len) {
 
 			int timeout = 500;
 			while (!lbm_event(&v)) {
-				if (timeout == 0 || lispif_is_eval_task()) {
+				if (restart_cnt != lispif_get_restart_cnt()) {
+					return;
+				}
+
+				if (timeout == 0 || lispif_is_eval_task() || !event_cmds_data_tx_en) {
 					lbm_free(v.buf);
 					return;
 				}
@@ -6167,27 +6176,54 @@ static void cmds_send_raw(unsigned char *buffer, unsigned int len) {
 }
 
 static void cmds_send_packet(unsigned char *buffer, unsigned int len) {
-	if (cmds_packet_state) {
-		packet_send_packet(buffer, len, cmds_packet_state);
+	if (cmds_state) {
+		packet_send_packet(buffer, len, &(cmds_state->cmds_packet_state));
 	}
 }
 
 static void cmds_send_task(void *arg) {
-	cmds_send_data *sd = (cmds_send_data*)arg;
-	commands_process_packet(sd->buffer, sd->len, cmds_send_packet);
-	free(sd);
-	cmds_task = 0;
+	(void)arg;
+	commands_process_packet(cmds_state->buffer, cmds_state->len, cmds_send_packet);
 	vTaskDelete(NULL);
 }
 
+static void cmds_send_task_del(int a, void *arg) {
+	(void)a;
+	(void)arg;
+	cmds_running = false;
+}
+
 static void cmds_proc(unsigned char *data, unsigned int len) {
-	if (cmds_task != 0) {
+	// 10 ms timeout. TODO: Block only task and not all of eval when waiting
+	int timeout = 10;
+	while (cmds_running) {
+		vTaskDelay(1);
+		timeout--;
+		if (timeout == 0) {
+			return;
+		}
+	}
+
+	if (!cmds_state) {
 		return;
 	}
-	cmds_send_data *sd = malloc(sizeof(cmds_send_data));
-	memcpy(sd->buffer, data, len);
-	sd->len = len;
-	xTaskCreatePinnedToCore(cmds_send_task, "lbm_cmds", 3500, sd, 8, (TaskHandle_t*)&cmds_task, tskNO_AFFINITY);
+
+	memcpy(cmds_state->buffer, data, len);
+	cmds_state->len = len;
+
+	cmds_running = true;
+	TaskHandle_t task = xTaskCreateStaticPinnedToCore(
+		cmds_send_task,
+		"lbm_cmds",
+		cmds_state->cmds_thd_stack_size,
+		0,
+		8,
+		cmds_state->cmds_thd_stack,
+		&cmds_thd,
+		tskNO_AFFINITY
+	);
+
+	vTaskSetThreadLocalStoragePointerAndDelCallback(task, 0, 0, cmds_send_task_del);
 }
 
 static lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
@@ -6197,7 +6233,6 @@ static lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
 	}
 
 	bool start = true;
-
 	if (argn >= 1) {
 		if (!is_symbol_true_false(args[0])) {
 			return ENC_SYM_TERROR;
@@ -6206,17 +6241,37 @@ static lbm_value ext_cmds_start_stop(lbm_value *args, lbm_uint argn) {
 		start = lbm_is_symbol_true(args[0]);
 	}
 
-	if (cmds_packet_state) {
-		lbm_free(cmds_packet_state);
-		cmds_packet_state = 0;
+	if (cmds_running) {
+		while (cmds_running) {
+			vTaskDelay(1);
+		}
+
+		cmds_running = false;
+	}
+
+	if (cmds_state) {
+		lbm_free(cmds_state->cmds_thd_stack);
+		lbm_free(cmds_state);
+		cmds_state = 0;
 	}
 
 	if (start) {
-		cmds_packet_state = lbm_malloc(sizeof(PACKET_STATE_t));
-		if (!cmds_packet_state) {
+		cmds_state = lbm_malloc(sizeof(cmds_send_data));
+
+		if (!cmds_state) {
 			return ENC_SYM_MERROR;
 		}
-		packet_init(cmds_send_raw, cmds_proc, cmds_packet_state);
+
+		cmds_state->cmds_thd_stack = lbm_malloc(3500);
+		cmds_state->cmds_thd_stack_size = 3500;
+
+		if (!cmds_state->cmds_thd_stack) {
+			lbm_free(cmds_state);
+			cmds_state = 0;
+			return ENC_SYM_MERROR;
+		}
+
+		packet_init(cmds_send_raw, cmds_proc, &(cmds_state->cmds_packet_state));
 	}
 
 	return ENC_SYM_TRUE;
@@ -6231,13 +6286,13 @@ static lbm_value ext_cmds_proc(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	if (!cmds_packet_state) {
+	if (!cmds_state) {
 		lbm_set_error_reason("Cmds not started");
 		return ENC_SYM_EERROR;
 	}
 
 	for (unsigned int i = 0;i < arr->size;i++) {
-		packet_process_byte(((unsigned char *)arr->data)[i],cmds_packet_state);
+		packet_process_byte(((unsigned char *)arr->data)[i],&(cmds_state->cmds_packet_state));
 	}
 
 	return ENC_SYM_TRUE;
@@ -6620,7 +6675,12 @@ void lispif_disable_all_events(void) {
 		as504x_init_done = false;
 	}
 
-	cmds_packet_state = 0;
+	while (cmds_running) {
+		vTaskDelay(1);
+	}
+
+	cmds_running = false;
+	cmds_state = 0;
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
