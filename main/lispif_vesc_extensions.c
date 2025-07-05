@@ -3330,6 +3330,116 @@ static lbm_value ext_ublox_init(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_NIL;
 }
 
+static lbm_value ext_nmea_parse(lbm_value *args, lbm_uint argn) {
+	if (argn != 1) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	char *str = lbm_dec_str(args[0]);
+	if (!str) {
+		return ENC_SYM_TERROR;
+	}
+
+	return nmea_decode_string(str) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+}
+
+static lbm_value ext_set_pos_time(lbm_value *args, lbm_uint argn) {
+	nmea_state_t *s = nmea_get_state();
+
+	int gga_cnt = s->gga_cnt;
+	int rmc_cnt = s->rmc_cnt;
+
+	for (lbm_uint i = 0;i < argn;i++) {
+		lbm_value arg = args[i];
+
+		if (lbm_is_number(arg)) {
+			switch (i) {
+			case 0:
+			case 1:
+			case 2:
+			case 4:
+				if (s->gga_cnt == gga_cnt) {
+					s->gga_cnt++;
+					s->gga.update_time = xTaskGetTickCount();
+				}
+				break;
+
+			case 3:
+			case 6:
+			case 7:
+			case 8:
+				if (s->rmc_cnt == rmc_cnt) {
+					s->rmc_cnt++;
+					s->rmc.update_time = xTaskGetTickCount();
+				}
+				break;
+			}
+
+			switch (i) {
+			case 0: {
+				portDISABLE_INTERRUPTS();
+				s->gga.lat = lbm_dec_as_double(arg);
+				portENABLE_INTERRUPTS();
+			} break;
+
+			case 1: {
+				portDISABLE_INTERRUPTS();
+				s->gga.lon = lbm_dec_as_double(arg);
+				portENABLE_INTERRUPTS();
+			} break;
+
+			case 2: {
+				s->gga.height = lbm_dec_as_float(arg);
+			} break;
+
+			case 3: {
+				s->rmc.speed = lbm_dec_as_float(arg);
+			} break;
+
+			case 4: {
+				s->gga.h_dop = lbm_dec_as_float(arg);
+			} break;
+
+			case 5: {
+				s->gga.ms_today = lbm_dec_as_u32(arg);
+
+				s->rmc.ms = s->gga.ms_today % 1000;
+				s->rmc.ss = (s->gga.ms_today / 1000) % 60;
+				s->rmc.mm = (s->gga.ms_today / 1000 / 60) % 60;
+				s->rmc.hh = (s->gga.ms_today / 1000 / 60 / 60) % 24;
+
+				if (s->gga_cnt == gga_cnt) {
+					s->gga_cnt++;
+					s->gga.update_time = xTaskGetTickCount();
+				}
+
+				if (s->rmc_cnt == rmc_cnt) {
+					s->rmc_cnt++;
+					s->rmc.update_time = xTaskGetTickCount();
+				}
+			} break;
+
+			case 6: {
+				s->rmc.yy = lbm_dec_as_i32(arg);
+			} break;
+
+			case 7: {
+				s->rmc.mo = lbm_dec_as_i32(arg);
+			} break;
+
+			case 8: {
+				s->rmc.dd = lbm_dec_as_i32(arg);
+			} break;
+
+			default: break;
+			}
+		}
+	}
+
+	return ENC_SYM_TRUE;
+}
+
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
@@ -6499,6 +6609,8 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("gnss-date-time", ext_gnss_date_time);
 		lbm_add_extension("gnss-age", ext_gnss_age);
 		lbm_add_extension("ublox-init", ext_ublox_init);
+		lbm_add_extension("nmea-parse", ext_nmea_parse);
+		lbm_add_extension("set-pos-time", ext_set_pos_time);
 
 		// Sleep
 		lbm_add_extension("sleep-deep", ext_sleep_deep);
