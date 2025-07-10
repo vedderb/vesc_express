@@ -692,6 +692,7 @@ void comm_ble_init(void) {
 		uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
 		uint8_t auth_option = ESP_BLE_ONLY_ACCEPT_SPECIFIED_AUTH_DISABLE;
 		uint8_t oob_support = ESP_BLE_OOB_DISABLE;
+		esp_ble_gap_config_local_privacy(true);
 		esp_ble_gap_set_security_param(
 			ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(uint32_t)
 		);
