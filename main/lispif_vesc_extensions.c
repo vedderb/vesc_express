@@ -2181,7 +2181,11 @@ static void esp_rx_fun(void *arg) {
 	}
 }
 
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
+#else
+static void espnow_send_cb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
+#endif
 	lbm_unblock_ctx_unboxed(esp_now_send_cid, status == ESP_NOW_SEND_SUCCESS ? ENC_SYM_TRUE : ENC_SYM_NIL);
 }
 
