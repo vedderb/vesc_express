@@ -1,0 +1,45 @@
+(import "pkg::jpg_test_480_320@://vesc_packages/lib_files/files.vescpkg" 'jpg_test_480_320)
+
+(disp-set-bl 1)
+(disp-set-bl 5)
+(disp-reset)
+
+(disp-orientation 3)
+
+(disp-clear 0xffffff)
+(disp-render-jpg jpg_test_480_320 0 0)
+
+;(i2c-detect-addr 0x60)
+;(i2c-detect-addr 0x48)
+
+(def ads-addr 0x48)
+(def buf-ads-tx (bufcreate 3))
+(def buf-ads-rx (bufcreate 2))
+
+(def v0 0.0)
+(def v1 0.0)
+
+(btn-pull-en true)
+;(btn-pull-en false)
+
+(loopwhile-thd 100 t {
+        (bufset-u8 buf-ads-tx 0 1)
+
+        (looprange i 0 2 {
+                (bufset-u16 buf-ads-tx 1 (+
+                        (bits-enc-int 0 12 (+ i 4) 3) ; Channel i
+                        (bits-enc-int 0 9 1 3) ; +- 4.096 V
+                        (bits-enc-int 0 5 5 3) ; 1600 SPS
+                        (bits-enc-int 0 0 3 2) ; Disable comparator
+                ))
+
+                (i2c-tx-rx ads-addr buf-ads-tx)
+                (sleep 0.005)
+                (i2c-tx-rx ads-addr '(0) buf-ads-rx)
+                (set (ix '(v0 v1 v2 v3) i) (* (/ (bufget-i16 buf-ads-rx 0) 32768.0) 4.096))
+                (sleep 0.005)
+        })
+
+        (sleep 0.1)
+})
+

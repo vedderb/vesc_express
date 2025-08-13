@@ -18,11 +18,11 @@
         (var scale 50.0)
         (var ofs-x (/ 120 scale))
         (var ofs-y (/ 110 scale))
-        
+
         (loopforeach e edges {
                 (var na (ix nodes (ix e 0)))
                 (var nb (ix nodes (ix e 1)))
-                
+
                 (apply line (map (fn (x) (to-i (* x scale))) (list
                             (+ ofs-x (ix na 0)) (+ ofs-y (ix na 1))
                             (+ ofs-x (ix nb 0)) (+ ofs-y (ix nb 1))
@@ -35,12 +35,12 @@
         (var cx (cos ax))
         (var sy (sin ay))
         (var cy (cos ay))
-        
+
         (loopforeach n nodes {
                 (var x (ix n 0))
                 (var y (ix n 1))
                 (var z (ix n 2))
-                
+
                 (setix n 0 (- (* x cx) (* z sx)))
                 (setix n 2 (+ (* z cx) (* x sx)))
                 (setq z (ix n 2))

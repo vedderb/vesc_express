@@ -104,6 +104,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/vesc/scope"
 "hwconf/vesc/duet"
 "hwconf/vesc/link"
+"hwconf/vesc/vdisp_900"
 
 "lispBM"
 "lispBM/include"

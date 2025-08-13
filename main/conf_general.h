@@ -79,6 +79,9 @@
 
 //#define HW_HEADER					"hw_link.h"
 //#define HW_SOURCE					"hw_link.c"
+
+//#define HW_HEADER					"hw_vdisp_900.h"
+//#define HW_SOURCE					"hw_vdisp_900.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)
