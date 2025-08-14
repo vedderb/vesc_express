@@ -1,4 +1,5 @@
-(import "pkg::jpg_test_480_320@://vesc_packages/lib_files/files.vescpkg" 'jpg_test_480_320)
+(import "pkg::jpg_test_320_240@://vesc_packages/lib_files/files.vescpkg" 'jpg_test)
+(import "pkg::font_16_26@://vesc_packages/lib_files/files.vescpkg" 'font)
 
 (disp-set-bl 1)
 (disp-set-bl 5)
@@ -6,8 +7,8 @@
 
 (disp-orientation 3)
 
-(disp-clear 0xffffff)
-(disp-render-jpg jpg_test_480_320 0 0)
+(disp-clear 0)
+(disp-render-jpg jpg_test 0 0)
 
 ;(i2c-detect-addr 0x60)
 ;(i2c-detect-addr 0x48)
@@ -18,6 +19,8 @@
 
 (def v0 0.0)
 (def v1 0.0)
+(def btn '(0 0 0 0))
+(def usb 0)
 
 (btn-pull-en true)
 ;(btn-pull-en false)
@@ -25,21 +28,116 @@
 (loopwhile-thd 100 t {
         (bufset-u8 buf-ads-tx 0 1)
 
-        (looprange i 0 2 {
-                (bufset-u16 buf-ads-tx 1 (+
-                        (bits-enc-int 0 12 (+ i 4) 3) ; Channel i
-                        (bits-enc-int 0 9 1 3) ; +- 4.096 V
-                        (bits-enc-int 0 5 5 3) ; 1600 SPS
-                        (bits-enc-int 0 0 3 2) ; Disable comparator
-                ))
+        (if (not (connected-usb)) {
+                (setq usb 0)
+                (btn-pull-en true)
 
-                (i2c-tx-rx ads-addr buf-ads-tx)
-                (sleep 0.005)
-                (i2c-tx-rx ads-addr '(0) buf-ads-rx)
-                (set (ix '(v0 v1 v2 v3) i) (* (/ (bufget-i16 buf-ads-rx 0) 32768.0) 4.096))
-                (sleep 0.005)
+                (looprange i 0 2 {
+                        (bufset-u16 buf-ads-tx 1 (+
+                                (bits-enc-int 0 12 (+ i 4) 3) ; Channel i
+                                (bits-enc-int 0 9 1 3) ; +- 4.096 V
+                                (bits-enc-int 0 5 5 3) ; 1600 SPS
+                                (bits-enc-int 0 0 3 2) ; Disable comparator
+                        ))
+
+                        (i2c-tx-rx ads-addr buf-ads-tx)
+                        (sleep 0.005)
+                        (i2c-tx-rx ads-addr '(0) buf-ads-rx)
+                        (set (ix '(v0 v1 v2 v3) i) (* (/ (bufget-i16 buf-ads-rx 0) 32768.0) 4.096))
+                        (sleep 0.005)
+                })
+
+                (btn-pull-en false)
+
+                (var btn1 (and (> v1 1.18) (< v1 1.3)))
+                (var btn2 (and (> v1 1.5) (< v1 1.8)))
+                (var btn3 (and (> v1 2.1) (< v1 2.4)))
+                (var btn4 (< v0 1.6))
+
+                (setq btn (list (if btn1 1 0) (if btn2 1 0) (if btn3 1 0) (if btn4 1 0)))
+        }
+        {
+                (setq usb 1)
         })
 
-        (sleep 0.1)
+        (sleep 0.02)
+})
+
+(def img (img-buffer 'indexed2 160 240))
+(def img-bt (img-buffer 'indexed2 480 65))
+
+(defun line (x0 y0 x1 y1)
+    (img-line img x0 y0 x1 y1 1 '(thickness 1))
+)
+
+; Nodes and edges of a 3d cube
+(def nodes '((-1 -1 -1) (-1 -1 1) (-1 1 -1) (-1 1 1) (1 -1 -1) (1 -1 1) (1 1 -1) (1 1 1)))
+(def edges '((0  1) (1 3) (3 2) (2 0) (4 5) (5 7) (7 6) (6 4) (0 4) (1 5) (2 6) (3 7)))
+
+(defun draw-edges () {
+        (var scale 50.0)
+        (var ofs-x (/ 80 scale))
+        (var ofs-y (/ 110 scale))
+
+        (loopforeach e edges {
+                (var na (ix nodes (ix e 0)))
+                (var nb (ix nodes (ix e 1)))
+
+                (apply line (map (fn (x) (to-i (* x scale))) (list
+                            (+ ofs-x (ix na 0)) (+ ofs-y (ix na 1))
+                            (+ ofs-x (ix nb 0)) (+ ofs-y (ix nb 1))
+                )))
+        })
+})
+
+(defun rotate-cube (ax ay) {
+        (var sx (sin ax))
+        (var cx (cos ax))
+        (var sy (sin ay))
+        (var cy (cos ay))
+
+        (loopforeach n nodes {
+                (var x (ix n 0))
+                (var y (ix n 1))
+                (var z (ix n 2))
+
+                (setix n 0 (- (* x cx) (* z sx)))
+                (setix n 2 (+ (* z cx) (* x sx)))
+                (setq z (ix n 2))
+                (setix n 1 (- (* y cy) (* z sy)))
+                (setix n 2 (+ (* z cy) (* y sy)))
+        })
+})
+
+(def fps 0)
+
+(loopwhile t {
+        (var t-start (systime))
+        (img-text img 10 210 1 0 font (str-from-n fps "FPS %.1f "))
+        (draw-edges)
+        (rotate-cube 0.1 0.05)
+        (disp-render img 320 0 '(0 0xff0000))
+        (img-clear img)
+        (def fps (/ 1 (secs-since t-start)))
+
+        (img-clear img-bt)
+
+        (var ofs 20)
+        (var names (list "M" "-" "+" "O"))
+
+        (looprange i 0 4 {
+                (img-text img-bt (+ ofs 30) -3 1 0 font (ix names i))
+
+                (if (= (ix btn i) 1)
+                    (img-rectangle img-bt ofs 25 80 30 1 '(rounded 8) '(filled))
+                    (img-rectangle img-bt ofs 25 80 30 1 '(rounded 8))
+                )
+
+                (setq ofs (+ ofs 120))
+        })
+
+        (disp-render img-bt 0 255 '(0 0xff0000))
+
+        ;(def fps (/ 1 (secs-since t-start)))
 })
 
