@@ -49,7 +49,6 @@ set(COMPONENT_SRCS
 "lispBM/src/lbm_c_interop.c"
 "lispBM/src/lbm_custom_type.c"
 "lispBM/src/lbm_flat_value.c"
-"lispBM/src/lbm_flags.c"
 "lispBM/src/lbm_prof.c"
 "lispBM/src/lbm_defrag_mem.c"
 "lispBM/src/lbm_image.c"
