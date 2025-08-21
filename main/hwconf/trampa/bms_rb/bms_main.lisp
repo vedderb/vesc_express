@@ -205,7 +205,7 @@
         (var t-start (systime))
         (bms-set-pchg 1)
 
-        (loopwhile (< (secs-since t-start) 0.2) {
+        (loopwhile (< (secs-since t-start) 0.6) {
                 (if (> (bms-get-vout) (* v-tot 0.80)) {
                         (setq res t)
                         (print (str-from-n (* (secs-since t-start) 1000.0) "PCHG T: %.1f ms"))

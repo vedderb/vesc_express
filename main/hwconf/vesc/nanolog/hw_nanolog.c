@@ -15,35 +15,10 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
-#ifndef MAIN_HWCONF_VESC_LINK_H_
-#define MAIN_HWCONF_VESC_LINK_H_
+#include "hw_nanolog.h"
 
-#include "driver/gpio.h"
-#include "adc.h"
-
-#define HW_NAME						"VL Link"
-
-#ifndef CONF_BLE_NAME
-#define CONF_BLE_NAME "VL Link"
-#endif
-
-#define HW_NO_UART
-
-#define HW_INIT_HOOK()				hw_init()
-
-// CAN
-#define CAN_TX_GPIO_NUM				0
-#define CAN_RX_GPIO_NUM				1
-
-// SD-card
-#define SD_PIN_MOSI					5
-#define SD_PIN_MISO					10
-#define SD_PIN_SCK					4
-#define SD_PIN_CS					9
-
-// Functions
-void hw_init(void);
-
-#endif /* MAIN_HWCONF_VESC_LINK_H_ */
+void hw_init(void) {
+	
+}

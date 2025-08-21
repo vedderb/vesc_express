@@ -82,6 +82,9 @@
 
 //#define HW_HEADER					"hw_vdisp_900.h"
 //#define HW_SOURCE					"hw_vdisp_900.c"
+
+//#define HW_HEADER					"hw_nanolog.h"
+//#define HW_SOURCE					"hw_nanolog.c"
 #endif
 
 #if !defined(HW_SOURCE) && !defined(HW_SOURCE_ALT)

@@ -1,5 +1,5 @@
 /*
-	Copyright 2024 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2025 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -17,19 +17,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_HWCONF_VESC_LINK_H_
-#define MAIN_HWCONF_VESC_LINK_H_
+#ifndef MAIN_HWCONF_VESC_NANOLOG_H_
+#define MAIN_HWCONF_VESC_NANOLOG_H_
 
-#include "driver/gpio.h"
-#include "adc.h"
-
-#define HW_NAME						"VL Link"
+#define HW_NAME						"Nanolog"
 
 #ifndef CONF_BLE_NAME
-#define CONF_BLE_NAME "VL Link"
+#define CONF_BLE_NAME "Nanolog"
 #endif
-
-#define HW_NO_UART
 
 #define HW_INIT_HOOK()				hw_init()
 
@@ -38,12 +33,18 @@
 #define CAN_RX_GPIO_NUM				1
 
 // SD-card
-#define SD_PIN_MOSI					5
-#define SD_PIN_MISO					10
-#define SD_PIN_SCK					4
-#define SD_PIN_CS					9
+#define SD_PIN_MOSI					7
+#define SD_PIN_MISO					8
+#define SD_PIN_SCK					6
+#define SD_PIN_CS					5
+
+// UART
+#define UART_NUM					0
+#define UART_BAUDRATE				115200
+#define UART_TX						21
+#define UART_RX						20
 
 // Functions
 void hw_init(void);
 
-#endif /* MAIN_HWCONF_VESC_LINK_H_ */
+#endif /* MAIN_HWCONF_VESC_NANOLOG_H_ */
