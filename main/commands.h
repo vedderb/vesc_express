@@ -28,6 +28,7 @@ typedef void (*send_func_t)(unsigned char *, unsigned int);
 
 // Functions
 void commands_init(void);
+void commands_unregister_reply_func(void(*reply_func)(unsigned char *data, unsigned int len));
 void commands_process_packet(
 	unsigned char *data, unsigned int len, send_func_t reply_func
 );
@@ -37,11 +38,12 @@ send_func_t commands_get_send_func(void);
 void commands_set_send_func(send_func_t func);
 int commands_printf(const char *format, ...);
 int commands_printf_lisp(const char *format, ...);
-void commands_init_plot(char *namex, char *namey);
-void commands_plot_add_graph(char *name);
+void commands_init_plot(const char *namex, const char *namey);
+void commands_plot_add_graph(const char *name);
 void commands_plot_set_graph(int graph);
 void commands_send_plot_points(float x, float y);
-void commands_send_app_data(unsigned char *data, unsigned int len);
+void commands_send_app_data(unsigned char *data, unsigned int len, int interface, int can_id);
+bool commands_set_app_data_handler(void(*func)(unsigned char *data, unsigned int len));
 
 #if LOGS_ENABLED
 

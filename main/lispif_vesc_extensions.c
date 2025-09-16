@@ -66,6 +66,8 @@
 #include "comm_ble.h"
 #include "lbm_image.h"
 #include "packet.h"
+#include "flash_helper.h"
+#include "crypto.h"
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -95,6 +97,10 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <string.h>
+
+// Declare native lib extension
+lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn);
+lbm_value ext_unload_native_lib(lbm_value *args, lbm_uint argn);
 
 typedef struct {
 	// BMS
@@ -978,56 +984,6 @@ static lbm_value ext_recv_data(lbm_value *args, lbm_uint argn) {
 	}
 
 	return ENC_SYM_TRUE;
-}
-
-typedef union {
-	uint32_t as_u32;
-	int32_t as_i32;
-	float as_float;
-} eeprom_var;
-
-#define EEPROM_VARS		256
-
-static bool check_eeprom_addr(int addr) {
-	if (addr < 0 || addr >= EEPROM_VARS) {
-		lbm_set_error_reason("Address must be 0 to 255");
-		return false;
-	}
-
-	return true;
-}
-
-static bool store_eeprom_var(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS) {
-		return false;
-	}
-
-	char buf[10];
-	sprintf(buf, "v%d", address);
-
-	nvs_handle_t my_handle;
-	esp_err_t ok_op = nvs_open("lbm", NVS_READWRITE, &my_handle);
-	esp_err_t ok_set = nvs_set_u32(my_handle, buf, v->as_u32);
-	esp_err_t ok_com = nvs_commit(my_handle);
-	nvs_close(my_handle);
-
-	return ok_op == ESP_OK && ok_set == ESP_OK && ok_com == ESP_OK;
-}
-
-static bool read_eeprom_var(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS) {
-		return false;
-	}
-
-	char buf[10];
-	sprintf(buf, "v%d", address);
-
-	nvs_handle_t my_handle;
-	esp_err_t ok_op = nvs_open("lbm", NVS_READONLY, &my_handle);
-	esp_err_t ok_set = nvs_get_u32(my_handle, buf, &v->as_u32);
-	nvs_close(my_handle);
-
-	return ok_op == ESP_OK && ok_set == ESP_OK;
 }
 
 static lbm_value ext_eeprom_store_f(lbm_value *args, lbm_uint argn) {
@@ -5900,62 +5856,45 @@ static lbm_value ext_aes_ctr_crypt(lbm_value *args, lbm_uint argn) {
     if (!lbm_check_argn_range(argn, 5, 5)) {
         return ENC_SYM_EERROR;
     }
-
     if (!lbm_is_array_r(args[0]) || !lbm_is_array_rw(args[1]) || !lbm_is_array_rw(args[2])) {
         lbm_set_error_reason("Invalid array types");
         return ENC_SYM_EERROR;
     }
 
-    lbm_array_header_t *key_header = (lbm_array_header_t *)lbm_car(args[0]);
+    lbm_array_header_t *key_header     = (lbm_array_header_t *)lbm_car(args[0]);
     lbm_array_header_t *counter_header = (lbm_array_header_t *)lbm_car(args[1]);
-    lbm_array_header_t *data_header = (lbm_array_header_t *)lbm_car(args[2]);
+    lbm_array_header_t *data_header    = (lbm_array_header_t *)lbm_car(args[2]);
 
-    // Check key size (128, 192, or 256 bits)
-    if (key_header->size != 16 && key_header->size != 24 && key_header->size != 32) {
-        lbm_set_error_reason("Key must be 16, 24, or 32 bytes (128, 192, or 256 bits)");
+    size_t key_len = key_header->size;
+    if (!(key_len == 16 || key_len == 24 || key_len == 32)) {
+        lbm_set_error_reason("Key must be 16, 24, or 32 bytes");
         return ENC_SYM_EERROR;
     }
-
     if (counter_header->size != 16) {
         lbm_set_error_reason("Counter must be 16 bytes");
         return ENC_SYM_EERROR;
     }
 
     lbm_int start_offset = lbm_dec_as_i32(args[3]);
-    lbm_int length = lbm_dec_as_i32(args[4]);
-
-    if (start_offset < 0 || length < 0 || (start_offset + length) > (lbm_int)data_header->size) {
-        lbm_set_error_reason("Invalid start offset or length");
+    lbm_int length       = lbm_dec_as_i32(args[4]);
+    if (start_offset < 0 || length < 0 ||
+        (start_offset + length) > (lbm_int)data_header->size) {
+        lbm_set_error_reason("Invalid start/length");
         return ENC_SYM_EERROR;
     }
 
-    uint8_t *key = (uint8_t*)key_header->data;
-    uint8_t *counter = (uint8_t*)counter_header->data;
-    uint8_t *data = (uint8_t*)data_header->data + start_offset;
+    int rc = aes_ctr_crypt_inplace(
+        (const uint8_t*)key_header->data, key_len,
+        (uint8_t*)counter_header->data,
+        (uint8_t*)data_header->data,
+        (size_t)start_offset,
+        (size_t)length
+    );
 
-    // Perform in-place encryption/decryption
-    esp_aes_context ctx;
-    esp_aes_init(&ctx);
-
-    int ret = esp_aes_setkey(&ctx, key, key_header->size * 8);
-    if (ret != 0) {
-        esp_aes_free(&ctx);
-        lbm_set_error_reason("AES key setup failed");
+    if (rc != 0) {
+        lbm_set_error_reason("AES-CTR failed");
         return ENC_SYM_EERROR;
     }
-
-    uint8_t stream_block[16];
-    size_t nc_off = 0;
-
-    ret = esp_aes_crypt_ctr(&ctx, length, &nc_off, counter, stream_block, data, data);
-
-    esp_aes_free(&ctx);
-
-    if (ret != 0) {
-        lbm_set_error_reason("AES-CTR encryption/decryption failed");
-        return ENC_SYM_EERROR;
-    }
-
     return ENC_SYM_TRUE;
 }
 
@@ -6440,6 +6379,7 @@ static bool dynamic_loader(const char *str, const char **code) {
 }
 
 void lispif_load_vesc_extensions(bool main_found) {
+	lispif_stop_lib();
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
 		i2c_mutex_init_done = true;
@@ -6622,6 +6562,10 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
 		lbm_add_extension("rtc-data", ext_rtc_data);
 
+		// Native libraries
+		lbm_add_extension("load-native-lib", ext_load_native_lib);
+		lbm_add_extension("unload-native-lib", ext_unload_native_lib);
+
 		lispif_load_rgbled_extensions();
 
 		lispif_load_disp_extensions();
@@ -6756,6 +6700,8 @@ void lispif_disable_all_events(void) {
 		xSemaphoreGive(rmsg_mutex);
 	}
 
+	lispif_stop_lib();
+
 	event_can_sid_en = false;
 	event_can_eid_en = false;
 	event_data_rx_en = false;
@@ -6795,6 +6741,8 @@ void lispif_disable_all_events(void) {
 
 	cmds_running = false;
 	cmds_state = 0;
+
+	vTaskDelay(pdMS_TO_TICKS(5));
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
