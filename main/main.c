@@ -214,7 +214,7 @@ uint32_t main_calc_hw_crc(void) {
 	return crc;
 }
 
-void main_store_backup_data(void) {
+bool main_store_backup_data(void) {
 	nvs_handle_t my_handle;
 	backup.controller_id = backup.config.controller_id;
 	backup.can_baud_rate = backup.config.can_baud_rate;
@@ -222,6 +222,7 @@ void main_store_backup_data(void) {
 	nvs_set_blob(my_handle, "backup", (void*)&backup, sizeof(backup_data));
 	nvs_commit(my_handle);
 	nvs_close(my_handle);
+	return true;
 }
 
 bool main_init_done(void) {
