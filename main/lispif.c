@@ -92,7 +92,6 @@ void(*ext_load_callbacks[EXT_LOAD_CALLBACK_LEN])(bool) = {0};
  */
 
 // Private functions
-static uint32_t timestamp_callback(void);
 static void sleep_callback(uint32_t us);
 static bool image_write(uint32_t w, int32_t ix, bool const_heap);
 static void eval_thread(void *arg);
@@ -807,7 +806,6 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 					PRINT_STACK_SIZE, extension_storage,
 					EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE);
 
-			lbm_set_timestamp_us_callback(timestamp_callback);
 			lbm_set_usleep_callback(sleep_callback);
 			lbm_set_printf_callback(commands_printf_lisp);
 			lbm_set_ctx_done_callback(done_callback);
@@ -943,11 +941,6 @@ void lispif_add_ext_load_callback(void (*p_func)(bool)) {
 
 bool lispif_is_eval_task(void) {
 	return eval_task == xTaskGetCurrentTaskHandle();
-}
-
-static uint32_t timestamp_callback(void) {
-	TickType_t t = xTaskGetTickCount();
-	return (uint32_t) ((1000 / portTICK_PERIOD_MS) * t);
 }
 
 static void sleep_callback(uint32_t us) {

@@ -45,6 +45,7 @@ set(COMPONENT_SRCS
 "lispBM/src/lispbm.c"
 "lispBM/src/eval_cps.c"
 "lispBM/platform/freertos/src/platform_mutex.c"
+"lispBM/platform/freertos/src/platform_timestamp.c"
 "lispBM/src/lbm_channel.c"
 "lispBM/src/lbm_c_interop.c"
 "lispBM/src/lbm_custom_type.c"
@@ -128,6 +129,7 @@ add_compile_definitions(
     LBM_USE_DYN_ARRAYS
     LBM_USE_TIME_QUOTA
     LBM_USE_ERROR_LINENO
+    LBM_USE_MACRO_REST_ARGS
 )
 
 if((DEFINED ENV{HW_SRC}) OR (DEFINED ENV{HW_HEADER}))
