@@ -1,0 +1,94 @@
+(def adc-thr 0.0)
+(def adc-brake 0.0)
+(def adc-lever1 0.0)
+(def adc-lever2 0.0)
+
+(def val-thr 0.0)
+(def val-brake 0.0)
+(def val-lever1 0.0)
+(def val-lever2 0.0)
+
+(def light-on 0)
+
+(def ledbuf (rgbled-buffer 2 0 1))
+
+(def buf-canid200 (array-create 8))
+
+@const-start
+
+; Clamp value to range 0-1
+(defun clamp01 (v)
+    (cond
+        ((< v 0.0) 0.0)
+        ((> v 1.0) 1.0)
+        (t v)
+))
+
+; CAN
+
+; Map and clamp the range min-max to 0-1
+(defun map-range-01 (v min max)
+    (clamp01 (/ (- (to-float v) min) (- max min)))
+)
+
+(defun proc-sid (id data) {
+        (cond
+            ((= id 201) {
+                    (setq light-on (bufget-u8 data 1))
+
+                    (if (= light-on 1)
+                        (gpio-write 5 1)
+                        (gpio-write 5 0)
+                    )
+            })
+        )
+})
+
+(defun event-handler ()
+    (loopwhile t
+        (recv
+            ((event-can-sid . ((? id) . (? data))) (proc-sid id data))
+            (_ nil)
+)))
+
+(defun main () {
+        ; LED and ADC enable
+        (gpio-configure 10 'pin-mode-out)
+        (gpio-write 10 1)
+
+        ; Headlight
+        (gpio-configure 5 'pin-mode-out)
+        (gpio-write 5 0)
+
+        ; LEDs on PCB
+        (rgbled-init 2)
+        (rgbled-color ledbuf 0 (color-make 0.2 0 0))
+        (rgbled-color ledbuf 1 (color-make 0 0.2 0.0))
+        (rgbled-update ledbuf)
+
+        (event-register-handler (spawn event-handler))
+        (event-enable 'event-can-sid)
+
+        (loopwhile-thd 100 t {
+                (setq adc-thr (get-adc 0))
+                (setq adc-brake (get-adc 1))
+                (setq adc-lever1 (get-adc 3))
+                (setq adc-lever2 (get-adc 4))
+
+                (setq val-thr (map-range-01 adc-thr 0.42 2.1))
+                (setq val-brake (map-range-01 adc-brake 0.43 2.1))
+                (setq val-lever1 (map-range-01 adc-lever1 0.4 2.05))
+                (setq val-lever2 (map-range-01 adc-lever2 0.4 2.1))
+
+                (bufset-i16 buf-canid200 0 (* val-thr 1000))
+                (bufset-i16 buf-canid200 2 (* val-brake 1000))
+                (bufset-i16 buf-canid200 4 (* val-lever1 1000))
+                (bufset-i16 buf-canid200 6 (* val-lever2 1000))
+                (can-send-sid 200 buf-canid200)
+
+                (sleep 0.025)
+        })
+})
+
+(image-save)
+(main)

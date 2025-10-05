@@ -106,6 +106,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/vesc/link"
 "hwconf/vesc/vdisp_900"
 "hwconf/vesc/nanolog"
+"hwconf/vesc/vbms16"
+"hwconf/vesc/rmcore"
 
 "lispBM"
 "lispBM/include"
