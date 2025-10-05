@@ -26,12 +26,15 @@
 #include <stddef.h>
 #include "lispbm.h"
 
+#define NATIVE_LIB_MAGIC 0xCAFEBABE
+
 // Functions
 void lispif_init(void);
 int lispif_get_restart_cnt(void);
 void lispif_lock_lbm(void);
 void lispif_unlock_lbm(void);
 void lispif_stop(void);
+void lispif_stop_lib(void);
 bool lispif_restart(bool print, bool load_code, bool load_imports);
 void lispif_disable_all_events(void);
 void lispif_free(void *ptr);
@@ -45,6 +48,7 @@ void lispif_add_dyn_load_callback(bool (*p_func)(const char*, const char**));
 bool lispif_is_eval_task(void);
 
 void lispif_load_vesc_extensions(bool main_found);
+bool lispif_vesc_dynamic_loader(const char *str, const char **code);
 char* lispif_print_prefix(void);
 char* lispif_fw_name(void);
 

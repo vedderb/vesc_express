@@ -1,5 +1,5 @@
 /*
-	Copyright 2024 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -17,13 +17,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#ifndef MAIN_RGBLED_LISPIF_RGBLED_EXTENSIONS_H_
-#define MAIN_RGBLED_LISPIF_RGBLED_EXTENSIONS_H_
+#ifndef MAIN_CRYPTO_H_
+#define MAIN_CRYPTO_H_
 
-void lispif_load_rgbled_extensions();
+#include <stddef.h>
+#include <stdint.h>
 
-bool rgbled_init(int pin);
-void rgbled_deinit();
-void rgbled_update(uint8_t * data, size_t size);
+int aes_ctr_crypt_inplace(const uint8_t *key, size_t key_len,
+                              uint8_t counter[16],
+                              uint8_t *buf, size_t start, size_t len);
 
-#endif /* MAIN_RGBLED_LISPIF_RGBLED_EXTENSIONS_H_ */
+#endif /* MAIN_CRYPTO_H_ */

@@ -34,6 +34,12 @@ typedef struct {
 	unsigned int erase_cnt_max; // Largest erase counter for a given sector
 } flast_stats;
 
+typedef union {
+	uint32_t as_u32;
+	int32_t as_i32;
+	float as_float;
+} eeprom_var;
+
 bool flash_helper_erase_code(int ind, int size);
 bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len, uint32_t save_after);
 bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t len);
@@ -43,5 +49,11 @@ int flash_helper_code_size_raw(int ind);
 uint32_t flash_helper_code_size(int ind);
 uint16_t flash_helper_code_flags(int ind);
 flast_stats flash_helper_stats(void);
+
+bool check_eeprom_addr(int addr);
+
+bool store_eeprom_var(eeprom_var *v, int address);
+
+bool read_eeprom_var(eeprom_var *v, int address);
 
 #endif /* FLASH_HELPER_H_ */

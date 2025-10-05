@@ -9,6 +9,8 @@ get_filename_component(ProjectId ${CMAKE_CURRENT_LIST_DIR} NAME)
 string(REPLACE " " "_" ProjectId ${ProjectId})
 project(${ProjectId})
 
+target_link_libraries(${PROJECT_NAME}.elf PRIVATE "-T${CMAKE_CURRENT_SOURCE_DIR}/main/linker_libif.ld")
+
 include(cmake/git_rev_parse.cmake)
 
 git_describe(GIT_COMMIT_HASH ".")
