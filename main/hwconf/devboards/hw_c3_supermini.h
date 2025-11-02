@@ -34,7 +34,11 @@
 
 // LEDs
 // Blue is shared (GPIO8/SCK/D8), Red is not controllable (Power LED)
+// On the VESC-Express, blue LED is used for feedback of BT and red for Wifi
 #define LED_BLUE_PIN				8
+
+#define LED_BLUE_ON()				gpio_set_level(LED_BLUE_PIN, 1)
+#define LED_BLUE_OFF()				gpio_set_level(LED_BLUE_PIN, 0)
 
 // CAN
 #define CAN_TX_GPIO_NUM				1
