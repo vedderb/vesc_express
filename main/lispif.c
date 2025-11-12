@@ -55,14 +55,9 @@ static uint32_t *memory_array;
 static uint32_t *bitmap_array;
 static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE];
 
+static bool string_tok_valid = false;
 static volatile lbm_uint *image_ptr = 0;
 static int image_max_ind = 0;
-
-static lbm_string_channel_state_t string_tok_state;
-static lbm_char_channel_t string_tok;
-static lbm_buffered_channel_state_t buffered_tok_state;
-static lbm_char_channel_t buffered_string_tok;
-static bool string_tok_valid = false;
 
 static TaskHandle_t eval_task = 0;
 static volatile bool lisp_thd_running = false;
@@ -123,7 +118,6 @@ void lispif_init(void) {
 	memory_array = heap_caps_malloc(mem_size * sizeof(uint32_t), MALLOC_CAP_DMA);
 	bitmap_array = heap_caps_malloc(bitmap_size * sizeof(uint32_t), MALLOC_CAP_DMA);
 
-	memset(&buffered_tok_state, 0, sizeof(buffered_tok_state));
 	lbm_mutex = xSemaphoreCreateMutex();
 	lispif_restart(false, true, true);
 
@@ -526,6 +520,9 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				if (pause_eval(30, 1000)) {
 					repl_buffer = lbm_malloc_reserve(len);
 					if (repl_buffer) {
+						static lbm_string_channel_state_t string_tok_state;
+						static lbm_char_channel_t string_tok;
+
 						memcpy(repl_buffer, data, len);
 						lbm_create_string_char_channel(&string_tok_state, &string_tok, repl_buffer);
 						repl_cid = lbm_load_and_eval_expression(&string_tok);
@@ -552,6 +549,9 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_LISP_STREAM_CODE: {
+		static lbm_buffered_channel_state_t buffered_tok_state = {0};
+		static lbm_char_channel_t buffered_string_tok = {0};
+
 		int32_t ind = 0;
 		int32_t offset = buffer_get_int32(data, &ind);
 		int32_t tot_len = buffer_get_int32(data, &ind);
@@ -897,6 +897,9 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 		}
 
 		if (load_code) {
+			static lbm_string_channel_state_t string_tok_state;
+			static lbm_char_channel_t string_tok;
+
 			if (print) {
 				if (main_found) {
 					commands_printf_lisp("Running main-function");
