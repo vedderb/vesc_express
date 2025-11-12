@@ -62,6 +62,7 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/lbm_dyn_lib.c"
 "lispBM/src/extensions/ttf_extensions.c"
 "lispBM/src/extensions/schrift.c"
+"lispBM/src/extensions/ttf_backend.c"
 
 "wifi/lispif_wifi_extensions.c"
 
