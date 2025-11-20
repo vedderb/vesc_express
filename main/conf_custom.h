@@ -1,5 +1,5 @@
 /*
-	Copyright 2024 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
 
 	This file is part of the VESC firmware.
 
@@ -15,15 +15,25 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
-#ifndef MAIN_RGBLED_LISPIF_RGBLED_EXTENSIONS_H_
-#define MAIN_RGBLED_LISPIF_RGBLED_EXTENSIONS_H_
+#ifndef CONF_CUSTOM_H_
+#define CONF_CUSTOM_H_
 
-void lispif_load_rgbled_extensions();
+#include <stdint.h>
+#include <stdbool.h>
 
-bool rgbled_init(int pin);
-void rgbled_deinit();
-void rgbled_update(uint8_t * data, size_t size);
+// Functions
+void conf_custom_add_config(
+	int (*get_cfg)(uint8_t *data, bool is_default),
+	bool (*set_cfg)(uint8_t *data), int (*get_cfg_xml)(uint8_t **data)
+);
+void conf_custom_clear_configs(void);
+int conf_custom_cfg_num(void);
+int conf_custom_get_cfg_xml(int conf_ind, uint8_t **data);
+void conf_custom_process_cmd(
+	unsigned char *data, unsigned int len,
+	void (*reply_func)(unsigned char *data, unsigned int len)
+);
 
-#endif /* MAIN_RGBLED_LISPIF_RGBLED_EXTENSIONS_H_ */
+#endif /* CONF_CUSTOM_H_ */

@@ -29,8 +29,11 @@
 #include "freertos/semphr.h"
 
 #include "commands.h"
+#include "comm_ble.h"
+#include "comm_uart.h"
 #include "datatypes.h"
 #include "conf_general.h"
+#include "conf_custom.h"
 #include "comm_can.h"
 #include "terminal.h"
 #include "mempools.h"
@@ -90,6 +93,7 @@ static esp_ota_handle_t update_handle = 0;
 static send_func_t send_func = 0;
 static send_func_t send_func_can_fwd = 0;
 static send_func_t send_func_blocking = 0;
+static void(* volatile appdata_func)(unsigned char *data, unsigned int len) = 0;
 
 // Blocking thread
 static SemaphoreHandle_t block_sem;
@@ -164,7 +168,7 @@ static void block_task(void *arg) {
 			data[len] = '\0';
 			terminal_process_string((char*)data);
 			break;
-
+			
 		case COMM_CAN_UPDATE_BAUD_ALL: {
 			int32_t ind = 0;
 			uint32_t kbits = buffer_get_int16(data, &ind);
@@ -207,6 +211,18 @@ void commands_init(void) {
 	init_done = true;
 }
 
+void commands_unregister_reply_func(void (*reply_func)(unsigned char *data, unsigned int len)) {
+	if (send_func == reply_func) {
+		send_func = NULL;
+	}
+	if (send_func_blocking == reply_func) {
+		send_func_blocking = NULL;
+	}
+	if (send_func_can_fwd == reply_func) {
+		send_func_can_fwd = NULL;
+	}
+}
+
 void commands_process_packet(unsigned char *data, unsigned int len,
 		send_func_t reply_func) {
 	if (!len) {
@@ -233,12 +249,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	}
 
 	switch (packet_id) {
-	case COMM_FW_VERSION: {
-		int32_t ind = 0;
-		uint8_t send_buffer[65];
-		send_buffer[ind++] = COMM_FW_VERSION;
-		send_buffer[ind++] = FW_VERSION_MAJOR;
-		send_buffer[ind++] = FW_VERSION_MINOR;
+		case COMM_FW_VERSION: {
+			int32_t ind = 0;
+			uint8_t send_buffer[65];
+			send_buffer[ind++] = COMM_FW_VERSION;
+			send_buffer[ind++] = FW_VERSION_MAJOR;
+			send_buffer[ind++] = FW_VERSION_MINOR;
 
 		strcpy((char*)(send_buffer + ind), HW_NAME);
 		ind += strlen(HW_NAME) + 1;
@@ -253,7 +269,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		send_buffer[ind++] = FW_TEST_VERSION_NUMBER;
 
 		send_buffer[ind++] = HW_TYPE_CUSTOM_MODULE;
-		send_buffer[ind++] = 1; // One custom config
+		send_buffer[ind++] = 1 + conf_custom_cfg_num(); // Main config + one optional custom config
 
 		send_buffer[ind++] = 0; // No phase filters
 		send_buffer[ind++] = 0; // No HW QML
@@ -302,6 +318,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		break;
 
 	case COMM_ERASE_NEW_APP: {
+		lispif_stop();
 		int32_t ind = 0;
 
 		if (update_handle != 0) {
@@ -340,62 +357,61 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			ok = res == ESP_OK;
 		}
 
-		ind = 0;
-		uint8_t send_buffer[50];
-		send_buffer[ind++] = COMM_WRITE_NEW_APP_DATA;
-		send_buffer[ind++] = ok;
-		buffer_append_uint32(send_buffer, new_app_offset, &ind);
-		reply_func(send_buffer, ind);
-	} break;
+			ind = 0;
+			uint8_t send_buffer[50];
+			send_buffer[ind++] = COMM_WRITE_NEW_APP_DATA;
+			send_buffer[ind++] = ok;
+			buffer_append_uint32(send_buffer, new_app_offset, &ind);
+			reply_func(send_buffer, ind);
+		} break;
 
-	case COMM_REBOOT: {
-		comm_wifi_disconnect();
-		esp_wifi_stop();
+		case COMM_REBOOT: {
+			comm_wifi_disconnect();
+			esp_wifi_stop();
 
-		// Deep sleep to reboot as that disconnects USB properly
-//		esp_restart();
-		esp_sleep_enable_timer_wakeup(1000000);
-		esp_deep_sleep_start();
-	} break;
+			// Deep sleep to reboot as that disconnects USB properly
+			//		esp_restart();
+			esp_sleep_enable_timer_wakeup(1000000);
+			esp_deep_sleep_start();
+		} break;
 
-	case COMM_FORWARD_CAN:
-		send_func_can_fwd = reply_func;
-		comm_can_send_buffer(data[0], data + 1, len - 1, 0);
-		break;
-
-	case COMM_CAN_FWD_FRAME: {
-		int32_t ind = 0;
-		uint32_t id = buffer_get_uint32(data, &ind);
-		bool is_ext = data[ind++];
-
-		if (is_ext) {
-			comm_can_transmit_eid(id, data + ind, len - ind);
-		} else {
-			comm_can_transmit_sid(id, data + ind, len - ind);
-		}
-	} break;
-
-	case COMM_GET_CUSTOM_CONFIG:
-	case COMM_GET_CUSTOM_CONFIG_DEFAULT: {
-		main_config_t *conf = calloc(1, sizeof(main_config_t));
-
-		int conf_ind = data[0];
-
-		if (conf_ind != 0) {
+		case COMM_FORWARD_CAN:
+			send_func_can_fwd = reply_func;
+			comm_can_send_buffer(data[0], data + 1, len - 1, 0);
 			break;
-		}
 
-		if (packet_id == COMM_GET_CUSTOM_CONFIG) {
-			*conf = backup.config;
-		} else {
+		case COMM_CAN_FWD_FRAME: {
+			int32_t ind = 0;
+			uint32_t id = buffer_get_uint32(data, &ind);
+			bool is_ext = data[ind++];
+
+			if (is_ext) {
+				comm_can_transmit_eid(id, data + ind, len - ind);
+			} else {
+				comm_can_transmit_sid(id, data + ind, len - ind);
+			}
+		} break;
+
+		case COMM_GET_CUSTOM_CONFIG:
+		case COMM_GET_CUSTOM_CONFIG_DEFAULT: {
+
+			int conf_ind = data[0];
+
+			switch (conf_ind) {
+			case 0: {
+				main_config_t *conf = calloc(1, sizeof(main_config_t));
+
+				if (packet_id == COMM_GET_CUSTOM_CONFIG) {
+					*conf = backup.config;
+				} else {
 #ifdef OVR_CONF_SET_DEFAULTS
-			OVR_CONF_SET_DEFAULTS(conf);
+					OVR_CONF_SET_DEFAULTS(conf);
 #else
-			confparser_set_defaults_main_config_t(conf);
+					confparser_set_defaults_main_config_t(conf);
 #endif
-		}
+				}
 
-		uint8_t *send_buffer_global = mempools_get_packet_buffer();
+				uint8_t *send_buffer_global = mempools_get_packet_buffer();
 		int32_t ind = 0;
 		send_buffer_global[ind++] = packet_id;
 		send_buffer_global[ind++] = conf_ind;
@@ -404,51 +420,67 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 #else
 		int32_t len = confparser_serialize_main_config_t(send_buffer_global + ind, conf);
 #endif
-		commands_send_packet(send_buffer_global, len + ind);
-		mempools_free_packet_buffer(send_buffer_global);
+				commands_send_packet(send_buffer_global, len + ind);
+				mempools_free_packet_buffer(send_buffer_global);
 
-		free(conf);
-	} break;
+				free(conf);
+			} break;
+			case 1: {
+				conf_custom_process_cmd(data - 1, len + 1, reply_func);
+			}
+			break;
+			default:
+		}
+		} break;
 
-	case COMM_SET_CUSTOM_CONFIG: {
-		main_config_t *conf = calloc(1, sizeof(main_config_t));
-		*conf = backup.config;
+		case COMM_SET_CUSTOM_CONFIG: {
 
-		int conf_ind = data[0];
 
+			int conf_ind = data[0];
+			switch (conf_ind) {
+			case 0: {
+				main_config_t *conf = calloc(1, sizeof(main_config_t));
+			*conf = backup.config;
 #ifdef OVR_CONF_DESERIALIZE
-		if (conf_ind == 0 && OVR_CONF_DESERIALIZE(data + 1, conf)) {
+				if (conf_ind == 0 && OVR_CONF_DESERIALIZE(data + 1, conf)) {
 #else
-		if (conf_ind == 0 && confparser_deserialize_main_config_t(data + 1, conf)) {
+				if (conf_ind == 0 && confparser_deserialize_main_config_t(data + 1, conf)) {
 #endif
 			bool baud_changed = backup.config.can_baud_rate != conf->can_baud_rate;
-			backup.config = *conf;
+					backup.config = *conf;
 
-			if (baud_changed) {
-				comm_can_update_baudrate(0);
+					if (baud_changed) {
+						comm_can_update_baudrate(0);
+					}
+
+					main_store_backup_data();
+
+					int32_t ind = 0;
+					uint8_t send_buffer[50];
+					send_buffer[ind++] = packet_id;
+					reply_func(send_buffer, ind);
+				} else {
+					commands_printf("Warning: Could not set configuration");
+				}
+				
+				free(conf);
 			}
-
-			main_store_backup_data();
-
-			int32_t ind = 0;
-			uint8_t send_buffer[50];
-			send_buffer[ind++] = packet_id;
-			reply_func(send_buffer, ind);
-		} else {
-			commands_printf("Warning: Could not set configuration");
-		}
-
-		free(conf);
-	} break;
-
-	case COMM_GET_CUSTOM_CONFIG_XML: {
-		int32_t ind = 0;
-
-		int conf_ind = data[ind++];
-
-		if (conf_ind != 0) {
 			break;
+			case 1: {
+				conf_custom_process_cmd(data - 1, len + 1, reply_func);
+			}
+			break;
+			default:
 		}
+		} break;
+
+		case COMM_GET_CUSTOM_CONFIG_XML: {
+			int32_t ind = 0;
+
+			int conf_ind = data[ind++];
+
+			switch (conf_ind) {
+			case 0: {
 
 		int32_t len_conf = buffer_get_int32(data, &ind);
 		int32_t ofs_conf = buffer_get_int32(data, &ind);
@@ -467,7 +499,15 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		ind += len_conf;
 		reply_func(send_buffer_global, ind);
 		mempools_free_packet_buffer(send_buffer_global);
-	} break;
+			}
+			break;
+			case 1: {
+				conf_custom_process_cmd(data - 1, len + 1, reply_func);
+			}
+			break;
+			default:
+		}
+		} break;
 
 	case COMM_FILE_LIST: {
 		int32_t ind = 0;
@@ -587,22 +627,22 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		strcat(path_full, path);
 
 		ind = 0;
-		send_buffer[ind++] = packet_id;
-		buffer_append_int32(send_buffer, offset, &ind);
+			send_buffer[ind++] = packet_id;
+			buffer_append_int32(send_buffer, offset, &ind);
 
-		if (!f_last || f_last_offset != offset) {
-			if (f_last) {
-				fclose(f_last);
-			}
+			if (!f_last || f_last_offset != offset) {
+				if (f_last) {
+					fclose(f_last);
+				}
 
-			f_last = fopen(path_full, "r");
-			if (f_last) {
-				fseek(f_last, 0, SEEK_END);
-				f_last_size = ftell(f_last);
-				fseek(f_last, offset, SEEK_SET);
-				f_last_offset = offset;
+				f_last = fopen(path_full, "r");
+				if (f_last) {
+					fseek(f_last, 0, SEEK_END);
+					f_last_size = ftell(f_last);
+					fseek(f_last, offset, SEEK_SET);
+					f_last_offset = offset;
+				}
 			}
-		}
 
 		if (f_last) {
 			buffer_append_int32(send_buffer, f_last_size, &ind);
@@ -920,93 +960,96 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_CUSTOM_APP_DATA:
+		if (appdata_func) {
+			appdata_func(data, len);
+		}
 		lispif_process_custom_app_data(data, len);
 		break;
 
-	case COMM_BMS_GET_VALUES:
-	case COMM_BMS_SET_CHARGE_ALLOWED:
-	case COMM_BMS_SET_BALANCE_OVERRIDE:
-	case COMM_BMS_RESET_COUNTERS:
-	case COMM_BMS_FORCE_BALANCE:
-	case COMM_BMS_ZERO_CURRENT_OFFSET: {
-		bms_process_cmd(data - 1, len + 1, reply_func);
-		break;
-	}
-
-	case COMM_GET_IMU_DATA: {
-		int32_t ind = 0;
-		uint8_t send_buffer[70];
-		send_buffer[ind++] = packet_id;
-
-		int32_t ind2 = 0;
-		uint32_t mask = buffer_get_uint16(data, &ind2);
-
-		float rpy[3], acc[3], gyro[3], mag[3], q[4];
-		imu_get_rpy(rpy);
-		imu_get_accel(acc);
-		imu_get_gyro(gyro);
-		imu_get_mag(mag);
-		imu_get_quaternions(q);
-
-		buffer_append_uint16(send_buffer, mask, &ind);
-
-		if (mask & ((uint32_t)1 << 0)) {
-			buffer_append_float32_auto(send_buffer, rpy[0], &ind);
-		}
-		if (mask & ((uint32_t)1 << 1)) {
-			buffer_append_float32_auto(send_buffer, rpy[1], &ind);
-		}
-		if (mask & ((uint32_t)1 << 2)) {
-			buffer_append_float32_auto(send_buffer, rpy[2], &ind);
+		case COMM_BMS_GET_VALUES:
+		case COMM_BMS_SET_CHARGE_ALLOWED:
+		case COMM_BMS_SET_BALANCE_OVERRIDE:
+		case COMM_BMS_RESET_COUNTERS:
+		case COMM_BMS_FORCE_BALANCE:
+		case COMM_BMS_ZERO_CURRENT_OFFSET: {
+			bms_process_cmd(data - 1, len + 1, reply_func);
+			break;
 		}
 
-		if (mask & ((uint32_t)1 << 3)) {
-			buffer_append_float32_auto(send_buffer, acc[0], &ind);
-		}
-		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float32_auto(send_buffer, acc[1], &ind);
-		}
-		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32_auto(send_buffer, acc[2], &ind);
-		}
+		case COMM_GET_IMU_DATA: {
+			int32_t ind = 0;
+			uint8_t send_buffer[70];
+			send_buffer[ind++] = packet_id;
 
-		if (mask & ((uint32_t)1 << 6)) {
-			buffer_append_float32_auto(send_buffer, gyro[0], &ind);
-		}
-		if (mask & ((uint32_t)1 << 7)) {
-			buffer_append_float32_auto(send_buffer, gyro[1], &ind);
-		}
-		if (mask & ((uint32_t)1 << 8)) {
-			buffer_append_float32_auto(send_buffer, gyro[2], &ind);
-		}
+			int32_t ind2 = 0;
+			uint32_t mask = buffer_get_uint16(data, &ind2);
 
-		if (mask & ((uint32_t)1 << 9)) {
-			buffer_append_float32_auto(send_buffer, mag[0], &ind);
-		}
-		if (mask & ((uint32_t)1 << 10)) {
-			buffer_append_float32_auto(send_buffer, mag[1], &ind);
-		}
-		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32_auto(send_buffer, mag[2], &ind);
-		}
+			float rpy[3], acc[3], gyro[3], mag[3], q[4];
+			imu_get_rpy(rpy);
+			imu_get_accel(acc);
+			imu_get_gyro(gyro);
+			imu_get_mag(mag);
+			imu_get_quaternions(q);
 
-		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32_auto(send_buffer, q[0], &ind);
-		}
-		if (mask & ((uint32_t)1 << 13)) {
-			buffer_append_float32_auto(send_buffer, q[1], &ind);
-		}
-		if (mask & ((uint32_t)1 << 14)) {
-			buffer_append_float32_auto(send_buffer, q[2], &ind);
-		}
-		if (mask & ((uint32_t)1 << 15)) {
-			buffer_append_float32_auto(send_buffer, q[3], &ind);
-		}
+			buffer_append_uint16(send_buffer, mask, &ind);
 
-		send_buffer[ind++] = backup.config.controller_id;
+			if (mask & ((uint32_t)1 << 0)) {
+				buffer_append_float32_auto(send_buffer, rpy[0], &ind);
+			}
+			if (mask & ((uint32_t)1 << 1)) {
+				buffer_append_float32_auto(send_buffer, rpy[1], &ind);
+			}
+			if (mask & ((uint32_t)1 << 2)) {
+				buffer_append_float32_auto(send_buffer, rpy[2], &ind);
+			}
 
-		reply_func(send_buffer, ind);
-	} break;
+			if (mask & ((uint32_t)1 << 3)) {
+				buffer_append_float32_auto(send_buffer, acc[0], &ind);
+			}
+			if (mask & ((uint32_t)1 << 4)) {
+				buffer_append_float32_auto(send_buffer, acc[1], &ind);
+			}
+			if (mask & ((uint32_t)1 << 5)) {
+				buffer_append_float32_auto(send_buffer, acc[2], &ind);
+			}
+
+			if (mask & ((uint32_t)1 << 6)) {
+				buffer_append_float32_auto(send_buffer, gyro[0], &ind);
+			}
+			if (mask & ((uint32_t)1 << 7)) {
+				buffer_append_float32_auto(send_buffer, gyro[1], &ind);
+			}
+			if (mask & ((uint32_t)1 << 8)) {
+				buffer_append_float32_auto(send_buffer, gyro[2], &ind);
+			}
+
+			if (mask & ((uint32_t)1 << 9)) {
+				buffer_append_float32_auto(send_buffer, mag[0], &ind);
+			}
+			if (mask & ((uint32_t)1 << 10)) {
+				buffer_append_float32_auto(send_buffer, mag[1], &ind);
+			}
+			if (mask & ((uint32_t)1 << 11)) {
+				buffer_append_float32_auto(send_buffer, mag[2], &ind);
+			}
+
+			if (mask & ((uint32_t)1 << 12)) {
+				buffer_append_float32_auto(send_buffer, q[0], &ind);
+			}
+			if (mask & ((uint32_t)1 << 13)) {
+				buffer_append_float32_auto(send_buffer, q[1], &ind);
+			}
+			if (mask & ((uint32_t)1 << 14)) {
+				buffer_append_float32_auto(send_buffer, q[2], &ind);
+			}
+			if (mask & ((uint32_t)1 << 15)) {
+				buffer_append_float32_auto(send_buffer, q[3], &ind);
+			}
+
+			send_buffer[ind++] = backup.config.controller_id;
+
+			reply_func(send_buffer, ind);
+		} break;
 
 	case COMM_FW_INFO: {
 		// Write at most the first max_len characters of str into buffer,
@@ -1046,21 +1089,21 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		reply_func(send_buffer, ind);
 	} break;
 
-	// Blocking commands
-	case COMM_TERMINAL_CMD:
-	case COMM_PING_CAN:
-	case COMM_CAN_UPDATE_BAUD_ALL:
-		if (!is_blocking) {
-			memcpy(blocking_thread_cmd_buffer, data - 1, len + 1);
-			blocking_thread_cmd_len = len + 1;
+		// Blocking commands
+		case COMM_TERMINAL_CMD:
+		case COMM_PING_CAN:
+		case COMM_CAN_UPDATE_BAUD_ALL:
+			if (!is_blocking) {
+				memcpy(blocking_thread_cmd_buffer, data - 1, len + 1);
+				blocking_thread_cmd_len = len + 1;
 			is_blocking = true;
 			send_func_blocking = reply_func;
-			xSemaphoreGive(block_sem);
-		}
-		break;
+				xSemaphoreGive(block_sem);
+			}
+			break;
 
-	default:
-		break;
+		default:
+			break;
 	}
 }
 
@@ -1134,7 +1177,7 @@ int commands_printf_lisp(const char* format, ...) {
 	int len;
 
 	char *print_buffer = malloc(PRINT_BUFFER_SIZE);
-
+	
 
 	print_buffer[0] = COMM_LISP_PRINT;
 	int offset = 1;
@@ -1167,7 +1210,7 @@ int commands_printf_lisp(const char* format, ...) {
 			i += prefix_len;
 			len_to_print += prefix_len;
 		}
-
+		
 		if (len_to_print > PRINT_BUFFER_SIZE) {
 			len_to_print = PRINT_BUFFER_SIZE;
 		}
@@ -1190,7 +1233,7 @@ int commands_printf_lisp(const char* format, ...) {
 	return len_to_print - 1;
 }
 
-void commands_init_plot(char *namex, char *namey) {
+void commands_init_plot(const char *namex, const char *namey) {
 	int ind = 0;
 	uint8_t *send_buffer_global = mempools_get_packet_buffer();
 	send_buffer_global[ind++] = COMM_PLOT_INIT;
@@ -1204,7 +1247,7 @@ void commands_init_plot(char *namex, char *namey) {
 	mempools_free_packet_buffer(send_buffer_global);
 }
 
-void commands_plot_add_graph(char *name) {
+void commands_plot_add_graph(const char *name) {
 	int ind = 0;
 	uint8_t *send_buffer_global = mempools_get_packet_buffer();
 	send_buffer_global[ind++] = COMM_PLOT_ADD_GRAPH;
@@ -1232,12 +1275,64 @@ void commands_send_plot_points(float x, float y) {
 	commands_send_packet(buffer, ind);
 }
 
-void commands_send_app_data(unsigned char *data, unsigned int len) {
+void commands_send_app_data(unsigned char *data, unsigned int len, int interface, int can_id) {
 	int32_t index = 0;
 	uint8_t *send_buffer_global = mempools_get_packet_buffer();
 	send_buffer_global[index++] = COMM_CUSTOM_APP_DATA;
 	memcpy(send_buffer_global + index, data, len);
 	index += len;
-	commands_send_packet(send_buffer_global, index);
+
+	switch (interface) {
+	case 0:
+		commands_send_packet(send_buffer_global, index);
+		break;
+
+	case 1:
+		comm_usb_send_packet(send_buffer_global, index);
+		break;
+
+	case 2:
+		comm_can_send_buffer(can_id, send_buffer_global, index, 3);
+		break;
+
+	case 3:
+		comm_uart_send_packet(send_buffer_global, index, 0);
+		break;
+
+	case 4:
+		comm_uart_send_packet(send_buffer_global, index, 1);
+		break;
+
+	case 5:
+		break;
+
+	case 6:
+		comm_wifi_send_packet_local(send_buffer_global, index);
+		break;
+
+	case 7:
+		comm_wifi_send_packet_hub(send_buffer_global, index);
+		break;
+
+	case 8:
+		comm_ble_send_packet(send_buffer_global, index);
+		break;
+
+	default:
+		break;
+	}
+
+
 	mempools_free_packet_buffer(send_buffer_global);
+}
+
+bool commands_set_app_data_handler(void(*func)(unsigned char *data, unsigned int len)) {
+	if (utils_is_func_valid(func)) {
+		appdata_func = func;
+		return true;
+	} else {
+		appdata_func = 0;
+	}
+
+	return false;
 }

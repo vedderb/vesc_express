@@ -16,6 +16,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
+#include <stdint.h>   // for uint8_t, uint32_t, etc.
+#include <stdbool.h>  // for bool, true, false
+#include <stddef.h>   // for size_t
 
 #include "lispif_rgbled_extensions.h"
 #include "lispif.h"
@@ -161,9 +164,7 @@ esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
 	return ESP_OK;
 }
 
-static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-
+void rgbled_deinit() {
 	if (led_chan != NULL) {
 		rmt_tx_wait_all_done(led_chan, 100);
 		rmt_disable(led_chan);
@@ -180,8 +181,34 @@ static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
 		gpio_reset_pin(led_pin_driver);
 		led_pin_driver = -1;
 	}
+}
+
+static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+
+	rgbled_deinit();
 
 	return ENC_SYM_TRUE;
+}
+
+bool rgbled_init(int pin) {
+	rgbled_deinit();
+
+	led_pin_driver = pin;
+
+	rmt_tx_channel_config_t tx_chan_config = {
+			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
+			.gpio_num = pin,
+			.mem_block_symbols = 64, // increase the block size can make the LED less flickering
+			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
+			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
+	};
+	rmt_new_tx_channel(&tx_chan_config, &led_chan);
+
+	rmt_new_led_strip_encoder(&led_encoder);
+	rmt_enable(led_chan);
+
+	return true;
 }
 
 static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
@@ -201,28 +228,12 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	unsigned int type_led = 0;
 	if (argn >= 2) {
 		type_led = lbm_dec_as_u32(args[1]);
-		if (type_led >= 4) {
+		if (type_led > 4) {
 			lbm_set_error_reason("Invalid LED type");
 			return ENC_SYM_TERROR;
 		}
 	}
-
-	ext_rgbled_deinit(0, 0);
-
-	led_type_driver = type_led;
-	led_pin_driver = pin;
-
-	rmt_tx_channel_config_t tx_chan_config = {
-			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
-			.gpio_num = pin,
-			.mem_block_symbols = 64, // increase the block size can make the LED less flickering
-			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
-			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
-	};
-	rmt_new_tx_channel(&tx_chan_config, &led_chan);
-
-	rmt_new_led_strip_encoder(&led_encoder);
-	rmt_enable(led_chan);
+	rgbled_init(pin);
 
 	return ENC_SYM_TRUE;
 }
@@ -235,7 +246,7 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 	uint8_t type_led = 0;
 	if (argn >= 2) {
 		type_led = lbm_dec_as_u32(args[1]);
-		if (type_led >= 4) {
+		if (type_led > 4) {
 			lbm_set_error_reason("Invalid LED type");
 			return ENC_SYM_TERROR;
 		}
@@ -267,7 +278,7 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
-	if ((argn != 3 && argn != 4) || !lbm_is_array_rw(args[0]) ||
+	if ((argn != 3 && argn != 4) || !lbm_is_array_r(args[0]) ||
 			!lbm_is_number(args[1]) || (!lbm_is_number(args[2]) && !lbm_is_list(args[2]))) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
@@ -281,7 +292,7 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	char *invalid_arr_msg = "Invalid LED array";
 
 	uint8_t type_led = led_data[0] & 0x0F;
-	if (type_led >= 4) {
+	if (type_led > 4) {
 		lbm_set_error_reason(invalid_arr_msg);
 		return ENC_SYM_TERROR;
 	}
@@ -402,6 +413,11 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+void rgbled_update(uint8_t * data, size_t size) {
+    if (size < 1) return;
+    rmt_transmit(led_chan, led_encoder, data, size, &tx_config);
+}
+
 static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
 	if (led_encoder == NULL || led_chan == NULL) {
 		lbm_set_error_reason("Please run rgbled-init first");
@@ -423,7 +439,7 @@ static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
 
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
 
-	rmt_transmit(led_chan, led_encoder, (uint8_t*)array->data + 1, array->size - 1, &tx_config);
+	rgbled_update((uint8_t*)array->data + 1, array->size - 1);
 
 	return ENC_SYM_TRUE;
 }

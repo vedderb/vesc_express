@@ -175,7 +175,7 @@ static void prof_timer_callback(void* arg) {
 }
 
 static bool pause_eval(uint32_t num_free, uint32_t timeout_ms) {
-	if (!lisp_thd_running) {
+		if (!lisp_thd_running) {
 		return false;
 	}
 	
@@ -737,6 +737,8 @@ void lispif_stop(void) {
 		return;
 	}
 
+	lispif_stop_lib();
+
 	lispif_lock_lbm();
 
 	lbm_kill_eval();
@@ -774,7 +776,7 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 	int32_t code_len = flash_helper_code_size(CODE_IND_LISP);
 
 	if (!load_code || (code_data != 0 && code_len > 0)) {
-		lispif_disable_all_events();
+		lispif_disable_all_events();		
 
 		bool save_heap = lisp_thd_running && lbm_image_exists();
 
@@ -880,21 +882,50 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 
 				if (num_imports > 0 && num_imports < 500) {
 					for (int i = 0;i < num_imports;i++) {
-						char *name = code_data + ind;
-						ind += strlen(name) + 1;
-						int32_t offset = buffer_get_int32((uint8_t*)code_data, &ind);
-						int32_t len = buffer_get_int32((uint8_t*)code_data, &ind);
+					char *name = code_data + ind;
+					ind += strlen(name) + 1;
+					int32_t offset = buffer_get_int32((uint8_t*)code_data, &ind);
+					int32_t len = buffer_get_int32((uint8_t*)code_data, &ind);
 
-						lbm_value val;
+					// Bounds check first
+					if (offset < 0 || len < 0
+						|| (int64_t)offset + len > (int64_t)code_len) {
+						continue;
+					}
+
+					lbm_value val;
+					bool handled = false;
+
+					// Try native lib path if it’s big enough to have a header
+					if (len > 12) {
+						uint32_t magic_be = 0;
+						memcpy(
+							&magic_be, (const uint8_t *)code_data + offset,
+							sizeof(magic_be)
+						);
+
+						if (magic_be == __builtin_bswap32(NATIVE_LIB_MAGIC)) {
+							uint8_t *irom_base =
+								(uint8_t *)utils_drom_to_irom(code_data)
+								+ offset;
+
+							lbm_value val = lbm_enc_u32((uint32_t)irom_base);
+							lbm_define(name, val);
+							handled = true;
+						}
+					}
+
+					// Fallback: normal Lisp import
+					if (!handled) {
 						if (lbm_share_array_const(&val, code_data + offset, len)) {
 							lbm_define(name, val);
 						}
 					}
 				}
-
-				lbm_image_save_global_env();
 			}
+				lbm_image_save_global_env();
 		}
+	}
 
 		if (load_code) {
 			static lbm_string_channel_state_t string_tok_state;

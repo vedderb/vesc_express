@@ -83,6 +83,10 @@ static volatile bool use_vesc_decoder = true;
 
 static volatile int rx_recovery_cnt = 0;
 
+// Function pointers
+static bool(*sid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
+static bool(*eid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
+
 // Private functions
 static void update_baud(CAN_BAUD baudrate);
 
@@ -610,6 +614,12 @@ static void process_task(void *arg) {
 			}
 
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
+            const bool     extd = msg->extd;
+            if (extd) {
+                if (eid_callback) eid_callback(msg->identifier, msg->data, msg->data_length_code);
+            } else {
+                if (sid_callback) sid_callback(msg->identifier, msg->data, msg->data_length_code);
+            }
 
 			if (use_vesc_decoder) {
 				if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
@@ -748,7 +758,7 @@ static void update_baud(CAN_BAUD baudrate) {
 	case CAN_BAUD_75K: {
 		// Invalid
 	} break;
-
+	
 	case CAN_BAUD_100K: {
 		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_100KBITS();
 		t_config = t_config2;
@@ -883,11 +893,11 @@ void comm_can_update_baudrate(int delay_msec) {
 
 	twai_stop();
 	twai_driver_uninstall();
-
+	
 	if (delay_msec > 0) {
 		vTaskDelay(delay_msec / portTICK_PERIOD_MS);
 	}
-
+	
 	update_baud(backup.config.can_baud_rate);
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
@@ -958,7 +968,7 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 	}
 
 	twai_transmit(&tx_msg, 5);
-
+	
 	xSemaphoreGive(send_mutex);
 }
 
@@ -986,8 +996,34 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 	}
 
 	twai_transmit(&tx_msg, 5);
-
+	
 	xSemaphoreGive(send_mutex);
+}
+
+/**
+ * Set function to be called when standard CAN frames are received.
+ *
+ * The callback should return true if the frame was used by the application, false otherwise. if
+ * the frame was used, no further processing will be done here.
+ *
+ * @param p_func
+ * Pointer to the function.
+ */
+void comm_can_set_sid_rx_callback(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len)) {
+	sid_callback = p_func;
+}
+
+/**
+ * Set function to be called when extended CAN frames are received.
+ *
+ * The callback should return true if the frame was used by the application, false otherwise. if
+ * the frame was used, no further processing will be done here.
+ *
+ * @param p_func
+ * Pointer to the function.
+ */
+void comm_can_set_eid_rx_callback(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len)) {
+	eid_callback = p_func;
 }
 
 /**
