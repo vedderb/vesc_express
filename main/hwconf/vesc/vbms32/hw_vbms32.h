@@ -190,6 +190,9 @@ typedef struct {
 	
 	// Wait for init done before enabling power switch
 	bool psw_wait_init;
+
+	// Enable onboard beeper
+	bool beeper_enabled;
 } main_config_t;
 
 // Default setting Overrides

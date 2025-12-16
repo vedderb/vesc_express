@@ -273,6 +273,11 @@
 #define CONF_PSW_WAIT_INIT 0
 #endif
 
+// Beeper Enabled
+#ifndef CONF_BEEPER_ENABLED
+#define CONF_BEEPER_ENABLED 1
+#endif
+
 // VBMS32_CONF_DEFAULT_H_
 #endif
 
