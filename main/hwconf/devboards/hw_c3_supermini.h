@@ -20,6 +20,8 @@
 /* ESP32C3 Supermini
    - https://www.fambach.net/esp32-c3-super-mini-board/
    - https://forum.esk8.news/t/usb-c-to-vesc-can-forward-adapter-cheap-and-diy/79789
+   
+   HW_HEADER=hwconf/devboards/hw_c3_supermini.h && HW_SRC=hwconf/devboards/hw_c3_supermini.c && idf.py build
    */
 
 #ifndef MAIN_HWCONF_C3_SUPERMINI_H_
