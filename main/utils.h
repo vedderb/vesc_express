@@ -112,4 +112,16 @@ static inline void utils_norm_angle_rad(float *angle) {
 	while (*angle >=  M_PI) { *angle -= 2.0 * M_PI; }
 }
 
+static inline void* utils_drom_to_irom(void* drom_addr) {
+    uint32_t addr = (uint32_t)drom_addr;
+    if (addr >= 0x3C000000 && addr < 0x3C800000) {
+        uint32_t offset = addr - 0x3C000000;
+        return (void*)(0x42000000 + offset);
+    }
+    return drom_addr;
+}
+
+void utils_sys_lock_cnt(void);
+void utils_sys_unlock_cnt(void);
+bool utils_is_func_valid (void * func);
 #endif /* MAIN_UTILS_H_ */

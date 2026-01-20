@@ -21,6 +21,9 @@
 #include "esp_partition.h"
 #include "crc.h"
 #include "buffer.h"
+#include "eval_cps.h"
+#include "nvs_flash.h"
+#include "lispif.h"
 
 #include <string.h>
 
@@ -256,4 +259,46 @@ uint16_t flash_helper_code_flags(int ind) {
 
 flast_stats flash_helper_stats(void) {
 	return m_stats;
+}
+
+bool check_eeprom_addr(int addr) {
+	if (addr < 0 || addr > 127) {
+		lbm_set_error_reason("Address must be 0 to 127");
+		return false;
+	}
+
+	return true;
+}
+
+bool store_eeprom_var(eeprom_var *v, int address) {
+	if (address < 0 || address > 127) {
+		return false;
+	}
+
+	char buf[10];
+	sprintf(buf, "v%d", address);
+
+	nvs_handle_t my_handle;
+	esp_err_t ok_op = nvs_open("lbm", NVS_READWRITE, &my_handle);
+	esp_err_t ok_set = nvs_set_u32(my_handle, buf, v->as_u32);
+	esp_err_t ok_com = nvs_commit(my_handle);
+	nvs_close(my_handle);
+
+	return ok_op == ESP_OK && ok_set == ESP_OK && ok_com == ESP_OK;
+}
+
+bool read_eeprom_var(eeprom_var *v, int address) {
+	if (address < 0 || address > 127) {
+		return false;
+	}
+
+	char buf[10];
+	sprintf(buf, "v%d", address);
+
+	nvs_handle_t my_handle;
+	esp_err_t ok_op = nvs_open("lbm", NVS_READONLY, &my_handle);
+	esp_err_t ok_set = nvs_get_u32(my_handle, buf, &v->as_u32);
+	nvs_close(my_handle);
+
+	return ok_op == ESP_OK && ok_set == ESP_OK;
 }
