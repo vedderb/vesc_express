@@ -256,7 +256,15 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		send_buffer[ind++] = 1; // One custom config
 
 		send_buffer[ind++] = 0; // No phase filters
+#ifdef QMLUI_HEADER_HW
+#ifdef QMLUI_HW_FULLSCREEN
+		send_buffer[ind++] = 2; // Has HW QML (fullscreen)
+#else
+		send_buffer[ind++] = 1; // Has HW QML
+#endif
+#else
 		send_buffer[ind++] = 0; // No HW QML
+#endif
 
 		if (flash_helper_code_size(CODE_IND_QML) > 0) {
 			send_buffer[ind++] = flash_helper_code_flags(CODE_IND_QML);
@@ -778,6 +786,31 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		lispif_process_cmd(data - 1, len + 1, reply_func);
 		break;
 	}
+
+	case COMM_GET_QML_UI_HW: {
+#ifdef QMLUI_HEADER_HW
+		int32_t ind = 0;
+
+		int32_t len_qml = buffer_get_int32(data, &ind);
+		int32_t ofs_qml = buffer_get_int32(data, &ind);
+
+		if (ofs_qml < 0 || len_qml < 0 ||
+				(len_qml + ofs_qml) > (int32_t)data_qml_hw_len ||
+				len_qml > (PACKET_MAX_PL_LEN - 10)) {
+			break;
+		}
+
+		uint8_t *send_buffer_global = mempools_get_packet_buffer();
+		ind = 0;
+		send_buffer_global[ind++] = packet_id;
+		buffer_append_int32(send_buffer_global, data_qml_hw_len, &ind);
+		buffer_append_int32(send_buffer_global, ofs_qml, &ind);
+		memcpy(send_buffer_global + ind, data_qml_hw + ofs_qml, len_qml);
+		ind += len_qml;
+		reply_func(send_buffer_global, ind);
+		mempools_free_packet_buffer(send_buffer_global);
+#endif
+	} break;
 
 	case COMM_GET_QML_UI_APP:
 	case COMM_LISP_READ_CODE: {

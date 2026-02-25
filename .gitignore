@@ -8,6 +8,8 @@ sdkconfig
 .vscode
 .DS_Store
 build_output/
+main/hwconf/**/*/qmlui_hw.c
+main/hwconf/**/*/qmlui_hw.h
 
 # These should maybe be committed instead, but they weren't before and I don't
 # feel like making that decision right now...
