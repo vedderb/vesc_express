@@ -299,7 +299,6 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	}
 
 	rmt_enable(led_chan);
-	gpio_set_drive_capability((gpio_num_t)pin, GPIO_DRIVE_CAP_3); // max drive strength for EMF robustness on long LED runs
 
 	return ENC_SYM_TRUE;
 }
