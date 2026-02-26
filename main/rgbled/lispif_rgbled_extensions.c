@@ -43,7 +43,6 @@ typedef struct {
 
 static rmt_channel_handle_t led_chan = NULL;
 static rmt_encoder_handle_t led_encoder = NULL;
-static unsigned int led_type_driver = 0;
 static int led_pin_driver = -1;
 static unsigned int led_timing_driver = 0;
 
@@ -209,7 +208,7 @@ static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
-	if (argn < 1 || argn > 3) {
+	if (argn < 1 || argn > 2) {
 		lbm_set_error_reason((char*)lbm_error_str_num_args);
 		return ENC_SYM_TERROR;
 	}
@@ -220,23 +219,14 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	unsigned int type_led = 0;
-	if (argn >= 2) {
-		type_led = lbm_dec_as_u32(args[1]);
-		if (type_led >= 4) {
-			lbm_set_error_reason("Invalid LED type");
-			return ENC_SYM_TERROR;
-		}
-	}
-
 	unsigned int timing_preset = 0;
-	if (argn >= 3) {
-		timing_preset = lbm_dec_as_u32(args[2]);
+	if (argn >= 2) {
+		timing_preset = lbm_dec_as_u32(args[1]);
 	}
 
 	// Skip full reinit if already configured on the same pin with the same type.
 	// Avoids tearing down the RMT channel every frame, which leaves the pin floating.
-	if (pin == led_pin_driver && type_led == led_type_driver && timing_preset == led_timing_driver && led_chan != NULL) {
+	if (pin == led_pin_driver && timing_preset == led_timing_driver && led_chan != NULL) {
 		return ENC_SYM_TRUE;
 	}
 
@@ -267,7 +257,6 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
 	gpio_set_level((gpio_num_t)pin, 0);
 
-	led_type_driver = type_led;
 	led_pin_driver = pin;
 	led_timing_driver = timing_preset;
 
