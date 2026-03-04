@@ -3974,8 +3974,8 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 	}
 
 	bool report_size = false;
-	uint count = INT_MAX;
-	uint offset = 0;
+	unsigned int count = INT_MAX;
+	unsigned int offset = 0;
 	
 	// Count comes before offset, 'size can appear anywhere after path
 	for (uint i = 1;i < argn;i++) {
@@ -3984,11 +3984,8 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 		} else if (lbm_is_number(args[i])) {
 			if (count == INT_MAX) {
 				count = lbm_dec_as_u32(args[i]);
-			} else if (offset == 0) {
-				offset = lbm_dec_as_u32(args[i]);
 			} else {
-				lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
-				return ENC_SYM_TERROR;
+				offset = lbm_dec_as_u32(args[i]);
 			}
 		} else {
 			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
@@ -4004,8 +4001,8 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 
 	bool merror = false;
 	struct dirent *dir;
-	uint cur_offset = 0;
-	uint cur_count = 0;
+	unsigned int cur_offset = 0;
+	unsigned int cur_count = 0;
 	DIR *d = opendir(path_full);
 	if (d) {
 		while ((dir = readdir(d)) != NULL) {
