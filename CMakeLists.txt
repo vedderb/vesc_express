@@ -64,6 +64,36 @@ if(DEFINED HW_NAME AND DEFINED HW_TARGET AND DEFINED HW_FILE_NAME)
     
     # Pass through hw file paths
     add_compile_definitions(HW_HEADER="${HW_FILE}.h" HW_SOURCE="${HW_FILE}.c")
+
+    # Auto-generate QML files if any *.qml files exist alongside the HW config
+    get_filename_component(HW_DIR ${HW_FILE_NAME} DIRECTORY)
+    file(GLOB QMLUI_QML_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/${HW_DIR}/*.qml")
+    
+    if(QMLUI_QML_SRCS)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        set(QMLUI_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${HW_DIR}")
+        set(QMLUI_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/tools/create_qmlui_hw.py")
+        
+        foreach(QMLUI_QML_SRC IN LISTS QMLUI_QML_SRCS)
+            # Tell CMake to re-run configuration if the QML file or generator changes
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${QMLUI_QML_SRC} ${QMLUI_GENERATOR})
+            
+            message(STATUS "Generating QMLUI HW from ${QMLUI_QML_SRC}")
+            execute_process(
+                COMMAND ${Python3_EXECUTABLE}
+                    "${QMLUI_GENERATOR}"
+                    "${QMLUI_QML_SRC}" "${QMLUI_OUT_DIR}"
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                RESULT_VARIABLE QMLUI_RESULT
+                OUTPUT_VARIABLE QMLUI_OUTPUT
+                ERROR_VARIABLE QMLUI_ERROR
+            )
+            if(NOT QMLUI_RESULT EQUAL 0)
+                message(FATAL_ERROR "Failed to generate QMLUI HW files:\n${QMLUI_ERROR}")
+            endif()
+            message(STATUS "${QMLUI_OUTPUT}")
+        endforeach()
+    endif()
 else ()
     message(FATAL_ERROR "Build target info missing.\nHW_NAME: ${HW_NAME}\nHW_TARGET: ${HW_TARGET}\nHW_FILE: ${HW_FILE_NAME}") 
 endif()
