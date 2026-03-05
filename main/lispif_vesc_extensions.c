@@ -3960,8 +3960,12 @@ static lbm_value ext_f_rm(lbm_value *args, lbm_uint argn) {
 
 // (f-ls path) -> ((path is-dir) (path is-dir) ...)
 // (f-ls path 'size) -> ((path is-dir size) (path is-dir size) ...)
+// (f-ls path count) -> ((path is-dir ) (path is-dir ) ...)
+// (f-ls path count offset) -> ((path is-dir ) (path is-dir ) ...)
+// (f-ls path count offset 'size) -> ((path is-dir ) (path is-dir ) ...)
+// (f-ls path count 'size) -> ((path is-dir ) (path is-dir ) ...)
 static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_RANGE(1, 2);
+	LBM_CHECK_ARGN_RANGE(1, 4);
 
 	char *path = dec_str_check(args[0]);
 	if (!path) {
@@ -3970,9 +3974,22 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 	}
 
 	bool report_size = false;
-	if (argn  == 2) {
-		if (lbm_is_symbol(args[1]) && lbm_dec_sym(args[1]) == sym_size) {
+	unsigned int count = INT_MAX;
+	unsigned int offset = 0;
+	
+	// Count comes before offset, 'size can appear anywhere after path
+	for (uint i = 1;i < argn;i++) {
+		if (lbm_is_symbol(args[i]) && lbm_dec_sym(args[i]) == sym_size) {
 			report_size = true;
+		} else if (lbm_is_number(args[i])) {
+			if (count == INT_MAX) {
+				count = lbm_dec_as_u32(args[i]);
+			} else {
+				offset = lbm_dec_as_u32(args[i]);
+			}
+		} else {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
 		}
 	}
 
@@ -3984,9 +4001,19 @@ static lbm_value ext_f_ls(lbm_value *args, lbm_uint argn) {
 
 	bool merror = false;
 	struct dirent *dir;
+	unsigned int cur_offset = 0;
+	unsigned int cur_count = 0;
 	DIR *d = opendir(path_full);
 	if (d) {
 		while ((dir = readdir(d)) != NULL) {
+			if (cur_offset < offset) {
+				cur_offset++;
+				continue;
+			}
+			if (cur_count >= count) {
+				break;
+			}
+			cur_count++;
 			lbm_value current = ENC_SYM_NIL;
 
 			int len_f = strlen(dir->d_name);
