@@ -9,9 +9,10 @@
 #include "lispif.h"
 #include "lispbm.h"
 
-#define DISPLAY_WIDTH		170
-#define DISPLAY_HEIGHT		320
-#define DISPLAY_X_OFFSET	35
+static int display_width = 170;
+static int display_height = 320;
+static int display_x_offset = 35;
+static int display_y_offset = 0;
 
 static int m_pin_reset = -1;
 static int m_pin_dc = -1;
@@ -180,14 +181,14 @@ static void blast_rgb888(uint8_t *data, uint32_t num_pix) {
 }
 
 bool disp_sh8601_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
-	if ((x + img->width) > DISPLAY_WIDTH || (y + img->height) > DISPLAY_HEIGHT) {
+	if ((x + img->width) > display_width || (y + img->height) > display_height) {
 		return false;
 	}
 
-	uint16_t cs = x + DISPLAY_X_OFFSET;
+	uint16_t cs = x + display_x_offset;
 	uint16_t ce = cs + img->width - 1;
-	uint16_t ps = y;
-	uint16_t pe = y + img->height - 1;
+	uint16_t ps = y + display_y_offset;
+	uint16_t pe = ps + img->height - 1;
 
 	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
 	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
@@ -241,10 +242,10 @@ bool disp_sh8601_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color
 void disp_sh8601_clear(uint32_t color) {
 	uint16_t clear_color_disp = to_disp_color(color);
 
-	uint16_t cs = DISPLAY_X_OFFSET;
-	uint16_t ce = DISPLAY_X_OFFSET + DISPLAY_WIDTH - 1;
-	uint16_t ps = 0;
-	uint16_t pe = DISPLAY_HEIGHT - 1;
+	uint16_t cs = display_x_offset;
+	uint16_t ce = display_x_offset + display_width - 1;
+	uint16_t ps = display_y_offset;
+	uint16_t pe = ps + display_height - 1;
 
 	uint8_t col[4] = {cs >> 8, cs, ce >> 8, ce};
 	uint8_t row[4] = {ps >> 8, ps, pe >> 8, pe};
@@ -255,7 +256,7 @@ void disp_sh8601_clear(uint32_t color) {
 	hwspi_begin();
 	command_start(0x2C);
 	hwspi_data_stream_start();
-	for (int i = 0; i < (DISPLAY_WIDTH * DISPLAY_HEIGHT); i ++) {
+	for (int i = 0; i < (display_width * display_height); i ++) {
 		hwspi_data_stream_write((uint8_t)(clear_color_disp));
 		hwspi_data_stream_write((uint8_t)(clear_color_disp >> 8));
 	}
@@ -286,6 +287,50 @@ static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
+    LBM_CHECK_ARGN_NUMBER(1);
+
+    uint32_t orientation = lbm_dec_as_u32(args[0]);
+    uint8_t madctl = 0;
+    lbm_value res = ENC_SYM_TRUE;
+
+    switch (orientation) {
+        case 0: // normal portrait
+            madctl = 0b00001000;
+            display_width = 170;
+            display_height = 320;
+			display_x_offset = 35;
+			display_y_offset = 0;
+            break;
+        case 1: // 90° CW
+            madctl = 0b10101000;
+            display_width = 320;
+            display_height = 170;
+			display_x_offset = 0;
+			display_y_offset = 35;
+            break;
+        case 2: // 180° 
+            madctl = 0b11001000;
+            display_width = 170;
+            display_height = 320;
+			display_x_offset = 35;
+			display_y_offset = 0;
+            break;
+        case 3: // 270° CW
+            madctl = 0b01101000;
+            display_width = 320;
+            display_height = 170;
+			display_x_offset = 0;
+			display_y_offset = 35;
+            break;
+        default:
+            return ENC_SYM_EERROR;
+    }
+
+    disp_sh8601_command(0x36, &madctl, 1);
+    return res;
+}
+
 void disp_sh8601_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int pin_dc, int clock_mhz) {
 	hwspi_init(clock_mhz, 0, -1, pin_sd0, pin_clk, pin_cs);
 	m_pin_reset = pin_reset;
@@ -304,6 +349,7 @@ void disp_sh8601_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int p
 	gpio_set_level(m_pin_dc, 1);
 
 	lbm_add_extension("ext-disp-cmd", ext_disp_cmd);
+	lbm_add_extension("ext-disp-orientation", ext_disp_orientation);
 }
 
 void disp_sh8601_command(uint8_t command, const uint8_t *args, int argn) {
