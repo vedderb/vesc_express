@@ -4,9 +4,10 @@
 (disp-load-sh8601 13 10 12 9 11 40)
 (disp-reset)
 
+(ext-disp-orientation 1)
+
 ; SH8601 initialization sequence from vendor's datasheet 
 (defun sh8601-init () {
-    (ext-disp-cmd 0x36 0x00)
     (ext-disp-cmd 0x3A 0x55)
     (ext-disp-cmd 0xB2 0x0C 0x0C 0x00 0x33 0x33)
     (ext-disp-cmd 0xB7 0x35)
