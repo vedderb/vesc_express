@@ -11,6 +11,7 @@ Drivers for a specific display is loaded with the associated `disp-load` functio
 1. disp-load-sh8501b
 2. disp-load-ili9341
 3. disp-load-ssd1306
+4. disp-load-sh8601
 
 Each disp-load function takes arguments specific to the display. These are
 explained below.
@@ -164,6 +165,30 @@ SPI clock at 40MHz:
 
 ```clj
 (disp-load-sh8501b 6 5 7 8 40)
+```
+
+## sh8601
+
+* Resolution: 170 * 320
+* Colors: 16Bit
+* Interface: SPI
+
+Compatible with all image formats supported by the graphics library.
+
+### disp-load-sh8601
+
+```clj
+(disp-load-sh8601 gpio-sd0 gpio-clk gpio-cs gpio-reset gpio-dc spi-mhz)
+```
+
+Loads the sh8601 driver. The driver uses hardware-SPI at rate `spi-mhz` on the
+`gpio-sd0` and `gpio-clk` GPIO pins.
+
+Example using GPIO pins 6,5,7 and 8 for sd0,clk,cs and reset running the
+SPI clock at 40MHz and DC on GPIO 9:
+
+```clj
+(disp-load-sh8601 6 5 7 8 9 40)
 ```
 
 ## ili9341
