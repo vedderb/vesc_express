@@ -72,6 +72,7 @@ int32_t vbms32_confparser_serialize_main_config_t(uint8_t *buffer, const main_co
 	buffer[ind++] = conf->t_psw_en;
 	buffer_append_float16(buffer, conf->t_psw_max_mos, 10, &ind);
 	buffer[ind++] = conf->psw_wait_init;
+	buffer[ind++] = conf->beeper_enabled;
 
 	return ind;
 }
@@ -146,6 +147,7 @@ bool vbms32_confparser_deserialize_main_config_t(const uint8_t *buffer, main_con
 	conf->t_psw_en = buffer[ind++];
 	conf->t_psw_max_mos = buffer_get_float16(buffer, 10, &ind);
 	conf->psw_wait_init = buffer[ind++];
+	conf->beeper_enabled = buffer[ind++];
 
 	return true;
 }
@@ -205,5 +207,6 @@ void vbms32_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->t_psw_en = CONF_T_PSW_EN;
 	conf->t_psw_max_mos = CONF_T_PSW_MAX_MOS;
 	conf->psw_wait_init = CONF_PSW_WAIT_INIT;
+	conf->beeper_enabled = CONF_BEEPER_ENABLED;
 }
 

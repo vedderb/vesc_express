@@ -993,6 +993,7 @@ typedef struct {
 	lbm_uint t_psw_en;
 	lbm_uint t_psw_max_mos;
 	lbm_uint psw_wait_init;
+	lbm_uint beeper_enabled;
 } vesc_syms;
 
 static vesc_syms syms_vesc = {0};
@@ -1073,6 +1074,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("t_psw_max_mos", comp);
 		} else if (comp == &syms_vesc.psw_wait_init) {
 			lbm_add_symbol_const("psw_wait_init", comp);
+		} else if (comp == &syms_vesc.beeper_enabled) {
+			lbm_add_symbol_const("beeper_enabled", comp);
 		}
 	}
 
@@ -1203,6 +1206,8 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &cfg->t_psw_max_mos, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.psw_wait_init)) {
 		res = get_or_set_bool(set, &cfg->psw_wait_init, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.beeper_enabled)) {
+		res = get_or_set_bool(set, &cfg->beeper_enabled, &set_arg);
 	}
 
 	return res;
