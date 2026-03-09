@@ -77,4 +77,6 @@ psw_status *comm_can_get_psw_status_id(int id);
 void comm_can_psw_switch(int id, bool is_on, bool plot);
 void comm_can_update_pid_pos_offset(int id, float angle_now, bool store);
 
+void comm_can_decode_msg(uint32_t eid, uint8_t* data8, int len, bool is_replaced);
+
 #endif /* MAIN_COMM_CAN_H_ */

@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 
 # You can set a HW here when e.g. building with the eclipse plugin
 # set(HW_NAME "Wcore")
+set(HW_NAME "VESC Assist")
 
 # Default build target Logic
 if(NOT DEFINED HW_NAME)
@@ -19,6 +20,8 @@ endif()
 # Look for hardware header files based on HW_NAME
 file(GLOB_RECURSE HW_HEADER_PATHS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     main/hwconf/hw_*.h
+    components/*/main/hwconf/hw_*.h
+
 )
 
 foreach(HW_HEADER_PATH ${HW_HEADER_PATHS})

@@ -614,6 +614,7 @@ static void process_task(void *arg) {
 				if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
 					if (msg->extd) {
 						decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+						comm_can_decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
 					}
 				}
 			}

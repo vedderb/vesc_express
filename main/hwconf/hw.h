@@ -20,10 +20,12 @@
 #ifndef MAIN_HWCONF_HW_H_
 #define MAIN_HWCONF_HW_H_
 
+#include HW_HEADER
+
 #include "conf_general.h"
 #include "adc.h"
 
-#include HW_HEADER
+// #include HW_HEADER
 
 #ifdef OVR_CONF_DEFAULT
 #include OVR_CONF_DEFAULT
