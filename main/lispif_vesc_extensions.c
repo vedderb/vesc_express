@@ -37,6 +37,7 @@
 #include "extensions/lbm_dyn_lib.h"
 #include "extensions/ttf_extensions.h"
 #include "lispif_disp_extensions.h"
+#include "lispif_touch_extensions.h"
 #include "lispif_wifi_extensions.h"
 #include "lispif_ble_extensions.h"
 #include "lispif_rgbled_extensions.h"
@@ -1944,6 +1945,8 @@ static lbm_value ext_enable_event(lbm_value *args, lbm_uint argn) {
 		event_wifi_disconnect_en = en;
 	} else if (name == sym_event_cmds_data_tx) {
 		event_cmds_data_tx_en = en;
+	} else if (name == sym_event_touch_int) {
+		event_touch_int_en = en;
 	} else if (name == sym_bms_chg_allow) {
 		event_bms_chg_allow_en = en;
 	} else if (name == sym_bms_bal_ovr) {
@@ -6675,6 +6678,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lispif_load_rgbled_extensions();
 
 		lispif_load_disp_extensions();
+		lispif_load_touch_extensions();
 		lispif_load_wifi_extensions();
 
 		if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
@@ -6813,6 +6817,7 @@ void lispif_disable_all_events(void) {
 	event_ble_rx_en = false;
 	event_wifi_disconnect_en = false;
 	event_cmds_data_tx_en = false;
+	event_touch_int_en = false;
 
 	event_bms_chg_allow_en = false;
 	event_bms_bal_ovr_en = false;
