@@ -2,12 +2,16 @@ cmake_minimum_required(VERSION 3.5)
 
 # You can set a HW here when e.g. building with the eclipse plugin
 # set(HW_NAME "Wcore")
+# set(HW_NAME "Devkit C6")
+set(HW_NAME "WS147T-C6")
 
 # Default build target Logic
 if(NOT DEFINED HW_NAME)
     if(DEFINED IDF_TARGET)
         if(IDF_TARGET STREQUAL "esp32s3")
             set(HW_NAME "Devkit S3")
+        elseif(IDF_TARGET STREQUAL "esp32c6")
+            set(HW_NAME "Devkit C6")
         else()
             set(HW_NAME "VESC Express T")
         endif()
@@ -71,6 +75,24 @@ else ()
 endif()
 
 message("Processing target ${HW_NAME} on ${HW_TARGET} for file ${HW_FILE_NAME}")
+
+# Set up sdkconfig.defaults chain
+# Base defaults + target-specific + component-specific (if from component)
+set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults")
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults.${HW_TARGET}")
+    list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults.${HW_TARGET}")
+endif()
+
+# Check if hardware is from a component and add component's sdkconfig.defaults
+if(HW_FILE_NAME MATCHES "^components/([^/]+)/")
+    set(HW_COMPONENT_NAME ${CMAKE_MATCH_1})
+    set(COMPONENT_SDKCONFIG "${CMAKE_CURRENT_SOURCE_DIR}/components/${HW_COMPONENT_NAME}/sdkconfig.defaults")
+    if(EXISTS ${COMPONENT_SDKCONFIG})
+        list(APPEND SDKCONFIG_DEFAULTS ${COMPONENT_SDKCONFIG})
+        message("Adding component sdkconfig: ${COMPONENT_SDKCONFIG}")
+    endif()
+endif()
 
 # The following lines of boilerplate have to be in your project's
 # CMakeLists in this exact order for cmake to work correctly

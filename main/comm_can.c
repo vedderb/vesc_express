@@ -32,7 +32,9 @@
 #include "commands.h"
 #include "nmea.h"
 #include "ublox.h"
+#ifndef CONFIG_IDF_TARGET_ESP32C6
 #include "lispif.h"
+#endif
 #include "bms.h"
 #include "utils.h"
 #include "soc/gpio_sig_map.h"
@@ -607,9 +609,9 @@ static void process_task(void *arg) {
 			if (rx_read >= RXBUF_LEN) {
 				rx_read = 0;
 			}
-
+#ifndef CONFIG_IDF_TARGET_ESP32C6
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
-
+#endif
 			if (use_vesc_decoder) {
 				if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
 					if (msg->extd) {
@@ -919,6 +921,17 @@ void comm_can_change_pins(int tx, int rx) {
 	g_config.tx_io = tx;
 	g_config.rx_io = rx;
 
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+	// The C6 has internal pull-ups on the CAN pins, so disable them to avoid issues with some CAN transceivers.
+	gpio_set_pull_mode(tx, GPIO_FLOATING);
+	esp_rom_gpio_connect_out_signal(tx, TWAI0_TX_IDX, false, false);
+	esp_rom_gpio_pad_select_gpio(tx);
+
+	gpio_set_pull_mode(rx, GPIO_FLOATING);
+	esp_rom_gpio_connect_in_signal(rx, TWAI0_RX_IDX, false);
+	esp_rom_gpio_pad_select_gpio(rx);
+	gpio_set_direction(rx, GPIO_MODE_INPUT);
+#else	
 	gpio_set_pull_mode(tx, GPIO_FLOATING);
 	esp_rom_gpio_connect_out_signal(tx, TWAI_TX_IDX, false, false);
 	esp_rom_gpio_pad_select_gpio(tx);
@@ -927,6 +940,7 @@ void comm_can_change_pins(int tx, int rx) {
 	esp_rom_gpio_connect_in_signal(rx, TWAI_RX_IDX, false);
 	esp_rom_gpio_pad_select_gpio(rx);
 	gpio_set_direction(rx, GPIO_MODE_INPUT);
+#endif
 
 	twai_start();
 

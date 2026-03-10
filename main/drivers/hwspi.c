@@ -32,7 +32,10 @@
 	#define CLEAR_CS()		(GPIO.out_w1tc = 1 << m_pin_cs)
 #elif CONFIG_IDF_TARGET_ESP32C3
 	#define SET_CS() 		(GPIO.out_w1ts.val = 1 << m_pin_cs)
-	#define CLEAR_CS()		(GPIO.out_w1tc.val = 1 << m_pin_cs)
+#define CLEAR_CS()		(GPIO.out_w1tc.val = 1 << m_pin_cs)
+#elif CONFIG_IDF_TARGET_ESP32C6
+	#define SET_CS() 		(GPIO.out_w1ts.val = 1 << m_pin_cs)
+	#define CLEAR_CS()		(GPIO.out_w1tc.val = 1 << m_pin_cs)	
 #else
 	#error "Unsupported target"
 #endif
