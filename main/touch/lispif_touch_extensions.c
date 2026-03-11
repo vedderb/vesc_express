@@ -648,10 +648,6 @@ static lbm_value ext_touch_mirror_y(lbm_value *args, lbm_uint argn) {
 }
 
 void lispif_load_touch_extensions(void) {
-	if (!touch_runtime_init()) {
-		return;
-	}
-
 	lbm_add_symbol_const("cst816s", &sym_cst816s);
 	lbm_add_symbol_const("gt911", &sym_gt911);
 	lbm_add_symbol_const("xpt2046", &sym_xpt2046);
