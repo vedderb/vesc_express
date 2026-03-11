@@ -52,7 +52,7 @@
 #include "terminal.h"
 #include "main.h"
 #include "mempools.h"
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 #include "lispif.h"
 #endif
 #include "bms.h"
@@ -129,7 +129,7 @@ void app_main(void) {
 
 #ifdef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 	lispif_init();
 	HW_POST_LISPIF_HOOK();
 #endif
@@ -175,7 +175,7 @@ void app_main(void) {
 
 #ifndef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 	lispif_init();
 #endif	
 #endif

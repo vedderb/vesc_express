@@ -55,12 +55,12 @@
 #include "comm_wifi.h"
 #include "log.h"
 #include "nmea.h"
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 #include "lispif.h"
 #endif
 #include "flash_helper.h"
 #include "bms.h"
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 #include "imu.h"
 #endif
 #include "esp_efuse.h"
@@ -272,7 +272,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 
 		send_buffer[ind++] = 0; // No NRF flags
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 		if (lispif_fw_name()[0] == 0) {
 			strcpy((char*)(send_buffer + ind), FW_NAME);
 			ind += strlen(FW_NAME) + 1;
@@ -777,7 +777,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		reply_func(send_buffer, ind);
 	} break;
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 	case COMM_LISP_SET_RUNNING:
 	case COMM_LISP_GET_STATS:
 	case COMM_LISP_REPL_CMD:
@@ -928,7 +928,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_CUSTOM_APP_DATA:
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_LISP
 		lispif_process_custom_app_data(data, len);
 #endif
 		break;
@@ -942,7 +942,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		bms_process_cmd(data - 1, len + 1, reply_func);
 		break;
 	}
-#ifndef CONFIG_IDF_TARGET_ESP32C6
+#ifndef HW_EXCLUDE_IMU
 	case COMM_GET_IMU_DATA: {
 		int32_t ind = 0;
 		uint8_t send_buffer[70];
@@ -1136,7 +1136,7 @@ int commands_printf_lisp(const char* format, ...) {
 	if (!init_done) {
 		return 0;
 	}
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#ifdef HW_EXCLUDE_LISP
 	return 0;
 #else
 

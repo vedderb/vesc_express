@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.5)
 # You can set a HW here when e.g. building with the eclipse plugin
 # set(HW_NAME "Wcore")
 # set(HW_NAME "Devkit C6")
-# set(HW_NAME "WS147T-C6")
+set(HW_NAME "WS147T-C6")
 # set(HW_NAME "VESC Assist")
 
 # Default build target Logic
@@ -68,6 +68,24 @@ if(DEFINED HW_NAME AND DEFINED HW_TARGET AND DEFINED HW_FILE_NAME)
     elseif(NOT IDF_TARGET STREQUAL HW_TARGET)
         message(WARNING "IDF_TARGET (${IDF_TARGET}) does not match HW_TARGET (${HW_TARGET}) from ${HW_NAME}. This may cause build issues.")
     endif()
+    
+    # Scan hardware header for exclusion flags
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/${HW_FILE_NAME}" HW_HEADER_CONTENT)
+    foreach(LINE IN LISTS HW_HEADER_CONTENT)
+        # Check for exclusion defines (with or without comments)
+        if(LINE MATCHES "^#define[ \t]+HW_EXCLUDE_LISP")
+            set(HW_EXCLUDE_LISP TRUE)
+            message(STATUS "Hardware requests: Exclude LispBM")
+        endif()
+        if(LINE MATCHES "^#define[ \t]+HW_EXCLUDE_LEGACY_I2C")
+            set(HW_EXCLUDE_LEGACY_I2C TRUE)
+            message(STATUS "Hardware requests: Exclude legacy I2C drivers")
+        endif()
+        if(LINE MATCHES "^#define[ \t]+HW_NO_DISPLAY_DRIVERS")
+            set(HW_NO_DISPLAY_DRIVERS TRUE)
+            message(STATUS "Hardware requests: Exclude display drivers")
+        endif()
+    endforeach()
     
     # Pass through hw file paths
     add_compile_definitions(HW_HEADER="${HW_FILE}.h" HW_SOURCE="${HW_FILE}.c")
