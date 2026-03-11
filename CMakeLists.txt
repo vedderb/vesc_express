@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.5)
 # You can set a HW here when e.g. building with the eclipse plugin
 # set(HW_NAME "Wcore")
 # set(HW_NAME "Devkit C6")
-set(HW_NAME "WS147T-C6")
+# set(HW_NAME "WS147T-C6")
+# set(HW_NAME "VESC Assist")
 
 # Default build target Logic
 if(NOT DEFINED HW_NAME)

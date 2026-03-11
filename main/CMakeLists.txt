@@ -28,11 +28,69 @@ set(COMPONENT_SRCS
 "config/confsrc.c"
 "hwconf/hw.c"
 
+"lispif.c"
+"lispif_events.c"
+"lbm_vesc_utils.c"
+"lispif_vesc_extensions.c"
+"lbm_color_extensions.c"
+"lispBM/src/env.c"
+"lispBM/src/fundamental.c"
+"lispBM/src/heap.c"
+"lispBM/src/lbm_memory.c"
+"lispBM/src/print.c"
+"lispBM/src/stack.c"
+"lispBM/src/symrepr.c"
+"lispBM/src/tokpar.c"
+"lispBM/src/extensions.c"
+"lispBM/src/lispbm.c"
+"lispBM/src/eval_cps.c"
+"lispBM/platform/freertos/src/platform_mutex.c"
+"lispBM/platform/freertos/src/platform_timestamp.c"
+"lispBM/src/lbm_channel.c"
+"lispBM/src/lbm_c_interop.c"
+"lispBM/src/lbm_custom_type.c"
+"lispBM/src/lbm_flat_value.c"
+"lispBM/src/lbm_prof.c"
+"lispBM/src/lbm_defrag_mem.c"
+"lispBM/src/lbm_image.c"
+"lispBM/src/extensions/array_extensions.c"
+"lispBM/src/extensions/math_extensions.c"
+"lispBM/src/extensions/string_extensions.c"
+"lispBM/src/extensions/display_extensions.c"
+"lispBM/src/extensions/tjpgd.c"
+"lispBM/src/extensions/mutex_extensions.c"
+"lispBM/src/extensions/lbm_dyn_lib.c"
+"lispBM/src/extensions/ttf_extensions.c"
+"lispBM/src/extensions/schrift.c"
+"lispBM/src/extensions/ttf_backend.c"
+
+"wifi/lispif_wifi_extensions.c"
+
 "ble/custom_ble.c"
+"ble/lispif_ble_extensions.c"
 
+"rgbled/lispif_rgbled_extensions.c"
+
+"display/lispif_disp_extensions.c"
+"display/disp_sh8501b.c"
+"display/disp_ili9341.c"
+"display/disp_ssd1306.c"
+"display/disp_st7789.c"
+"display/disp_ili9488.c"
+"display/disp_st7735.c"
+"display/disp_ssd1351.c"
+"display/disp_icna3306.c"
+
+"drivers/bme280/bme280.c"
+"drivers/bme280/bme280_if.c"
 "drivers/hwspi.c"
+"drivers/spi_bb.c"
+"drivers/enc_as504x.c"
+"drivers/imu/imu.c"
+"drivers/imu/lsm6ds3.c"
+"drivers/imu/ahrs.c"
 
-# "lowzip/lowzip.c"
+"lowzip/lowzip.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS
@@ -56,10 +114,19 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/rescue"
 "hwconf/avaspark"
 
+"lispBM"
+"lispBM/include"
+"lispBM/platform/freertos/include"
+"display"
+"wifi"
 "ble"
+"rgbled"
 "drivers"
-# "lowzip"
+"drivers/bme280"
+"drivers/imu"
+"lowzip"
 )
+
 
 register_component()
 
