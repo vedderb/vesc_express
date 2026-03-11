@@ -13,3 +13,5 @@ build_output/
 # feel like making that decision right now...
 managed_components/
 dependencies.lock
+components/
+components/*

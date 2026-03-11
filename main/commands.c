@@ -55,11 +55,14 @@
 #include "comm_wifi.h"
 #include "log.h"
 #include "nmea.h"
+#ifndef HW_EXCLUDE_LISP
 #include "lispif.h"
+#endif
 #include "flash_helper.h"
 #include "bms.h"
+#ifndef HW_EXCLUDE_LISP
 #include "imu.h"
-
+#endif
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
 #include "esp_vfs_fat.h"
@@ -203,7 +206,11 @@ static void block_task(void *arg) {
 void commands_init(void) {
 	print_mutex = xSemaphoreCreateMutex();
 	block_sem = xSemaphoreCreateBinary();
+#ifndef CONFIG_IDF_TARGET_ESP32C6
 	xTaskCreatePinnedToCore(block_task, "comm_block", 2500, NULL, 7, NULL, tskNO_AFFINITY);
+#else
+	xTaskCreatePinnedToCore(block_task, "comm_block", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+#endif
 	init_done = true;
 }
 
@@ -265,7 +272,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 
 		send_buffer[ind++] = 0; // No NRF flags
-
+#ifndef HW_EXCLUDE_LISP
 		if (lispif_fw_name()[0] == 0) {
 			strcpy((char*)(send_buffer + ind), FW_NAME);
 			ind += strlen(FW_NAME) + 1;
@@ -273,6 +280,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			strcpy((char*)(send_buffer + ind), lispif_fw_name());
 			ind += strlen(lispif_fw_name()) + 1;
 		}
+#endif
 
 		buffer_append_uint32(send_buffer, main_calc_hw_crc(), &ind);
 
@@ -769,7 +777,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		reply_func(send_buffer, ind);
 	} break;
-
+#ifndef HW_EXCLUDE_LISP
 	case COMM_LISP_SET_RUNNING:
 	case COMM_LISP_GET_STATS:
 	case COMM_LISP_REPL_CMD:
@@ -857,7 +865,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		buffer_append_uint32(send_buffer, qmlui_offset, &ind);
 		reply_func(send_buffer, ind);
 	} break;
-
+#endif
 	case COMM_IO_BOARD_GET_ALL: {
 		int32_t ind = 0;
 		int id = buffer_get_int16(data, &ind);
@@ -920,7 +928,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_CUSTOM_APP_DATA:
+#ifndef HW_EXCLUDE_LISP
 		lispif_process_custom_app_data(data, len);
+#endif
 		break;
 
 	case COMM_BMS_GET_VALUES:
@@ -932,7 +942,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		bms_process_cmd(data - 1, len + 1, reply_func);
 		break;
 	}
-
+#ifndef HW_EXCLUDE_IMU
 	case COMM_GET_IMU_DATA: {
 		int32_t ind = 0;
 		uint8_t send_buffer[70];
@@ -1007,7 +1017,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		reply_func(send_buffer, ind);
 	} break;
-
+#endif
 	case COMM_FW_INFO: {
 		// Write at most the first max_len characters of str into buffer,
 		// followed by a null byte.
@@ -1126,6 +1136,9 @@ int commands_printf_lisp(const char* format, ...) {
 	if (!init_done) {
 		return 0;
 	}
+#ifdef HW_EXCLUDE_LISP
+	return 0;
+#else
 
 	xSemaphoreTake(print_mutex, portMAX_DELAY);
 
@@ -1188,6 +1201,7 @@ int commands_printf_lisp(const char* format, ...) {
 	xSemaphoreGive(print_mutex);
 
 	return len_to_print - 1;
+#endif
 }
 
 void commands_init_plot(char *namex, char *namey) {

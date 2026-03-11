@@ -52,7 +52,9 @@
 #include "terminal.h"
 #include "main.h"
 #include "mempools.h"
+#ifndef HW_EXCLUDE_LISP
 #include "lispif.h"
+#endif
 #include "bms.h"
 #include "ble/custom_ble.h"
 
@@ -78,20 +80,27 @@ void app_main(void) {
 
 	esp_err_t ret = nvs_flash_init();
 	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-		nvs_flash_erase();
+		ESP_ERROR_CHECK(nvs_flash_erase());
 		ret = nvs_flash_init();
 	}
+	ESP_ERROR_CHECK(ret);
 
 	{
 		nvs_handle_t my_handle;
-		nvs_open("vesc", NVS_READONLY, &my_handle);
-		size_t required_size = 0;
-		nvs_get_blob(my_handle, "backup", NULL, &required_size);
+		esp_err_t err = nvs_open("vesc", NVS_READONLY, &my_handle);
+		if (err == ESP_OK) {
+			size_t required_size = 0;
+			nvs_get_blob(my_handle, "backup", NULL, &required_size);
 
-		memset((void*)&backup, 0, sizeof(backup));
+			memset((void*)&backup, 0, sizeof(backup));
 
-		if (required_size == sizeof(backup_data)) {
-			nvs_get_blob(my_handle, "backup", (void*)&backup, &required_size);
+			if (required_size == sizeof(backup_data)) {
+				nvs_get_blob(my_handle, "backup", (void*)&backup, &required_size);
+			}
+
+			nvs_close(my_handle);
+		} else {
+			memset((void*)&backup, 0, sizeof(backup));
 		}
 
 		if (backup.controller_id_init_flag != VAR_INIT_CODE) {
@@ -114,16 +123,16 @@ void app_main(void) {
 			backup.config.controller_id = backup.controller_id;
 			backup.config.can_baud_rate = backup.can_baud_rate;
 		}
-
-		nvs_close(my_handle);
 	}
 
 	adc_init();
 
 #ifdef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
+#ifndef HW_EXCLUDE_LISP
 	lispif_init();
 	HW_POST_LISPIF_HOOK();
+#endif
 #endif
 
 	mempools_init();
@@ -166,8 +175,9 @@ void app_main(void) {
 
 #ifndef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
+#ifndef HW_EXCLUDE_LISP
 	lispif_init();
-	HW_POST_LISPIF_HOOK();
+#endif	
 #endif
 
 #ifndef HW_NO_UART
