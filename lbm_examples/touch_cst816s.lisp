@@ -13,12 +13,10 @@
 
 (touch-load-cst816s touch-sda touch-scl touch-rst touch-int touch-width touch-height touch-i2c-freq)
 
-(touch-swap-xy 0)
-(touch-mirror-x 0)
-(touch-mirror-y 0)
+(touch-apply-transforms 0 0 0)
 
 (defun print-touch-poll ()
-    (let ((p (touch-read-and-get)))
+    (let ((p (touch-read)))
         (if p
             (print (list 'poll-touch 'cst816s p))
             nil)))

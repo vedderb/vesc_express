@@ -66,11 +66,6 @@ static bool touch_owns_i2c_driver = false;
 static spi_host_device_t touch_spi_host = SPI2_HOST;
 static bool touch_owns_spi_bus = false;
 static lbm_uint touch_driver_symbol = 0;
-static uint16_t touch_width = 0;
-static uint16_t touch_height = 0;
-static bool touch_swap_xy = false;
-static bool touch_mirror_x = false;
-static bool touch_mirror_y = false;
 
 static lbm_uint sym_cst816s = 0;
 static lbm_uint sym_gt911 = 0;
@@ -91,7 +86,6 @@ static esp_err_t touch_init_gt911_esp_lcd(int sda, int scl, int rst, int int_pin
 static esp_err_t touch_init_cst9217_esp_lcd(int sda, int scl, int rst, int int_pin, uint16_t width, uint16_t height, uint32_t freq, lispif_touch_driver_t *driver);
 static esp_err_t touch_init_xpt2046_esp_lcd(int host, int mosi, int miso, int sclk, int cs, int int_pin, uint16_t width, uint16_t height, uint32_t freq, lispif_touch_driver_t *driver);
 static bool touch_lock_loaded_or_error(void);
-static lbm_value touch_set_transform_flag(lbm_value *args, bool *flag);
 
 static bool start_flatten_with_gc(lbm_flat_value_t *v, size_t buffer_size) {
 	if (lbm_start_flatten(v, buffer_size)) {
@@ -423,40 +417,6 @@ static bool touch_lock_loaded_or_error(void) {
 	return true;
 }
 
-static lbm_value touch_set_transform_flag(lbm_value *args, bool *flag) {
-	if (!touch_lock_loaded_or_error()) {
-		return ENC_SYM_EERROR;
-	}
-
-	*flag = lbm_dec_as_i32(args[0]) != 0;
-	xSemaphoreGive(touch_mutex);
-	return ENC_SYM_TRUE;
-}
-
-static void touch_apply_transforms(lispif_touch_point_data_t *points, uint8_t point_cnt) {
-	for (uint8_t i = 0;i < point_cnt;i++) {
-		uint16_t x = points[i].x;
-		uint16_t y = points[i].y;
-
-		if (touch_mirror_x) {
-			x = touch_width > 0 ? (touch_width - 1U) - x : x;
-		}
-
-		if (touch_mirror_y) {
-			y = touch_height > 0 ? (touch_height - 1U) - y : y;
-		}
-
-		if (touch_swap_xy) {
-			uint16_t tmp = x;
-			x = y;
-			y = tmp;
-		}
-
-		points[i].x = x;
-		points[i].y = y;
-	}
-}
-
 static void touch_delete_locked(void) {
 	if (touch_driver.deinit) {
 		touch_driver.deinit();
@@ -464,11 +424,6 @@ static void touch_delete_locked(void) {
 
 	memset(&touch_driver, 0, sizeof(touch_driver));
 	touch_driver_symbol = 0;
-	touch_width = 0;
-	touch_height = 0;
-	touch_swap_xy = false;
-	touch_mirror_x = false;
-	touch_mirror_y = false;
 }
 
 static lbm_value touch_get_point_locked(void) {
@@ -479,8 +434,6 @@ static lbm_value touch_get_point_locked(void) {
 		lbm_set_esp_error_reason(res);
 		return ENC_SYM_EERROR;
 	}
-
-	touch_apply_transforms(&point, point_cnt);
 
 	if (point_cnt == 0) {
 		return ENC_SYM_NIL;
@@ -568,7 +521,6 @@ static void touch_event_task(void *arg) {
 			if (res == ESP_OK) {
 				uint8_t point_cnt = 0;
 				if (touch_driver.get_data(&point, &point_cnt, 1) == ESP_OK) {
-					touch_apply_transforms(&point, point_cnt);
 					pressed = point_cnt > 0;
 				}
 			}
@@ -604,11 +556,12 @@ static bool touch_validate_i2c_load_args(int pin_sda, int pin_scl, int pin_rst, 
 }
 
 static lbm_value touch_load_driver(lispif_touch_driver_t driver, lbm_uint driver_symbol, int width, int height) {
+	(void)width;
+	(void)height;
+
 	xSemaphoreTake(touch_mutex, portMAX_DELAY);
 	touch_driver = driver;
 	touch_driver_symbol = driver_symbol;
-	touch_width = (uint16_t)width;
-	touch_height = (uint16_t)height;
 	xSemaphoreGive(touch_mutex);
 
 	return ENC_SYM_TRUE;
@@ -832,36 +785,6 @@ static lbm_value ext_touch_read(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	esp_err_t res = touch_driver.read_data();
-	xSemaphoreGive(touch_mutex);
-
-	if (res != ESP_OK) {
-		lbm_set_esp_error_reason(res);
-		return ENC_SYM_EERROR;
-	}
-
-	return ENC_SYM_TRUE;
-}
-
-static lbm_value ext_touch_data(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN(0);
-
-	if (!touch_lock_loaded_or_error()) {
-		return ENC_SYM_EERROR;
-	}
-
-	lbm_value res = touch_get_point_locked();
-	xSemaphoreGive(touch_mutex);
-	return res;
-}
-
-static lbm_value ext_touch_read_and_get(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN(0);
-
-	if (!touch_lock_loaded_or_error()) {
-		return ENC_SYM_EERROR;
-	}
-
 	esp_err_t read_res = touch_driver.read_data();
 	if (read_res != ESP_OK) {
 		xSemaphoreGive(touch_mutex);
@@ -888,19 +811,40 @@ static lbm_value ext_touch_delete(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static lbm_value ext_touch_swap_xy(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
-	return touch_set_transform_flag(args, &touch_swap_xy);
-}
+static lbm_value ext_touch_apply_transforms(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(3);
 
-static lbm_value ext_touch_mirror_x(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
-	return touch_set_transform_flag(args, &touch_mirror_x);
-}
+	if (!touch_lock_loaded_or_error()) {
+		return ENC_SYM_EERROR;
+	}
 
-static lbm_value ext_touch_mirror_y(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
-	return touch_set_transform_flag(args, &touch_mirror_y);
+	bool swap_xy = lbm_dec_as_i32(args[0]) != 0;
+	bool mirror_x = lbm_dec_as_i32(args[1]) != 0;
+	bool mirror_y = lbm_dec_as_i32(args[2]) != 0;
+	bool apply_mirror_x = mirror_x;
+	bool apply_mirror_y = mirror_y;
+
+	if (swap_xy && touch_handle && touch_handle->set_swap_xy == NULL) {
+		apply_mirror_x = mirror_y;
+		apply_mirror_y = mirror_x;
+	}
+
+	esp_err_t res = esp_lcd_touch_set_swap_xy(touch_handle, swap_xy);
+	if (res == ESP_OK) {
+		res = esp_lcd_touch_set_mirror_x(touch_handle, apply_mirror_x);
+	}
+	if (res == ESP_OK) {
+		res = esp_lcd_touch_set_mirror_y(touch_handle, apply_mirror_y);
+	}
+
+	if (res != ESP_OK) {
+		xSemaphoreGive(touch_mutex);
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
+
+	xSemaphoreGive(touch_mutex);
+	return ENC_SYM_TRUE;
 }
 
 void lispif_load_touch_extensions(void) {
@@ -914,10 +858,6 @@ void lispif_load_touch_extensions(void) {
 	lbm_add_extension("touch-load-cst9217", ext_touch_load_cst9217);
 	lbm_add_extension("touch-load-xpt2046", ext_touch_load_xpt2046);
 	lbm_add_extension("touch-read", ext_touch_read);
-	lbm_add_extension("touch-data", ext_touch_data);
-	lbm_add_extension("touch-read-and-get", ext_touch_read_and_get);
 	lbm_add_extension("touch-delete", ext_touch_delete);
-	lbm_add_extension("touch-swap-xy", ext_touch_swap_xy);
-	lbm_add_extension("touch-mirror-x", ext_touch_mirror_x);
-	lbm_add_extension("touch-mirror-y", ext_touch_mirror_y);
+	lbm_add_extension("touch-apply-transforms", ext_touch_apply_transforms);
 }

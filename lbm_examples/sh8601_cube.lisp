@@ -1,38 +1,11 @@
 (import "font_16_26.bin" 'font)
 
-;(disp-load-sh8601 6 5 19 18 7 40)
 (disp-load-sh8601 13 10 12 9 11 40)
 (disp-reset)
 
 (ext-disp-orientation 1)
 
-; SH8601 initialization sequence from vendor's datasheet 
-(defun sh8601-init () {
-    (ext-disp-cmd 0x3A 0x55)
-    (ext-disp-cmd 0xB2 0x0C 0x0C 0x00 0x33 0x33)
-    (ext-disp-cmd 0xB7 0x35)
-    (ext-disp-cmd 0xBB 0x13)
-    (ext-disp-cmd 0xC0 0x2C)
-    (ext-disp-cmd 0xC2 0x01)
-    (ext-disp-cmd 0xC3 0x0B)
-    (ext-disp-cmd 0xC4 0x20)
-    (ext-disp-cmd 0xC6 0x0F)
-    (ext-disp-cmd 0xD0 0xA4 0xA1)
-    (ext-disp-cmd 0xD6 0xA1)
-    (ext-disp-cmd 0xE0 0x00 0x03 0x07 0x08 0x07 0x15 0x2A 0x44 0x42 0x0A 0x17 0x18 0x25 0x27)
-    (ext-disp-cmd 0xE1 0x00 0x03 0x08 0x07 0x07 0x23 0x2A 0x43 0x42 0x09 0x18 0x17 0x25 0x27)
-    (ext-disp-cmd 0x11)
-    (sleep 0.12)
-    (ext-disp-cmd 0x21)
-    (sleep 0.02)
-    (ext-disp-cmd 0x29)
-    (sleep 0.12)
-    (disp-clear 0x000000)
-})
-
-(sh8601-init)
-
-(def img (img-buffer 'indexed2 160 80))
+(def img (img-buffer 'indexed4 320 170))
 
 (defun line (x0 y0 x1 y1)
     (img-line img x0 y0 x1 y1 1 '(thickness 2))
@@ -43,9 +16,9 @@
 (def edges '((0  1) (1 3) (3 2) (2 0) (4 5) (5 7) (7 6) (6 4) (0 4) (1 5) (2 6) (3 7)))
 
 (defun draw-edges () {
-        (var scale 20.0)
-        (var ofs-x (/ 40 scale))
-        (var ofs-y (/ 40 scale))
+        (var scale 45.0)
+        (var ofs-x (/ 220 scale))
+        (var ofs-y (/ 85 scale))
 
         (loopforeach e edges {
                 (var na (ix nodes (ix e 0)))
@@ -81,11 +54,11 @@
 
 (loopwhile t {
         (var t-start (systime))
-        (img-text img 90 10 1 0 font "FPS")
-        (img-text img 90 40 1 0 font (str-from-n fps "%.1f "))
+        (img-text img 10 10 3 0 font (str-from-n fps "FPS %.1f "))
+        (img-rectangle img 0 0 319 169 2  )
         (draw-edges)
         (rotate-cube 0.1 0.05)
-        (disp-render img 0 24 '(0 0xff0000))
+        (disp-render img 0 0 (list 0x000000 0xff0000 0x00ff00 0x0000ff))
         (img-clear img)
         (def fps (/ 1 (secs-since t-start)))
 })
