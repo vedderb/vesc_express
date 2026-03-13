@@ -71,6 +71,8 @@ set(COMPONENT_SRCS
 
 "rgbled/lispif_rgbled_extensions.c"
 
+"touch/lispif_touch_extensions.c"
+
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
 "display/disp_ili9341.c"
@@ -80,6 +82,7 @@ set(COMPONENT_SRCS
 "display/disp_st7735.c"
 "display/disp_ssd1351.c"
 "display/disp_icna3306.c"
+"display/disp_sh8601.c"
 
 "drivers/bme280/bme280.c"
 "drivers/bme280/bme280_if.c"
@@ -121,6 +124,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "wifi"
 "ble"
 "rgbled"
+"touch"
 "drivers"
 "drivers/bme280"
 "drivers/imu"
