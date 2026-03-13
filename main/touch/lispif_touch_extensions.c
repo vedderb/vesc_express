@@ -37,8 +37,6 @@
 #include "esp_err.h"
 
 #include "esp_lcd_panel_io.h"
-//#include "esp_lcd_io_i2c.h"
-//#include "esp_lcd_io_spi.h"
 #include "esp_lcd_touch.h"
 #include "esp_lcd_touch_cst816s.h"
 #include "esp_lcd_touch_cst9217.h"
