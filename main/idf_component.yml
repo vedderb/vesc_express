@@ -2,6 +2,11 @@
 dependencies:
   espressif/dhara: "^0.1.0"
   espressif/spi_nand_flash: "^0.1.0"
+  espressif/esp_lcd_touch: "^1.2.1"
+  espressif/esp_lcd_touch_cst816s: "^1.1.1"
+  espressif/esp_lcd_touch_gt911: "^1.2.0"
+  waveshare/esp_lcd_touch_cst9217: "^1.0.4"
+  atanisoft/esp_lcd_touch_xpt2046: "^1.0.6"
   ## Required IDF version
   idf:
     version: ">=4.1.0"
