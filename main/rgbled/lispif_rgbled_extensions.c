@@ -43,8 +43,14 @@ typedef struct {
 
 static rmt_channel_handle_t led_chan = NULL;
 static rmt_encoder_handle_t led_encoder = NULL;
-static unsigned int led_type_driver = 0;
 static int led_pin_driver = -1;
+static unsigned int led_timing_driver = 0;
+
+static float led_t0h;
+static float led_t0l;
+static float led_t1h;
+static float led_t1l;
+static uint32_t led_reset_us;
 
 static const uint8_t gamma_table[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3,
@@ -122,25 +128,26 @@ static esp_err_t rmt_led_strip_encoder_reset(rmt_encoder_t *encoder) {
 }
 
 esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
-	rmt_led_strip_encoder_t *led_encoder = NULL;
-	led_encoder = calloc(1, sizeof(rmt_led_strip_encoder_t));
+	rmt_led_strip_encoder_t *led_encoder = calloc(1, sizeof(rmt_led_strip_encoder_t));
+	if (led_encoder == NULL) {
+		return ESP_ERR_NO_MEM;
+	}
 	led_encoder->base.encode = rmt_encode_led_strip;
 	led_encoder->base.del = rmt_del_led_strip_encoder;
 	led_encoder->base.reset = rmt_led_strip_encoder_reset;
 
-	// different led strip might have its own timing requirements, following parameter is for WS2812
 	rmt_bytes_encoder_config_t bytes_encoder_config = {
 			.bit0 = {
 					.level0 = 1,
-					.duration0 = 0.3 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T0H=0.3us
+					.duration0 = led_t0h * RMT_LED_STRIP_RESOLUTION_HZ / 1000000,
 					.level1 = 0,
-					.duration1 = 0.9 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T0L=0.9us
+					.duration1 = led_t0l * RMT_LED_STRIP_RESOLUTION_HZ / 1000000,
 			},
 			.bit1 = {
 					.level0 = 1,
-					.duration0 = 0.9 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T1H=0.9us
+					.duration0 = led_t1h * RMT_LED_STRIP_RESOLUTION_HZ / 1000000,
 					.level1 = 0,
-					.duration1 = 0.3 * RMT_LED_STRIP_RESOLUTION_HZ / 1000000, // T1L=0.3us
+					.duration1 = led_t1l * RMT_LED_STRIP_RESOLUTION_HZ / 1000000,
 			},
 			.flags.msb_first = 1 // WS2812 transfer bit order: G7...G0R7...R0B7...B0
 	};
@@ -149,7 +156,7 @@ esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
 	rmt_copy_encoder_config_t copy_encoder_config = {};
 	rmt_new_copy_encoder(&copy_encoder_config, &led_encoder->copy_encoder);
 
-	uint32_t reset_ticks = RMT_LED_STRIP_RESOLUTION_HZ / 1000000 * 50 / 2; // reset code duration defaults to 50us
+	uint32_t reset_ticks = RMT_LED_STRIP_RESOLUTION_HZ / 1000000 * led_reset_us / 2; // configurable reset duration
 	led_encoder->reset_code = (rmt_symbol_word_t) {
 		.level0 = 0,
 				.duration0 = reset_ticks,
@@ -161,11 +168,9 @@ esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
 	return ESP_OK;
 }
 
-static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
-	(void)args; (void)argn;
-
+static void rgbled_deinit_internal(int mode) {
 	if (led_chan != NULL) {
-		rmt_tx_wait_all_done(led_chan, 100);
+		rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
 		rmt_disable(led_chan);
 		rmt_del_channel(led_chan);
 		led_chan = NULL;
@@ -177,9 +182,25 @@ static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (led_pin_driver >= 0) {
-		gpio_reset_pin(led_pin_driver);
+		if (mode == 1) {
+			// Mode 1: Pull/Hold LOW
+			gpio_set_direction((gpio_num_t)led_pin_driver, GPIO_MODE_OUTPUT);
+			gpio_set_level((gpio_num_t)led_pin_driver, 0);
+		} else {
+			// Mode 0: Default hardware reset (Input with Pull-up)
+			gpio_reset_pin(led_pin_driver);
+		}
 		led_pin_driver = -1;
 	}
+}
+
+static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
+	int mode = 0;
+	if (argn >= 1 && lbm_is_number(args[0])) {
+		mode = lbm_dec_as_i32(args[0]);
+	}
+
+	rgbled_deinit_internal(mode);
 
 	return ENC_SYM_TRUE;
 }
@@ -187,7 +208,7 @@ static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
-	if (argn != 1 && argn != 2) {
+	if (argn < 1 || argn > 2) {
 		lbm_set_error_reason((char*)lbm_error_str_num_args);
 		return ENC_SYM_TERROR;
 	}
@@ -198,30 +219,74 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	unsigned int type_led = 0;
+	unsigned int timing_preset = 0;
 	if (argn >= 2) {
-		type_led = lbm_dec_as_u32(args[1]);
-		if (type_led >= 4) {
-			lbm_set_error_reason("Invalid LED type");
-			return ENC_SYM_TERROR;
-		}
+		timing_preset = lbm_dec_as_u32(args[1]);
 	}
 
-	ext_rgbled_deinit(0, 0);
+	// Skip full reinit if already configured on the same pin with the same type.
+	// Avoids tearing down the RMT channel every frame, which leaves the pin floating.
+	if (pin == led_pin_driver && timing_preset == led_timing_driver && led_chan != NULL) {
+		return ENC_SYM_TRUE;
+	}
 
-	led_type_driver = type_led;
+	rgbled_deinit_internal(1); // Pull/Hold LOW when switching pins
+
+	switch (timing_preset) {
+	case 1: // WS2812B
+		led_t0h = 0.40; led_t0l = 0.85; led_t1h = 0.80; led_t1l = 0.45; led_reset_us = 300;
+		break;
+	case 2: // WS2815
+		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.90; led_t1l = 0.30; led_reset_us = 300;
+		break;
+	case 3: // SK6812
+		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.60; led_t1l = 0.60; led_reset_us = 80;
+		break;
+	case 4: // SK6815
+		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.60; led_t1l = 0.60; led_reset_us = 300;
+		break;
+	case 0:
+	default: // Generic
+		// Universal timing compromise: sits within the tolerance overlap zone of WS2812B, WS2815, SK6812, and SK6815.
+		led_t0h = 0.35; led_t0l = 1.00; led_t1h = 0.95; led_t1l = 0.30; led_reset_us = 300;
+		break;
+	}
+
+	// Explicitly drive pin LOW as push-pull output before handing it to RMT.
+	// Prevents the pin from floating in an undefined state during channel setup.
+	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+	gpio_set_level((gpio_num_t)pin, 0);
+
 	led_pin_driver = pin;
+	led_timing_driver = timing_preset;
 
 	rmt_tx_channel_config_t tx_chan_config = {
 			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
 			.gpio_num = pin,
-			.mem_block_symbols = 64, // increase the block size can make the LED less flickering
+#if SOC_RMT_SUPPORT_DMA
+			.mem_block_symbols = 256,
+			.flags.with_dma = 1,
+#else
+			.mem_block_symbols = 64,
+#endif
 			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
 			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
 	};
-	rmt_new_tx_channel(&tx_chan_config, &led_chan);
+	if (rmt_new_tx_channel(&tx_chan_config, &led_chan) != ESP_OK) {
+		led_chan = NULL;
+		led_pin_driver = -1;
+		lbm_set_error_reason("RMT channel init failed");
+		return ENC_SYM_EERROR;
+	}
 
-	rmt_new_led_strip_encoder(&led_encoder);
+	if (rmt_new_led_strip_encoder(&led_encoder) != ESP_OK) {
+		rmt_del_channel(led_chan);
+		led_chan = NULL;
+		led_pin_driver = -1;
+		lbm_set_error_reason("RMT encoder init failed");
+		return ENC_SYM_EERROR;
+	}
+
 	rmt_enable(led_chan);
 
 	return ENC_SYM_TRUE;
@@ -274,6 +339,10 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	}
 
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+	if (array == NULL) {
+		lbm_set_error_reason("LED buffer is NULL");
+		return ENC_SYM_EERROR;
+	}
 	uint8_t *led_data = (uint8_t*)array->data;
 	uint8_t *led_pixels = led_data + 1;
 	int led_data_len = array->size - 1;
@@ -422,8 +491,18 @@ static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
 	}
 
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+	if (array == NULL) {
+		lbm_set_error_reason("LED buffer is NULL");
+		return ENC_SYM_EERROR;
+	}
 
-	rmt_transmit(led_chan, led_encoder, (uint8_t*)array->data + 1, array->size - 1, &tx_config);
+	// Wait for any in-progress transmission to complete before sending new data.
+	rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
+	esp_err_t err = rmt_transmit(led_chan, led_encoder, (uint8_t*)array->data + 1, array->size - 1, &tx_config);
+	if (err != ESP_OK) {
+		commands_printf_lisp("RMT transmit failed: %d", err);
+		return ENC_SYM_EERROR;
+	}
 
 	return ENC_SYM_TRUE;
 }
