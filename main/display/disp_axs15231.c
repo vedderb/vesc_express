@@ -19,12 +19,10 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "driver/spi_master.h"
-#include "driver/gpio.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_axs15231b.h"
 #include "esp_heap_caps.h"
-#include "esp_log.h"
 
 #include "disp_axs15231.h"
 #include "lispif.h"
@@ -39,18 +37,6 @@
 static int m_display_width = DISPLAY_WIDTH_PHYS;
 static int m_display_height = DISPLAY_HEIGHT_PHYS;
 static int m_rotation = 0;
-static int m_te_pin = -1;
-static SemaphoreHandle_t m_te_sem = NULL;
-
-static void IRAM_ATTR te_gpio_isr_handler(void* arg) {
-    if (m_te_sem) {
-        BaseType_t high_task_wakeup = pdFALSE;
-        xSemaphoreGiveFromISR(m_te_sem, &high_task_wakeup);
-        if (high_task_wakeup) {
-            portYIELD_FROM_ISR();
-        }
-    }
-}
 
 #define CHUNK_LINES		20
 #define PIX_BUF_PIXELS	(DISPLAY_HEIGHT_PHYS * CHUNK_LINES)
@@ -158,10 +144,6 @@ bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, col
 
 	uint16_t *buf = (uint16_t *)m_pix_buf;
 
-    if (m_te_pin >= 0 && m_te_sem) {
-        xSemaphoreTake(m_te_sem, pdMS_TO_TICKS(100));
-    }
-
     int px_min, py_min, target_w, target_h;
 
     if (m_rotation == 0) {
@@ -243,10 +225,6 @@ void disp_axs15231_clear(uint32_t color) {
 		buf[i] = c;
 	}
 
-    if (m_te_pin >= 0 && m_te_sem) {
-        xSemaphoreTake(m_te_sem, pdMS_TO_TICKS(100));
-    }
-
 	int total = DISPLAY_WIDTH_PHYS * DISPLAY_HEIGHT_PHYS;
 	int sent = 0;
 	while (sent < total) {
@@ -307,9 +285,7 @@ static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 }
 
 void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
-		int pin_clk, int pin_cs, int pin_reset, int pin_te, int clock_mhz) {
-
-    m_te_pin = pin_te;
+		int pin_clk, int pin_cs, int pin_reset, int clock_mhz) {
 
 	if (!m_pix_buf) {
 		m_pix_buf = heap_caps_malloc(PIX_BUF_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
@@ -344,30 +320,8 @@ void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 	esp_lcd_panel_reset(m_panel);
 	esp_lcd_panel_init(m_panel);
 
-	if (m_te_pin >= 0) {
-        if (m_te_sem == NULL) {
-            m_te_sem = xSemaphoreCreateBinary();
-        }
-
-        gpio_config_t te_conf = {
-            .pin_bit_mask = (1ULL << m_te_pin),
-            .mode = GPIO_MODE_INPUT,
-            .pull_up_en = GPIO_PULLUP_ENABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_POSEDGE,
-        };
-        gpio_config(&te_conf);
-        gpio_install_isr_service(0);
-        gpio_isr_handler_add(m_te_pin, te_gpio_isr_handler, NULL);
-
-        uint8_t te_val = 0x00;
-        disp_axs15231_command(0x35, &te_val, 1);
-    }
-
 	lbm_add_extension("ext-disp-cmd", ext_disp_cmd);
 	lbm_add_extension("ext-disp-orientation", ext_disp_orientation);
-
-	ESP_LOGI(TAG, "AXS15231 initialized");
 }
 
 void disp_axs15231_reset(void) {
