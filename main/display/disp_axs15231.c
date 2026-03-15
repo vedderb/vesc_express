@@ -36,6 +36,8 @@
 #define DISPLAY_WIDTH_PHYS	320
 #define DISPLAY_HEIGHT_PHYS	480
 
+static int m_display_width = DISPLAY_WIDTH_PHYS;
+static int m_display_height = DISPLAY_HEIGHT_PHYS;
 static int m_rotation = 0;
 static int m_te_pin = -1;
 static SemaphoreHandle_t m_te_sem = NULL;
@@ -50,7 +52,7 @@ static void IRAM_ATTR te_gpio_isr_handler(void* arg) {
     }
 }
 
-#define CHUNK_LINES		10
+#define CHUNK_LINES		20
 #define PIX_BUF_PIXELS	(DISPLAY_HEIGHT_PHYS * CHUNK_LINES)
 #define PIX_BUF_BYTES	(PIX_BUF_PIXELS * 2)
 
@@ -154,7 +156,6 @@ bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, col
 		return false;
 	}
 
-	uint32_t total_pix = img->width * img->height;
 	uint16_t *buf = (uint16_t *)m_pix_buf;
 
     if (m_te_pin >= 0 && m_te_sem) {
