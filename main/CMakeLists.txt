@@ -83,6 +83,7 @@ set(COMPONENT_SRCS
 "display/disp_ssd1351.c"
 "display/disp_icna3306.c"
 "display/disp_sh8601.c"
+"display/disp_axs15231.c"
 
 "drivers/bme280/bme280.c"
 "drivers/bme280/bme280_if.c"

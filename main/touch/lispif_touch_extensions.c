@@ -42,6 +42,7 @@
 #include "esp_lcd_touch_cst9217.h"
 #include "esp_lcd_touch_gt911.h"
 #include "esp_lcd_touch_xpt2046.h"
+#include "esp_lcd_axs15231b.h"
 
 #define TOUCH_I2C_PORT I2C_NUM_0
 #define TOUCH_I2C_DEFAULT_FREQ 400000
@@ -63,12 +64,14 @@ static i2c_port_t touch_i2c_port = TOUCH_I2C_PORT;
 static bool touch_owns_i2c_driver = false;
 static spi_host_device_t touch_spi_host = SPI2_HOST;
 static bool touch_owns_spi_bus = false;
+static bool touch_has_int = false;
 static lbm_uint touch_driver_symbol = 0;
 
 static lbm_uint sym_cst816s = 0;
 static lbm_uint sym_gt911 = 0;
 static lbm_uint sym_cst9217 = 0;
 static lbm_uint sym_xpt2046 = 0;
+static lbm_uint sym_axs15231 = 0;
 
 typedef esp_err_t (*touch_i2c_create_fn_t)(esp_lcd_panel_io_handle_t io, const esp_lcd_touch_config_t *cfg, esp_lcd_touch_handle_t *tp);
 
@@ -302,6 +305,8 @@ static esp_err_t touch_init_i2c_esp_lcd(int sda, int scl, int rst, int int_pin, 
 		return res;
 	}
 
+	touch_has_int = (int_pin >= 0);
+
 	driver->deinit = touch_esp_lcd_deinit;
 	driver->read_data = touch_esp_lcd_read_data;
 	driver->get_data = touch_esp_lcd_get_data;
@@ -312,6 +317,11 @@ static esp_err_t touch_init_i2c_esp_lcd(int sda, int scl, int rst, int int_pin, 
 static esp_err_t touch_init_cst816s_esp_lcd(int sda, int scl, int rst, int int_pin, uint16_t width, uint16_t height, uint32_t freq, lispif_touch_driver_t *driver) {
 	esp_lcd_panel_io_i2c_config_t io_conf = ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG();
 	return touch_init_i2c_esp_lcd(sda, scl, rst, int_pin, width, height, freq, io_conf, NULL, esp_lcd_touch_new_i2c_cst816s, driver);
+}
+
+static esp_err_t touch_init_axs15231_esp_lcd(int sda, int scl, int rst, int int_pin, uint16_t width, uint16_t height, uint32_t freq, lispif_touch_driver_t *driver) {
+	esp_lcd_panel_io_i2c_config_t io_conf = ESP_LCD_TOUCH_IO_I2C_AXS15231B_CONFIG();
+	return touch_init_i2c_esp_lcd(sda, scl, rst, int_pin, width, height, freq, io_conf, NULL, esp_lcd_touch_new_i2c_axs15231b, driver);
 }
 
 static esp_err_t touch_init_gt911_esp_lcd(int sda, int scl, int rst, int int_pin, uint16_t width, uint16_t height, uint32_t freq, lispif_touch_driver_t *driver) {
@@ -391,6 +401,8 @@ static esp_err_t touch_init_xpt2046_esp_lcd(int host, int mosi, int miso, int sc
 		touch_esp_lcd_deinit();
 		return res;
 	}
+
+	touch_has_int = (int_pin >= 0);
 
 	driver->deinit = touch_esp_lcd_deinit;
 	driver->read_data = touch_esp_lcd_read_data;
@@ -504,7 +516,11 @@ static void touch_event_task(void *arg) {
 	(void)arg;
 
 	for (;;) {
-		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+		if (touch_has_int) {
+			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+		} else {
+			vTaskDelay(pdMS_TO_TICKS(50));
+		}
 
 		if (!event_touch_int_en || !touch_mutex) {
 			continue;
@@ -702,6 +718,52 @@ static lbm_value ext_touch_load_cst9217(lbm_value *args, lbm_uint argn) {
 	return touch_load_driver(driver, sym_cst9217, width, height);
 }
 
+static lbm_value ext_touch_load_axs15231(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_RANGE(6, 7);
+
+	int pin_sda = lbm_dec_as_i32(args[0]);
+	int pin_scl = lbm_dec_as_i32(args[1]);
+	int pin_rst = lbm_dec_as_i32(args[2]);
+	int pin_int = lbm_dec_as_i32(args[3]);
+	int width   = lbm_dec_as_i32(args[4]);
+	int height  = lbm_dec_as_i32(args[5]);
+	int freq    = TOUCH_I2C_DEFAULT_FREQ;
+
+	if (argn == 7) {
+		freq = lbm_dec_as_i32(args[6]);
+	}
+
+	if (!touch_validate_i2c_load_args(pin_sda, pin_scl, pin_rst, pin_int, width, height, freq)) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!touch_runtime_init()) {
+		lbm_set_error_reason(msg_touch_runtime);
+		return ENC_SYM_EERROR;
+	}
+
+	xSemaphoreTake(touch_mutex, portMAX_DELAY);
+	touch_delete_locked();
+	xSemaphoreGive(touch_mutex);
+
+	lispif_touch_driver_t driver = {0};
+	esp_err_t res = touch_init_axs15231_esp_lcd(
+			pin_sda,
+			pin_scl,
+			pin_rst,
+			pin_int,
+			(uint16_t)width,
+			(uint16_t)height,
+			(uint32_t)freq,
+			&driver);
+	if (res != ESP_OK) {
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
+
+	return touch_load_driver(driver, sym_axs15231, width, height);
+}
+
 static lbm_value ext_touch_load_xpt2046(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_RANGE(8, 9);
 
@@ -850,11 +912,13 @@ void lispif_load_touch_extensions(void) {
 	lbm_add_symbol_const("gt911", &sym_gt911);
 	lbm_add_symbol_const("cst9217", &sym_cst9217);
 	lbm_add_symbol_const("xpt2046", &sym_xpt2046);
+	lbm_add_symbol_const("axs15231", &sym_axs15231);
 
 	lbm_add_extension("touch-load-cst816s", ext_touch_load_cst816s);
 	lbm_add_extension("touch-load-gt911", ext_touch_load_gt911);
 	lbm_add_extension("touch-load-cst9217", ext_touch_load_cst9217);
 	lbm_add_extension("touch-load-xpt2046", ext_touch_load_xpt2046);
+	lbm_add_extension("touch-load-axs15231", ext_touch_load_axs15231);
 	lbm_add_extension("touch-read", ext_touch_read);
 	lbm_add_extension("touch-delete", ext_touch_delete);
 	lbm_add_extension("touch-apply-transforms", ext_touch_apply_transforms);
