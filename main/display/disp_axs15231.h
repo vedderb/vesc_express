@@ -22,7 +22,7 @@
 #include <stdbool.h>
 #include "lispif_disp_extensions.h"
 
-void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3, int pin_clk, int pin_cs, int pin_reset, int clock_mhz);
+void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3, int pin_clk, int pin_cs, int pin_reset, int pin_te, int clock_mhz);
 void disp_axs15231_command(uint8_t command, const uint8_t *args, int argn);
 bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors);
 void disp_axs15231_clear(uint32_t color);

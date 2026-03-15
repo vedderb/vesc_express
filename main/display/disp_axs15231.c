@@ -17,23 +17,41 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "driver/spi_master.h"
+#include "driver/gpio.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_axs15231b.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 
 #include "disp_axs15231.h"
 #include "lispif.h"
 #include "lispbm.h"
+#include <string.h>
 
-// AXS15231B physical resolution
-#define DISPLAY_WIDTH	320
-#define DISPLAY_HEIGHT	480
+#define TAG "AXS15231"
 
-// DMA buffer
-#define CHUNK_LINES		20
-#define PIX_BUF_PIXELS	(DISPLAY_WIDTH * CHUNK_LINES)
+#define DISPLAY_WIDTH_PHYS	320
+#define DISPLAY_HEIGHT_PHYS	480
+
+static int m_rotation = 0;
+static int m_te_pin = -1;
+static SemaphoreHandle_t m_te_sem = NULL;
+
+static void IRAM_ATTR te_gpio_isr_handler(void* arg) {
+    if (m_te_sem) {
+        BaseType_t high_task_wakeup = pdFALSE;
+        xSemaphoreGiveFromISR(m_te_sem, &high_task_wakeup);
+        if (high_task_wakeup) {
+            portYIELD_FROM_ISR();
+        }
+    }
+}
+
+#define CHUNK_LINES		10
+#define PIX_BUF_PIXELS	(DISPLAY_HEIGHT_PHYS * CHUNK_LINES)
 #define PIX_BUF_BYTES	(PIX_BUF_PIXELS * 2)
 
 static esp_lcd_panel_io_handle_t m_io    = NULL;
@@ -84,78 +102,134 @@ static inline uint16_t to_disp_color(uint32_t rgb) {
 	return (uint16_t)hi | ((uint16_t)lo << 8);
 }
 
+static inline uint32_t fetch_rgb888(image_buffer_t *img, uint32_t idx, color_t *colors) {
+	uint32_t rgb = 0;
+	int cur_x = idx % img->width;
+	int cur_y = idx / img->width;
+	switch (img->fmt) {
+	case indexed2:
+		if (colors) {
+			int ci = (img->data[idx >> 3] >> (7 - (idx & 7))) & 1;
+			rgb = COLOR_TO_RGB888(colors[ci], cur_x, cur_y);
+		}
+		break;
+	case indexed4:
+		if (colors) {
+			int bit = (3 - (idx & 3)) * 2;
+			int ci  = (img->data[idx >> 2] >> bit) & 3;
+			rgb = COLOR_TO_RGB888(colors[ci], cur_x, cur_y);
+		}
+		break;
+	case indexed16:
+		if (colors) {
+			int bit = (1 - (idx & 1)) * 4;
+			int ci  = (img->data[idx >> 1] >> bit) & 0xF;
+			rgb = COLOR_TO_RGB888(colors[ci], cur_x, cur_y);
+		}
+		break;
+	case rgb332: {
+		uint8_t p = img->data[idx];
+		rgb = ((uint32_t)((p >> 5) & 7) << (16+5)) | ((uint32_t)((p >> 2) & 7) << (8+5)) | ((uint32_t)(p & 3) << 6);
+		break;
+	}
+	case rgb565: {
+		uint16_t p = ((uint16_t)img->data[2*idx] << 8) | img->data[2*idx+1];
+		rgb = ((uint32_t)(p >> 11) << (16+3)) | ((uint32_t)((p >> 5) & 0x3F) << (8+2)) | ((uint32_t)(p & 0x1F) << 3);
+		break;
+	}
+	case rgb888:
+		rgb = (uint32_t)img->data[3*idx] << 16 | (uint32_t)img->data[3*idx+1] << 8 | img->data[3*idx+2];
+		break;
+	default: break;
+	}
+	return rgb;
+}
+
 void disp_axs15231_command(uint8_t command, const uint8_t *args, int argn) {
 	esp_lcd_panel_io_tx_param(m_io, command, args, argn);
 }
 
 bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors) {
-	uint16_t x_end = x + img->width;
-	uint16_t y_end = y + img->height;
-
-	if (x_end > DISPLAY_WIDTH || y_end > DISPLAY_HEIGHT) {
+	if (x + img->width > m_display_width || y + img->height > m_display_height) {
 		return false;
 	}
 
 	uint32_t total_pix = img->width * img->height;
 	uint16_t *buf = (uint16_t *)m_pix_buf;
-	uint32_t pix_idx = 0;
 
-	while (pix_idx < total_pix) {
-		uint32_t chunk_now = total_pix - pix_idx;
-		if (chunk_now > PIX_BUF_PIXELS) chunk_now = PIX_BUF_PIXELS;
+    if (m_te_pin >= 0 && m_te_sem) {
+        xSemaphoreTake(m_te_sem, pdMS_TO_TICKS(100));
+    }
 
-		for (uint32_t i = 0; i < chunk_now; i++) {
-			uint32_t current_idx = pix_idx + i;
-			uint16_t cur_x = current_idx % img->width;
-			uint16_t cur_y = current_idx / img->width;
-			uint32_t rgb = 0;
+    int px_min, py_min, target_w, target_h;
 
-			switch (img->fmt) {
-			case indexed2:
-				if (colors) {
-					int ci = (img->data[current_idx >> 3] >> (7 - (current_idx & 7))) & 1;
-					rgb = COLOR_TO_RGB888(colors[ci], cur_x, cur_y);
-				}
-				break;
-			case indexed4:
-				if (colors) {
-					int bit = (3 - (current_idx & 3)) * 2;
-					int ci  = (img->data[current_idx >> 2] >> bit) & 3;
-					rgb = COLOR_TO_RGB888(colors[ci], cur_x, cur_y);
-				}
-				break;
-			case indexed16:
-				if (colors) {
-					int bit = (1 - (current_idx & 1)) * 4;
-					int ci  = (img->data[current_idx >> 1] >> bit) & 0xF;
-					rgb = COLOR_TO_RGB888(colors[ci], cur_x, cur_y);
-				}
-				break;
-			case rgb332: {
-				uint8_t p = img->data[current_idx];
-				rgb = ((uint32_t)((p >> 5) & 7) << (16+5)) | ((uint32_t)((p >> 2) & 7) << (8+5)) | ((uint32_t)(p & 3) << 6);
-				break;
-			}
-			case rgb565: {
-				uint16_t p = ((uint16_t)img->data[2*current_idx] << 8) | img->data[2*current_idx+1];
-				rgb = ((uint32_t)(p >> 11) << (16+3)) | ((uint32_t)((p >> 5) & 0x3F) << (8+2)) | ((uint32_t)(p & 0x1F) << 3);
-				break;
-			}
-			case rgb888:
-				rgb = (uint32_t)img->data[3*current_idx] << 16 | (uint32_t)img->data[3*current_idx+1] << 8 | img->data[3*current_idx+2];
-				break;
-			default: break;
-			}
-			buf[i] = to_disp_color(rgb);
-		}
-		
-		int start_y = y + (pix_idx / img->width);
-		int end_y   = start_y + (chunk_now / img->width);
-		
-		esp_lcd_panel_draw_bitmap(m_panel, x, start_y, x + img->width, end_y, buf);
-		
-		pix_idx += chunk_now;
-	}
+    if (m_rotation == 0) {
+        px_min = x;
+        py_min = y;
+        target_w = img->width;
+        target_h = img->height;
+    } else if (m_rotation == 90) {
+        px_min = (DISPLAY_WIDTH_PHYS - 1) - (y + img->height - 1);
+        py_min = x;
+        target_w = img->height;
+        target_h = img->width;
+    } else if (m_rotation == 180) {
+        px_min = (DISPLAY_WIDTH_PHYS - 1) - (x + img->width - 1);
+        py_min = (DISPLAY_HEIGHT_PHYS - 1) - (y + img->height - 1);
+        target_w = img->width;
+        target_h = img->height;
+    } else {
+        px_min = y;
+        py_min = (DISPLAY_HEIGHT_PHYS - 1) - (x + img->width - 1);
+        target_w = img->height;
+        target_h = img->width;
+    }
+
+    uint32_t total_p = target_w * target_h;
+    uint32_t pix_idx = 0;
+    while (pix_idx < total_p) {
+        uint32_t chunk_now = total_p - pix_idx;
+        if (chunk_now > PIX_BUF_PIXELS) chunk_now = PIX_BUF_PIXELS;
+
+        if (pix_idx + chunk_now < total_p) {
+            chunk_now = (chunk_now / target_w) * target_w;
+            if (chunk_now == 0) chunk_now = target_w;
+        }
+
+        for (uint32_t i = 0; i < chunk_now; i++) {
+            uint32_t p_idx = pix_idx + i;
+            int p_cur_x = p_idx % target_w;
+            int p_cur_y = p_idx / target_w;
+            
+            int abs_px = px_min + p_cur_x;
+            int abs_py = py_min + p_cur_y;
+            int lx, ly;
+
+            if (m_rotation == 0) {
+                lx = abs_px;
+                ly = abs_py;
+            } else if (m_rotation == 90) {
+                lx = abs_py;
+                ly = (DISPLAY_WIDTH_PHYS - 1) - abs_px;
+            } else if (m_rotation == 180) {
+                lx = (DISPLAY_WIDTH_PHYS - 1) - abs_px;
+                ly = (DISPLAY_HEIGHT_PHYS - 1) - abs_py;
+            } else {
+                lx = (DISPLAY_HEIGHT_PHYS - 1) - abs_py;
+                ly = abs_px;
+            }
+
+            uint32_t src_idx = (ly - y) * img->width + (lx - x);
+            buf[i] = to_disp_color(fetch_rgb888(img, src_idx, colors));
+        }
+
+        int p_start_y = py_min + (pix_idx / target_w);
+        int p_end_y   = p_start_y + (chunk_now / target_w);
+        if (p_end_y == p_start_y && chunk_now > 0) p_end_y++;
+        
+        esp_lcd_panel_draw_bitmap(m_panel, px_min, p_start_y, px_min + target_w, p_end_y, buf);
+        pix_idx += chunk_now;
+    }
 
 	return true;
 }
@@ -168,18 +242,22 @@ void disp_axs15231_clear(uint32_t color) {
 		buf[i] = c;
 	}
 
-	int total = DISPLAY_WIDTH * DISPLAY_HEIGHT;
+    if (m_te_pin >= 0 && m_te_sem) {
+        xSemaphoreTake(m_te_sem, pdMS_TO_TICKS(100));
+    }
+
+	int total = DISPLAY_WIDTH_PHYS * DISPLAY_HEIGHT_PHYS;
 	int sent = 0;
 	while (sent < total) {
 		int chunk = total - sent;
 		if (chunk > PIX_BUF_PIXELS) chunk = PIX_BUF_PIXELS;
 
-		int start_y = sent / DISPLAY_WIDTH;
-		int lines = chunk / DISPLAY_WIDTH;
+		int start_y = sent / DISPLAY_WIDTH_PHYS;
+		int lines = chunk / DISPLAY_WIDTH_PHYS;
 		if (lines == 0) lines = 1;
 
-		esp_lcd_panel_draw_bitmap(m_panel, 0, start_y, DISPLAY_WIDTH, start_y + lines, buf);
-		sent += lines * DISPLAY_WIDTH;
+		esp_lcd_panel_draw_bitmap(m_panel, 0, start_y, DISPLAY_WIDTH_PHYS, start_y + lines, buf);
+		sent += lines * DISPLAY_WIDTH_PHYS;
 	}
 }
 
@@ -201,17 +279,36 @@ static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
-	// uint32_t val = lbm_dec_as_u32(args[0]);
+	uint32_t val = lbm_dec_as_u32(args[0]);
     
-    // Placeholder for orientation
-    // esp_lcd_panel_swap_xy(m_panel, ...);
-    // esp_lcd_panel_mirror(m_panel, ...);
+    uint8_t madctl = 0x08;
+    disp_axs15231_command(0x36, &madctl, 1);
+
+    if (val == 0) {
+        m_rotation = 0;
+        m_display_width = DISPLAY_WIDTH_PHYS;
+        m_display_height = DISPLAY_HEIGHT_PHYS;
+    } else if (val == 1) {
+        m_rotation = 90;
+        m_display_width = DISPLAY_HEIGHT_PHYS;
+        m_display_height = DISPLAY_WIDTH_PHYS;
+    } else if (val == 2) {
+        m_rotation = 180;
+        m_display_width = DISPLAY_WIDTH_PHYS;
+        m_display_height = DISPLAY_HEIGHT_PHYS;
+    } else if (val == 3) {
+        m_rotation = 270;
+        m_display_width = DISPLAY_HEIGHT_PHYS;
+        m_display_height = DISPLAY_WIDTH_PHYS;
+    }
 	
 	return ENC_SYM_TRUE;
 }
 
 void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
-		int pin_clk, int pin_cs, int pin_reset, int clock_mhz) {
+		int pin_clk, int pin_cs, int pin_reset, int pin_te, int clock_mhz) {
+
+    m_te_pin = pin_te;
 
 	if (!m_pix_buf) {
 		m_pix_buf = heap_caps_malloc(PIX_BUF_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
@@ -219,7 +316,7 @@ void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 
 	const spi_bus_config_t buscfg = AXS15231B_PANEL_BUS_QSPI_CONFIG(
 			pin_clk, pin_sd0, pin_sd1, pin_sd2, pin_sd3,
-			DISPLAY_WIDTH * DISPLAY_HEIGHT * 2);
+			DISPLAY_WIDTH_PHYS * DISPLAY_HEIGHT_PHYS * 2);
 	spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
 
 	const esp_lcd_panel_io_spi_config_t io_cfg =
@@ -246,8 +343,30 @@ void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 	esp_lcd_panel_reset(m_panel);
 	esp_lcd_panel_init(m_panel);
 
+	if (m_te_pin >= 0) {
+        if (m_te_sem == NULL) {
+            m_te_sem = xSemaphoreCreateBinary();
+        }
+
+        gpio_config_t te_conf = {
+            .pin_bit_mask = (1ULL << m_te_pin),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_POSEDGE,
+        };
+        gpio_config(&te_conf);
+        gpio_install_isr_service(0);
+        gpio_isr_handler_add(m_te_pin, te_gpio_isr_handler, NULL);
+
+        uint8_t te_val = 0x00;
+        disp_axs15231_command(0x35, &te_val, 1);
+    }
+
 	lbm_add_extension("ext-disp-cmd", ext_disp_cmd);
 	lbm_add_extension("ext-disp-orientation", ext_disp_orientation);
+
+	ESP_LOGI(TAG, "AXS15231 initialized");
 }
 
 void disp_axs15231_reset(void) {

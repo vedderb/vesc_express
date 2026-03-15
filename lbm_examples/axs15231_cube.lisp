@@ -11,10 +11,10 @@
 (gpio-configure 1 'pin-mode-out)
 (gpio-write 1 1)
 
-;TODO rotation
-;(ext-disp-orientation 0)
+(ext-disp-orientation 0)
 
 (def img (img-buffer 'indexed4 320 480))
+;(def img (img-buffer 'indexed4 480 320))
 
 (defun line (x0 y0 x1 y1)
     (img-line img x0 y0 x1 y1 1 '(thickness 2))
@@ -97,6 +97,7 @@
 
     ; Border frame
     (img-rectangle img 0 0 319 479 2)
+    ;(img-rectangle img 0 0 479 319 2)
 
     ; Draw rotating cube
     (draw-edges)

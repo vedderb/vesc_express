@@ -353,7 +353,7 @@ static lbm_value ext_disp_load_icna3306(lbm_value *args, lbm_uint argn) {
 }
 
 static lbm_value ext_disp_load_axs15231(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(8);
+	LBM_CHECK_ARGN_NUMBER(9);
 
 	int gpio_sd0   = lbm_dec_as_i32(args[0]);
 	int gpio_sd1   = lbm_dec_as_i32(args[1]);
@@ -362,6 +362,7 @@ static lbm_value ext_disp_load_axs15231(lbm_value *args, lbm_uint argn) {
 	int gpio_clk   = lbm_dec_as_i32(args[4]);
 	int gpio_cs    = lbm_dec_as_i32(args[5]);
 	int gpio_reset = lbm_dec_as_i32(args[6]);
+	int gpio_te    = lbm_dec_as_i32(args[7]);
 
 	if (!utils_gpio_is_valid(gpio_sd0) ||
 			!utils_gpio_is_valid(gpio_sd1) ||
@@ -373,7 +374,7 @@ static lbm_value ext_disp_load_axs15231(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	int spi_mhz = lbm_dec_as_i32(args[7]);
+	int spi_mhz = lbm_dec_as_i32(args[8]);
 
 	if (spi_mhz == 0 || spi_mhz > 80) {
 		lbm_set_error_reason(msg_invalid_clk_speed);
@@ -381,7 +382,7 @@ static lbm_value ext_disp_load_axs15231(lbm_value *args, lbm_uint argn) {
 	}
 
 	disp_axs15231_init(gpio_sd0, gpio_sd1, gpio_sd2, gpio_sd3,
-			gpio_clk, gpio_cs, gpio_reset, spi_mhz);
+			gpio_clk, gpio_cs, gpio_reset, gpio_te, spi_mhz);
 
 	lbm_display_extensions_set_callbacks(
 			disp_axs15231_render_image,
