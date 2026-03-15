@@ -25,6 +25,10 @@
 
 #include HW_HEADER
 
+#ifdef QMLUI_HEADER_HW
+#include QMLUI_HEADER_HW
+#endif
+
 #ifdef OVR_CONF_DEFAULT
 #include OVR_CONF_DEFAULT
 #else

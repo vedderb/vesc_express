@@ -19,3 +19,7 @@
 
 #include "conf_general.h"
 #include HW_SOURCE
+
+#ifdef QMLUI_SOURCE_HW
+#include QMLUI_SOURCE_HW
+#endif
