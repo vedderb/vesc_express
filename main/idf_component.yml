@@ -1,15 +1,15 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  espressif/dhara: "^0.1.0"
-  espressif/spi_nand_flash: "^0.1.0"
-  espressif/esp_lcd_touch: "^1.2.1"
-  espressif/esp_lcd_touch_cst816s: "^1.1.1"
-  espressif/esp_lcd_touch_gt911: "^1.2.0"
-  waveshare/esp_lcd_touch_cst9217: "^1.0.4"
-  atanisoft/esp_lcd_touch_xpt2046: "^1.0.6"
+  espressif/dhara: ^0.1.0
+  espressif/spi_nand_flash: ^0.1.0
+  espressif/esp_lcd_touch: ^1.2.1
+  espressif/esp_lcd_touch_cst816s: ^1.1.1
+  espressif/esp_lcd_touch_gt911: ^1.2.0
+  waveshare/esp_lcd_touch_cst9217: ^1.0.4
+  atanisoft/esp_lcd_touch_xpt2046: ^1.0.6
   ## Required IDF version
   idf:
-    version: ">=4.1.0"
+    version: '>=4.1.0'
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"
@@ -21,3 +21,4 @@ dependencies:
   #   # `public` flag doesn't have an effect dependencies of the `main` component.
   #   # All dependencies of `main` are public by default.
   #   public: true
+  espressif/esp_lcd_axs15231b: ^2.1.0
