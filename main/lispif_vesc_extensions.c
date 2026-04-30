@@ -3639,10 +3639,38 @@ static lbm_value ext_set_pos_time(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// Disable radios before sleeping. Reversible — safe for light sleep where
+// execution resumes after wake and the BT/WiFi stacks must still be usable.
+static void sleep_disable_radios(void) {
+	esp_wifi_stop();
+
+	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) {
+		esp_bluedroid_disable();
+	}
+
+	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
+		esp_bt_controller_disable();
+	}
+}
+
+// Full teardown for deep sleep only. The chip reboots on wake so deinit is
+// free; doing it here prevents BLE state corruption observed across many
+// 2h-cycle wakes (BMS freeze after weeks).
+static void sleep_deinit_radios(void) {
+	sleep_disable_radios();
+
+	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_INITIALIZED) {
+		esp_bluedroid_deinit();
+	}
+	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
+		esp_bt_controller_deinit();
+	}
+}
+
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	esp_wifi_stop();
+	sleep_deinit_radios();
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
@@ -3660,7 +3688,10 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	esp_wifi_stop();
+	// Light sleep returns to the caller with stacks intact, so use the
+	// reversible disable path — a deinit here would leave the unit
+	// permanently without BT/WiFi until reboot.
+	sleep_disable_radios();
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
