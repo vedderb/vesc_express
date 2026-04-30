@@ -368,6 +368,11 @@ static volatile uint32_t eval_cps_run_state = EVAL_CPS_STATE_DEAD;
 static volatile uint32_t eval_cps_next_state = EVAL_CPS_STATE_NONE;
 static volatile uint32_t eval_cps_next_state_arg = 0;
 static volatile bool     eval_cps_state_changed = false;
+static volatile lbm_uint eval_heartbeat = 0;
+
+lbm_uint lbm_get_eval_heartbeat(void) {
+  return eval_heartbeat;
+}
 
 sizeopt static void usleep_nonsense(uint32_t us) {
   (void) us;
@@ -5982,6 +5987,7 @@ void lbm_run_eval(void){
             lbm_mutex_unlock(&blocking_extension_mutex);
           }
         }
+        eval_heartbeat++;
         usleep_callback(EVAL_CPS_MIN_SLEEP);
         continue;
       case EVAL_CPS_STATE_PAUSED:
@@ -5992,6 +5998,7 @@ void lbm_run_eval(void){
           eval_cps_next_state_arg = 0;
           eval_cps_run_state = EVAL_CPS_STATE_PAUSED;
         }
+        eval_heartbeat++;
         usleep_callback(EVAL_CPS_MIN_SLEEP);
         continue;
       case EVAL_CPS_STATE_KILL:
@@ -6017,6 +6024,7 @@ void lbm_run_eval(void){
       } else {
         if (eval_cps_state_changed) break;
         if (!is_atomic) {
+          eval_heartbeat++;
           if (gc_requested) {
             gc();
           }
@@ -6055,6 +6063,7 @@ void lbm_run_eval(void){
         if (eval_cps_state_changed) break;
         eval_steps_quota = eval_steps_refill;
         if (!is_atomic) {
+          eval_heartbeat++;
           if (gc_requested) {
             gc();
           }
