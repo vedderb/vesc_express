@@ -3646,7 +3646,10 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
-		esp_sleep_enable_timer_wakeup((uint32_t)(sleep_time * 1.0e6));
+		// esp_sleep_enable_timer_wakeup takes microseconds. With uint32_t the
+		// limit is ~4294 s (71.6 min); longer sleeps wrap modulo 2^32, so
+		// 2 h becomes ~2905 s (~48.4 min). Use uint64_t for multi-hour sleeps.
+		esp_sleep_enable_timer_wakeup((uint64_t)(sleep_time * 1.0e6));
 	}
 
 	esp_deep_sleep_start();
@@ -3661,7 +3664,7 @@ static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
-		esp_sleep_enable_timer_wakeup((uint32_t)(sleep_time * 1.0e6));
+		esp_sleep_enable_timer_wakeup((uint64_t)(sleep_time * 1.0e6));
 	}
 
 	esp_light_sleep_start();
