@@ -777,6 +777,11 @@ void lispif_stop(void) {
 		return;
 	}
 
+	TaskHandle_t task = eval_task;
+	if (task) {
+		(void)main_task_wdt_disable_task(task);
+	}
+
 	lispif_lock_lbm();
 
 	lbm_kill_eval();
@@ -790,10 +795,14 @@ void lispif_stop(void) {
 		}
 	}
 
-	if (lisp_thd_running) {
-		vTaskDelete(eval_task);
+	if (lisp_thd_running && task) {
+		vTaskDelete(task);
 		lisp_thd_running = false;
+		eval_task = 0;
 		commands_printf_lisp("Killed eval task as it didn't stop when asked to");
+	} else if (lisp_thd_running) {
+		lisp_thd_running = false;
+		commands_printf_lisp("Eval task did not stop, but no task handle was available");
 	}
 
 	lispif_unlock_lbm();
@@ -998,7 +1007,19 @@ static void sleep_callback(uint32_t us) {
 	if (t == 0) {
 		t = 1;
 	}
-	vTaskDelay(t);
+
+	while (t > 0) {
+		TickType_t step = t;
+		if (step > pdMS_TO_TICKS(1000)) {
+			step = pdMS_TO_TICKS(1000);
+		}
+
+		(void)main_task_wdt_reset();
+		vTaskDelay(step);
+		t -= step;
+	}
+
+	(void)main_task_wdt_reset();
 }
 
 static bool image_write(uint32_t w, int32_t ix, bool const_heap) {
@@ -1023,7 +1044,12 @@ static bool image_write(uint32_t w, int32_t ix, bool const_heap) {
 static void eval_thread(void *arg) {
 	(void)arg;
 	eval_task = xTaskGetCurrentTaskHandle();
+#if CONFIG_ESP_TASK_WDT_EN && (defined(HW_APP_WDT_TIMEOUT_S) || defined(HW_APP_WDT_STARTUP_TIMEOUT_S))
+	(void)main_task_wdt_enable();
+#endif
 	lbm_run_eval();
+	(void)main_task_wdt_disable();
 	lisp_thd_running = false;
+	eval_task = 0;
 	vTaskDelete(NULL);
 }

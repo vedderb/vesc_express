@@ -2162,6 +2162,80 @@ static lbm_value ext_lbm_set_quota(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static bool decode_bool_arg(lbm_value arg, bool *val) {
+	if (lbm_is_number(arg)) {
+		*val = lbm_dec_as_i32(arg) != 0;
+		return true;
+	} else if (arg == ENC_SYM_TRUE) {
+		*val = true;
+		return true;
+	} else if (arg == ENC_SYM_NIL) {
+		*val = false;
+		return true;
+	}
+
+	return false;
+}
+
+static lbm_value ext_wdt_result(esp_err_t res) {
+	if (res == ESP_OK) {
+		return ENC_SYM_TRUE;
+	}
+
+	lbm_set_error_reason((char*)esp_err_to_name(res));
+	return ENC_SYM_EERROR;
+}
+
+static lbm_value ext_wdt_configure(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(2);
+
+	bool is_enabled = false;
+	if (!decode_bool_arg(args[0], &is_enabled)) {
+		lbm_set_error_reason((char*) lbm_error_str_incorrect_arg);
+		return ENC_SYM_TERROR;
+	}
+
+	if (!lbm_is_number(args[1])) {
+		lbm_set_error_reason((char*) lbm_error_str_no_number);
+		return ENC_SYM_TERROR;
+	}
+
+	uint32_t timeout_s = lbm_dec_as_u32(args[1]);
+	if (is_enabled && timeout_s < 1) {
+		lbm_set_error_reason("Watchdog timeout must be greater than 0");
+		return ENC_SYM_EERROR;
+	}
+
+	return ext_wdt_result(main_task_wdt_configure(is_enabled, timeout_s));
+}
+
+static lbm_value ext_wdt_enable(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(0);
+	return ext_wdt_result(main_task_wdt_enable());
+}
+
+static lbm_value ext_wdt_disable(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(0);
+	return ext_wdt_result(main_task_wdt_disable());
+}
+
+static lbm_value ext_wdt_reset(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(0);
+	return ext_wdt_result(main_task_wdt_reset());
+}
+
+static lbm_value ext_wdt_set_timeout(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	uint32_t timeout_s = lbm_dec_as_u32(args[0]);
+	if (timeout_s < 1) {
+		lbm_set_error_reason("Watchdog timeout must be greater than 0");
+		return ENC_SYM_EERROR;
+	}
+
+	return ext_wdt_result(main_task_wdt_set_timeout(timeout_s));
+}
+
 lbm_value ext_lbm_set_gc_stack_size(lbm_value *args, lbm_uint argn) {
 	if (argn == 1) {
 		if (lbm_is_number(args[0])) {
@@ -6894,6 +6968,13 @@ void lispif_load_vesc_extensions(bool main_found) {
 		// Lbm settings
 		lbm_add_extension("lbm-set-quota", ext_lbm_set_quota);
 		lbm_add_extension("lbm-set-gc-stack-size", ext_lbm_set_gc_stack_size);
+
+		// Application watchdog
+		lbm_add_extension("wdt-configure", ext_wdt_configure);
+		lbm_add_extension("wdt-enable", ext_wdt_enable);
+		lbm_add_extension("wdt-disable", ext_wdt_disable);
+		lbm_add_extension("wdt-reset", ext_wdt_reset);
+		lbm_add_extension("wdt-set-timeout", ext_wdt_set_timeout);
 
 		// Plot
 		lbm_add_extension("plot-init", ext_plot_init);
