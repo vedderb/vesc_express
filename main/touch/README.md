@@ -5,14 +5,15 @@ The following touch extensions are available:
 1. `touch-load-cst816s`
 2. `touch-load-gt911`
 3. `touch-load-cst9217`
-4. `touch-load-xpt2046`
-5. `touch-read`
-6. `touch-apply-transforms`
-7. `touch-delete`
+4. `touch-load-cst836u`
+5. `touch-load-xpt2046`
+6. `touch-read`
+7. `touch-apply-transforms`
+8. `touch-delete`
 
 ## Quick Start (I2C Controllers)
 
-Use this for CST816S, GT911, and CST9217:
+Use this for CST816S, GT911, CST9217, and CST836U:
 
 ```clj
 (touch-load-cst816s sda scl rst int width height [i2c-freq])
@@ -31,6 +32,7 @@ For other I2C controllers, use their matching loader with the same argument patt
 ```clj
 (touch-load-gt911 sda scl rst int width height [i2c-freq])
 (touch-load-cst9217 sda scl rst int width height [i2c-freq])
+(touch-load-cst836u sda scl rst int width height [i2c-freq])
 ```
 
 ## Quick Start (SPI - XPT2046)
@@ -72,7 +74,8 @@ Start with:
 
 Then test combinations until touch coordinates match your screen orientation.
 
-This uses esp_lcd_touch transform APIs under the hood, so behavior stays consistent across controllers.
+For esp_lcd-based controllers transforms are applied by esp_lcd_touch.
+For CST836U transforms are applied in the local driver layer with the same Lisp API.
 
 ## Touch Events
 
@@ -89,7 +92,7 @@ Event format:
 (event-touch-int driver-symbol pressed x y strength track-id)
 ```
 
-`driver-symbol` is one of: `cst816s`, `gt911`, `cst9217`, `xpt2046`.
+`driver-symbol` is one of: `cst816s`, `gt911`, `cst9217`, `cst836u`, `xpt2046`, `axs15231`.
 
 ## How the CST816S Example Works
 

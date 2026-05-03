@@ -21,6 +21,7 @@
 
 #include "lispif_events.h"
 #include "lbm_vesc_utils.h"
+#include "touch_cst836u.h"
 #include "eval_cps.h"
 #include "extensions.h"
 #include "heap.h"
@@ -75,6 +76,7 @@ static lbm_uint sym_gt911 = 0;
 static lbm_uint sym_cst9217 = 0;
 static lbm_uint sym_xpt2046 = 0;
 static lbm_uint sym_axs15231 = 0;
+static lbm_uint sym_cst836u = 0;
 
 typedef esp_err_t (*touch_i2c_create_fn_t)(esp_lcd_panel_io_handle_t io, const esp_lcd_touch_config_t *cfg, esp_lcd_touch_handle_t *tp);
 
@@ -459,6 +461,7 @@ static void touch_delete_locked(void) {
 
 	memset(&touch_driver, 0, sizeof(touch_driver));
 	touch_driver_symbol = 0;
+	touch_cst836u_reset();
 }
 
 static lbm_value touch_get_point_locked(void) {
@@ -814,6 +817,63 @@ static lbm_value ext_touch_load_axs15231(lbm_value *args, lbm_uint argn) {
 	return touch_load_driver(driver, sym_axs15231, width, height);
 }
 
+static lbm_value ext_touch_load_cst836u(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_RANGE(6, 7);
+
+	int pin_sda = lbm_dec_as_i32(args[0]);
+	int pin_scl = lbm_dec_as_i32(args[1]);
+	int pin_rst = lbm_dec_as_i32(args[2]);
+	int pin_int = lbm_dec_as_i32(args[3]);
+	int width = lbm_dec_as_i32(args[4]);
+	int height = lbm_dec_as_i32(args[5]);
+	int freq = TOUCH_I2C_DEFAULT_FREQ;
+
+	if (argn == 7) {
+		freq = lbm_dec_as_i32(args[6]);
+	}
+
+	if (!touch_validate_i2c_load_args(pin_sda, pin_scl, pin_rst, pin_int, width, height, freq)) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!touch_runtime_init()) {
+		lbm_set_error_reason(msg_touch_runtime);
+		return ENC_SYM_EERROR;
+	}
+
+	xSemaphoreTake(touch_mutex, portMAX_DELAY);
+	touch_delete_locked();
+	xSemaphoreGive(touch_mutex);
+
+	esp_err_t res = touch_init_i2c_bus(pin_sda, pin_scl, (uint32_t)freq);
+	if (res != ESP_OK) {
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
+
+	if (pin_rst >= 0) {
+		gpio_reset_pin((gpio_num_t)pin_rst);
+		gpio_set_direction((gpio_num_t)pin_rst, GPIO_MODE_OUTPUT);
+		gpio_set_level((gpio_num_t)pin_rst, 0);
+		vTaskDelay(pdMS_TO_TICKS(10));
+		gpio_set_level((gpio_num_t)pin_rst, 1);
+		vTaskDelay(pdMS_TO_TICKS(50));
+	}
+
+	lispif_touch_driver_t driver = {0};
+	res = touch_cst836u_init(touch_i2c_port, (uint16_t)width, (uint16_t)height, &driver);
+	if (res != ESP_OK) {
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
+
+	driver.deinit = touch_esp_lcd_deinit;
+	//touch_has_int = (pin_int >= 0);
+	touch_has_int = false;
+
+	return touch_load_driver(driver, sym_cst836u, width, height);
+}
+
 static lbm_value ext_touch_load_xpt2046(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_RANGE(8, 9);
 
@@ -931,6 +991,14 @@ static lbm_value ext_touch_apply_transforms(lbm_value *args, lbm_uint argn) {
 	bool swap_xy = lbm_dec_as_i32(args[0]) != 0;
 	bool mirror_x = lbm_dec_as_i32(args[1]) != 0;
 	bool mirror_y = lbm_dec_as_i32(args[2]) != 0;
+
+	touch_cst836u_set_transforms(swap_xy, mirror_x, mirror_y);
+
+	 if (!touch_handle) {
+	  xSemaphoreGive(touch_mutex);
+	  return ENC_SYM_TRUE;
+	 }
+
 	bool apply_mirror_x = mirror_x;
 	bool apply_mirror_y = mirror_y;
 
@@ -963,12 +1031,14 @@ void lispif_load_touch_extensions(void) {
 	lbm_add_symbol_const("cst9217", &sym_cst9217);
 	lbm_add_symbol_const("xpt2046", &sym_xpt2046);
 	lbm_add_symbol_const("axs15231", &sym_axs15231);
+	lbm_add_symbol_const("cst836u", &sym_cst836u);
 
 	lbm_add_extension("touch-load-cst816s", ext_touch_load_cst816s);
 	lbm_add_extension("touch-load-gt911", ext_touch_load_gt911);
 	lbm_add_extension("touch-load-cst9217", ext_touch_load_cst9217);
 	lbm_add_extension("touch-load-xpt2046", ext_touch_load_xpt2046);
 	lbm_add_extension("touch-load-axs15231", ext_touch_load_axs15231);
+	lbm_add_extension("touch-load-cst836u", ext_touch_load_cst836u);
 	lbm_add_extension("touch-read", ext_touch_read);
 	lbm_add_extension("touch-delete", ext_touch_delete);
 	lbm_add_extension("touch-apply-transforms", ext_touch_apply_transforms);

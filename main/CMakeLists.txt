@@ -72,6 +72,7 @@ set(COMPONENT_SRCS
 "rgbled/lispif_rgbled_extensions.c"
 
 "touch/lispif_touch_extensions.c"
+"touch/touch_cst836u.c"
 
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
