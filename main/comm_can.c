@@ -63,12 +63,19 @@ static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 #define RXBUF_LEN					50
 
 static twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
-static const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+static twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 #if HW_CAN_NO_ACK_MODE
 static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(0, 0, TWAI_MODE_NO_ACK);
 #else
 static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(0, 0, TWAI_MODE_NORMAL);
 #endif
+
+static void update_filter(void) {
+	twai_filter_config_t hw_filter;
+	if (HW_CAN_FILTER_CONFIG(&hw_filter)) {
+		f_config = hw_filter;
+	}
+}
 
 static volatile bool init_done = false;
 static volatile bool sem_init_done = false;
@@ -632,6 +639,12 @@ static void process_task(void *arg) {
 
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
 
+			// Hardware-specific CAN hook (weak symbol, can be overridden)
+			extern void hw_can_rx_hook(uint32_t id, uint8_t *data, int len, bool is_ext) __attribute__((weak));
+			if (hw_can_rx_hook) {
+				hw_can_rx_hook(msg->identifier, msg->data, msg->data_length_code, msg->extd);
+			}
+
 			if (use_vesc_decoder) {
 				if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
 					if (msg->extd) {
@@ -855,6 +868,7 @@ void comm_can_start(int pin_tx, int pin_rx) {
 	}
 
 	update_baud(backup.config.can_baud_rate);
+	update_filter();
 
 	g_config.tx_queue_len = 20;
 	g_config.rx_queue_len = 20;
@@ -933,6 +947,7 @@ void comm_can_update_baudrate(int delay_msec) {
 	}
 
 	update_baud(backup.config.can_baud_rate);
+	update_filter();
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
 
