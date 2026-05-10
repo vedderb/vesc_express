@@ -66,6 +66,13 @@
 #define LOGS_ENABLED 0
 #endif
 
+// Set to 0 in a hwconf header to skip the COMM_PING_CAN scan loop. Useful for
+// headless variants that share a bus with a master and should never respond to
+// or initiate VESC ping discovery.
+#ifndef HW_CAN_PING_SCAN_ENABLED
+#define HW_CAN_PING_SCAN_ENABLED 1
+#endif
+
 #ifndef UART_NUM
 #define HW_NO_UART
 #define UART_NUM					0
