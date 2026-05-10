@@ -121,6 +121,8 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/vesc/wcore"
 "hwconf/rescue"
 "hwconf/avaspark"
+"hwconf/jetfleet"
+"hwconf/jetfleet/jfbms32"
 
 "lispBM"
 "lispBM/include"
