@@ -80,6 +80,14 @@
 #define HW_CAN_NO_ACK_MODE 0
 #endif
 
+// Hardware-specific CAN acceptance filter hook. A hwconf header can override
+// this macro to forward to a function that fills a twai_filter_config_t and
+// returns true. The default expands to false, which the compiler eliminates
+// so no filter override is applied.
+#ifndef HW_CAN_FILTER_CONFIG
+#define HW_CAN_FILTER_CONFIG(cfg) ((void)(cfg), false)
+#endif
+
 #ifndef UART_NUM
 #define HW_NO_UART
 #define UART_NUM					0
