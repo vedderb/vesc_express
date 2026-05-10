@@ -67,7 +67,11 @@ static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 
 static twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
 static const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+#if HW_CAN_NO_ACK_MODE
+static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(0, 0, TWAI_MODE_NO_ACK);
+#else
 static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(0, 0, TWAI_MODE_NORMAL);
+#endif
 
 static volatile bool init_done = false;
 static volatile bool sem_init_done = false;
