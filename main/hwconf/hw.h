@@ -73,6 +73,13 @@
 #define HW_CAN_PING_SCAN_ENABLED 1
 #endif
 
+// Set to 1 in a hwconf header to bring up TWAI in TWAI_MODE_NO_ACK instead of
+// TWAI_MODE_NORMAL. Useful for diagnostic builds that should not generate ACKs
+// on a live bus.
+#ifndef HW_CAN_NO_ACK_MODE
+#define HW_CAN_NO_ACK_MODE 0
+#endif
+
 #ifndef UART_NUM
 #define HW_NO_UART
 #define UART_NUM					0
