@@ -123,6 +123,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/avaspark"
 "hwconf/jetfleet"
 "hwconf/jetfleet/jfbms32"
+"hwconf/jetfleet/jfbms_slave"
 
 "lispBM"
 "lispBM/include"
