@@ -123,6 +123,7 @@ void lispif_init(void) {
 	heap_size = (4096 + 512);
 	mem_size = LBM_MEMORY_SIZE_KB(32);
 	bitmap_size = LBM_BITMAP_SIZE_KB(32);
+#else
 	#error "Unsupported target"
 #endif
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
