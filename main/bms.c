@@ -52,6 +52,7 @@ static int clamp_count(int count, int max) {
 
 // Function pointers
 static void(*cmd_handler)(COMM_PACKET_ID cmd, int param1, int param2) = 0;
+static bool(*cmd_hook)(COMM_PACKET_ID cmd, int param1, int param2) = 0;
 
 void bms_init(void) {
 	if (!reply_mutex) {
@@ -393,6 +394,23 @@ void bms_process_cmd(unsigned char *data, unsigned int len,
 	case COMM_BMS_RESET_COUNTERS:
 	case COMM_BMS_FORCE_BALANCE:
 	case COMM_BMS_ZERO_CURRENT_OFFSET: {
+		bool handled = false;
+
+		if (cmd_hook) {
+			int param1 = -1;
+			int param2 = -1;
+
+			if (len >= 1) {
+				param1 = data[0];
+			}
+
+			if (len >= 2) {
+				param2 = data[1];
+			}
+
+			handled = cmd_hook(packet_id, param1, param2);
+		}
+
 		if (cmd_handler) {
 			int param1 = -1;
 			int param2 = -1;
@@ -406,7 +424,7 @@ void bms_process_cmd(unsigned char *data, unsigned int len,
 			}
 
 			cmd_handler(packet_id, param1, param2);
-		} else {
+		} else if (!handled) {
 			if (UTILS_AGE_S(m_values.update_time) < MAX_CAN_AGE_SEC) {
 				comm_can_send_buffer(m_values.can_id, data - 1, len + 1, 0);
 			}
@@ -420,6 +438,10 @@ void bms_process_cmd(unsigned char *data, unsigned int len,
 
 void bms_register_cmd_handler(void (*handler)(COMM_PACKET_ID cmd, int param1, int param2)) {
 	cmd_handler = handler;
+}
+
+void bms_register_cmd_hook(bool (*handler)(COMM_PACKET_ID cmd, int param1, int param2)) {
+	cmd_hook = handler;
 }
 
 volatile bms_values *bms_get_values(void) {
