@@ -20,12 +20,11 @@
 #ifndef MAIN_BLE_CUSTOM_BLE_H_
 #define MAIN_BLE_CUSTOM_BLE_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "esp_bt_defs.h"
-#include "esp_gatt_defs.h"
-#include "esp_gap_ble_api.h"
+#include "ble_compat.h"
 
 #define CUSTOM_BLE_MAX_NAME_LEN 30
 

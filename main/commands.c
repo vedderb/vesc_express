@@ -70,7 +70,9 @@
 #include "esp_sleep.h"
 #include "soc/rtc.h"
 #include "esp_bt.h"
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_bt_main.h"
+#endif
 #include "esp_wifi.h"
 
 // Settings
