@@ -71,7 +71,9 @@
 #include "soc/rtc.h"
 #if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_bt_main.h"
+#endif
 #include "esp_wifi.h"
 #endif
 

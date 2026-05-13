@@ -21,7 +21,7 @@
 
 #include <string.h>
 
-#include "esp_bt_defs.h"
+#include "ble_compat.h"
 
 #include "custom_ble.h"
 #include "lispif_events.h"

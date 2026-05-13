@@ -87,7 +87,11 @@
 #include "esp_private/esp_clk.h"
 #if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_bt_main.h"
+#elif defined(CONFIG_BT_NIMBLE_ENABLED)
+#include "nimble/nimble_port.h"
+#endif
 #endif
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
@@ -3653,9 +3657,13 @@ static void sleep_disable_radios(void) {
 #if !CONFIG_IDF_TARGET_ESP32P4
 	esp_wifi_stop();
 
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
 	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) {
 		esp_bluedroid_disable();
 	}
+#elif defined(CONFIG_BT_NIMBLE_ENABLED)
+	nimble_port_stop();
+#endif
 
 	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
 		esp_bt_controller_disable();
@@ -3669,12 +3677,18 @@ static void sleep_disable_radios(void) {
 static void sleep_deinit_radios(void) {
 	sleep_disable_radios();
 
+#if !CONFIG_IDF_TARGET_ESP32P4
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
 	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_INITIALIZED) {
 		esp_bluedroid_deinit();
 	}
+#elif defined(CONFIG_BT_NIMBLE_ENABLED)
+	nimble_port_deinit();
+#endif
 	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
 		esp_bt_controller_deinit();
 	}
+#endif
 }
 
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {

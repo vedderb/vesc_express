@@ -7,7 +7,6 @@ set(COMPONENT_SRCS
 "comm_uart.c"
 "comm_usb.c"
 "comm_can.c"
-"comm_ble.c"
 "comm_wifi.c"
 "packet.c"
 "crc.c"
@@ -66,8 +65,6 @@ set(COMPONENT_SRCS
 
 "wifi/lispif_wifi_extensions.c"
 
-"ble/custom_ble.c"
-
 "rgbled/lispif_rgbled_extensions.c"
 
 "touch/lispif_touch_extensions.c"
@@ -105,6 +102,18 @@ if(NOT CONFIG_IDF_TARGET_ESP32P4)
     list(APPEND COMPONENT_SRCS
         "ble/lispif_ble_extensions.c"
     )
+
+    if(CONFIG_BT_NIMBLE_ENABLED)
+        list(APPEND COMPONENT_SRCS
+            "comm_ble_nimble.c"
+            "ble/custom_ble_nimble.c"
+        )
+    else()
+        list(APPEND COMPONENT_SRCS
+            "comm_ble.c"
+            "ble/custom_ble.c"
+        )
+    endif()
 endif()
 
 set(COMPONENT_ADD_INCLUDEDIRS
