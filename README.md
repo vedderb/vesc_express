@@ -28,9 +28,11 @@ idf.py set-target <target>
 
 where target is esp32c3, esp32c6 or esp32s3. You will need to run a fullclean or remove the build directory when changing targets.
 
-Each normal build target uses its own shared 4 MB base file `sdkconfig.defaults.<target>`.
+Each normal build target uses its own shared base file `sdkconfig.defaults.<target>`.
 
-Boards that need non-default flash or PSRAM settings should instead provide their own full `sdkconfig.defaults.<hw_file>` file next to the shared target configs in the repository root.
+Boards that need non-default flash or PSRAM settings can provide `sdkconfig.defaults.<hw_file>` next to the shared target configs in the repository root. Hardware defaults are applied after the shared target defaults, so they only need to contain the board-specific overrides.
+
+For ESP32-C6 builds, use `Devkit C6 8M` for 8 MB flash modules and `Devkit C6 4M` for 4 MB flash modules.
 
 Once the toolchain is set up in the current path, the project can be built with
 
