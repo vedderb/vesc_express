@@ -73,16 +73,16 @@
 #define HW_CAN_PING_SCAN_ENABLED 1
 #endif
 
-// Set to 1 in a hwconf header to bring up TWAI in TWAI_MODE_NO_ACK instead of
-// TWAI_MODE_NORMAL. Useful for diagnostic builds that should not generate ACKs
-// on a live bus.
+// Set to 1 in a hwconf header to bring up TWAI self-test/no-ACK mode instead
+// of normal bus mode. Useful for diagnostic builds that should not generate
+// ACKs on a live bus.
 #ifndef HW_CAN_NO_ACK_MODE
 #define HW_CAN_NO_ACK_MODE 0
 #endif
 
 // Hardware-specific CAN acceptance filter hook. A hwconf header can override
-// this macro to forward to a function that fills a twai_filter_config_t and
-// returns true. The default expands to false, which the compiler eliminates
+// this macro to forward to a function that fills a twai_mask_filter_config_t
+// and returns true. The default expands to false, which the compiler eliminates
 // so no filter override is applied.
 #ifndef HW_CAN_FILTER_CONFIG
 #define HW_CAN_FILTER_CONFIG(cfg) ((void)(cfg), false)
@@ -97,19 +97,19 @@
 #endif
 
 #ifndef HW_ADC_CH0
-#define HW_ADC_CH0					ADC1_CHANNEL_0
+#define HW_ADC_CH0					ADC_CHANNEL_0
 #endif
 #ifndef HW_ADC_CH1
-#define HW_ADC_CH1					ADC1_CHANNEL_1
+#define HW_ADC_CH1					ADC_CHANNEL_1
 #endif
 #ifndef HW_ADC_CH2
-#define HW_ADC_CH2					ADC1_CHANNEL_2
+#define HW_ADC_CH2					ADC_CHANNEL_2
 #endif
 #ifndef HW_ADC_CH3
-#define HW_ADC_CH3					ADC1_CHANNEL_3
+#define HW_ADC_CH3					ADC_CHANNEL_3
 #endif
 #ifndef HW_ADC_CH4
-#define HW_ADC_CH4					ADC1_CHANNEL_4
+#define HW_ADC_CH4					ADC_CHANNEL_4
 #endif
 
 #endif /* MAIN_HWCONF_HW_H_ */

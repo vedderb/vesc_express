@@ -21,6 +21,8 @@
 #include "hwspi.h"
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "esp_heap_caps.h"
 #include "soc/gpio_struct.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -161,4 +163,3 @@ void hwspi_send_data(const uint8_t *data, int len) {
 	t.flags = 0;
 	spi_device_polling_transmit(m_spi, &t);
 }
-

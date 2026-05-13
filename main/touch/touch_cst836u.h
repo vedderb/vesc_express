@@ -21,7 +21,7 @@
 #define TOUCH_CST836U_H_
 
 #include <stdbool.h>
-#include "driver/i2c.h"
+#include "i2c_compat.h"
 #include "lispif_touch_extensions.h"
 
 esp_err_t touch_cst836u_init(i2c_port_t port, uint16_t width, uint16_t height, lispif_touch_driver_t *driver);

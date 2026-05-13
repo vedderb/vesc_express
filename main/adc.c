@@ -21,46 +21,58 @@
 #include "terminal.h"
 #include "commands.h"
 
-#if CONFIG_IDF_TARGET_ESP32C6
+#include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
-#else
-#include "esp_adc_cal.h"
-#endif
 
 #include <math.h>
 
 // Private variables
+static adc_oneshot_unit_handle_t adc1_handle = NULL;
+static adc_cali_handle_t adc1_cali_handle = NULL;
 static bool cal_ok = false;
 
-#if CONFIG_IDF_TARGET_ESP32C6
-static adc_cali_handle_t adc1_cali_handle = NULL;
-#else
-static esp_adc_cal_characteristics_t adc1_chars;
-#endif
+static void adc_config_channel_if_present(adc_channel_t ch) {
+	if (!adc1_handle) {
+		return;
+	}
+
+	adc_oneshot_chan_cfg_t cfg = {
+		.atten = ADC_ATTEN_DB_12,
+		.bitwidth = ADC_BITWIDTH_DEFAULT,
+	};
+	adc_oneshot_config_channel(adc1_handle, ch, &cfg);
+}
 
 void adc_init(void) {
-	adc1_config_width(ADC_WIDTH_BIT_DEFAULT);
+	adc_oneshot_unit_init_cfg_t init_cfg = {
+		.unit_id = ADC_UNIT_1,
+		.ulp_mode = ADC_ULP_MODE_DISABLE,
+	};
+	if (adc_oneshot_new_unit(&init_cfg, &adc1_handle) != ESP_OK) {
+		adc1_handle = NULL;
+		return;
+	}
 
 #ifdef HW_ADC_CH0
-	adc1_config_channel_atten(HW_ADC_CH0, ADC_ATTEN_DB_12);
+	adc_config_channel_if_present(HW_ADC_CH0);
 #endif
 #ifdef HW_ADC_CH1
-	adc1_config_channel_atten(HW_ADC_CH1, ADC_ATTEN_DB_12);
+	adc_config_channel_if_present(HW_ADC_CH1);
 #endif
 #ifdef HW_ADC_CH2
-	adc1_config_channel_atten(HW_ADC_CH2, ADC_ATTEN_DB_12);
+	adc_config_channel_if_present(HW_ADC_CH2);
 #endif
 #ifdef HW_ADC_CH3
-	adc1_config_channel_atten(HW_ADC_CH3, ADC_ATTEN_DB_12);
+	adc_config_channel_if_present(HW_ADC_CH3);
 #endif
 #ifdef HW_ADC_CH4
-	adc1_config_channel_atten(HW_ADC_CH4, ADC_ATTEN_DB_12);
+	adc_config_channel_if_present(HW_ADC_CH4);
 #endif
 
-	#if CONFIG_IDF_TARGET_ESP32C6
 	adc_cali_curve_fitting_config_t cali_config = {
 		.unit_id = ADC_UNIT_1,
+		.chan = ADC_CHANNEL_0,
 		.atten = ADC_ATTEN_DB_12,
 		.bitwidth = ADC_BITWIDTH_DEFAULT,
 	};
@@ -68,27 +80,24 @@ void adc_init(void) {
 	if (adc_cali_create_scheme_curve_fitting(&cali_config, &adc1_cali_handle) == ESP_OK) {
 		cal_ok = true;
 	}
-	#else
-	if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
-		esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_DEFAULT, 0, &adc1_chars);
-		cal_ok = true;
-	}
-	#endif
 }
 
-float adc_get_voltage(adc1_channel_t ch) {
-	float res = -1.0;
-
-	if (cal_ok) {
-		#if CONFIG_IDF_TARGET_ESP32C6
-		int voltage_mv = 0;
-		if (adc_cali_raw_to_voltage(adc1_cali_handle, adc1_get_raw(ch), &voltage_mv) == ESP_OK) {
-			res = (float)voltage_mv / 1000.0;
-		}
-		#else
-		res = (float)esp_adc_cal_raw_to_voltage(adc1_get_raw(ch), &adc1_chars) / 1000.0;
-		#endif
+float adc_get_voltage(adc_channel_t ch) {
+	if (!adc1_handle) {
+		return -1.0f;
 	}
 
-	return res;
+	int raw = 0;
+	if (adc_oneshot_read(adc1_handle, ch, &raw) != ESP_OK) {
+		return -1.0f;
+	}
+
+	if (cal_ok && adc1_cali_handle) {
+		int voltage_mv = 0;
+		if (adc_cali_raw_to_voltage(adc1_cali_handle, raw, &voltage_mv) == ESP_OK) {
+			return (float)voltage_mv / 1000.0f;
+		}
+	}
+
+	return (float)raw * (3.3f / 4095.0f);
 }

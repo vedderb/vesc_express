@@ -21,7 +21,7 @@
 #include "bq769x2_defs.h"
 
 #include "main.h"
-#include "driver/i2c.h"
+#include "i2c_compat.h"
 #include "esp_sleep.h"
 #include "lispif.h"
 #include "lispbm.h"
@@ -1085,19 +1085,19 @@ static lbm_value ext_set_btn_wakeup_state(lbm_value *args, lbm_uint argn) {
 
 	switch (lbm_dec_as_i32(args[0])) {
 		case 0:
-			esp_deep_sleep_enable_gpio_wakeup(
+			esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(
 				1ULL << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_LOW
 			);
 			break;
 
 		case 1:
-			esp_deep_sleep_enable_gpio_wakeup(
+			esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(
 				1ULL << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_HIGH
 			);
 			break;
 
 		default:
-			gpio_deep_sleep_wakeup_disable(PIN_ENABLE);
+			gpio_wakeup_disable_on_hp_periph_powerdown_sleep(PIN_ENABLE);
 			break;
 	}
 

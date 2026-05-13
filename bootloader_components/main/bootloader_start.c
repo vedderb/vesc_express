@@ -41,6 +41,8 @@ static int select_partition_number(bootloader_state_t *bs) {
 	return bootloader_utility_get_selected_boot_partition(bs);
 }
 
+#if CONFIG_LIBC_NEWLIB
 struct _reent *__getreent(void) {
 	return _GLOBAL_REENT;
 }
+#endif

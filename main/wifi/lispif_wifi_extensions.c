@@ -813,7 +813,6 @@ static lbm_value ext_wifi_ftm_measure(lbm_value *args, lbm_uint argn) {
 
 
 	a->id = lbm_get_current_cid();
-	a->cfg.use_get_report_api = true;
 	a->cfg.channel = lbm_dec_as_i32(args[1]);
 	a->cfg.frm_count = 8;
 	a->cfg.burst_period = 2;

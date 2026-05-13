@@ -28,7 +28,6 @@
 #include "hal/usb_serial_jtag_ll.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "freertos/ringbuf.h"
 #include "esp_intr_alloc.h"
 #include "soc/periph_defs.h"
 #include "soc/soc_caps.h"

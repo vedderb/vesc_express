@@ -24,8 +24,7 @@
 #include "heap.h"
 #include "lbm_defines.h"
 #include "main.h"
-#include "driver/i2c.h"
-#include "driver/twai.h"
+#include "i2c_compat.h"
 #include "esp_sleep.h"
 #include "lispif.h"
 #include "lispbm.h"
@@ -60,7 +59,7 @@ static uint16_t m_bal_state_ic2 = 0;
 static char *error_comm_bq1 = "BQ1 communication error";
 static char *error_comm_bq2 = "BQ2 communication error";
 
-bool hw_can_get_filter_config(twai_filter_config_t *cfg) {
+bool hw_can_get_filter_config(twai_mask_filter_config_t *cfg) {
 	if (!cfg) {
 		return false;
 	}
@@ -69,14 +68,12 @@ bool hw_can_get_filter_config(twai_filter_config_t *cfg) {
 	uint32_t slave_id = (uint32_t)conf->slave_id & 0x7FU;
 	uint32_t my_bal_id = 0x500U | slave_id;
 
-	/*
-	 * Match one standard 11-bit ID in hardware.
-	 * TWAI acceptance layout for standard IDs uses bits [31:21].
-	 * Mask bit = 0 means "compare", bit = 1 means "don't care".
-	 */
-	cfg->acceptance_code = my_bal_id << 21;
-	cfg->acceptance_mask = ~(0x7FFU << 21);
-	cfg->single_filter = true;
+	cfg->id = my_bal_id;
+	cfg->mask = TWAI_STD_ID_MASK;
+	cfg->is_ext = false;
+	cfg->no_classic = false;
+	cfg->no_fd = true;
+	cfg->dual_filter = false;
 	return true;
 }
 

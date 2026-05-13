@@ -21,7 +21,7 @@
 #include "bme280_if.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
+#include "i2c_compat.h"
 #include <string.h>
 
 // Private variables

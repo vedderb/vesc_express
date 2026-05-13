@@ -22,7 +22,7 @@
 
 #include "adc.h"
 #include "driver/gpio.h"
-#include "driver/twai.h"
+#include "esp_twai.h"
 #include "datatypes.h"
 
 #define HW_NAME						"JFBMS_SLAVE"
@@ -116,6 +116,6 @@ typedef struct {
 
 // Functions
 void hw_init(void);
-bool hw_can_get_filter_config(twai_filter_config_t *cfg);
+bool hw_can_get_filter_config(twai_mask_filter_config_t *cfg);
 
 #endif /* MAIN_HWCONF_JETFLEET_JFBMS_SLAVE_H_ */
