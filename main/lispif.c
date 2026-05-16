@@ -762,6 +762,8 @@ static void done_callback(eval_context_t *ctx) {
 }
 
 void lispif_stop(void) {
+	main_task_wdt_disable();
+
 	if (!lisp_thd_running) {
 		return;
 	}

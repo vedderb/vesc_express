@@ -83,5 +83,12 @@ uint32_t main_calc_hw_crc(void);
 void main_store_backup_data(void);
 bool main_init_done(void);
 void main_wait_until_init_done(void);
+void main_task_wdt_configure(bool is_enabled, uint32_t timeout_s);
+void main_task_wdt_enable(void);
+void main_task_wdt_disable(void);
+void main_task_wdt_reset(void);
+void main_task_wdt_set_timeout(uint32_t timeout_s);
+bool main_task_wdt_is_enabled(void);
+uint32_t main_task_wdt_get_timeout(void);
 
 #endif /* MAIN_H_ */

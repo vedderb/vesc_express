@@ -5,6 +5,7 @@
 ; Wait this long for charger to start charging
 (def charger-max-delay 3.0)
 (def sleep-unblock-en true) ; Enable automatic sleep unblocking
+(def app-wdt-timeout 120) ; Seconds. Set to 0 to disable the app watchdog.
 
 ;;;;;;;;; End User Settings ;;;;;;;;;
 
@@ -83,6 +84,8 @@ loopwhile-thd
 ; Current inverted and different shunt compared to stock FW
 ; TODO: The hardware should provide a unitless raw value...
 (defun bms-current () (* (bms-get-current) -0.2))
+
+(defun pcb-version-1 () (not (bms-supports-shutdown)))
 
 (defun beep (times dt) {
         (mutex-lock buz-mutex)
@@ -296,9 +299,7 @@ loopwhile-thd
     })
 })
 
-(defun bms-shutdown () {
-    (print "BMS shutdown sequence starting")
-    (beep 30 0.1)
+(defun bms-shutdown-bqs () {
     (var bq-ok true)
 
     (if (> (bms-get-param 'cells_ic2) 0) {
@@ -313,18 +314,43 @@ loopwhile-thd
         (setq bq-ok false)
     })
 
-    (if (not bq-ok) (bms-shutdown-failed-alarm))
+    bq-ok
+})
 
-    (sleep 1)
+(defun bms-shutdown () {
+    (if (not (bms-supports-shutdown)) {
+        (print "BMS shutdown pin not supported; shutting down BQs and entering ESP deep sleep")
+        (beep 30 0.1)
 
-    (gpio-hold-deepsleep 0)
-    (gpio-hold 8 0)
-    (gpio-write 8 0)
+        (if (not (bms-shutdown-bqs)) (bms-shutdown-failed-alarm))
 
-    (print "BMS shutdown pin asserted")
-    (beep 1 0.75)
+        (sleep 1)
+        (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
+        (save-rtc-val)
+        (save-settings)
 
-    (sleep 10)
+        (sleep-config-wakeup-pin 0 1)
+        (bms-set-btn-wakeup-state 1)
+
+        (print "BQs in shutdown, ESP entering deep sleep")
+        (beep 1 0.75)
+        (sleep-deep -1)
+    } {
+        (print "BMS shutdown sequence starting")
+        (beep 30 0.1)
+        (if (not (bms-shutdown-bqs)) (bms-shutdown-failed-alarm))
+
+        (sleep 1)
+
+        (gpio-hold-deepsleep 0)
+        (gpio-hold 8 0)
+        (gpio-write 8 0)
+
+        (print "BMS shutdown pin asserted")
+        (beep 1 0.75)
+
+        (sleep 10)
+    })
 })
 
 (defun process-sleep-time () {
@@ -618,30 +644,15 @@ loopwhile-thd
         (setq vt-vchg (bms-get-vchg))
         (setq iout (+ (with-com '(bms-current)) (can-sum-current)))
 
-        ;; Coefficients for current-dependent correction (cell 0 only)
-        (def C1_ERR_COEFF 0.003)   ;; V per A (3 mV/A)
-        (def C1_ERR_LIMIT 0.015)   ;; V max correction
-
-        ;; compute correction once
         (var c1-err 0.0)
-
-        ;; only apply when charging: iout < 0
-        (if (< iout 0.0)
-                (setq c1-err (* C1_ERR_COEFF (abs iout)))
-        )
-
-        ;; clamp correction
-        (if (> c1-err C1_ERR_LIMIT)
-                (setq c1-err C1_ERR_LIMIT)
+        (if (and (pcb-version-1) (< iout 0.0))
+                (setq c1-err (truncate (* 0.003 (abs iout)) 0.0 0.015))
         )
 
         (looprange i 0 cell-num {
-                ;(set-bms-val 'bms-v-cell i (ix v-cells i))
                 (set-bms-val 'bms-v-cell i
                         (if (= i 0)
-                                ;; cell 0 corrected while charging
                                 (- (ix v-cells i) c1-err)
-                                ;; all other cells unchanged
                                 (ix v-cells i)
                         )
                 )
@@ -839,6 +850,7 @@ loopwhile-thd
                 )
         })
 
+        (wdt-reset)
         (sleep 0.1)
 }))
 
@@ -960,7 +972,10 @@ loopwhile-thd
 }))
 
 (defun main () {
-        (set-fw-name "bms32-test")
+        (if (> app-wdt-timeout 0)
+            (wdt-configure true app-wdt-timeout)
+            (wdt-disable)
+        )
 
         ; Compatibility Check
         (loopwhile (!= (bms-fw-version) 6) {
@@ -972,6 +987,8 @@ loopwhile-thd
                 (gpio-write 9 0) ; Enable CAN
                 (sleep 5)
         })
+
+        (set-fw-name "")
 
         (def charge-dis-ts (systime))
         (def t-last (systime))

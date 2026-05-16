@@ -259,15 +259,6 @@ void lbm_kill_eval(void);
  * \return Current state of the evaluator.
  */
 uint32_t lbm_get_eval_state(void);
-/** Get a monotonic evaluator heartbeat.
- *
- * The heartbeat advances from the evaluator thread whenever its scheduler
- * loop is alive. It can be used by platform watchdogs to detect a wedged
- * evaluator without relying on allocation or GC activity.
- *
- * \return Current evaluator heartbeat.
- */
-lbm_uint lbm_get_eval_heartbeat(void);
 /** Provide a description of an error as a string.
  *  Use when implementing for example extensions to
  *  report an error message to the programmer in case

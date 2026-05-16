@@ -232,8 +232,8 @@ CONFIG_FATFS_API_ENCODING_ANSI_OEM=y
 CONFIG_FATFS_USE_FASTSEEK=y
 CONFIG_FATFS_FAST_SEEK_BUFFER_SIZE=64
 
-# Task watchdog must panic/reset on timeout so hangs recover themselves
-# instead of leaving the device in a silently-stuck state.
+# The script-controlled application watchdog uses the ESP task WDT panic/reset
+# path to recover opted-in applications that stop making progress.
 CONFIG_ESP_TASK_WDT_EN=y
 CONFIG_ESP_TASK_WDT_INIT=y
 CONFIG_ESP_TASK_WDT_PANIC=y
