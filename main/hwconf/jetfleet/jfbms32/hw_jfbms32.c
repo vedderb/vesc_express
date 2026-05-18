@@ -1283,8 +1283,7 @@ typedef struct {
 	lbm_uint v_charge_detect;
 	lbm_uint t_charge_max;
 	lbm_uint t_charge_max_mos;
-	lbm_uint sleep_regular;
-	lbm_uint sleep_long;
+	lbm_uint sleep;
 	lbm_uint min_charge_current;
 	lbm_uint max_charge_current;
 	lbm_uint soc_filter_const;
@@ -1292,12 +1291,6 @@ typedef struct {
 	lbm_uint t_bal_max_ic;
 	lbm_uint t_charge_min;
 	lbm_uint t_charge_mon_en;
-	lbm_uint psw_t_pchg;
-	lbm_uint psw_scd_en;
-	lbm_uint psw_scd_tres;
-	lbm_uint t_psw_en;
-	lbm_uint t_psw_max_mos;
-	lbm_uint psw_wait_init;
 	lbm_uint temp_beta;
 	lbm_uint temp_res;
 	lbm_uint shutdown;
@@ -1349,10 +1342,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("t_charge_max", comp);
 		} else if (comp == &syms_vesc.t_charge_max_mos) {
 			lbm_add_symbol_const("t_charge_max_mos", comp);
-		} else if (comp == &syms_vesc.sleep_regular) {
-			lbm_add_symbol_const("sleep_regular", comp);
-		} else if (comp == &syms_vesc.sleep_long) {
-			lbm_add_symbol_const("sleep_long", comp);
+		} else if (comp == &syms_vesc.sleep) {
+			lbm_add_symbol_const("sleep", comp);
 		} else if (comp == &syms_vesc.shutdown) {
 			lbm_add_symbol_const("shutdown", comp);
 		} else if (comp == &syms_vesc.min_charge_current) {
@@ -1369,18 +1360,6 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("t_charge_min", comp);
 		} else if (comp == &syms_vesc.t_charge_mon_en) {
 			lbm_add_symbol_const("t_charge_mon_en", comp);
-		} else if (comp == &syms_vesc.psw_t_pchg) {
-			lbm_add_symbol_const("psw_t_pchg", comp);
-		} else if (comp == &syms_vesc.psw_scd_en) {
-			lbm_add_symbol_const("psw_scd_en", comp);
-		} else if (comp == &syms_vesc.psw_scd_tres) {
-			lbm_add_symbol_const("psw_scd_tres", comp);
-		} else if (comp == &syms_vesc.t_psw_en) {
-			lbm_add_symbol_const("t_psw_en", comp);
-		} else if (comp == &syms_vesc.t_psw_max_mos) {
-			lbm_add_symbol_const("t_psw_max_mos", comp);
-		} else if (comp == &syms_vesc.psw_wait_init) {
-			lbm_add_symbol_const("psw_wait_init", comp);
 		} else if (comp == &syms_vesc.temp_beta) {
 			lbm_add_symbol_const("temp_beta", comp);
 		} else if (comp == &syms_vesc.temp_res) {
@@ -1494,10 +1473,8 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &cfg->t_charge_max, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.t_charge_max_mos)) {
 		res = get_or_set_float(set, &cfg->t_charge_max_mos, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.sleep_regular)) {
-		res = get_or_set_float(set, &cfg->sleep_regular, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.sleep_long)) {
-		res = get_or_set_float(set, &cfg->sleep_long, &set_arg);
+	} else if (compare_symbol(name, &syms_vesc.sleep)) {
+		res = get_or_set_float(set, &cfg->sleep, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.shutdown)) {
 		res = get_or_set_u16(set, &cfg->shutdown, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.min_charge_current)) {
@@ -1514,18 +1491,6 @@ static lbm_value bms_get_set_param(bool set, lbm_value *args, lbm_uint argn) {
 		res = get_or_set_float(set, &cfg->t_charge_min, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.t_charge_mon_en)) {
 		res = get_or_set_bool(set, &cfg->t_charge_mon_en, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.psw_t_pchg)) {
-		res = get_or_set_float(set, &cfg->psw_t_pchg, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.psw_scd_en)) {
-		res = get_or_set_bool(set, &cfg->psw_scd_en, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.psw_scd_tres)) {
-		res = get_or_set_i(set, &cfg->psw_scd_tres, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.t_psw_en)) {
-		res = get_or_set_bool(set, &cfg->t_psw_en, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.t_psw_max_mos)) {
-		res = get_or_set_float(set, &cfg->t_psw_max_mos, &set_arg);
-	} else if (compare_symbol(name, &syms_vesc.psw_wait_init)) {
-		res = get_or_set_bool(set, &cfg->psw_wait_init, &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temp_res)) {
 		res = get_or_set_i(set, (int *)(&cfg->temp_res), &set_arg);
 	} else if (compare_symbol(name, &syms_vesc.temp_beta)) {

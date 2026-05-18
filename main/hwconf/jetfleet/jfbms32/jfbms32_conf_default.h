@@ -224,13 +224,8 @@
 #endif
 
 // Sleep Time
-#ifndef CONF_SLEEP_REGULAR
-#define CONF_SLEEP_REGULAR 12
-#endif
-
-// Sleep Time Long
-#ifndef CONF_SLEEP_LONG
-#define CONF_SLEEP_LONG 30
+#ifndef CONF_SLEEP
+#define CONF_SLEEP 12
 #endif
 
 // SoC Filter Constant
@@ -241,36 +236,6 @@
 // Charge Temp Min
 #ifndef CONF_T_CHARGE_MIN
 #define CONF_T_CHARGE_MIN 0
-#endif
-
-// Precharge Time Max
-#ifndef CONF_PSW_T_PCHG
-#define CONF_PSW_T_PCHG 3
-#endif
-
-// Shortcircuit Protection Enabled
-#ifndef CONF_PSW_SCD_EN
-#define CONF_PSW_SCD_EN 1
-#endif
-
-// Shortcircuit Protection Threshold
-#ifndef CONF_PSW_SCD_TRES
-#define CONF_PSW_SCD_TRES 4
-#endif
-
-// Temperature Protection Enabled
-#ifndef CONF_T_PSW_EN
-#define CONF_T_PSW_EN 1
-#endif
-
-// PSW Temp Max Mos
-#ifndef CONF_T_PSW_MAX_MOS
-#define CONF_T_PSW_MAX_MOS 105
-#endif
-
-// Wait for Init
-#ifndef CONF_PSW_WAIT_INIT
-#define CONF_PSW_WAIT_INIT 0
 #endif
 
 // NTC Resistance

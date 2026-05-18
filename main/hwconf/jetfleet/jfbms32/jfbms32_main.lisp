@@ -3,7 +3,7 @@
 ; TODO: Move into config?
 
 ; Wait this long for charger to start charging
-(def charger-max-delay 3.0)
+(def charger-max-delay 10.0)
 (def sleep-unblock-en true) ; Enable automatic sleep unblocking
 (def app-wdt-timeout 120) ; Seconds. Set to 0 to disable the app watchdog.
 
@@ -47,6 +47,7 @@
 (def soc -1.0)
 (def i-zero-time 0.0)
 (def chg-allowed true)
+(def current-zero-offset 0.0)
 (def com-force-on false)
 (def com-mutex (mutex-create))
 (def buz-mutex (mutex-create))
@@ -82,8 +83,8 @@ loopwhile-thd
 ;;; Hack End ;;;
 
 ; Current inverted and different shunt compared to stock FW
-; TODO: The hardware should provide a unitless raw value...
-(defun bms-current () (* (bms-get-current) -0.2))
+(defun bms-current-raw () (* (bms-get-current) -0.2))
+(defun bms-current () (- (bms-current-raw) current-zero-offset))
 
 (defun pcb-version-1 () (not (bms-supports-shutdown)))
 
@@ -151,6 +152,20 @@ loopwhile-thd
         (bufcpy (rtc-data) 0 tmp 0 (buflen tmp))
         (bufset-u8 (rtc-data) 900 rtc-val-magic)
 })
+
+(defun prepare-external-wakeup () {
+        ; JFBMS32 wakes from external requests on IO2, such as charger
+        ; connect or ESC/remote wake. Keep that source enabled for every
+        ; normal sleep path.
+        (sleep-config-wakeup-pin 0 1)
+        (bms-set-btn-wakeup-state 1)
+})
+
+(defun external-wake-active () (= (bms-get-btn) 1))
+
+(defun external-wake-inactive () (= (bms-get-btn) 0))
+
+(defun sleep-duration-s () (* (bms-get-param 'sleep) 3600))
 
 (defun test-chg (samples) {
         ; Many chargers "pulse" before starting, try to catch a pulse
@@ -227,7 +242,7 @@ loopwhile-thd
 
         (if (and
                 (not (can-active))
-                (= (bms-get-btn) 0)
+                (external-wake-inactive)
                 (not com-force-on)
                 (not (is-connected))
                 (not is-charging)
@@ -261,8 +276,19 @@ loopwhile-thd
                 (and (!= v1 0x3b) (!= v1 0x7b))
                 (and has-ic2 (and (!= v2 0x3b) (!= v2 0x7b)))
             ) {
-            (print "BQs with invalid temperature settings")
-            (exit-error 0)
+            (print "Invalid temperature settings, retrying...")
+            (sleep 0.01)
+
+            (setq v1 (bms-read-reg 1 0x92fd 1))
+            (setq v2 (if has-ic2 (with-com '(bms-read-reg 2 0x92fd 1)) 0x3b))
+
+            (if (or
+                    (and (!= v1 0x3b) (!= v1 0x7b))
+                    (and has-ic2 (and (!= v2 0x3b) (!= v2 0x7b)))
+                ) {
+                (print "BQs with invalid temperature settings")
+                (exit-error 0)
+            })
         })
 
         (var bms-temps (with-com '(bms-get-temps)))
@@ -317,7 +343,7 @@ loopwhile-thd
     bq-ok
 })
 
-(defun bms-shutdown () {
+(defun bms-shutdown-impl (save-counters) {
     (if (not (bms-supports-shutdown)) {
         (print "BMS shutdown pin not supported; shutting down BQs and entering ESP deep sleep")
         (beep 30 0.1)
@@ -327,10 +353,9 @@ loopwhile-thd
         (sleep 1)
         (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
         (save-rtc-val)
-        (save-settings)
+        (if save-counters (save-settings))
 
-        (sleep-config-wakeup-pin 0 1)
-        (bms-set-btn-wakeup-state 1)
+        (prepare-external-wakeup)
 
         (print "BQs in shutdown, ESP entering deep sleep")
         (beep 1 0.75)
@@ -352,6 +377,18 @@ loopwhile-thd
         (sleep 10)
     })
 })
+
+(defun bms-shutdown () (bms-shutdown-impl true))
+
+(defun bms-shutdown-no-save () (bms-shutdown-impl false))
+
+(defun low-soc-unused () (and
+        (< soc 0.05)
+        (not trigger-bal-after-charge)
+        (external-wake-inactive)
+        (not (is-connected))
+        (not (can-active))
+))
 
 (defun process-sleep-time () {
 
@@ -390,17 +427,20 @@ loopwhile-thd
 
         (var do-sleep true)
 
-        (if (= (bms-get-btn) 1) {
+        (if (external-wake-active) {
                 (setq do-sleep false)
         })
 
-        (if (or charge-wakeup (test-chg 5)) {
+        (var chg-detected (test-chg 5))
+        (if (or charge-wakeup chg-detected) {
+                (setq do-sleep false)
                 (if (not (assoc rtc-val 'charge-fault)) {
-                        (setq do-sleep false)
                         (setq charge-wakeup true)
                 })
+        })
 
-                ; Reset charge fault when the charger is not connected at boot
+        ; Reset charge fault when the charger is not connected at boot
+        (if (not chg-detected) {
                 (setassoc rtc-val 'charge-fault false)
         })
 
@@ -467,7 +507,7 @@ loopwhile-thd
                 })
         })
 
-        (if (and (< soc 0.05) (not trigger-bal-after-charge) (not (is-connected))) (setq do-sleep true))
+        (if (low-soc-unused) (bms-shutdown-no-save))
 
         ;(sleep 5)
         ;(print v-cells)
@@ -487,17 +527,8 @@ loopwhile-thd
                     (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
                     (save-rtc-val)
 
-                    (if (< (assoc rtc-val 'soc) 0.05)
-                        {
-                            (bms-set-btn-wakeup-state 1)
-                            (sleep-deep (* (bms-get-param 'sleep_regular) 3600))
-                        }
-                        {
-                            (sleep-config-wakeup-pin 0 1)
-                            (bms-set-btn-wakeup-state 1)
-                            (sleep-deep (* (bms-get-param 'sleep_regular) 3600))
-                        }
-                    )
+                    (prepare-external-wakeup)
+                    (sleep-deep (sleep-duration-s))
                 })
                 (_ {
                     (print "bms-sleep FAILED in start-fun -- deferring sleep-deep, will retry")
@@ -802,9 +833,9 @@ loopwhile-thd
         )
 
         ; Go to sleep when button is off, not balancing and not connected
-        (if (and (= (bms-get-btn) 0) (> i-zero-time 1.0) (not is-balancing) (not (is-connected)) (not (can-active))) {
+        (if (and (external-wake-inactive) (> i-zero-time 1.0) (not is-balancing) (not (is-connected)) (not (can-active))) {
                 (sleep 0.1)
-                (if (= (bms-get-btn) 0) {
+                (if (external-wake-inactive) {
                         (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
                         (save-rtc-val)
                         (save-settings)
@@ -812,9 +843,8 @@ loopwhile-thd
                         (match (trap (with-com '(do-bms-sleep)))
                             ((exit-ok _) {
                                 (print "bms-sleep ok, entering sleep-deep")
-                                (sleep-config-wakeup-pin 0 1)
-                                (bms-set-btn-wakeup-state 1)
-                                (sleep-deep (* (bms-get-param 'sleep_regular) 3600))
+                                (prepare-external-wakeup)
+                                (sleep-deep (sleep-duration-s))
                             })
                             (_ {
                                 (print "bms-sleep FAILED in main-ctrl idle path -- deferring sleep-deep, will retry")
@@ -829,25 +859,9 @@ loopwhile-thd
                 (setq ah-cnt-soc 0.0)
         })
 
-        ; Always go to sleep when SOC is too low
-        (if (and (< soc 0.05) (> i-zero-time 1.0) (<= c-min (bms-get-param 'vc_empty)) (not (is-connected)) (not (can-active))) {
-                ; Sleep longer and do not use the key to wake up when
-                ; almost empty
-                (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
-                (save-rtc-val)
-                (save-settings)
-                ; TEST INSTRUMENTATION: see start-fun for rationale.
-                (match (trap (with-com '(do-bms-sleep)))
-                    ((exit-ok _) {
-                        (print "bms-sleep ok, entering sleep-deep")
-                        (bms-set-btn-wakeup-state 1)
-                        (sleep-deep (* (bms-get-param 'sleep_regular) 3600))
-                    })
-                    (_ {
-                        (print "bms-sleep FAILED in main-ctrl low-SOC path -- deferring sleep-deep, will retry")
-                        (sleep 1.0)
-                    })
-                )
+        ; Shut down when SOC is too low and nothing external is requesting the BMS.
+        (if (and (low-soc-unused) (> i-zero-time 1.0) (<= c-min (bms-get-param 'vc_empty))) {
+                (bms-shutdown)
         })
 
         (wdt-reset)
@@ -947,29 +961,11 @@ loopwhile-thd
                     (setq bal-ok true)
                     (setq bal-ok false)
             ))
-           ((event-data-rx ? data) (eval (read data)))
+            (event-bms-zero-ofs (setq current-zero-offset (with-com '(bms-current-raw))))
+            ((event-data-rx ? data) (eval (read data)))
             (_ nil)
             ;((? a) (print a))
 )))
-
-(defun start-hum-thd ()
-    ; Use humidity sensor if it is detected on the i2c-bus
-    (if (i2c-detect-addr 0x40) {
-            (i2c-tx-rx 0x40 '(2 0x10 0)) ; Temperature and humidity in sequence
-            (i2c-tx-rx 0x40 '(0)) ; Start first measurement
-
-            (loopwhile-thd ("hum" 100) t {
-                    (sleep 0.5)
-                    (var rx (bufcreate 4))
-                    (i2c-tx-rx 0x40 '() rx)
-                    (i2c-tx-rx 0x40 '(0)) ; Start next measurement
-                    (var hum (* (/ (bufget-u16 rx 2) 65536.0) 100.0))
-                    (var hum-temp (- (* (/ (bufget-u16 rx 0) 65536.0) 165.0) 40.0))
-
-                    (set-bms-val 'bms-hum hum)
-                    (set-bms-val 'bms-temp-hum hum-temp)
-            })
-}))
 
 (defun main () {
         (if (> app-wdt-timeout 0)
@@ -1032,7 +1028,6 @@ loopwhile-thd
 
         (event-register-handler (spawn event-handler))
         (event-enable 'event-bms-chg-allow)
-        (event-enable 'event-bms-bal-ovr)
         (event-enable 'event-bms-reset-cnt)
         (event-enable 'event-bms-force-bal)
         (event-enable 'event-bms-zero-ofs)
@@ -1118,8 +1113,6 @@ loopwhile-thd
 
                 })
         })
-
-        (start-hum-thd)
 })
 
 @const-end

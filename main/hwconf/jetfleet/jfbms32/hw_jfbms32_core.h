@@ -126,13 +126,10 @@ typedef struct {
 	// Only allow charging when the MOSFET temperature is below this value
 	float t_charge_max_mos;
 
-	// Regular sleep time
-	float sleep_regular;
+	// Sleep time
+	float sleep;
 
-	// Long sleep time, for when SOC is low
-	float sleep_long;
-
-	// Long sleep time, for when SOC is low
+	// Shutdown time, in days
 	uint16_t shutdown;
 
 	// Stop charging when the charge current goes below this value
@@ -155,24 +152,6 @@ typedef struct {
 
 	// Enable temperature monitoring during charging
 	bool t_charge_mon_en;
-
-	// Maximum precharge time
-	float psw_t_pchg;
-
-	// Shortcircuit protection enabled
-	bool psw_scd_en;
-
-	// Shortcircuit protection threshold
-	int psw_scd_tres;
-
-	// Enable overtemperature protection
-	bool t_psw_en;
-
-	// Turn off power switch when MOSFET temperature is above this value
-	float t_psw_max_mos;
-
-	// Wait for init done before enabling power switch
-	bool psw_wait_init;
 } main_config_t;
 
 // Default setting Overrides
