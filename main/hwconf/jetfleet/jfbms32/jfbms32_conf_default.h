@@ -155,17 +155,17 @@
 
 // Charge Start Voltage
 #ifndef CONF_CHARGE_START
-#define CONF_CHARGE_START 4.16
+#define CONF_CHARGE_START 4.15
 #endif
 
 // Charge End Voltage
 #ifndef CONF_CHARGE_END
-#define CONF_CHARGE_END 4.21
+#define CONF_CHARGE_END 4.2
 #endif
 
 // Charge Minimum Voltage
 #ifndef CONF_CHARGE_MIN
-#define CONF_CHARGE_MIN 2
+#define CONF_CHARGE_MIN 3
 #endif
 
 // Balance Minimum Voltage

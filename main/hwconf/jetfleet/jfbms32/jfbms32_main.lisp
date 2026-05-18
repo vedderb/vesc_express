@@ -25,7 +25,11 @@
 (def init-done false)
 
 (def chg-status "")
+(def bq-status "")
+(def bq-status-latched "")
 (def bal-status "")
+(def bq-safety-a1 0)
+(def bq-safety-a2 0)
 
 (def rtc-val '(
         (wakeup-cnt . 0)
@@ -189,8 +193,11 @@ loopwhile-thd
 ; SOC from battery voltage
 (defun calc-soc (v-cell) (truncate (/ (- v-cell (bms-get-param 'vc_empty)) (- (bms-get-param 'vc_full) (bms-get-param 'vc_empty))) 0.0 1.0))
 
-; True when VESC Tool is connected, used to block sleep
-(defun is-connected () (or (connected-wifi) (connected-usb) (connected-ble) (= (bms-get-param 'block_sleep) 1)))
+; True when a real communication interface is connected.
+(defun is-comm-connected () (or (connected-wifi) (connected-usb) (connected-ble)))
+
+; True when VESC Tool is connected or sleep is intentionally blocked.
+(defun is-connected () (or (is-comm-connected) (= (bms-get-param 'block_sleep) 1)))
 ;(defun is-connected () (or (connected-wifi) (connected-ble) (= (bms-get-param 'block_sleep) 1)))
 
 (defunret can-active () {
@@ -336,6 +343,8 @@ loopwhile-thd
         (< soc 0.05)
         (not trigger-bal-after-charge)
         (external-wake-inactive)
+        ; block_sleep is intentionally honored here so a fresh, unconfigured
+        ; pack cannot shut itself down before setup is complete.
         (not (is-connected))
         (not (can-active))
 ))
@@ -554,6 +563,42 @@ loopwhile-thd
     (- val (* tc (- val sample)))
 )
 
+(defun status-append (base part)
+    (if (> (str-len part) 0)
+        (if (> (str-len base) 0)
+            (str-merge base " | " part)
+            part
+        )
+        base
+))
+
+(defun bq-fault-str-one (prefix flags) {
+        (var s "")
+        (if (!= (bitwise-and flags 0x80) 0) (setq s (status-append s (str-merge prefix "_SCD"))))
+        (if (!= (bitwise-and flags 0x40) 0) (setq s (status-append s (str-merge prefix "_OCD2"))))
+        (if (!= (bitwise-and flags 0x20) 0) (setq s (status-append s (str-merge prefix "_OCD1"))))
+        (if (!= (bitwise-and flags 0x10) 0) (setq s (status-append s (str-merge prefix "_OCC"))))
+        (if (!= (bitwise-and flags 0x08) 0) (setq s (status-append s (str-merge prefix "_COV"))))
+        (if (!= (bitwise-and flags 0x04) 0) (setq s (status-append s (str-merge prefix "_CUV"))))
+        s
+})
+
+(defun update-bq-status () {
+        ; SafetyStatusA bits: SCD OCD2 OCD1 OCC COV CUV.
+        (setq bq-safety-a1 (bms-direct-cmd 1 0x03))
+        (setq bq-safety-a2 (if (> (bms-get-param 'cells_ic2) 0) (with-com '(bms-direct-cmd 2 0x03)) 0))
+        (status-append
+                (bq-fault-str-one "BQ1" bq-safety-a1)
+                (bq-fault-str-one "BQ2" bq-safety-a2)
+        )
+})
+
+(defun bq-current-fault-active ()
+    (or
+        (!= (bitwise-and bq-safety-a1 0xB0) 0)
+        (!= (bitwise-and bq-safety-a2 0xB0) 0)
+))
+
 (defun set-chg (chg) {
         (if chg
             {
@@ -601,15 +646,21 @@ loopwhile-thd
 
 (defun main-ctrl () (loopwhile t {
         ; Exit if any of the BQs has fallen asleep
-        (if (or
-                (= (bms-direct-cmd 1 0x00) 4)
-                (and (> (bms-get-param 'cells_ic2) 0) (= (with-com '(bms-direct-cmd 2 0x00)) 4))
-        )
-        (exit-error 0)
-        )
+            (if (or
+                    (= (bms-direct-cmd 1 0x00) 4)
+                    (and (> (bms-get-param 'cells_ic2) 0) (= (with-com '(bms-direct-cmd 2 0x00)) 4))
+                )
+                (exit-error 0)
+            )
 
-        (var v-cells (with-com '(bms-get-vcells)))
-        (var bms-temps (update-temps))
+            (setq bq-status (update-bq-status))
+            (if (> (str-len bq-status) 0) (setq bq-status-latched bq-status))
+            (if (and (> (str-len bq-status-latched) 0) (> (secs-since charge-dis-ts) 5.0)) {
+                    (setq bq-status-latched "")
+            })
+
+            (var v-cells (with-com '(bms-get-vcells)))
+            (var bms-temps (update-temps))
         (var temp-ext-num (truncate (bms-get-param 'temp_num) 0 4))
 
         (var c-sorted (sort < v-cells))
@@ -713,6 +764,10 @@ loopwhile-thd
                 (not (assoc rtc-val 'charge-fault))
         ))
 
+        (if (bq-current-fault-active) {
+                (setq charge-ok false)
+        })
+
         ; If charging is enabled and maximum charge current is exceeded a charge fault is latched
         (if (and is-charging (> (- iout) (bms-get-param 'max_charge_current))) {
                 (setq charge-ok false)
@@ -732,11 +787,8 @@ loopwhile-thd
         ))
 
         ; Set combined BMS status
-        (set-bms-val 'bms-status (str-merge
-                chg-status
-                (if (and (> (str-len chg-status) 0) (> (str-len bal-status) 0)) " | " "")
-                bal-status
-        ))
+        (var bq-status-display (if (> (str-len bq-status) 0) bq-status bq-status-latched))
+        (set-bms-val 'bms-status (status-append (status-append chg-status bq-status-display) bal-status))
 
         (if (and (test-chg 1) charge-ok)
         {
@@ -901,7 +953,6 @@ loopwhile-thd
                     (setq bal-ok false)
             ))
             (event-bms-zero-ofs (setq current-zero-offset (with-com '(bms-current-raw))))
-            ((event-data-rx ? data) (eval (read data)))
             (_ nil)
             ;((? a) (print a))
 )))
@@ -941,6 +992,7 @@ loopwhile-thd
         (def active-cells-ic2 (bms-get-param 'cells_ic2))
         (def active-temp-num (bms-get-param 'temp_num))
         (def active-temp-res (bms-get-param 'temp_res))
+        (def active-max-charge-current (bms-get-param 'max_charge_current))
         (def cell-num (+ active-cells-ic1 active-cells-ic2))
 
         (def t-start-fun (secs-since 0))
@@ -970,7 +1022,6 @@ loopwhile-thd
         (event-enable 'event-bms-reset-cnt)
         (event-enable 'event-bms-force-bal)
         (event-enable 'event-bms-zero-ofs)
-        (event-enable 'event-data-rx)
 
         (set-bms-val 'bms-cell-num cell-num)
         (set-bms-val 'bms-can-id (can-local-id))
@@ -992,16 +1043,21 @@ loopwhile-thd
                 (var cfg-cells-ic2 (bms-get-param 'cells_ic2))
                 (var cfg-temp-num (bms-get-param 'temp_num))
                 (var cfg-temp-res (bms-get-param 'temp_res))
+                (var cfg-max-charge-current (bms-get-param 'max_charge_current))
 
                 (if (or
                         (!= cfg-cells-ic1 active-cells-ic1)
                         (!= cfg-cells-ic2 active-cells-ic2)
                         (!= cfg-temp-num active-temp-num)
                         (!= cfg-temp-res active-temp-res)
+                        (!= cfg-max-charge-current active-max-charge-current)
                     ) {
                         (print "BMS config changed, reinitializing hardware")
-                        (com-force true)
+                        ; Fail closed before any BQ communication that could block.
                         (bms-set-chg 0)
+                        (setq is-charging false)
+                        (setq charge-ok false)
+                        (com-force true)
                         (looprange i 0 cell-num (with-com `(bms-set-bal ,i 0)))
                         (init-hw)
                         (beep 2 0.05)
@@ -1009,6 +1065,7 @@ loopwhile-thd
                         (setq active-cells-ic2 cfg-cells-ic2)
                         (setq active-temp-num cfg-temp-num)
                         (setq active-temp-res cfg-temp-res)
+                        (setq active-max-charge-current cfg-max-charge-current)
                         (setq cell-num (+ active-cells-ic1 active-cells-ic2))
                         (set-bms-val 'bms-cell-num cell-num)
                         (set-bms-val 'bms-temp-adc-num (+ 5 (truncate active-temp-num 0 4)))
@@ -1016,6 +1073,12 @@ loopwhile-thd
                 })
 
                 (if did-crash {
+                        ; Fail closed immediately. init-hw can loop while recovering
+                        ; BQ communication, so do not leave the charge gate enabled
+                        ; while recovery is waiting on the bus.
+                        (bms-set-chg 0)
+                        (setq is-charging false)
+                        (setq charge-ok false)
                         (com-force true)
                         (init-hw)
                         (com-force false)

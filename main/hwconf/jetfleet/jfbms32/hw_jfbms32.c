@@ -432,6 +432,22 @@ static uint32_t float_to_u(float number) {
 	return res;
 }
 
+static uint8_t clamp_u8_i(int value, int min, int max) {
+	if (value < min) {
+		value = min;
+	} else if (value > max) {
+		value = max;
+	}
+
+	return (uint8_t)value;
+}
+
+static uint8_t overcurrent_threshold_from_a(float current) {
+	// BQ76952 OCC/OCD thresholds are shunt voltage in 2 mV steps.
+	float shunt_mv = current * HW_R_SHUNT * 1000.0f;
+	return clamp_u8_i((int)((shunt_mv / 2.0f) + 0.5f), 2, 62);
+}
+
 static void bq_init(uint8_t dev_addr) {
 	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
 	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
@@ -520,14 +536,32 @@ static void bq_init(uint8_t dev_addr) {
 	bq_set_reg(dev_addr, DCHGPinConfig, ntcPinConfig, 1);
 	bq_set_reg(dev_addr, HDQPinConfig, 0b00111011, 1);
 
-	// Disabled
-	bq_set_reg(dev_addr, DDSGPinConfig, 0x00, 1);
+	// DDSG is routed to the charge gate disable circuit. Configure it as an
+	// active-low hardware fault output. BQ voltage protections are intentionally
+	// left disabled here because only the lower BQ DDSG is wired; software
+	// charge control uses both BQ ICs for cell-voltage cutoff.
+	bq_set_reg(dev_addr, DDSGPinConfig, 0x82, 1);
 
 	// Use all cells
 	bq_set_reg(dev_addr, VCellMode, 0x0000, 2);
 
-	// Disable automatic protections
-	bq_set_reg(dev_addr, EnabledProtectionsA, 0x00, 1);
+	// Configure BQ current protections. Software still owns normal charge
+	// control and all voltage limits. This board routes DDSG into the charge
+	// gate disable path, so include charge-current OCC in the DSG-side action
+	// mask as well; that lets DDSG pull the charge gate off on charge OC.
+	bq_set_reg(dev_addr, MfgStatusInit, 0x10, 1); // FET_EN
+	bq_set_reg(dev_addr, OCCThreshold, overcurrent_threshold_from_a(cfg->max_charge_current), 1);
+	bq_set_reg(dev_addr, OCCDelay, 1, 1);
+	bq_set_reg(dev_addr, OCD1Threshold, overcurrent_threshold_from_a(cfg->max_charge_current), 1);
+	bq_set_reg(dev_addr, OCD1Delay, 1, 1);
+	bq_set_reg(dev_addr, SCDThreshold, 0, 1); // 10 mV, 50 A with 0.2 mOhm shunt
+	bq_set_reg(dev_addr, SCDDelay, 1, 1); // no extra delay
+	bq_set_reg(dev_addr, SCDLLatchLimit, 1, 1);
+	// Keep TI's fast-turnoff CHG mask value. Voltage faults are disabled
+	// globally below, so only the enabled current protections can act.
+	bq_set_reg(dev_addr, CHGFETProtectionsA, 0x98, 1); // TI fast CHG mask
+	bq_set_reg(dev_addr, DSGFETProtectionsA, 0xF4, 1); // SCD + OCD2 + OCD1 + OCC + CUV
+	bq_set_reg(dev_addr, EnabledProtectionsA, 0xB0, 1); // SCD + OCD1 + OCC
 	bq_set_reg(dev_addr, EnabledProtectionsB, 0x00, 1);
 
 	// Host-controlled balancing
@@ -545,6 +579,7 @@ static void bq_init(uint8_t dev_addr) {
 
 	vTaskDelay(10);
 
+	command_subcommands(dev_addr, ALL_FETS_ON);
 	command_subcommands(dev_addr, SLEEP_DISABLE);
 }
 
