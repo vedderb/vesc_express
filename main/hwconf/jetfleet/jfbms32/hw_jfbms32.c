@@ -448,7 +448,25 @@ static uint8_t overcurrent_threshold_from_a(float current) {
 	return clamp_u8_i((int)((shunt_mv / 2.0f) + 0.5f), 2, 62);
 }
 
-static void bq_init(uint8_t dev_addr) {
+static uint8_t scd_threshold_from_a(float current) {
+	static const float thresholds_mv[] = {
+		10.0f, 20.0f, 40.0f, 60.0f, 80.0f, 100.0f, 125.0f, 150.0f,
+		175.0f, 200.0f, 250.0f, 300.0f, 350.0f, 400.0f, 450.0f, 500.0f
+	};
+
+	float target_current = fmaxf(current * 2.5f, 40.0f);
+	float target_mv = target_current * HW_R_SHUNT * 1000.0f;
+
+	for (size_t i = 0; i < (sizeof(thresholds_mv) / sizeof(thresholds_mv[0])); i++) {
+		if (target_mv <= thresholds_mv[i]) {
+			return (uint8_t)i;
+		}
+	}
+
+	return 15;
+}
+
+static void bq_init(uint8_t dev_addr, bool current_protection_en) {
 	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
 	command_subcommands(dev_addr, EXIT_DEEPSLEEP);
 	vTaskDelay(10);
@@ -536,32 +554,43 @@ static void bq_init(uint8_t dev_addr) {
 	bq_set_reg(dev_addr, DCHGPinConfig, ntcPinConfig, 1);
 	bq_set_reg(dev_addr, HDQPinConfig, 0b00111011, 1);
 
-	// DDSG is routed to the charge gate disable circuit. Configure it as an
-	// active-low hardware fault output. BQ voltage protections are intentionally
-	// left disabled here because only the lower BQ DDSG is wired; software
-	// charge control uses both BQ ICs for cell-voltage cutoff.
-	bq_set_reg(dev_addr, DDSGPinConfig, 0x82, 1);
+	if (current_protection_en) {
+		// DDSG is routed to the charge gate disable circuit. Configure it as an
+		// active-low hardware fault output. BQ voltage protections are intentionally
+		// left disabled here because only the lower BQ DDSG is wired; software
+		// charge control uses both BQ ICs for cell-voltage cutoff.
+		bq_set_reg(dev_addr, DDSGPinConfig, 0x82, 1);
+	} else {
+		bq_set_reg(dev_addr, DDSGPinConfig, 0x00, 1);
+	}
 
 	// Use all cells
 	bq_set_reg(dev_addr, VCellMode, 0x0000, 2);
 
-	// Configure BQ current protections. Software still owns normal charge
-	// control and all voltage limits. This board routes DDSG into the charge
-	// gate disable path, so include charge-current OCC in the DSG-side action
-	// mask as well; that lets DDSG pull the charge gate off on charge OC.
 	bq_set_reg(dev_addr, MfgStatusInit, 0x10, 1); // FET_EN
-	bq_set_reg(dev_addr, OCCThreshold, overcurrent_threshold_from_a(cfg->max_charge_current), 1);
-	bq_set_reg(dev_addr, OCCDelay, 1, 1);
-	bq_set_reg(dev_addr, OCD1Threshold, overcurrent_threshold_from_a(cfg->max_charge_current), 1);
-	bq_set_reg(dev_addr, OCD1Delay, 1, 1);
-	bq_set_reg(dev_addr, SCDThreshold, 0, 1); // 10 mV, 50 A with 0.2 mOhm shunt
-	bq_set_reg(dev_addr, SCDDelay, 1, 1); // no extra delay
-	bq_set_reg(dev_addr, SCDLLatchLimit, 1, 1);
-	// Keep TI's fast-turnoff CHG mask value. Voltage faults are disabled
-	// globally below, so only the enabled current protections can act.
-	bq_set_reg(dev_addr, CHGFETProtectionsA, 0x98, 1); // TI fast CHG mask
-	bq_set_reg(dev_addr, DSGFETProtectionsA, 0xF4, 1); // SCD + OCD2 + OCD1 + OCC + CUV
-	bq_set_reg(dev_addr, EnabledProtectionsA, 0xB0, 1); // SCD + OCD1 + OCC
+	if (current_protection_en) {
+		// Configure BQ1 current protections. Software still owns normal charge
+		// control and all voltage limits. This board routes BQ1 DDSG into the
+		// charge gate disable path, so include charge-current OCC in the
+		// DSG-side action mask as well.
+		bq_set_reg(dev_addr, OCCThreshold, overcurrent_threshold_from_a(cfg->max_charge_current), 1);
+		bq_set_reg(dev_addr, OCCDelay, 1, 1);
+		bq_set_reg(dev_addr, OCD1Threshold, overcurrent_threshold_from_a(cfg->max_charge_current), 1);
+		bq_set_reg(dev_addr, OCD1Delay, 1, 1);
+		bq_set_reg(dev_addr, SCDThreshold, scd_threshold_from_a(cfg->max_charge_current), 1);
+		bq_set_reg(dev_addr, SCDDelay, 1, 1); // no extra delay
+		bq_set_reg(dev_addr, SCDLLatchLimit, 1, 1);
+		// Keep TI's fast-turnoff CHG mask value. Voltage faults are disabled
+		// globally below, so only the enabled current protections can act.
+		bq_set_reg(dev_addr, CHGFETProtectionsA, 0x98, 1); // TI fast CHG mask
+		bq_set_reg(dev_addr, DSGFETProtectionsA, 0xF4, 1); // SCD + OCD2 + OCD1 + OCC + CUV
+		bq_set_reg(dev_addr, EnabledProtectionsA, 0xB0, 1); // SCD + OCD1 + OCC
+	} else {
+		// BQ2 has no current shunt and no DDSG charge-gate path on this board.
+		bq_set_reg(dev_addr, CHGFETProtectionsA, 0x00, 1);
+		bq_set_reg(dev_addr, DSGFETProtectionsA, 0x00, 1);
+		bq_set_reg(dev_addr, EnabledProtectionsA, 0x00, 1);
+	}
 	bq_set_reg(dev_addr, EnabledProtectionsB, 0x00, 1);
 
 	// Host-controlled balancing
@@ -709,7 +738,7 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 			command_subcommands(BQ_ADDR_1, BQ769x2_RESET);
 			vTaskDelay(pdMS_TO_TICKS(300));
 
-			bq_init(BQ_ADDR_2);
+			bq_init(BQ_ADDR_2, true);
 			command_subcommands(BQ_ADDR_2, SET_CFGUPDATE);
 			if (!bq_set_reg(BQ_ADDR_2, I2CAddress, 0x20, 1)) {
 				continue;
@@ -739,12 +768,12 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 	vTaskDelay(50);
 
 	if (cells_ic2 != 0) {
-		bq_init(BQ_ADDR_2);
+		bq_init(BQ_ADDR_2, false);
 	}
 
 	// Always init BQ1 at its final address so its config is fresh on
 	// every bms-init, regardless of which path we took above.
-	bq_init(BQ_ADDR_1);
+	bq_init(BQ_ADDR_1, true);
 
 	m_cells_ic1 = cells_ic1;
 	m_cells_ic2 = cells_ic2;

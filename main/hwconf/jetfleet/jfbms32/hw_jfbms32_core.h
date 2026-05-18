@@ -176,7 +176,7 @@ typedef struct {
 #define HW_ADC_CH1					ADC_CHANNEL_1 // DIV_OUT
 
 // Parameters
-#define HW_R_SHUNT					0.0002
+#define HW_R_SHUNT					0.001
 
 // Macros
 #define HW_GET_VOUT()				((adc_get_voltage(ADC_CHANNEL_1) * (220.0e3 + 4.7e3)) / 4.7e3)

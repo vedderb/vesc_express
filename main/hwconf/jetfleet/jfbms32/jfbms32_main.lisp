@@ -86,8 +86,8 @@ loopwhile-thd
 
 ;;; Hack End ;;;
 
-; Current inverted and different shunt compared to stock FW
-(defun bms-current-raw () (* (bms-get-current) -0.2))
+; Current inverted compared to stock FW
+(defun bms-current-raw () (* (bms-get-current) -1.0))
 (defun bms-current () (- (bms-current-raw) current-zero-offset))
 
 (defun beep (times dt) {
@@ -585,19 +585,16 @@ loopwhile-thd
 
 (defun update-bq-status () {
         ; SafetyStatusA bits: SCD OCD2 OCD1 OCC COV CUV.
+        ; Only BQ1 has the current shunt, so BQ2 cannot produce meaningful
+        ; current-protection status on this hardware.
         (setq bq-safety-a1 (bms-direct-cmd 1 0x03))
-        (setq bq-safety-a2 (if (> (bms-get-param 'cells_ic2) 0) (with-com '(bms-direct-cmd 2 0x03)) 0))
-        (status-append
-                (bq-fault-str-one "BQ1" bq-safety-a1)
-                (bq-fault-str-one "BQ2" bq-safety-a2)
-        )
+        (setq bq-safety-a2 0)
+        (bq-fault-str-one "BQ1" bq-safety-a1)
 })
 
 (defun bq-current-fault-active ()
-    (or
-        (!= (bitwise-and bq-safety-a1 0xB0) 0)
-        (!= (bitwise-and bq-safety-a2 0xB0) 0)
-))
+    (!= (bitwise-and bq-safety-a1 0xB0) 0)
+)
 
 (defun set-chg (chg) {
         (if chg
