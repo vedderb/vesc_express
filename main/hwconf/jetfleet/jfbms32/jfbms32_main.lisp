@@ -86,8 +86,6 @@ loopwhile-thd
 (defun bms-current-raw () (* (bms-get-current) -0.2))
 (defun bms-current () (- (bms-current-raw) current-zero-offset))
 
-(defun pcb-version-1 () (not (bms-supports-shutdown)))
-
 (defun beep (times dt) {
         (mutex-lock buz-mutex)
 
@@ -154,10 +152,7 @@ loopwhile-thd
 })
 
 (defun prepare-external-wakeup () {
-        ; JFBMS32 wakes from external requests on IO2, such as charger
-        ; connect or ESC/remote wake. Keep that source enabled for every
-        ; normal sleep path.
-        (sleep-config-wakeup-pin 0 1)
+        ; JFBMS32 wakes from external requests on IO2.
         (bms-set-btn-wakeup-state 1)
 })
 
@@ -311,71 +306,26 @@ loopwhile-thd
         bms-temps
 })
 
-(defun bms-shutdown-cmd (ic)
-    (match (trap (with-com `(bms-subcmd-cmdonly ,ic 0x0010)))
-        ((exit-ok _) true)
-        (_ false)
-))
-
 (defun bms-shutdown-failed-alarm () {
-    (print "BMS shutdown failed - BQ did not enter shutdown")
+    (print "BMS hardware shutdown failed")
     (loopwhile t {
         (beep 20 0.05)
         (sleep 0.5)
     })
 })
 
-(defun bms-shutdown-bqs () {
-    (var bq-ok true)
-
-    (if (> (bms-get-param 'cells_ic2) 0) {
-        (if (not (and (bms-shutdown-cmd 2) (bms-shutdown-cmd 2))) {
-            (print "BQ2 shutdown command failed")
-            (setq bq-ok false)
-        })
-    })
-
-    (if (not (and (bms-shutdown-cmd 1) (bms-shutdown-cmd 1))) {
-        (print "BQ1 shutdown command failed")
-        (setq bq-ok false)
-    })
-
-    bq-ok
-})
-
 (defun bms-shutdown-impl (save-counters) {
-    (if (not (bms-supports-shutdown)) {
-        (print "BMS shutdown pin not supported; shutting down BQs and entering ESP deep sleep")
-        (beep 30 0.1)
+    (print "BMS shutdown sequence starting")
+    (beep 30 0.1)
 
-        (if (not (bms-shutdown-bqs)) (bms-shutdown-failed-alarm))
+    (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
+    (save-rtc-val)
+    (if save-counters (save-settings))
 
-        (sleep 1)
-        (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
-        (save-rtc-val)
-        (if save-counters (save-settings))
-
-        (prepare-external-wakeup)
-
-        (print "BQs in shutdown, ESP entering deep sleep")
-        (beep 1 0.75)
-        (sleep-deep -1)
-    } {
-        (print "BMS shutdown sequence starting")
-        (beep 30 0.1)
-        (if (not (bms-shutdown-bqs)) (bms-shutdown-failed-alarm))
-
-        (sleep 1)
-
-        (gpio-hold-deepsleep 0)
-        (gpio-hold 8 0)
-        (gpio-write 8 0)
-
-        (print "BMS shutdown pin asserted")
-        (beep 1 0.75)
-
-        (sleep 10)
-    })
+    (match (trap (bms-hw-shutdown))
+        ((exit-ok _) nil)
+        (_ (bms-shutdown-failed-alarm))
+    )
 })
 
 (defun bms-shutdown () (bms-shutdown-impl true))
@@ -451,9 +401,7 @@ loopwhile-thd
 
         (beep 2 0.1)
 
-        (if (bms-supports-shutdown)
-                (process-sleep-time)
-        )
+        (process-sleep-time)
 
         (if (can-active) (setq do-sleep false))
 
@@ -648,8 +596,6 @@ loopwhile-thd
 })
 
 (defun do-bms-sleep () {
-   ;(gpio-hold 8 1)
-   ;(gpio-hold-deepsleep 1)
    (bms-sleep)
 })
 
@@ -675,17 +621,10 @@ loopwhile-thd
         (setq vt-vchg (bms-get-vchg))
         (setq iout (+ (with-com '(bms-current)) (can-sum-current)))
 
-        (var c1-err 0.0)
-        (if (and (pcb-version-1) (< iout 0.0))
-                (setq c1-err (truncate (* 0.003 (abs iout)) 0.0 0.015))
-        )
-
+        (var cell0-report-offset (bms-cell0-report-offset iout))
         (looprange i 0 cell-num {
                 (set-bms-val 'bms-v-cell i
-                        (if (= i 0)
-                                (- (ix v-cells i) c1-err)
-                                (ix v-cells i)
-                        )
+                        (- (ix v-cells i) (if (= i 0) cell0-report-offset 0.0))
                 )
                 (set-bms-val 'bms-bal-state i (bms-get-bal i))
         })
@@ -974,8 +913,8 @@ loopwhile-thd
         )
 
         ; Compatibility Check
-        (loopwhile (!= (bms-fw-version) 6) {
-                (if (< (bms-fw-version) 6)
+        (loopwhile (!= (bms-fw-version) 7) {
+                (if (< (bms-fw-version) 7)
                     (print "Firmware too old, please update")
                     (print "Package too old, please update")
                 )

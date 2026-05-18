@@ -843,6 +843,77 @@ exit_error2:
 	return ENC_SYM_EERROR;
 }
 
+static bool bms_shutdown_bq(uint8_t addr) {
+	// SHUTDOWN requires the subcommand to be sent twice in succession.
+	return command_subcommands(addr, SHUTDOWN) &&
+			command_subcommands(addr, SHUTDOWN);
+}
+
+static void bms_config_shutdown_wakeup(void) {
+	gpio_set_direction(PIN_ENABLE, GPIO_MODE_INPUT);
+
+#if CONFIG_IDF_TARGET_ESP32S3
+	esp_sleep_enable_ext0_wakeup(PIN_ENABLE, 1);
+	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+	esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(
+			1ULL << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_HIGH);
+#else
+#error "Unsupported target"
+#endif
+}
+
+static lbm_value ext_bms_hw_shutdown(lbm_value *args, lbm_uint argn) {
+	(void)args;
+
+	if (argn != 0) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (xSemaphoreTake(bq_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+		lbm_set_error_reason("bq_mutex timeout in bms-hw-shutdown");
+		return ENC_SYM_EERROR;
+	}
+
+	gpio_set_level(PIN_COM_EN, 0);
+
+	if (m_cells_ic2 != 0 && !bms_shutdown_bq(BQ_ADDR_2)) {
+		xSemaphoreGive(bq_mutex);
+		lbm_set_error_reason("BQ2 shutdown command failed");
+		return ENC_SYM_EERROR;
+	}
+
+	if (!bms_shutdown_bq(BQ_ADDR_1)) {
+		xSemaphoreGive(bq_mutex);
+		lbm_set_error_reason("BQ1 shutdown command failed");
+		return ENC_SYM_EERROR;
+	}
+
+	xSemaphoreGive(bq_mutex);
+
+	vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef SHUTDOWN_SUPPORT
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+	gpio_deep_sleep_hold_dis();
+#endif
+	// Disable ESP GPIO hold so the open-drain shutdown output can change
+	// from idle/released high to asserted low.
+	gpio_hold_dis(PIN_SHUTDOWN);
+	gpio_set_level(PIN_SHUTDOWN, 0);
+
+	vTaskDelay(pdMS_TO_TICKS(10000));
+	lbm_set_error_reason("BMS shutdown pin did not power off");
+	return ENC_SYM_EERROR;
+#else
+	bms_config_shutdown_wakeup();
+	gpio_set_level(PIN_COM_EN, 1);
+	esp_deep_sleep_start();
+
+	return ENC_SYM_TRUE;
+#endif
+}
+
 static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
@@ -872,6 +943,21 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 	}
 
 	return lbm_list_destructive_reverse(vc_list);
+}
+
+static lbm_value ext_cell0_report_offset(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	float offset = 0.0;
+#ifndef SHUTDOWN_SUPPORT
+	float current = lbm_dec_as_float(args[0]);
+	if (current < 0.0) {
+		offset = 0.003 * fabsf(current);
+		utils_truncate_number(&offset, 0.0, 0.015);
+	}
+#endif
+
+	return lbm_enc_float(offset);
 }
 
 #define NTC_TEMP(res, ntc_res, ntc_beta) \
@@ -1599,7 +1685,7 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
-	return lbm_enc_i(6);
+	return lbm_enc_i(7);
 }
 
 static void load_extensions(bool main_found) {
@@ -1617,6 +1703,9 @@ static void load_extensions(bool main_found) {
 
 	// Get list of cell voltages
 	lbm_add_extension("bms-get-vcells", ext_get_vcells);
+
+	// Apply HW-specific Cell 0 voltage compensation before publishing BMS data
+	lbm_add_extension("bms-cell0-report-offset", ext_cell0_report_offset);
 
 	// Get list of temperature readings
 	lbm_add_extension("bms-get-temps", ext_get_temps);
@@ -1642,6 +1731,8 @@ static void load_extensions(bool main_found) {
 	lbm_add_extension("get-time-of-day-s", ext_get_time_of_day_s);
 
 	lbm_add_extension("bms-supports-shutdown", ext_bms_supports_shutdown);
+
+	lbm_add_extension("bms-hw-shutdown", ext_bms_hw_shutdown);
 
 	// Enable/disable output switch
 	lbm_add_extension("bms-set-out", ext_set_out);
