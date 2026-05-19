@@ -4,6 +4,7 @@
 
 ; Wait this long for charger to start charging
 (def charger-max-delay 10.0)
+(def current-scale 0.9675) ; Meter calibration: 1.19A actual / 1.23A reported
 (def sleep-unblock-en true) ; Enable automatic sleep unblocking
 (def app-wdt-timeout 120) ; Seconds. Set to 0 to disable the app watchdog.
 
@@ -15,6 +16,7 @@
 (def is-balancing false)
 (def is-charging false)
 (def charge-ok false)
+(def charger-detected-prev false)
 (def c-min 0.0)
 (def c-max 0.0)
 (def t-min 0.0)
@@ -87,7 +89,7 @@ loopwhile-thd
 ;;; Hack End ;;;
 
 ; Current inverted compared to stock FW
-(defun bms-current-raw () (* (bms-get-current) -1.0))
+(defun bms-current-raw () (* (bms-get-current) -1.0 current-scale))
 (defun bms-current () (- (bms-current-raw) current-zero-offset))
 
 (defun beep (times dt) {
@@ -599,21 +601,20 @@ loopwhile-thd
 (defun set-chg (chg) {
         (if chg
             {
+                (if (not is-charging) (setq charge-ts (systime)))
                 (gpio-write 9 0)
                 (bms-set-chg 1)
                 (setq is-charging true)
             }
             {
-                (bms-set-chg 0)
-                (setq is-charging false)
-
                 ; Trigger balancing when charging ends and the charge
                 ; has been ongoing for at least 10 seconds.
-                (if (> (secs-since charge-ts) 10.0) {
+                (if (and is-charging (> (secs-since charge-ts) 10.0)) {
                         (setq trigger-bal-after-charge true)
                 })
 
-                (setq charge-ts (systime))
+                (bms-set-chg 0)
+                (setq is-charging false)
             }
         )
 })
@@ -787,7 +788,13 @@ loopwhile-thd
         (var bq-status-display (if (> (str-len bq-status) 0) bq-status bq-status-latched))
         (set-bms-val 'bms-status (status-append (status-append chg-status bq-status-display) bal-status))
 
-        (if (and (test-chg 1) charge-ok)
+        (var charger-detected (test-chg 1))
+        (if (and charger-detected (not charger-detected-prev)) {
+                (setq charge-ts (systime))
+        })
+        (setq charger-detected-prev charger-detected)
+
+        (if (and charger-detected charge-ok)
         {
                 (if (< (secs-since charge-ts) charger-max-delay)
                 (set-chg true)

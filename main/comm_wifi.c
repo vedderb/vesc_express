@@ -482,9 +482,13 @@ void comm_wifi_init(void) {
 
 	esp_wifi_set_storage(WIFI_STORAGE_RAM);
 
+#ifdef HW_WIFI_PS_MODE
+	esp_wifi_set_ps(HW_WIFI_PS_MODE);
+#else
 	if (backup.config.ble_mode == BLE_MODE_DISABLED) {
 		esp_wifi_set_ps(WIFI_PS_NONE);
 	}
+#endif
 
 	esp_event_handler_instance_t instance_any_id;
 	esp_event_handler_instance_t instance_got_ip;
@@ -549,6 +553,13 @@ void comm_wifi_init(void) {
 	}
 
 	esp_wifi_start();
+
+#ifdef HW_WIFI_MAX_TX_POWER
+	esp_err_t tx_power_res = esp_wifi_set_max_tx_power(HW_WIFI_MAX_TX_POWER);
+	if (tx_power_res != ESP_OK) {
+		STORED_LOGF("esp_wifi_set_max_tx_power failed, result: %d", tx_power_res);
+	}
+#endif
 
 	if (backup.config.use_tcp_local) {
 		comm_local.packet = calloc(1, sizeof(PACKET_STATE_t));

@@ -178,6 +178,14 @@ typedef struct {
 // Parameters
 #define HW_R_SHUNT					0.001
 
+// Keep radio peak current low on JFBMS32. BLE power is an esp_power_level_t
+// value, e.g. ESP_PWR_LVL_N24 ... ESP_PWR_LVL_P20 on ESP32-C3. Optional
+// per-role BLE overrides are HW_BLE_PWR_LVL_DEFAULT, _ADV, _SCAN and _CONN.
+// WiFi power is in 0.25 dBm units, where 8 is the ESP-IDF minimum.
+#define HW_BLE_PWR_LVL				ESP_PWR_LVL_N24
+#define HW_WIFI_MAX_TX_POWER		8
+#define HW_WIFI_PS_MODE				WIFI_PS_MIN_MODEM
+
 // Macros
 #define HW_GET_VOUT()				((adc_get_voltage(ADC_CHANNEL_1) * (220.0e3 + 4.7e3)) / 4.7e3)
 #define HW_GET_VCHG()				((adc_get_voltage(ADC_CHANNEL_0) * (220.0e3 + 4.7e3)) / 4.7e3)

@@ -45,7 +45,18 @@
 #define HW_BLE_PWR_LVL ESP_PWR_LVL_P18
 #endif
 #endif
-#define ESP_PWR_LVL HW_BLE_PWR_LVL
+#ifndef HW_BLE_PWR_LVL_DEFAULT
+#define HW_BLE_PWR_LVL_DEFAULT HW_BLE_PWR_LVL
+#endif
+#ifndef HW_BLE_PWR_LVL_ADV
+#define HW_BLE_PWR_LVL_ADV HW_BLE_PWR_LVL
+#endif
+#ifndef HW_BLE_PWR_LVL_SCAN
+#define HW_BLE_PWR_LVL_SCAN HW_BLE_PWR_LVL
+#endif
+#ifndef HW_BLE_PWR_LVL_CONN
+#define HW_BLE_PWR_LVL_CONN HW_BLE_PWR_LVL
+#endif
 
 void ble_store_config_init(void);
 
@@ -110,12 +121,12 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
 };
 
 static void apply_tx_power(void) {
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL1, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL2, ESP_PWR_LVL);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, HW_BLE_PWR_LVL_ADV);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, HW_BLE_PWR_LVL_SCAN);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, HW_BLE_PWR_LVL_DEFAULT);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, HW_BLE_PWR_LVL_CONN);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL1, HW_BLE_PWR_LVL_CONN);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL2, HW_BLE_PWR_LVL_CONN);
 }
 
 static void start_advertising(void) {
