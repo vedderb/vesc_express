@@ -41,6 +41,8 @@
 // caller forever. If this ever times out we bail out with an error instead of
 // blocking - combined with the task WDT this is what lets a stuck bus recover.
 #define I2C_MUTEX_TIMEOUT_MS 500
+#define BMS_BALANCE_OFF_RETRIES 3
+#define BMS_BALANCE_OFF_RETRY_DELAY_MS 20
 
 // Macros
 #define M_CELLS (m_cells_ic1 + m_cells_ic2)
@@ -56,6 +58,16 @@ static uint16_t m_bal_state_ic2 = 0;
 // Error messages
 static char *error_comm_bq1 = "BQ1 communication error";
 static char *error_comm_bq2 = "BQ2 communication error";
+
+static void bms_set_chg_hw(bool enable) {
+	gpio_set_level(PIN_PSW_EN, 1);
+	gpio_set_level(PIN_CHG_EN, enable ? 1 : 0);
+}
+
+static void bms_clear_balance_state(void) {
+	m_bal_state_ic1 = 0;
+	m_bal_state_ic2 = 0;
+}
 
 static esp_err_t i2c_tx_rx(
 	uint8_t addr, const uint8_t *write_buffer, size_t write_size,
@@ -407,6 +419,32 @@ static bool subcommands_write16(
 	return true;
 }
 
+static bool bms_disable_balancing_hw(bool include_ic2) {
+	bms_clear_balance_state();
+
+	for (int i = 0; i < BMS_BALANCE_OFF_RETRIES; i++) {
+		bool res1 = subcommands_write16(BQ_ADDR_1, CB_ACTIVE_CELLS, 0);
+		bool res2 = true;
+
+		if (include_ic2) {
+			res2 = subcommands_write16(BQ_ADDR_2, CB_ACTIVE_CELLS, 0);
+		}
+
+		if (res1 && res2) {
+			return true;
+		}
+
+		vTaskDelay(pdMS_TO_TICKS(BMS_BALANCE_OFF_RETRY_DELAY_MS));
+	}
+
+	return false;
+}
+
+static bool bms_fail_close_outputs_hw(bool include_ic2) {
+	bms_set_chg_hw(false);
+	return bms_disable_balancing_hw(include_ic2);
+}
+
 static uint32_t float_to_u(float number) {
 	// Set subnormal numbers to 0 as they are not handled properly
 	// using this method.
@@ -647,9 +685,6 @@ static void bq_init(uint8_t dev_addr, bool current_protection_en) {
 static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
 
-	m_bal_state_ic1 = 0;
-	m_bal_state_ic2 = 0;
-
 	unsigned int cells_ic1 = 16;
 	if (argn >= 1) {
 		cells_ic1 = lbm_dec_as_u32(args[0]);
@@ -666,10 +701,16 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
+	bms_set_chg_hw(false);
+	bms_clear_balance_state();
+
 	if (xSemaphoreTake(bq_mutex, pdMS_TO_TICKS(I2C_MUTEX_TIMEOUT_MS)) != pdTRUE) {
 		lbm_set_error_reason("bq_mutex timeout in bms-init");
 		return ENC_SYM_NIL;
 	}
+
+	gpio_set_level(PIN_COM_EN, 0);
+	(void)bms_disable_balancing_hw(m_cells_ic2 != 0 || cells_ic2 != 0);
 
 	// i2c_tx_rx() serializes through i2c_mutex, but i2c_driver_delete /
 	// _install bypass it. If any other caller (Lisp i2c-tx-rx, i2c-detect,
@@ -840,21 +881,12 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 
 	// Disable all switches
 	gpio_set_level(PIN_OUT_EN, 0);
-	gpio_set_level(PIN_CHG_EN, 0);
+	bms_set_chg_hw(false);
 	gpio_set_level(PIN_PSW_EN, 0);
 
 	// Stop balancing
-	m_bal_state_ic1 = 0;
-	m_bal_state_ic2 = 0;
-
-	if (!subcommands_write16(BQ_ADDR_1, CB_ACTIVE_CELLS, m_bal_state_ic1)) {
+	if (!bms_disable_balancing_hw(m_cells_ic2 != 0)) {
 		goto exit_error1;
-	}
-
-	if (m_cells_ic2 != 0) {
-		if (!subcommands_write16(BQ_ADDR_2, CB_ACTIVE_CELLS, m_bal_state_ic2)) {
-			goto exit_error2;
-		}
 	}
 
 	// Disable temperature measurement pull-ups and ensure that regulator is kept on in DEEP SLEEP
@@ -938,20 +970,26 @@ static lbm_value ext_bms_hw_shutdown(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
+	bms_set_chg_hw(false);
+	bms_clear_balance_state();
+
 	if (xSemaphoreTake(bq_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
 		lbm_set_error_reason("bq_mutex timeout in bms-hw-shutdown");
 		return ENC_SYM_EERROR;
 	}
 
 	gpio_set_level(PIN_COM_EN, 0);
+	(void)bms_disable_balancing_hw(m_cells_ic2 != 0);
 
 	if (m_cells_ic2 != 0 && !bms_shutdown_bq(BQ_ADDR_2)) {
+		(void)bms_fail_close_outputs_hw(m_cells_ic2 != 0);
 		xSemaphoreGive(bq_mutex);
 		lbm_set_error_reason("BQ2 shutdown command failed");
 		return ENC_SYM_EERROR;
 	}
 
 	if (!bms_shutdown_bq(BQ_ADDR_1)) {
+		(void)bms_fail_close_outputs_hw(m_cells_ic2 != 0);
 		xSemaphoreGive(bq_mutex);
 		lbm_set_error_reason("BQ1 shutdown command failed");
 		return ENC_SYM_EERROR;
@@ -971,6 +1009,8 @@ static lbm_value ext_bms_hw_shutdown(lbm_value *args, lbm_uint argn) {
 	gpio_set_level(PIN_SHUTDOWN, 0);
 
 	vTaskDelay(pdMS_TO_TICKS(10000));
+	bms_set_chg_hw(false);
+	bms_clear_balance_state();
 	lbm_set_error_reason("BMS shutdown pin did not power off");
 	return ENC_SYM_EERROR;
 #else
@@ -1277,8 +1317,63 @@ static lbm_value ext_set_out(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_set_chg(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
-	gpio_set_level(PIN_PSW_EN, 1);
-	gpio_set_level(PIN_CHG_EN, lbm_dec_as_i32(args[0]));
+	bms_set_chg_hw(lbm_dec_as_i32(args[0]) != 0);
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_bms_disable_balancing(lbm_value *args, lbm_uint argn) {
+	(void)args;
+
+	if (argn != 0) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (xSemaphoreTake(bq_mutex, pdMS_TO_TICKS(I2C_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+		bms_clear_balance_state();
+		lbm_set_error_reason("bq_mutex timeout in bms-disable-balancing");
+		return ENC_SYM_EERROR;
+	}
+
+	int com_prev = gpio_get_level(PIN_COM_EN);
+	gpio_set_level(PIN_COM_EN, 0);
+	bool res = bms_disable_balancing_hw(m_cells_ic2 != 0);
+	gpio_set_level(PIN_COM_EN, com_prev);
+	xSemaphoreGive(bq_mutex);
+
+	if (!res) {
+		lbm_set_error_reason("BMS balancing disable failed");
+		return ENC_SYM_EERROR;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_bms_fail_close_outputs(lbm_value *args, lbm_uint argn) {
+	(void)args;
+
+	if (argn != 0) {
+		return ENC_SYM_TERROR;
+	}
+
+	bms_set_chg_hw(false);
+
+	if (xSemaphoreTake(bq_mutex, pdMS_TO_TICKS(I2C_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+		bms_clear_balance_state();
+		lbm_set_error_reason("bq_mutex timeout in bms-fail-close-outputs");
+		return ENC_SYM_EERROR;
+	}
+
+	int com_prev = gpio_get_level(PIN_COM_EN);
+	gpio_set_level(PIN_COM_EN, 0);
+	bool res = bms_fail_close_outputs_hw(m_cells_ic2 != 0);
+	gpio_set_level(PIN_COM_EN, com_prev);
+	xSemaphoreGive(bq_mutex);
+
+	if (!res) {
+		lbm_set_error_reason("BMS fail-close balance disable failed");
+		return ENC_SYM_EERROR;
+	}
+
 	return ENC_SYM_TRUE;
 }
 
@@ -1309,7 +1404,7 @@ static lbm_value ext_set_bal(lbm_value *args, lbm_uint argn) {
 
 		res = subcommands_write16(BQ_ADDR_2, CB_ACTIVE_CELLS, m_bal_state_ic2);
 		if (!res) {
-			lbm_set_error_reason(error_comm_bq1);
+			lbm_set_error_reason(error_comm_bq2);
 		}
 	}
 
@@ -1763,7 +1858,7 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
-	return lbm_enc_i(7);
+	return lbm_enc_i(8);
 }
 
 static void load_extensions(bool main_found) {
@@ -1811,6 +1906,9 @@ static void load_extensions(bool main_found) {
 	lbm_add_extension("bms-supports-shutdown", ext_bms_supports_shutdown);
 
 	lbm_add_extension("bms-hw-shutdown", ext_bms_hw_shutdown);
+
+	lbm_add_extension("bms-disable-balancing", ext_bms_disable_balancing);
+	lbm_add_extension("bms-fail-close-outputs", ext_bms_fail_close_outputs);
 
 	// Enable/disable output switch
 	lbm_add_extension("bms-set-out", ext_set_out);

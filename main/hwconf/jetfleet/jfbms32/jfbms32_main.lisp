@@ -1,4 +1,4 @@
-﻿;;;;;;;;; User Settings ;;;;;;;;;
+;;;;;;;;; User Settings ;;;;;;;;;
 
 ; TODO: Move into config?
 
@@ -34,6 +34,8 @@
 (def bq-safety-a2 0)
 (def bq-scd-latched false)
 (def bq-scd-recovery-armed false)
+(def bal-off-failed false)
+(def fail-close-failed false)
 
 (def rtc-val '(
         (wakeup-cnt . 0)
@@ -272,6 +274,77 @@ loopwhile-thd
     )
 )
 
+(defun disable-balancing () {
+        (var bal-off-ok false)
+
+        (match (trap (bms-disable-balancing))
+                ((exit-ok _) (setq bal-off-ok true))
+                (_ {
+                        (setq bal-off-ok true)
+                        (looprange i 0 cell-num {
+                                (match (trap (with-com `(bms-set-bal ,i 0)))
+                                        ((exit-ok _) nil)
+                                        (_ (setq bal-off-ok false))
+                                )
+                        })
+                })
+        )
+
+        (if bal-off-ok
+                {
+                        (if bal-off-failed (print "Balancing disabled after retry"))
+                        (setq bal-off-failed false)
+                        (setq is-balancing false)
+                        (setq bal-status "")
+                }
+                {
+                        (if (not bal-off-failed) (print "Failed to disable balancing"))
+                        (setq bal-off-failed true)
+                }
+        )
+
+        bal-off-ok
+})
+
+(defun fail-close-outputs (clear-bal-trigger) {
+        (var close-ok false)
+
+        (match (trap (bms-fail-close-outputs))
+                ((exit-ok _) (setq close-ok true))
+                (_ {
+                        (trap (bms-set-chg 0))
+                        (setq close-ok (disable-balancing))
+                })
+        )
+
+        (setq is-charging false)
+        (setq charge-ok false)
+        (if clear-bal-trigger (setq trigger-bal-after-charge false))
+
+        (if close-ok
+                {
+                        (if fail-close-failed (print "BMS fail-close recovered"))
+                        (setq fail-close-failed false)
+                        (setq bal-off-failed false)
+                        (setq is-balancing false)
+                        (setq bal-status "")
+                }
+                {
+                        (if (not fail-close-failed) (print "BMS fail-close failed"))
+                        (setq fail-close-failed true)
+                }
+        )
+
+        close-ok
+})
+
+(defun balance-safe-now () (and
+        (<= (* (abs iout) (if is-balancing 0.8 1.0)) (bms-get-param 'balance_max_current))
+        (>= c-min (bms-get-param 'vc_balance_min))
+        (<= t-max (bms-get-param 't_bal_max_cell))
+        (<= t-ic (bms-get-param 't_bal_max_ic))
+))
+
 (defun update-temps () {
         ; Exit if any of the BQs has invalid temperature settings
         (var v1 (bms-read-reg 1 0x92fd 1))
@@ -328,6 +401,7 @@ loopwhile-thd
 (defun bms-shutdown-failed-alarm () {
     (print "BMS hardware shutdown failed")
     (loopwhile t {
+        (fail-close-outputs true)
         (beep 20 0.05)
         (sleep 0.5)
     })
@@ -335,6 +409,7 @@ loopwhile-thd
 
 (defun bms-shutdown-impl (save-counters) {
     (print "BMS shutdown sequence starting")
+    (fail-close-outputs true)
     (beep 30 0.1)
 
     (setassoc rtc-val 'sleep-enter-time-s (get-time-of-day-s))
@@ -712,6 +787,11 @@ loopwhile-thd
         (setq vt-vchg (bms-get-vchg))
         (setq iout (+ (with-com '(bms-current)) (can-sum-current)))
 
+        (if (and is-balancing (not (balance-safe-now))) {
+                (setq bal-ok false)
+                (disable-balancing)
+        })
+
         (var cell0-report-offset (bms-cell0-report-offset iout))
         (looprange i 0 cell-num {
                 (set-bms-val 'bms-v-cell i
@@ -829,7 +909,15 @@ loopwhile-thd
 
         ; Set combined BMS status
         (var bq-status-display (if (> (str-len bq-status) 0) bq-status bq-status-latched))
-        (set-bms-val 'bms-status (status-append (status-append chg-status bq-status-display) bal-status))
+        (var output-fault-status "")
+        (if bal-off-failed (setq output-fault-status (status-append output-fault-status "BAL_OFF_FAIL")))
+        (if fail-close-failed (setq output-fault-status (status-append output-fault-status "FAIL_CLOSE_FAIL")))
+        (set-bms-val 'bms-status
+                (status-append
+                        (status-append (status-append chg-status bq-status-display) bal-status)
+                        output-fault-status
+                )
+        )
 
         (var charger-detected (test-chg 1))
         (if (and charger-detected (not charger-detected-prev)) {
@@ -975,8 +1063,7 @@ loopwhile-thd
             })
 
             (if (not bal-ok) {
-                    (looprange i 0 cell-num (with-com `(bms-set-bal ,i 0)))
-                    (setq is-balancing false)
+                    (disable-balancing)
             })
 
             (setq bal-status (if is-balancing "BAL" ""))
@@ -1001,9 +1088,19 @@ loopwhile-thd
                     (setq bal-ok false)
             ))
             (event-bms-zero-ofs (setq current-zero-offset (with-com '(bms-current-raw))))
+            ((event-data-rx ? data) (handle-app-data data))
             (_ nil)
             ;((? a) (print a))
 )))
+
+(defun handle-app-data (data)
+    (match (trap (read data))
+        ((exit-ok (bms-shutdown)) {
+            (print "APPUI requested BMS shutdown")
+            (spawn (fn () (bms-shutdown)))
+        })
+        (_ (print "Ignoring unsupported APPUI command"))
+))
 
 (defun main () {
         (if (> app-wdt-timeout 0)
@@ -1012,8 +1109,8 @@ loopwhile-thd
         )
 
         ; Compatibility Check
-        (loopwhile (!= (bms-fw-version) 7) {
-                (if (< (bms-fw-version) 7)
+        (loopwhile (!= (bms-fw-version) 8) {
+                (if (< (bms-fw-version) 8)
                     (print "Firmware too old, please update")
                     (print "Package too old, please update")
                 )
@@ -1070,6 +1167,7 @@ loopwhile-thd
         (event-enable 'event-bms-reset-cnt)
         (event-enable 'event-bms-force-bal)
         (event-enable 'event-bms-zero-ofs)
+        (event-enable 'event-data-rx)
 
         (set-bms-val 'bms-cell-num cell-num)
         (set-bms-val 'bms-can-id (can-local-id))
@@ -1102,11 +1200,8 @@ loopwhile-thd
                     ) {
                         (print "BMS config changed, reinitializing hardware")
                         ; Fail closed before any BQ communication that could block.
-                        (bms-set-chg 0)
-                        (setq is-charging false)
-                        (setq charge-ok false)
+                        (fail-close-outputs true)
                         (com-force true)
-                        (looprange i 0 cell-num (with-com `(bms-set-bal ,i 0)))
                         (init-hw)
                         (beep 2 0.05)
                         (setq active-cells-ic1 cfg-cells-ic1)
@@ -1123,19 +1218,29 @@ loopwhile-thd
                 (if did-crash {
                         ; Fail closed immediately. init-hw can loop while recovering
                         ; BQ communication, so do not leave the charge gate enabled
-                        ; while recovery is waiting on the bus.
-                        (bms-set-chg 0)
-                        (setq is-charging false)
-                        (setq charge-ok false)
+                        ; or balance channels active while recovery is waiting on the bus.
+                        (fail-close-outputs true)
                         (com-force true)
                         (init-hw)
                         (com-force false)
-                        (bms-set-chg 0)
+                        (fail-close-outputs true)
                         (setq did-crash false)
                         (setq crash-cnt (+ crash-cnt 1))
                 })
 
                 (sleep 0.1)
+        })
+
+        (loopwhile-thd ("fail-close-retry" 100) t {
+                (if fail-close-failed {
+                        (fail-close-outputs true)
+                })
+
+                (if (and bal-off-failed (not fail-close-failed)) {
+                        (disable-balancing)
+                })
+
+                (sleep 0.5)
         })
 
         (loopwhile-thd ("sleep-unblock" 100) t {
