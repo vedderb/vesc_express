@@ -567,6 +567,10 @@ static void bq_init(uint8_t dev_addr, bool current_protection_en) {
 	// Use all cells
 	bq_set_reg(dev_addr, VCellMode, 0x0000, 2);
 
+	// The main charge/discharge MOSFETs are driven by external hardware, not
+	// the BQ high-side FET drivers. Keep the BQ charge pump off.
+	bq_set_reg(dev_addr, ChgPumpControl, 0x00, 1);
+
 	bq_set_reg(dev_addr, MfgStatusInit, 0x10, 1); // FET_EN
 	if (current_protection_en) {
 		// Configure BQ1 current protections. Software still owns normal charge
@@ -1143,7 +1147,19 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 		if (!ok) {
 			goto exit_error2;
 		}
+
+		// JFBMS32 uses the HDQ pin thermistors for MOSFET temperature:
+		// BQ1 HDQ = first MOSFET NTC, BQ2 HDQ = second MOSFET NTC.
+		float v6 = (float)command_read(BQ_ADDR_2, HDQTemperature, &ok)
+			* counts_to_volts;
+		if (!ok) {
+			goto exit_error2;
+		}
+
+		ts_list = lbm_cons(lbm_enc_float(NAN_TO_M1(
+				NTC_TEMP(ntc_measured_res(v6, 18000.0), ntc_smd_res, ntc_smd_beta))), ts_list);
 	} else {
+		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
 		ts_list = lbm_cons(lbm_enc_float(-1.0), ts_list);
 	}
 
@@ -1189,11 +1205,9 @@ static lbm_value ext_bms_supports_shutdown(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
 
-	#ifdef SHUTDOWN_SUPPORT
-		return ENC_SYM_TRUE;
-	#else
-		return ENC_SYM_NIL;
-	#endif
+	// Both JFBMS32 variants support the Lisp shutdown command. v2 asserts
+	// PIN_SHUTDOWN; v1 shuts down the BQs and then enters ESP deep sleep.
+	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_get_time_of_day_s(lbm_value *args, lbm_uint argn) {

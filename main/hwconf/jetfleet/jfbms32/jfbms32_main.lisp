@@ -32,6 +32,8 @@
 (def bal-status "")
 (def bq-safety-a1 0)
 (def bq-safety-a2 0)
+(def bq-scd-latched false)
+(def bq-scd-recovery-armed false)
 
 (def rtc-val '(
         (wakeup-cnt . 0)
@@ -273,22 +275,30 @@ loopwhile-thd
 (defun update-temps () {
         ; Exit if any of the BQs has invalid temperature settings
         (var v1 (bms-read-reg 1 0x92fd 1))
+        (var h1 (bms-read-reg 1 0x9300 1))
         (var has-ic2 (> (bms-get-param 'cells_ic2) 0))
         (var v2 (if has-ic2 (with-com '(bms-read-reg 2 0x92fd 1)) 0x3b)) ; default to valid when no IC2
+        (var h2 (if has-ic2 (with-com '(bms-read-reg 2 0x9300 1)) 0x3b)) ; default to valid when no IC2
 
         (if (or
                 (and (!= v1 0x3b) (!= v1 0x7b))
+                (!= h1 0x3b)
                 (and has-ic2 (and (!= v2 0x3b) (!= v2 0x7b)))
+                (and has-ic2 (!= h2 0x3b))
             ) {
             (print "Invalid temperature settings, retrying...")
             (sleep 0.01)
 
             (setq v1 (bms-read-reg 1 0x92fd 1))
+            (setq h1 (bms-read-reg 1 0x9300 1))
             (setq v2 (if has-ic2 (with-com '(bms-read-reg 2 0x92fd 1)) 0x3b))
+            (setq h2 (if has-ic2 (with-com '(bms-read-reg 2 0x9300 1)) 0x3b))
 
             (if (or
                     (and (!= v1 0x3b) (!= v1 0x7b))
+                    (!= h1 0x3b)
                     (and has-ic2 (and (!= v2 0x3b) (!= v2 0x7b)))
+                    (and has-ic2 (!= h2 0x3b))
                 ) {
                 (print "BQs with invalid temperature settings")
                 (exit-error 0)
@@ -298,7 +308,7 @@ loopwhile-thd
         (var bms-temps (with-com '(bms-get-temps)))
         (var temp-ext-num (truncate (bms-get-param 'temp_num) 0 4))
 
-        ; First and last are balance IC temps
+        ; bms-temps: BQ1 IC, BQ1 TS1/TS3/ALERT/DCHG, BQ1 HDQ, BQ2 IC, BQ2 HDQ
         (var t-sorted (sort < (map
                     (fn (x) (ix bms-temps (+ x 1)))
                     (range 0 temp-ext-num)
@@ -309,7 +319,7 @@ loopwhile-thd
 
         (setq t-min (ix t-sorted 0))
         (setq t-max (ix t-sorted -1))
-        (setq t-mos (ix bms-temps 5))
+        (setq t-mos (if (> (ix bms-temps 5) (ix bms-temps 7)) (ix bms-temps 5) (ix bms-temps 7)))
         (setq t-ic  (if (> (ix bms-temps 0) (ix bms-temps 6)) (ix bms-temps 0) (ix bms-temps 6)))
 
         bms-temps
@@ -598,6 +608,37 @@ loopwhile-thd
     (!= (bitwise-and bq-safety-a1 0xB0) 0)
 )
 
+(defun bq-scd-fault-active ()
+    (!= (bitwise-and bq-safety-a1 0x80) 0)
+)
+
+(defun recover-bq-scd-after-disconnect () {
+        (if (bq-scd-fault-active) {
+                (setq bq-scd-latched true)
+                (setq bq-scd-recovery-armed false)
+                (set-chg nil)
+        })
+
+        ; A charger-side short can also pull Vchg to zero, so absence only arms
+        ; recovery. The actual recover waits for a fresh charger-voltage detect.
+        (if (and bq-scd-latched (> (secs-since charge-dis-ts) 5.0)) {
+                (setq bq-scd-recovery-armed true)
+        })
+})
+
+(defun recover-bq-scd-on-charger-detect () {
+        (if bq-scd-recovery-armed {
+                (with-com '(progn
+                        (bms-subcmd-cmdonly 1 0x009C) ; SCDL_RECOVER
+                ))
+                (setassoc rtc-val 'charge-fault false)
+                (setq bq-scd-latched false)
+                (setq bq-scd-recovery-armed false)
+                (setq bq-status-latched "")
+                (setq charge-ts (systime))
+        })
+})
+
 (defun set-chg (chg) {
         (if chg
             {
@@ -653,9 +694,10 @@ loopwhile-thd
 
             (setq bq-status (update-bq-status))
             (if (> (str-len bq-status) 0) (setq bq-status-latched bq-status))
-            (if (and (> (str-len bq-status-latched) 0) (> (secs-since charge-dis-ts) 5.0)) {
+            (if (and (> (str-len bq-status-latched) 0) (not bq-scd-latched) (> (secs-since charge-dis-ts) 5.0)) {
                     (setq bq-status-latched "")
             })
+            (recover-bq-scd-after-disconnect)
 
             (var v-cells (with-com '(bms-get-vcells)))
             (var bms-temps (update-temps))
@@ -734,7 +776,7 @@ loopwhile-thd
         (set-bms-val 'bms-v-tot vtot)
         (set-bms-val 'bms-v-charge vt-vchg)
         (set-bms-val 'bms-i-in-ic iout)
-        (set-bms-val 'bms-temp-ic (ix bms-temps 0))
+        (set-bms-val 'bms-temp-ic t-ic)
         (set-bms-val 'bms-temp-cell-max t-max)
         (set-bms-val 'bms-soc soc)
         (set-bms-val 'bms-soh 1.0)
@@ -760,6 +802,7 @@ loopwhile-thd
                 (< t-mos (bms-get-param 't_charge_max_mos))
                 chg-allowed
                 (not (assoc rtc-val 'charge-fault))
+                (not bq-scd-latched)
         ))
 
         (if (bq-current-fault-active) {
@@ -790,6 +833,7 @@ loopwhile-thd
 
         (var charger-detected (test-chg 1))
         (if (and charger-detected (not charger-detected-prev)) {
+                (recover-bq-scd-on-charger-detect)
                 (setq charge-ts (systime))
         })
         (setq charger-detected-prev charger-detected)

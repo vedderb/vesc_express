@@ -80,7 +80,7 @@
 
 // Name
 #ifndef CONF_BLE_NAME
-#define CONF_BLE_NAME "JF BMS"
+#define CONF_BLE_NAME "JFBMS32"
 #endif
 
 // Bluetooth Pin Code

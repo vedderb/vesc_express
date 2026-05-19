@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
 
-# You can set a HW here when e.g. building with the eclipse plugin
-set(HW_NAME "JFBMS32v2")
+# Default hardware when building without an explicit -DHW_NAME=...
+# Keep this in the cache so command-line and IDE-selected targets can override it.
+set(HW_NAME "JFBMS32v1" CACHE STRING "Hardware target")
 
 # Default build target Logic
 if(NOT DEFINED HW_NAME)
