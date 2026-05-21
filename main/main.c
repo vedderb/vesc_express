@@ -136,6 +136,7 @@ void app_main(void) {
 
 	vTaskDelay(1);
 
+	#if !CONFIG_IDF_TARGET_ESP32P4
 	switch (backup.config.ble_mode) {
 		case BLE_MODE_DISABLED: {
 			break;
@@ -154,6 +155,7 @@ void app_main(void) {
 	if (backup.config.wifi_mode != WIFI_MODE_DISABLED) {
 		comm_wifi_init();
 	}
+	#endif
 
 	nmea_init();
 	log_init();

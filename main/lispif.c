@@ -98,9 +98,16 @@ extern lbm_const_heap_t *lbm_const_heap_state;
 #define LBM_MEMORY_SIZE_KB(kb) LBM_MEMORY_SIZE_64BYTES_TIMES_X((kb * 16))
 #define LBM_BITMAP_SIZE_KB(kb) LBM_MEMORY_BITMAP_SIZE((kb * 16))
 
+#ifdef CONFIG_IDF_TARGET_ESP32P4
+#define LBM_PSRAM_HEAP_BYTES   (4096 * 32)
+#define LBM_PSRAM_MEMORY_KB    2048
+#define LBM_PSRAM_BITMAP_KB    2048
+#else
 #define LBM_PSRAM_HEAP_BYTES   (4096 * 16)
 #define LBM_PSRAM_MEMORY_KB    512
 #define LBM_PSRAM_BITMAP_KB    512
+#endif
+
 
 void lispif_init(void) {
 #ifndef CONFIG_SPIRAM
@@ -110,6 +117,10 @@ void lispif_init(void) {
 	bitmap_size = LBM_BITMAP_SIZE_KB(48);
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 	heap_size = (2048 + 512);
+	mem_size = LBM_MEMORY_SIZE_KB(32);
+	bitmap_size = LBM_BITMAP_SIZE_KB(32);
+#elif CONFIG_IDF_TARGET_ESP32P4
+	heap_size = (4096 + 512);
 	mem_size = LBM_MEMORY_SIZE_KB(32);
 	bitmap_size = LBM_BITMAP_SIZE_KB(32);
 #else

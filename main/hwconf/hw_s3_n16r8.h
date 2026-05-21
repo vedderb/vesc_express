@@ -2,7 +2,7 @@
 #define HW_S3_N16R8_H_
 
 #define HW_NAME                 "S3 N16R8"
-#define HW_TARGET               "esp32s3"
+#define HW_TARGET               "esp32s3_n16r8"
 #define HW_UART_COMM
 
 #define HW_INIT_HOOK()          hw_init()

@@ -27,6 +27,7 @@
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
 
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
 #include "esp_bt_defs.h"
 #include "esp_bt_device.h"
@@ -36,11 +37,14 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
+#endif
 
 #include "packet.h"
 #include "commands.h"
 #include "conf_general.h"
 #include "main.h"
+
+#if !CONFIG_IDF_TARGET_ESP32P4
 
 
 #define GATTS_CHAR_VAL_LEN_MAX 255
@@ -738,3 +742,22 @@ int comm_ble_mtu_now(void) {
 void comm_ble_send_packet(unsigned char *data, unsigned int len) {
 	packet_send_packet(data, len, packet_state);
 }
+
+#else
+
+void comm_ble_init(void) {}
+
+bool comm_ble_is_connected(void) {
+	return false;
+}
+
+int comm_ble_mtu_now(void) {
+	return 0;
+}
+
+void comm_ble_send_packet(unsigned char *data, unsigned int len) {
+	(void)data;
+	(void)len;
+}
+
+#endif

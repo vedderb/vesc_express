@@ -1,8 +1,8 @@
-#ifndef MAIN_HWCONF_DEVKIT_C6_H_
-#define MAIN_HWCONF_DEVKIT_C6_H_
+#ifndef MAIN_HWCONF_DEVKIT_C6_FH4_H_
+#define MAIN_HWCONF_DEVKIT_C6_FH4_H_
 
-#define HW_NAME                     "Devkit C6"
-#define HW_TARGET                   "esp32c6"
+#define HW_NAME                     "Devkit C6 FH4"
+#define HW_TARGET                   "esp32c6_fh4"
 #define HW_UART_COMM
 
 #define HW_INIT_HOOK()              hw_init()
@@ -16,4 +16,4 @@
 // Functions
 void hw_init(void);
 
-#endif /* MAIN_HWCONF_DEVKIT_C6_H_ */
+#endif /* MAIN_HWCONF_DEVKIT_C6_FH4_H_ */

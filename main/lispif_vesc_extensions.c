@@ -70,10 +70,12 @@
 #include "bme280_if.h"
 
 #include "esp_netif.h"
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #include "esp_now.h"
 #include "esp_crc.h"
+#endif
 #include "driver/i2c.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -83,8 +85,10 @@
 #include "esp_sleep.h"
 #include "soc/rtc.h"
 #include "esp_private/esp_clk.h"
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
 #include "esp_bt_main.h"
+#endif
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 
@@ -101,7 +105,7 @@
 
 #if CONFIG_IDF_TARGET_ESP32S3
 	#define LBM_EVENTS_TASK_STACK_SIZE 1280
-#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	#define LBM_EVENTS_TASK_STACK_SIZE 640
 #else
 	#error "Unsupported target"
@@ -2293,6 +2297,8 @@ static lbm_value ext_ioboard_set_pwm(lbm_value *args, lbm_uint argn) {
 
 // ESP NOW
 
+#if !CONFIG_IDF_TARGET_ESP32P4
+
 static bool esp_now_initialized = false;
 static volatile lbm_cid esp_now_send_cid = -1;
 static volatile lbm_cid esp_now_recv_cid = -1;
@@ -2745,6 +2751,8 @@ static lbm_value ext_esp_now_recv(lbm_value *args, lbm_uint argn) {
 
 	return ENC_SYM_TRUE;
 }
+
+#endif
 
 static bool i2c_started = false;
 static SemaphoreHandle_t i2c_mutex;
@@ -3642,7 +3650,9 @@ static lbm_value ext_set_pos_time(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
+	#if !CONFIG_IDF_TARGET_ESP32P4
 	esp_wifi_stop();
+	#endif
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
@@ -3657,7 +3667,9 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
+	#if !CONFIG_IDF_TARGET_ESP32P4
 	esp_wifi_stop();
+	#endif
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
@@ -3684,7 +3696,7 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 #if CONFIG_IDF_TARGET_ESP32S3
 	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0); 
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
-#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	esp_deep_sleep_enable_gpio_wakeup(1 << pin,mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
 #else
 	#error "Unsupported target"
@@ -4702,6 +4714,7 @@ static lbm_value lbm_qml_erase(lbm_value *args, lbm_uint argn, COMM_PACKET_ID cm
 		return ENC_SYM_TRUE;
 	}
 }
+
 
 // (fw-erase size optCanId) -> t, nil
 static lbm_value ext_fw_erase(lbm_value *args, lbm_uint argn) {
@@ -6895,6 +6908,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("ioboard-set-pwm", ext_ioboard_set_pwm);
 
 		// ESP NOW
+		#if !CONFIG_IDF_TARGET_ESP32P4
 		lbm_add_extension("esp-now-start", ext_esp_now_start);
 		lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
 		lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
@@ -6907,6 +6921,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
 		lbm_add_extension("wifi-start", ext_wifi_start);
 		lbm_add_extension("wifi-stop", ext_wifi_stop);
+		#endif
 
 		// Logging
 		lbm_add_extension("log-start", ext_log_start);
@@ -6936,10 +6951,14 @@ void lispif_load_vesc_extensions(bool main_found) {
 
 		lispif_load_disp_extensions();
 		lispif_load_touch_extensions();
+		#if !CONFIG_IDF_TARGET_ESP32P4
 		lispif_load_wifi_extensions();
+		#endif
 
 		if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
+			#if !CONFIG_IDF_TARGET_ESP32P4
 			lispif_load_ble_extensions();
+			#endif
 		}
 
 		// CAN-Messages
@@ -7098,7 +7117,9 @@ void lispif_disable_all_events(void) {
 
 	bms_register_cmd_handler(NULL);
 
+	#if !CONFIG_IDF_TARGET_ESP32P4
 	esp_now_recv_cid = -1;
+	#endif
 	can_recv_sid_cid = -1;
 	can_recv_eid_cid = -1;
 #ifdef CONFIG_IDF_TARGET_ESP32C6

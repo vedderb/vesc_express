@@ -24,12 +24,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "datatypes.h"
 #include "esp_netif.h"
 #include "esp_event_base.h"
+
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "lwip/sockets.h"
 #include "lwip/ip_addr.h"
-
-#include "datatypes.h"
 
 /**
  * A event listener callback function used in the comm_wifi module.
@@ -171,5 +172,33 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len);
  * @param port The port to connect to. Is in host byte order.
 */
 struct sockaddr_in create_sockaddr_in(ip_addr_t addr, uint16_t port);
+
+#else
+
+typedef void (*comm_wifi_event_cb_t)(void* event_base, int32_t event_id, void* event_data);
+
+void comm_wifi_init(void);
+WIFI_MODE comm_wifi_get_mode(void);
+esp_ip4_addr_t comm_wifi_get_ip(void);
+esp_ip4_addr_t comm_wifi_get_ip_client(void);
+bool comm_wifi_is_client_connected(void);
+bool comm_wifi_is_connected_hub(void);
+bool comm_wifi_is_connecting(void);
+bool comm_wifi_is_connected(void);
+void comm_wifi_disconnect(void);
+bool comm_wifi_change_network(const char *ssid, const char *password);
+bool comm_wifi_reconnect_network(void);
+bool comm_wifi_disconnect_network(void);
+bool comm_wifi_set_auto_reconnect(bool should_reconnect);
+bool comm_wifi_get_auto_reconnect(void);
+void comm_wifi_set_event_listener(comm_wifi_event_cb_t handler);
+void comm_wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
+void comm_wifi_send_packet_local(unsigned char *data, unsigned int len);
+void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len);
+void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len);
+void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len);
+
+
+#endif
 
 #endif /* MAIN_COMM_WIFI_H_ */

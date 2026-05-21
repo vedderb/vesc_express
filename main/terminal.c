@@ -28,8 +28,10 @@
 #include <math.h>
 #include <ctype.h>
 
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
 #include "esp_wifi.h"
+#endif
 #include "comm_ble.h"
 #include "comm_wifi.h"
 #include "nvs_flash.h"
@@ -204,6 +206,7 @@ void terminal_process_string(char *str) {
 		commands_printf("WIFI Client Con   : %d", comm_wifi_is_client_connected());
 
 		uint8_t ch_primary;
+		#if !CONFIG_IDF_TARGET_ESP32P4
 		wifi_second_chan_t ch_second;
 		esp_err_t ch_res = esp_wifi_get_channel(&ch_primary, &ch_second);
 
@@ -214,6 +217,10 @@ void terminal_process_string(char *str) {
 		} else {
 			commands_printf("WIFI Channel      : error %d", ch_res);
 		}
+		#else
+		(void)ch_primary;
+		commands_printf("WIFI Channel      : N/A on ESP32-P4");
+		#endif
 
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		if (running != NULL) {

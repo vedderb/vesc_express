@@ -7,7 +7,11 @@ dependencies:
   espressif/esp_lcd_touch_gt911: ^1.2.0
   waveshare/esp_lcd_touch_cst9217: ^1.0.4
   atanisoft/esp_lcd_touch_xpt2046: ^1.0.6
-  espressif/esp_lcd_axs15231b: ^1.0.1
+  espressif/esp_lcd_axs15231b: ^2.1.0
+  espressif/esp_lcd_st7701: 
+    version: ^2.0.2
+    rules:
+      - if: "target in [esp32p4, esp32s3]"
   ## Required IDF version
   idf:
     version: '>=4.1.0'

@@ -38,12 +38,15 @@
 #include "soc/gpio_sig_map.h"
 #include <string.h>
 
-#ifndef TWAI_TX_IDX
-#define TWAI_TX_IDX TWAI0_TX_IDX
-#endif
-
-#ifndef TWAI_RX_IDX
-#define TWAI_RX_IDX TWAI0_RX_IDX
+#if CONFIG_IDF_TARGET_ESP32P4
+	#define VESC_TWAI_TX_IDX TWAI0_TX_PAD_OUT_IDX
+	#define VESC_TWAI_RX_IDX TWAI0_RX_PAD_IN_IDX
+#elif defined(TWAI0_TX_IDX)
+	#define VESC_TWAI_TX_IDX TWAI0_TX_IDX
+	#define VESC_TWAI_RX_IDX TWAI0_RX_IDX
+#else
+	#define VESC_TWAI_TX_IDX TWAI_TX_IDX
+	#define VESC_TWAI_RX_IDX TWAI_RX_IDX
 #endif
 
 // Status messages
@@ -960,11 +963,11 @@ void comm_can_change_pins(int tx, int rx) {
 	g_config.rx_io = rx;
 
 	gpio_set_pull_mode(tx, GPIO_FLOATING);
-	esp_rom_gpio_connect_out_signal(tx, TWAI_TX_IDX, false, false);
+	esp_rom_gpio_connect_out_signal(tx, VESC_TWAI_TX_IDX, false, false);
 	esp_rom_gpio_pad_select_gpio(tx);
 
 	gpio_set_pull_mode(rx, GPIO_FLOATING);
-	esp_rom_gpio_connect_in_signal(rx, TWAI_RX_IDX, false);
+	esp_rom_gpio_connect_in_signal(rx, VESC_TWAI_RX_IDX, false);
 	esp_rom_gpio_pad_select_gpio(rx);
 	gpio_set_direction(rx, GPIO_MODE_INPUT);
 

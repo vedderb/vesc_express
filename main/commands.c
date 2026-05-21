@@ -69,9 +69,11 @@
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
 #include "esp_bt_main.h"
 #include "esp_wifi.h"
+#endif
 
 // Settings
 #define PRINT_BUFFER_SIZE	400
@@ -295,7 +297,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 					comm_wifi_disconnect();
 					vTaskDelay(50 / portTICK_PERIOD_MS);
 
+					#if !CONFIG_IDF_TARGET_ESP32P4
 					esp_wifi_stop();
+					#endif
 
 					// Here we must use esp_restart even though that does not play nicely
 					// with USB. That is because we skip image validation in the bootloader
@@ -358,7 +362,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_REBOOT: {
 		comm_wifi_disconnect();
+		#if !CONFIG_IDF_TARGET_ESP32P4
 		esp_wifi_stop();
+		#endif
 
 		// Deep sleep to reboot as that disconnects USB properly
 //		esp_restart();

@@ -50,6 +50,8 @@
 #include "comm_wifi.h"
 #include "lispif.h"
 
+#if !CONFIG_IDF_TARGET_ESP32P4
+
 #define SSID_SIZE SIZEOF_MEMBER(wifi_ap_record_t, ssid)
 
 #define MUTEX_LOCK_TIMEOUT_MS 10
@@ -1567,3 +1569,9 @@ void lispif_load_wifi_extensions(void) {
 	lbm_add_extension("tcp-recv", ext_tcp_recv);
 	lbm_add_extension("tcp-recv-to-char", ext_tcp_recv_to_char);
 }
+
+#else
+
+void lispif_load_wifi_extensions(void) {}
+
+#endif

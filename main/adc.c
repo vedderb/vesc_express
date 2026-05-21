@@ -21,7 +21,7 @@
 #include "terminal.h"
 #include "commands.h"
 
-#if CONFIG_IDF_TARGET_ESP32C6
+#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #else
@@ -33,7 +33,7 @@
 // Private variables
 static bool cal_ok = false;
 
-#if CONFIG_IDF_TARGET_ESP32C6
+#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 static adc_cali_handle_t adc1_cali_handle = NULL;
 #else
 static esp_adc_cal_characteristics_t adc1_chars;
@@ -58,7 +58,7 @@ void adc_init(void) {
 	adc1_config_channel_atten(HW_ADC_CH4, ADC_ATTEN_DB_12);
 #endif
 
-	#if CONFIG_IDF_TARGET_ESP32C6
+	#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	adc_cali_curve_fitting_config_t cali_config = {
 		.unit_id = ADC_UNIT_1,
 		.atten = ADC_ATTEN_DB_12,
@@ -80,7 +80,7 @@ float adc_get_voltage(adc1_channel_t ch) {
 	float res = -1.0;
 
 	if (cal_ok) {
-		#if CONFIG_IDF_TARGET_ESP32C6
+		#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 		int voltage_mv = 0;
 		if (adc_cali_raw_to_voltage(adc1_cali_handle, adc1_get_raw(ch), &voltage_mv) == ESP_OK) {
 			res = (float)voltage_mv / 1000.0;

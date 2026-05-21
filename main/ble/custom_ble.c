@@ -30,6 +30,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
 #include "esp_bt_defs.h"
 #include "esp_bt_device.h"
@@ -40,12 +41,15 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
+#endif
 
 #include "commands.h"
 #include "conf_general.h"
 #include "main.h"
 #include "utils.h"
 #include "packet.h"
+
+#if !CONFIG_IDF_TARGET_ESP32P4
 
 #define ADV_CFG_FLAG      (1 << 0)
 #define SCAN_RSP_CFG_FLAG (1 << 1)
@@ -1145,3 +1149,13 @@ void custom_ble_init() {
 	memcpy(device_name, (char *)backup.config.ble_name, 9);
 	device_name[9] = '\0';
 }
+
+#else
+
+void custom_ble_init(void) {}
+
+bool custom_ble_started(void) {
+	return false;
+}
+
+#endif

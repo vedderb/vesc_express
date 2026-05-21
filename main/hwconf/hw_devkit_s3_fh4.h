@@ -1,8 +1,8 @@
-#ifndef HW_DEVKIT_S3_H_
-#define HW_DEVKIT_S3_H_
+#ifndef HW_DEVKIT_S3_FH4_H_
+#define HW_DEVKIT_S3_FH4_H_
 
-#define HW_NAME                 "Devkit S3"
-#define HW_TARGET               "esp32s3"
+#define HW_NAME                 "Devkit S3 FH4"
+#define HW_TARGET               "esp32s3_fh4"
 #define HW_UART_COMM
 #define HW_INIT_HOOK()          hw_init()
 
@@ -19,4 +19,4 @@
 // Functions
 void hw_init(void);
 
-#endif /* HW_DEVKIT_S3_H_ */
+#endif /* HW_DEVKIT_S3_FH4_H_ */
