@@ -975,10 +975,17 @@ static lbm_value ext_get_vcells(lbm_value *args, lbm_uint argn) {
 
 #define NTC_TEMP(res, ntc_res, beta)                                           \
 	(1.0 / ((logf((res) / (ntc_res)) / (beta)) + (1.0 / 298.15)) - 273.15)
-#define NTC_RES(volts) (18.0e3 / (1.8 / volts - 1.0) - 500.0)
 // Return 999.0 for invalid NTC (will be converted to 0x7FFF in broadcast)
 #define NTC_INVALID_MARKER 999.0f
 #define NAN_TO_INVALID(x)  (UTILS_IS_NAN(x) ? NTC_INVALID_MARKER : x)
+
+static float ntc_measured_res(float volts, float pullup_res) {
+	if (volts <= 0.0 || volts >= 1.79) {
+		return NAN;
+	}
+
+	return pullup_res / (1.8 / volts - 1.0) - 500.0;
+}
 
 static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	(void)args;
@@ -1004,6 +1011,7 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 	main_config_t *cfg = (main_config_t *)&backup.config;
 	float ntc_beta = (float)cfg->temp_beta;
 	float ntc_res = 0.0;
+	float ntc_pullup_res = 18000.0;
 	switch (cfg->temp_res) {
 		case NTC_RES_4_7K:  ntc_res = 4700.0;   break;
 		case NTC_RES_5K:    ntc_res = 5000.0;   break;
@@ -1012,8 +1020,8 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 		case NTC_RES_22K:   ntc_res = 22000.0;  break;
 		case NTC_RES_47K:   ntc_res = 47000.0;  break;
 		case NTC_RES_50K:   ntc_res = 50000.0;  break;
-		case NTC_RES_100K:  ntc_res = 100000.0; break;
-		case NTC_RES_200K:  ntc_res = 200000.0; break;
+		case NTC_RES_100K:  ntc_res = 100000.0; ntc_pullup_res = 180000.0; break;
+		case NTC_RES_200K:  ntc_res = 200000.0; ntc_pullup_res = 180000.0; break;
 		default:            ntc_res = 10000.0;  break;
 	}
 
@@ -1023,7 +1031,8 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 		goto exit_error1;
 	}
 	ts_list = lbm_cons(
-		lbm_enc_float(NAN_TO_INVALID(NTC_TEMP(NTC_RES(v1), ntc_res, ntc_beta))), ts_list
+		lbm_enc_float(NAN_TO_INVALID(
+			NTC_TEMP(ntc_measured_res(v1, ntc_pullup_res), ntc_res, ntc_beta))), ts_list
 	);
 
 	// Read BQ2 internal temperature if present (at address 0x08)
@@ -1049,7 +1058,8 @@ static lbm_value ext_get_temps(lbm_value *args, lbm_uint argn) {
 			goto exit_error2;
 		}
 		ts_list = lbm_cons(
-			lbm_enc_float(NAN_TO_INVALID(NTC_TEMP(NTC_RES(v2), ntc_res, ntc_beta))), ts_list
+			lbm_enc_float(NAN_TO_INVALID(
+				NTC_TEMP(ntc_measured_res(v2, ntc_pullup_res), ntc_res, ntc_beta))), ts_list
 		);
 	} else {
 		ts_list = lbm_cons(lbm_enc_float(NTC_INVALID_MARKER), ts_list);
