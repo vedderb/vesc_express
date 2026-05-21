@@ -59,14 +59,24 @@ static uint16_t m_bal_state_ic2 = 0;
 static char *error_comm_bq1 = "BQ1 communication error";
 static char *error_comm_bq2 = "BQ2 communication error";
 
+static bool configured_slave_id(uint8_t *slave_id) {
+	main_config_t *conf = (main_config_t *)&backup.config;
+	if (conf->slave_id < 1 || conf->slave_id > 8) {
+		return false;
+	}
+
+	*slave_id = (uint8_t)conf->slave_id;
+	return true;
+}
+
 bool hw_can_get_filter_config(twai_mask_filter_config_t *cfg) {
 	if (!cfg) {
 		return false;
 	}
 
-	main_config_t *conf = (main_config_t *)&backup.config;
-	uint32_t slave_id = (uint32_t)conf->slave_id & 0x7FU;
-	uint32_t my_bal_id = 0x500U | slave_id;
+	uint8_t slave_id = 0;
+	uint32_t my_bal_id = configured_slave_id(&slave_id) ?
+			(0x500U | slave_id) : 0x7FFU;
 
 	cfg->id = my_bal_id;
 	cfg->mask = TWAI_STD_ID_MASK;
@@ -105,6 +115,22 @@ bool hw_can_get_filter_config(twai_mask_filter_config_t *cfg) {
 // Forward declarations (functions defined later in file)
 static bool subcommands_write16(uint8_t dev_addr, uint16_t command, uint16_t data);
 
+static uint16_t configured_cell_mask(unsigned int cell_count) {
+	if (cell_count >= 16) {
+		return 0xFFFF;
+	}
+
+	if (cell_count == 0) {
+		return 0;
+	}
+
+	return (uint16_t)((1U << cell_count) - 1U);
+}
+
+static bool balance_mask_has_adjacent_cells(uint16_t mask) {
+	return (mask & (uint16_t)(mask << 1)) != 0;
+}
+
 // ============================================================================
 // CAN Protocol TX Functions
 // ============================================================================
@@ -115,23 +141,34 @@ static bool subcommands_write16(uint8_t dev_addr, uint16_t command, uint16_t dat
  * @param slave_id  Slave ID (1-8)
  * @param cells_mv  Array of cell voltages in mV (0 = not populated, 0xFFFF = error)
  */
+static void can_send_cell_msg(uint8_t slave_id, uint8_t msg_type, uint16_t *cells_mv) {
+	uint8_t buf[8];
+	uint8_t base_cell = msg_type * 4;
+
+	for (uint8_t i = 0; i < 4; i++) {
+		uint16_t v = cells_mv[base_cell + i];
+		buf[i * 2]     = v & 0xFF;
+		buf[i * 2 + 1] = (v >> 8) & 0xFF;
+	}
+
+	comm_can_transmit_sid(CAN_ID_CELLS(msg_type, slave_id), buf, 8);
+}
+
 static void can_send_all_cells(uint8_t slave_id, uint16_t *cells_mv) {
-	// Only send messages needed for configured cells (4 cells per message)
-	uint8_t num_msgs = (M_CELLS + 3) / 4;  // Round up: 12 cells = 3 msgs
-	if (num_msgs > 8) num_msgs = 8;        // Cap at 8 messages (32 cells max)
+	uint8_t ic1_msgs = (m_cells_ic1 + 3) / 4;
+	if (ic1_msgs > 4) ic1_msgs = 4;
 
-	for (uint8_t msg_type = 0; msg_type < num_msgs; msg_type++) {
-		uint8_t buf[8];
-		uint8_t base_cell = msg_type * 4;
+	for (uint8_t msg_type = 0; msg_type < ic1_msgs; msg_type++) {
+		can_send_cell_msg(slave_id, msg_type, cells_mv);
+	}
 
-		// Pack 4 cells per message, little-endian
-		for (uint8_t i = 0; i < 4; i++) {
-			uint16_t v = cells_mv[base_cell + i];
-			buf[i * 2]     = v & 0xFF;         // Low byte
-			buf[i * 2 + 1] = (v >> 8) & 0xFF;  // High byte
+	if (m_cells_ic2 > 0) {
+		uint8_t ic2_msgs = (m_cells_ic2 + 3) / 4;
+		if (ic2_msgs > 4) ic2_msgs = 4;
+
+		for (uint8_t i = 0; i < ic2_msgs; i++) {
+			can_send_cell_msg(slave_id, 4 + i, cells_mv);
 		}
-
-		comm_can_transmit_sid(CAN_ID_CELLS(msg_type, slave_id), buf, 8);
 	}
 }
 
@@ -185,9 +222,17 @@ static uint32_t get_bal_bitmap(void) {
 // Note: BQ76952 requires TOGGLE (0 then value) to reset internal ~18s timeout
 // Just writing the same value does NOT reset the timer!
 static bool apply_bal_bitmap(uint32_t bitmap) {
-	uint16_t new_bal_ic1 = bitmap & 0xFFFF;
-	uint16_t new_bal_ic2 = (bitmap >> 16) & 0xFFFF;
+	uint16_t new_bal_ic1 = (bitmap & 0xFFFF) & configured_cell_mask(m_cells_ic1);
+	uint16_t new_bal_ic2 = ((bitmap >> 16) & 0xFFFF) & configured_cell_mask(m_cells_ic2);
 	bool res = true;
+	bool invalid_mask = balance_mask_has_adjacent_cells(new_bal_ic1) ||
+			(m_cells_ic2 > 0 && balance_mask_has_adjacent_cells(new_bal_ic2));
+
+	if (invalid_mask) {
+		new_bal_ic1 = 0;
+		new_bal_ic2 = 0;
+		res = false;
+	}
 
 	// BQ1: Toggle - write 0 first, then actual value to reset internal timer
 	subcommands_write16(BQ_ADDR_1, CB_ACTIVE_CELLS, 0);  // Clear first
@@ -205,9 +250,11 @@ static bool apply_bal_bitmap(uint32_t bitmap) {
 		} else {
 			res = false;
 		}
+	} else {
+		m_bal_state_ic2 = 0;
 	}
 
-	return res;
+	return res && !invalid_mask;
 }
 
 // Stop all balancing
@@ -698,6 +745,9 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
+	m_cells_ic1 = cells_ic1;
+	m_cells_ic2 = cells_ic2;
+
 	if (xSemaphoreTake(bq_mutex, pdMS_TO_TICKS(I2C_MUTEX_TIMEOUT_MS)) != pdTRUE) {
 		lbm_set_error_reason("bq_mutex timeout in bms-init");
 		return ENC_SYM_NIL;
@@ -780,9 +830,6 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 
 	// Always refresh BQ1 configuration at its final address.
 	bq_init(BQ_ADDR_1);
-
-	m_cells_ic1 = cells_ic1;
-	m_cells_ic2 = cells_ic2;
 
 	// Test communication - BQ1 at 0x10, BQ2 at 0x08
 	bool res = false;
@@ -1362,6 +1409,21 @@ static volatile uint8_t m_fault_flags = 0;
 // Voltage-settled flag: 1 = balance FETs off long enough for accurate readings
 static volatile uint8_t m_settled_flag = 1;  // Start settled (no balancing at boot)
 
+static bool decode_bool_arg(lbm_value arg, bool *val) {
+	if (lbm_is_number(arg)) {
+		*val = lbm_dec_as_i32(arg) != 0;
+		return true;
+	} else if (arg == ENC_SYM_TRUE) {
+		*val = true;
+		return true;
+	} else if (arg == ENC_SYM_NIL) {
+		*val = false;
+		return true;
+	}
+
+	return false;
+}
+
 // (bms-set-fault-flags flags)
 // Set fault flags (bit0 = BQ1 init failed, bit1 = BQ2 init failed)
 static lbm_value ext_set_fault_flags(lbm_value *args, lbm_uint argn) {
@@ -1374,8 +1436,16 @@ static lbm_value ext_set_fault_flags(lbm_value *args, lbm_uint argn) {
 // Set voltage-settled flag (1 = settled, 0 = not settled)
 // Included as bit 2 in the faults byte of status CAN message
 static lbm_value ext_set_settled_flag(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_ARGN_NUMBER(1);
-	m_settled_flag = lbm_dec_as_i32(args[0]) != 0 ? 1 : 0;
+	if (argn != 1) {
+		return ENC_SYM_EERROR;
+	}
+
+	bool settled = false;
+	if (!decode_bool_arg(args[0], &settled)) {
+		return ENC_SYM_EERROR;
+	}
+
+	m_settled_flag = settled ? 1 : 0;
 	return ENC_SYM_TRUE;
 }
 
@@ -1391,6 +1461,9 @@ static lbm_value ext_broadcast_all(lbm_value *args, lbm_uint argn) {
 	}
 
 	uint8_t slave_id = lbm_dec_as_u32(args[0]);
+	if (slave_id < 1 || slave_id > 8) {
+		return ENC_SYM_EERROR;
+	}
 
 	// Extract cell voltages into 32-element array
 	// 0 = not populated, 0xFFFF = read error
@@ -1398,14 +1471,20 @@ static lbm_value ext_broadcast_all(lbm_value *args, lbm_uint argn) {
 	uint8_t num_cells = 0;
 	lbm_value curr = args[1];
 
-	while (lbm_is_cons(curr) && num_cells < 32) {
+	while (lbm_is_cons(curr) && num_cells < M_CELLS && num_cells < 32) {
 		lbm_value cell = lbm_car(curr);
 		if (lbm_is_number(cell)) {
+			uint8_t cell_index = num_cells;
+			uint8_t wire_index = cell_index;
+			if (cell_index >= m_cells_ic1) {
+				wire_index = 16 + (cell_index - m_cells_ic1);
+			}
+
 			float v = lbm_dec_as_float(cell);
 			if (v < 0) {
-				cells_mv[num_cells] = 0xFFFF;  // Error marker
+				cells_mv[wire_index] = 0xFFFF;  // Error marker
 			} else {
-				cells_mv[num_cells] = (uint16_t)(v * 1000.0f);  // Convert V to mV
+				cells_mv[wire_index] = (uint16_t)(v * 1000.0f);  // Convert V to mV
 			}
 			num_cells++;
 		}
@@ -1435,15 +1514,33 @@ static lbm_value ext_broadcast_all(lbm_value *args, lbm_uint argn) {
 	// Get fault flags from optional args or use stored value
 	uint8_t faults = m_fault_flags;
 	if (argn >= 5) {
-		bool bq1_ok = lbm_dec_as_i32(args[3]) != 0;
-		bool bq2_ok = lbm_dec_as_i32(args[4]) != 0;
+		bool bq1_ok = false;
+		bool bq2_ok = false;
+		if (!decode_bool_arg(args[3], &bq1_ok) ||
+				!decode_bool_arg(args[4], &bq2_ok)) {
+			return ENC_SYM_EERROR;
+		}
+
 		faults = 0;
 		if (!bq1_ok) faults |= 0x01;
 		if (!bq2_ok) faults |= 0x02;
+
+		if (!bq1_ok) {
+			for (uint8_t i = 0; i < m_cells_ic1 && i < 16; i++) {
+				cells_mv[i] = 0xFFFF;
+			}
+		}
+
+		if (!bq2_ok && m_cells_ic2 > 0) {
+			for (uint8_t i = 0; i < m_cells_ic2 && i < 16; i++) {
+				cells_mv[16 + i] = 0xFFFF;
+			}
+		}
 	}
 
 	// Include voltage-settled flag (bit 2)
 	if (m_settled_flag) faults |= 0x04;
+	faults &= 0x07;
 
 	// Send all messages per protocol
 	// TX queue is 20 messages, we send 10, so no delays needed
@@ -1505,8 +1602,10 @@ static lbm_value ext_stop_balancing(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_set_bal_bitmap_demo(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(2);
 
-	m_bal_state_ic1 = lbm_dec_as_u32(args[0]) & 0xFFFF;
-	m_bal_state_ic2 = lbm_dec_as_u32(args[1]) & 0xFFFF;
+	m_bal_state_ic1 = (lbm_dec_as_u32(args[0]) & 0xFFFF) &
+			configured_cell_mask(m_cells_ic1);
+	m_bal_state_ic2 = (lbm_dec_as_u32(args[1]) & 0xFFFF) &
+			configured_cell_mask(m_cells_ic2);
 
 	return ENC_SYM_TRUE;
 }
@@ -1624,6 +1723,12 @@ static volatile uint32_t can_rx_overflow = 0;
 // ID filtering is handled in TWAI hardware filter for slave builds.
 void hw_can_rx_hook(uint32_t id, uint8_t *data, int len, bool is_ext) {
 	if (is_ext) return;  // Only handle standard 11-bit IDs
+
+	uint8_t slave_id = 0;
+	if (!configured_slave_id(&slave_id) || id != CAN_ID_BAL_CMD(slave_id) ||
+			(len != 4 && len != 5)) {
+		return;
+	}
 
 	int next_write = (can_rx_write + 1) % CAN_BUF_SIZE;
 	if (next_write == can_rx_read) {

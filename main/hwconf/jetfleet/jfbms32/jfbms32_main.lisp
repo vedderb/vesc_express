@@ -1109,8 +1109,8 @@ loopwhile-thd
         )
 
         ; Compatibility Check
-        (loopwhile (!= (bms-fw-version) 8) {
-                (if (< (bms-fw-version) 8)
+        (loopwhile (!= (bms-fw-version) 6) {
+                (if (< (bms-fw-version) 6)
                     (print "Firmware too old, please update")
                     (print "Package too old, please update")
                 )

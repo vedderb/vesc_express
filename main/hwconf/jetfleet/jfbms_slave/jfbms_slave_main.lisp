@@ -26,6 +26,8 @@
 ; Previous balance masks for change detection (only print when mask changes)
 (def prev-ic1-mask (list 0))
 (def prev-ic2-mask (list 0))
+; Previous status flags printed to terminal
+(def prev-status-flags (list -1))
 ; Settle tracking: count loops with zero balance bitmap
 ; After 20 loops (2s at 10Hz) voltages are considered settled for master balance decisions
 (def settle-counter (list 20))  ; Start settled (no balancing at boot)
@@ -51,6 +53,40 @@
     })
     (str-merge s " " (str-from-n active "%d") "/" (str-from-n ncells "%d"))
 })
+
+(defun tx-status-flags (bq1-ok bq2-ok) {
+    (var flags 0)
+
+    (if (not bq1-ok) (setq flags (+ flags 0x01)))
+    ; CellsIC2 = 0 means there is no BQ2 fitted, not a BQ2 fault.
+    (if (and (> cells-ic2 0) (not bq2-ok)) (setq flags (+ flags 0x02)))
+    (if (>= (ix settle-counter 0) 20) (setq flags (+ flags 0x04)))
+
+    flags
+})
+
+(defun print-tx-status (flags bq1-ok bq2-ok reason) {
+    (print (str-merge "STATUS TX " reason
+        " flags=0x" (str-from-n flags "%02X")
+        " bq1=" (if bq1-ok "ok" "ERR")
+        " bq2=" (if (> cells-ic2 0) (if bq2-ok "ok" "ERR") "none")
+        " settled=" (if (> (bitwise-and flags 0x04) 0) "1" "0")
+        " ic1=" (str-from-n cells-ic1 "%d")
+        " ic2=" (str-from-n cells-ic2 "%d")))
+})
+
+(defun maybe-print-tx-status (bq1-ok bq2-ok force) {
+    (var flags (tx-status-flags bq1-ok bq2-ok))
+
+    (if (or force (not-eq flags (ix prev-status-flags 0))) {
+        (print-tx-status flags bq1-ok bq2-ok (if force "repeat" "change"))
+        (setix prev-status-flags 0 flags)
+    })
+
+    flags
+})
+
+(defun bool-u8 (v) (if v 1 0))
 
 ; ============================================================================
 ; Buzzer Beep Code Handler
@@ -82,7 +118,6 @@
 (defun process-can-messages () {
     (var expected-bal-id (+ 0x500 slave-id))
     (var rx-count 0)
-    (setix bal-rx-flag 0 0)
     ; Process all available CAN messages
     (loopwhile (> (slave-can-available) 0) {
         (var msg (slave-can-read))
@@ -90,23 +125,41 @@
             (setq rx-count (+ rx-count 1))
             (var can-id (car msg))
             (var data (cdr msg))
-            (if (and (= can-id expected-bal-id) (>= (buflen data) 4)) {
+            (if (and (= can-id expected-bal-id)
+                    (or (= (buflen data) 4) (= (buflen data) 5))) {
                 ; Extract IC1 and IC2 masks separately (16-bit each, avoids 28-bit overflow)
                 (var ic1-mask (+ (bufget-u8 data 0) (shl (bufget-u8 data 1) 8)))
                 (var ic2-mask (+ (bufget-u8 data 2) (shl (bufget-u8 data 3) 8)))
+                (var old-bal-active (or (> (ix prev-ic1-mask 0) 0)
+                                         (> (ix prev-ic2-mask 0) 0)))
+                (var new-bal-active (or (> ic1-mask 0) (> ic2-mask 0)))
+                (var mask-changed (or (not-eq ic1-mask (ix prev-ic1-mask 0))
+                                      (not-eq ic2-mask (ix prev-ic2-mask 0))))
                 ; Apply to BQ immediately
                 (var result (trap-value `(bms-set-bal-bitmap ,ic1-mask ,ic2-mask) false))
-                ; Reset watchdog counter (1 = command received, will increment each loop)
-                (setix bal-state 0 1)
                 (setix bal-rx-flag 0 1)
+                (if result {
+                    ; Reset watchdog counter (1 = command received, will increment each loop)
+                    (setix bal-state 0 1)
+                } {
+                    (trap-value '(bms-stop-balancing) false)
+                })
+
+                ; Any transition into or out of active balancing makes voltages unsettled
+                ; immediately. Only the zero-mask settle timer can set this true again.
+                (if (and result (or old-bal-active new-bal-active)) {
+                    (setix settle-counter 0 0)
+                    (bms-set-settled-flag 0)
+                })
+
                 ; Only print when mask actually changes
-                (if (or (not-eq ic1-mask (ix prev-ic1-mask 0))
-                        (not-eq ic2-mask (ix prev-ic2-mask 0))) {
-                    (setix prev-ic1-mask 0 ic1-mask)
-                    (setix prev-ic2-mask 0 ic2-mask)
-                    (if result
+                (if mask-changed {
+                    (if result {
+                        (setix prev-ic1-mask 0 ic1-mask)
+                        (setix prev-ic2-mask 0 ic2-mask)
                         (print (str-merge "BAL: IC1=[" (bal-cells-str ic1-mask cells-ic1)
                             "] IC2=[" (bal-cells-str ic2-mask cells-ic2) "]"))
+                    }
                         (print (str-merge "BAL FAIL: IC1=0x" (str-from-n ic1-mask "%04X")
                             " IC2=0x" (str-from-n ic2-mask "%04X"))))
                 })
@@ -150,10 +203,12 @@
 (defun main-thd () {
     ; Track BQ communication status
     (var bq1-ok true)
-    (var bq2-ok (if (> cells-ic2 0) true false))
+    (var bq2-ok true)
     (var loop-count 0)
 
     (loopwhile t {
+        (setix bal-rx-flag 0 0)
+
         ; Process incoming CAN messages (balance commands from master)
         (process-can-messages)
 
@@ -180,6 +235,9 @@
             (if (and (>= (length temps) 4) (> (ix temps 3) -200.0))
                 (setq bq2-ok true)
                 (setq bq2-ok false))
+        } {
+            ; Single-chip slaves report CellsIC2 = 0, not a BQ2 fault.
+            (setq bq2-ok true)
         })
 
         ; Track settle state for master balance synchronization
@@ -197,10 +255,12 @@
             (bms-set-settled-flag 0)
         })
 
+        (maybe-print-tx-status bq1-ok bq2-ok false)
+
         ; If a balance command was received, broadcast status immediately
         ; so master sees the updated balance mask without waiting for next cycle
         (if (= (ix bal-rx-flag 0) 1)
-            (bms-broadcast-all slave-id cells temps bq1-ok bq2-ok))
+            (bms-broadcast-all slave-id cells temps (bool-u8 bq1-ok) (bool-u8 bq2-ok)))
 
         ; Debug: print every 10 loops (1 second)
         (setq loop-count (+ loop-count 1))
@@ -209,16 +269,19 @@
             (var bal-bmp (bms-get-bal-bitmap))
             (var ic1-mask (bitwise-and bal-bmp 0xFFFF))
             (var ic2-mask (bitwise-and (shr bal-bmp 16) 0xFFFF))
+            (var tx-flags (tx-status-flags bq1-ok bq2-ok))
 
             (print (str-merge "BQ1 bal: [" (bal-cells-str ic1-mask cells-ic1) "]"
                 " 0x" (str-from-n ic1-mask "%04X")))
             (if (> cells-ic2 0)
                 (print (str-merge "BQ2 bal: [" (bal-cells-str ic2-mask cells-ic2) "]"
                     " 0x" (str-from-n ic2-mask "%04X"))))
+            (if (> (bitwise-and tx-flags 0x03) 0)
+                (maybe-print-tx-status bq1-ok bq2-ok true))
         })
 
         ; Broadcast all data via CAN (cell msgs + 1 temp + 1 status)
-        (bms-broadcast-all slave-id cells temps bq1-ok bq2-ok)
+        (bms-broadcast-all slave-id cells temps (bool-u8 bq1-ok) (bool-u8 bq2-ok))
 
         ; Update local VESC BMS values (for VESC Tool display when connected to slave)
         (slave-update-vesc-bms cells temps)
@@ -237,7 +300,7 @@
             ((exit-ok _) (print "main-thd exited - restarting"))
             (_ (print "main-thd crashed - restarting"))
         )
-        (sleep 1.0)
+        (sleep 0.1)
     })
 })
 
@@ -287,10 +350,13 @@
 } {
     ; Init failed - enter diagnostic loop, but still broadcast status
     (print "Entering diagnostic mode due to init failure")
+    (var diag-count 0)
     (loopwhile t {
-        (print (str-merge "I2C detect 0x08: " (if (i2c-detect-addr 0x08) "OK" "FAIL")))
+        (if (= (mod diag-count 10) 0)
+            (print (str-merge "I2C detect 0x08: " (if (i2c-detect-addr 0x08) "OK" "FAIL"))))
         ; Broadcast empty data with fault flags
-        (bms-broadcast-all slave-id '() '() false false)
-        (sleep 1.0)
+        (bms-broadcast-all slave-id '() '() 0 (if (> cells-ic2 0) 0 1))
+        (setq diag-count (+ diag-count 1))
+        (sleep 0.1)
     })
 })

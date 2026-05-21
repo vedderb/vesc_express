@@ -27,7 +27,8 @@
 #define HW_TARGET					"esp32c3"
 
 #define HW_INIT_HOOK()				hw_init()
-#define HW_POST_LISPIF_HOOK()		hw_jf_link_start()
+#define HW_CAN_NO_ACK_MODE			0
+#define USER_EXTENSION_STORAGE_SIZE	50
 
 // Configuration overrides
 #define OVR_CONF_PARSER_C			"jf_link_confparser.c"
@@ -101,6 +102,5 @@ typedef struct {
 
 // Functions
 void hw_init(void);
-void hw_jf_link_start(void);
 
 #endif /* MAIN_HWCONF_JETFLEET_HW_JF_LINK_H_ */

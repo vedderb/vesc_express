@@ -1858,7 +1858,7 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_bms_fw_version(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
-	return lbm_enc_i(8);
+	return lbm_enc_i(6);
 }
 
 static void load_extensions(bool main_found) {
