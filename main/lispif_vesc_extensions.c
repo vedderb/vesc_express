@@ -2177,6 +2177,15 @@ static bool decode_bool_arg(lbm_value arg, bool *val) {
 	return false;
 }
 
+static lbm_value ext_wdt_result(esp_err_t res) {
+	if (res == ESP_OK) {
+		return ENC_SYM_TRUE;
+	}
+
+	lbm_set_error_reason((char*)esp_err_to_name(res));
+	return ENC_SYM_EERROR;
+}
+
 static lbm_value ext_wdt_configure(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(2);
 
@@ -2197,27 +2206,22 @@ static lbm_value ext_wdt_configure(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	main_task_wdt_configure(is_enabled, timeout_s);
-
-	return ENC_SYM_TRUE;
+	return ext_wdt_result(main_task_wdt_configure(is_enabled, timeout_s));
 }
 
 static lbm_value ext_wdt_enable(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(0);
-	main_task_wdt_enable();
-	return ENC_SYM_TRUE;
+	return ext_wdt_result(main_task_wdt_enable());
 }
 
 static lbm_value ext_wdt_disable(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(0);
-	main_task_wdt_disable();
-	return ENC_SYM_TRUE;
+	return ext_wdt_result(main_task_wdt_disable());
 }
 
 static lbm_value ext_wdt_reset(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(0);
-	main_task_wdt_reset();
-	return ENC_SYM_TRUE;
+	return ext_wdt_result(main_task_wdt_reset());
 }
 
 static lbm_value ext_wdt_set_timeout(lbm_value *args, lbm_uint argn) {
@@ -2229,9 +2233,7 @@ static lbm_value ext_wdt_set_timeout(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	main_task_wdt_set_timeout(timeout_s);
-
-	return ENC_SYM_TRUE;
+	return ext_wdt_result(main_task_wdt_set_timeout(timeout_s));
 }
 
 lbm_value ext_lbm_set_gc_stack_size(lbm_value *args, lbm_uint argn) {

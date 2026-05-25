@@ -19,11 +19,12 @@
     */
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "driver/uart.h"
 #include "esp_task_wdt.h"
-#include "esp_timer.h"
+#include "sdkconfig.h"
 
 #include "conf_general.h"
 #include "comm_ble.h"
@@ -61,51 +62,205 @@
 #include <string.h>
 #include <sys/time.h>
 
+#if defined(HW_APP_WDT_TIMEOUT_S) || defined(HW_APP_WDT_STARTUP_TIMEOUT_S)
+#define HW_APP_WDT_AUTO_ENABLE 1
+#else
+#define HW_APP_WDT_AUTO_ENABLE 0
+#endif
+
 // Global variables
 volatile backup_data backup;
 
 // Private variables
 volatile static bool init_done = false;
-static volatile bool app_wdt_enabled = false;
-static volatile uint32_t app_wdt_timeout_s = 30;
-static volatile int64_t app_wdt_last_reset_us = 0;
+static bool app_wdt_initialized = false;
+#ifdef HW_APP_WDT_STARTUP_TIMEOUT_S
+static uint32_t app_wdt_timeout_s = HW_APP_WDT_STARTUP_TIMEOUT_S;
+#elif defined(HW_APP_WDT_TIMEOUT_S)
+static uint32_t app_wdt_timeout_s = HW_APP_WDT_TIMEOUT_S;
+#else
+static uint32_t app_wdt_timeout_s = 30;
+#endif
+static SemaphoreHandle_t app_wdt_mutex = NULL;
 
 // Private functions
 static void terminal_nmea(int argc, const char **argv);
 static void terminal_ublox_reinit(int argc, const char **argv);
-static void wdt_monitor_task(void *arg);
+static esp_err_t main_task_wdt_init(void);
+static esp_err_t main_task_wdt_reconfigure_locked(uint32_t timeout_s);
 
-void main_task_wdt_configure(bool is_enabled, uint32_t timeout_s) {
-	if (timeout_s > 0) {
+static uint32_t main_task_wdt_idle_core_mask(void) {
+	uint32_t mask = 0;
+#if defined(CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0) && CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0
+	mask |= (1U << 0);
+#endif
+#if defined(CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1) && CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1
+	mask |= (1U << 1);
+#endif
+	return mask;
+}
+
+static esp_err_t main_task_wdt_init(void) {
+#if CONFIG_ESP_TASK_WDT_EN
+	if (!app_wdt_mutex) {
+		app_wdt_mutex = xSemaphoreCreateMutex();
+		if (!app_wdt_mutex) {
+			return ESP_ERR_NO_MEM;
+		}
+	}
+
+	if (app_wdt_initialized) {
+		return ESP_OK;
+	}
+
+	xSemaphoreTake(app_wdt_mutex, portMAX_DELAY);
+	esp_err_t res = main_task_wdt_reconfigure_locked(app_wdt_timeout_s);
+	xSemaphoreGive(app_wdt_mutex);
+
+	return res;
+#else
+	return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+static esp_err_t main_task_wdt_reconfigure_locked(uint32_t timeout_s) {
+#if CONFIG_ESP_TASK_WDT_EN
+	if (timeout_s < 1) {
+		return ESP_ERR_INVALID_ARG;
+	}
+
+	esp_task_wdt_config_t config = {
+		.timeout_ms = timeout_s * 1000,
+		.idle_core_mask = main_task_wdt_idle_core_mask(),
+		.trigger_panic = true,
+	};
+
+	esp_err_t res;
+	if (app_wdt_initialized) {
+		res = esp_task_wdt_reconfigure(&config);
+		if (res == ESP_ERR_INVALID_STATE) {
+			app_wdt_initialized = false;
+			res = esp_task_wdt_init(&config);
+		}
+	} else {
+		res = esp_task_wdt_init(&config);
+		if (res == ESP_ERR_INVALID_STATE) {
+			res = esp_task_wdt_reconfigure(&config);
+		}
+	}
+
+	if (res == ESP_OK) {
+		app_wdt_initialized = true;
 		app_wdt_timeout_s = timeout_s;
 	}
 
-	app_wdt_last_reset_us = esp_timer_get_time();
-	app_wdt_enabled = is_enabled && app_wdt_timeout_s > 0;
+	return res;
+#else
+	return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
-void main_task_wdt_enable(void) {
-	main_task_wdt_configure(true, app_wdt_timeout_s);
-}
-
-void main_task_wdt_disable(void) {
-	app_wdt_enabled = false;
-	app_wdt_last_reset_us = esp_timer_get_time();
-}
-
-void main_task_wdt_reset(void) {
-	app_wdt_last_reset_us = esp_timer_get_time();
-}
-
-void main_task_wdt_set_timeout(uint32_t timeout_s) {
+esp_err_t main_task_wdt_configure(bool is_enabled, uint32_t timeout_s) {
 	if (timeout_s > 0) {
-		app_wdt_timeout_s = timeout_s;
-		main_task_wdt_reset();
+		esp_err_t res = main_task_wdt_set_timeout(timeout_s);
+		if (res != ESP_OK) {
+			return res;
+		}
 	}
+
+	return is_enabled ? main_task_wdt_enable() : main_task_wdt_disable();
+}
+
+esp_err_t main_task_wdt_enable(void) {
+	return main_task_wdt_enable_task(NULL);
+}
+
+esp_err_t main_task_wdt_enable_task(TaskHandle_t task) {
+#if CONFIG_ESP_TASK_WDT_EN
+	esp_err_t res = main_task_wdt_init();
+	if (res != ESP_OK) {
+		return res;
+	}
+
+	xSemaphoreTake(app_wdt_mutex, portMAX_DELAY);
+
+	res = esp_task_wdt_status(task);
+	if (res != ESP_OK) {
+		res = esp_task_wdt_add(task);
+	}
+
+	xSemaphoreGive(app_wdt_mutex);
+
+	return res;
+#else
+	return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t main_task_wdt_disable(void) {
+	return main_task_wdt_disable_task(NULL);
+}
+
+esp_err_t main_task_wdt_disable_task(TaskHandle_t task) {
+#if CONFIG_ESP_TASK_WDT_EN
+	if (!app_wdt_initialized || !app_wdt_mutex) {
+		return ESP_OK;
+	}
+
+	xSemaphoreTake(app_wdt_mutex, portMAX_DELAY);
+
+	esp_err_t res = esp_task_wdt_status(task);
+	if (res == ESP_OK) {
+		res = esp_task_wdt_delete(task);
+	} else if (res == ESP_ERR_NOT_FOUND || res == ESP_ERR_INVALID_STATE) {
+		res = ESP_OK;
+	}
+
+	xSemaphoreGive(app_wdt_mutex);
+
+	return res;
+#else
+	return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t main_task_wdt_reset(void) {
+#if CONFIG_ESP_TASK_WDT_EN
+	return esp_task_wdt_reset();
+#else
+	return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t main_task_wdt_set_timeout(uint32_t timeout_s) {
+	if (timeout_s < 1) {
+		return ESP_ERR_INVALID_ARG;
+	}
+
+#if CONFIG_ESP_TASK_WDT_EN
+	if (!app_wdt_mutex) {
+		app_wdt_mutex = xSemaphoreCreateMutex();
+		if (!app_wdt_mutex) {
+			return ESP_ERR_NO_MEM;
+		}
+	}
+
+	xSemaphoreTake(app_wdt_mutex, portMAX_DELAY);
+	esp_err_t res = main_task_wdt_reconfigure_locked(timeout_s);
+	xSemaphoreGive(app_wdt_mutex);
+
+	return res;
+#else
+	return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
 bool main_task_wdt_is_enabled(void) {
-	return app_wdt_enabled;
+#if CONFIG_ESP_TASK_WDT_EN
+	return app_wdt_initialized && esp_task_wdt_status(NULL) == ESP_OK;
+#else
+	return false;
+#endif
 }
 
 uint32_t main_task_wdt_get_timeout(void) {
@@ -118,6 +273,10 @@ void app_main(void) {
 	tv.tv_sec = 0;
 	tv.tv_usec = 0;
 	settimeofday(&tv, NULL);
+
+#if CONFIG_ESP_TASK_WDT_EN && HW_APP_WDT_AUTO_ENABLE
+	(void)main_task_wdt_enable();
+#endif
 
 	esp_err_t ret = nvs_flash_init();
 	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -161,17 +320,16 @@ void app_main(void) {
 		nvs_close(my_handle);
 	}
 
-	xTaskCreatePinnedToCore(wdt_monitor_task, "wdt_monitor", 2048, NULL, 1, NULL, tskNO_AFFINITY);
-#if defined(HW_APP_WDT_STARTUP_TIMEOUT_S) && HW_APP_WDT_STARTUP_TIMEOUT_S > 0
-	main_task_wdt_configure(true, HW_APP_WDT_STARTUP_TIMEOUT_S);
-#endif
+	(void)main_task_wdt_reset();
 
 	adc_init();
+	(void)main_task_wdt_reset();
 
 #ifdef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
 	lispif_init();
 	HW_POST_LISPIF_HOOK();
+	(void)main_task_wdt_reset();
 #endif
 
 	mempools_init();
@@ -181,6 +339,7 @@ void app_main(void) {
 	comm_can_start(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
 #endif
 	comm_usb_init();
+	(void)main_task_wdt_reset();
 
 	vTaskDelay(1);
 
@@ -203,21 +362,26 @@ void app_main(void) {
 	if (backup.config.wifi_mode != WIFI_MODE_DISABLED) {
 		comm_wifi_init();
 	}
+	(void)main_task_wdt_reset();
 #endif
 
 	nmea_init();
 	log_init();
+#if VESC_ENABLE_STORAGE
 #ifdef SD_PIN_MOSI
 	log_mount_card(SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK, SD_PIN_CS, SDMMC_FREQ_DEFAULT);
 #endif
 #ifdef NAND_PIN_MOSI
 	log_mount_nand_flash(NAND_PIN_MOSI, NAND_PIN_MISO, NAND_PIN_SCK, NAND_PIN_CS, FLASH_FREQ_KHZ);
 #endif
+#endif
+	(void)main_task_wdt_reset();
 
 #ifndef HW_EARLY_LBM_INIT
 	HW_INIT_HOOK();
 	lispif_init();
 	HW_POST_LISPIF_HOOK();
+	(void)main_task_wdt_reset();
 #endif
 
 #ifndef HW_NO_UART
@@ -226,6 +390,7 @@ void app_main(void) {
 #else
 	ublox_init(false, 500, UART_NUM, UART_RX, UART_TX);
 #endif
+	(void)main_task_wdt_reset();
 #endif
 
 	terminal_register_command_callback(
@@ -242,38 +407,17 @@ void app_main(void) {
 
 	init_done = true;
 
+#if CONFIG_ESP_TASK_WDT_EN && HW_APP_WDT_AUTO_ENABLE && defined(HW_APP_WDT_TIMEOUT_S)
+	(void)main_task_wdt_set_timeout(HW_APP_WDT_TIMEOUT_S);
+	(void)main_task_wdt_reset();
+#endif
+
+#if CONFIG_ESP_TASK_WDT_EN && HW_APP_WDT_AUTO_ENABLE
+	(void)main_task_wdt_disable();
+#endif
+
 	// Exit main to free up heap-space
 	vTaskDelete(NULL);
-}
-
-// Application watchdog feeder. Scripts opt in through the Lisp WDT extensions
-// and reset the watchdog after application-level progress has completed. When
-// disabled, or while progress is being reset within the configured timeout,
-// this task feeds the ESP task WDT. When the application watchdog expires it
-// stops feeding and lets CONFIG_ESP_TASK_WDT_PANIC reset the chip.
-static void wdt_monitor_task(void *arg) {
-	(void)arg;
-
-	esp_task_wdt_add(NULL);
-
-	for (;;) {
-		vTaskDelay(pdMS_TO_TICKS(1000));
-
-		bool feed_wdt = true;
-
-		if (app_wdt_enabled) {
-			uint32_t timeout_s = app_wdt_timeout_s;
-			int64_t elapsed_us = esp_timer_get_time() - app_wdt_last_reset_us;
-
-			if (timeout_s > 0 && elapsed_us >= ((int64_t)timeout_s * 1000000)) {
-				feed_wdt = false;
-			}
-		}
-
-		if (feed_wdt) {
-			esp_task_wdt_reset();
-		}
-	}
 }
 
 uint32_t main_calc_hw_crc(void) {

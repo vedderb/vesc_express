@@ -9,6 +9,7 @@
 #define HW_NO_UART
 #define HW_INIT_HOOK()				hw_init()
 #define HW_APP_WDT_STARTUP_TIMEOUT_S	300
+#define HW_APP_WDT_TIMEOUT_S		120
 
 // Extra slots for hw extensions (default 350 not enough)
 #define USER_EXTENSION_STORAGE_SIZE	50
