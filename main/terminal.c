@@ -28,8 +28,11 @@
 #include <math.h>
 #include <ctype.h>
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#include "sdkconfig.h"
+#if VESC_ENABLE_BLE && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
+#endif
+#if VESC_ENABLE_WIFI && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_wifi.h"
 #endif
 #include "comm_ble.h"
@@ -37,6 +40,7 @@
 #include "nvs_flash.h"
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
+#include "esp_heap_caps.h"
 #include "utils.h"
 #include "spi_flash_mmap.h"
 #include "freertos/FreeRTOS.h"
@@ -53,19 +57,23 @@ typedef struct _terminal_callback_struct {
 	void(*cbf)(int argc, const char **argv);
 } terminal_callback_struct;
 
+#if CONFIG_FREERTOS_USE_TRACE_FACILITY
 typedef struct {
 	UBaseType_t task_num;
 	unsigned long task_run_time;
 } taskinfo_struct;
+#endif
 
 
 // Private variables
 static terminal_callback_struct callbacks[CALLBACK_LEN];
 static int callback_write = 0;
 
+#if CONFIG_FREERTOS_USE_TRACE_FACILITY
 static taskinfo_struct *prev_taskinfo = NULL;
 static size_t prev_taskinfo_n = 0;
 static uint32_t prev_time = 0;
+#endif
 
 const char* utils_hw_type_to_string(HW_TYPE hw) {
 	switch (hw) {
@@ -107,6 +115,7 @@ void terminal_process_string(char *str) {
 	}
 
 	if (strcmp(argv[0], "threads") == 0) {
+#if CONFIG_FREERTOS_USE_TRACE_FACILITY
 		int num_tasks = uxTaskGetNumberOfTasks();
 		TaskStatus_t *tasks = malloc(num_tasks * sizeof(TaskStatus_t));
 		uint32_t time_total;
@@ -157,6 +166,11 @@ void terminal_process_string(char *str) {
 
 		free(tasks);
 		commands_printf(" ");
+#else
+		commands_printf("FreeRTOS task trace is disabled in this build.");
+		commands_printf("Enable CONFIG_FREERTOS_USE_TRACE_FACILITY to collect per-task stack high-water marks.");
+		commands_printf(" ");
+#endif
 	} else if (strcmp(argv[0], "mem") == 0) {
 		nvs_stats_t s;
 		nvs_get_stats(NULL, &s);
@@ -169,6 +183,7 @@ void terminal_process_string(char *str) {
 		commands_printf("Heap free         : %d", esp_get_free_heap_size());
 		commands_printf("Heap free int.    : %d", esp_get_free_internal_heap_size());
 		commands_printf("Heap min          : %d", esp_get_minimum_free_heap_size());
+		commands_printf("Heap largest int. : %d", (int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 		commands_printf("mmap data free    : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_DATA));
 		commands_printf("mmap inst free    : %d", spi_flash_mmap_get_free_pages(SPI_FLASH_MMAP_INST));
 
@@ -196,6 +211,7 @@ void terminal_process_string(char *str) {
 		commands_printf("Custom BLE Started: %d", custom_ble_started());
 		commands_printf("CAN RX Recoveries : %d", comm_can_get_rx_recovery_cnt());
 
+#if VESC_ENABLE_WIFI
 		esp_ip4_addr_t ip = comm_wifi_get_ip();
 		esp_ip4_addr_t ip_client = comm_wifi_get_ip_client();
 
@@ -221,6 +237,9 @@ void terminal_process_string(char *str) {
 		(void)ch_primary;
 		commands_printf("WIFI Channel      : N/A on ESP32-P4");
 		#endif
+#else
+		commands_printf("WIFI              : disabled at build time");
+#endif
 
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		if (running != NULL) {

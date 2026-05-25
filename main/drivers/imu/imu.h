@@ -20,7 +20,7 @@
 #ifndef IMU_IMU_H_
 #define IMU_IMU_H_
 
-#include "driver/i2c.h"
+#include "i2c_compat.h"
 
 typedef enum {
 	IMU_TYPE_OFF = 0,

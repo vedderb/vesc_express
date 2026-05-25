@@ -36,7 +36,7 @@
 #define CAN_RX_GPIO_NUM				0
 
 // ADC
-#define HW_ADC_CH0					ADC1_CHANNEL_3 // Ambient light sensor
+#define HW_ADC_CH0					ADC_CHANNEL_3 // Ambient light sensor
 
 // Functions
 void hw_init(void);

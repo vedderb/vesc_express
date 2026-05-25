@@ -1,20 +1,26 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  espressif/dhara: ^0.1.0
-  espressif/spi_nand_flash: ^0.1.0
-  espressif/esp_lcd_touch: ^1.2.1
-  espressif/esp_lcd_touch_cst816s: ^1.1.1
-  espressif/esp_lcd_touch_gt911: ^1.2.0
-  waveshare/esp_lcd_touch_cst9217: ^1.0.4
-  atanisoft/esp_lcd_touch_xpt2046: ^1.0.6
-  espressif/esp_lcd_axs15231b: ^2.1.0
-  espressif/esp_lcd_st7701: 
+  espressif/spi_nand_flash: ^1.0.2
+  espressif/spi_nand_flash_fatfs: ^1.0.0
+  espressif/esp_lcd_touch:
+    version: ^1.2.1
+  espressif/esp_lcd_touch_cst816s:
+    version: ^1.1.1
+  espressif/esp_lcd_touch_gt911:
+    version: ^1.2.0
+  waveshare/esp_lcd_touch_cst9217:
+    version: ^1.0.4
+  atanisoft/esp_lcd_touch_xpt2046:
+    version: ^1.0.6
+  espressif/esp_lcd_axs15231b:
+    version: ^1.0.1
+  espressif/esp_lcd_st7701:
     version: ^2.0.2
     rules:
       - if: "target in [esp32p4, esp32s3]"
   ## Required IDF version
   idf:
-    version: '>=4.1.0'
+    version: '>=6.0.1,<6.1.0'
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"

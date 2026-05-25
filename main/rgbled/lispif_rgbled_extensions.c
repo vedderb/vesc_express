@@ -25,10 +25,6 @@
 
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
-#include "soc/rmt_periph.h"
-#include "soc/io_mux_reg.h"
-#include "soc/gpio_periph.h"
-#include "hal/gpio_hal.h"
 #include "driver/gpio.h"
 
 #define RMT_LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)

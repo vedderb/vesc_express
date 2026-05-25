@@ -21,7 +21,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
+#include "i2c_compat.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
 #include "driver/gpio.h"
@@ -247,7 +247,8 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	}
 
 	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_HIGH);
+	esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(
+			1ULL << pin_btn, ESP_GPIO_WAKEUP_GPIO_HIGH);
 #else
 	gpio_set_level(pin_bl, 0);
 	while (v_btn < 2.0) {
@@ -255,7 +256,8 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	}
 
 	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_LOW);
+	esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(
+			1ULL << pin_btn, ESP_GPIO_WAKEUP_GPIO_LOW);
 #endif
 
 	esp_deep_sleep_start();

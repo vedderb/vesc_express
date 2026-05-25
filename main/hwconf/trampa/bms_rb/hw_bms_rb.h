@@ -172,15 +172,15 @@ typedef struct {
 #define PIN_PSW_EN					10
 
 // ADC
-#define HW_ADC_CH0					ADC1_CHANNEL_0 // DIV_CHG
-#define HW_ADC_CH1					ADC1_CHANNEL_1 // DIV_OUT
+#define HW_ADC_CH0					ADC_CHANNEL_0 // DIV_CHG
+#define HW_ADC_CH1					ADC_CHANNEL_1 // DIV_OUT
 
 // Parameters
 #define HW_R_SHUNT					0.001
 
 // Macros
-#define HW_GET_VOUT()				((adc_get_voltage(ADC1_CHANNEL_1) * (100.0 + 2.5e3 + 120.0e3 + 4.7e3)) / 4.7e3)
-#define HW_GET_VCHG()				((adc_get_voltage(ADC1_CHANNEL_0) * (120.0e3 + 4.7e3)) / 4.7e3)
+#define HW_GET_VOUT()				((adc_get_voltage(ADC_CHANNEL_1) * (100.0 + 2.5e3 + 120.0e3 + 4.7e3)) / 4.7e3)
+#define HW_GET_VCHG()				((adc_get_voltage(ADC_CHANNEL_0) * (120.0e3 + 4.7e3)) / 4.7e3)
 
 // Functions
 void hw_init(void);

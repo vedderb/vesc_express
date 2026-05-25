@@ -30,5 +30,6 @@ void bms_process_cmd(unsigned char *data, unsigned int len,
 volatile bms_values *bms_get_values(void);
 void bms_send_status_can(void);
 void bms_register_cmd_handler(void (*handler)(COMM_PACKET_ID cmd, int param1, int param2));
+void bms_register_cmd_hook(bool (*handler)(COMM_PACKET_ID cmd, int param1, int param2));
 
 #endif /* BMS_H_ */

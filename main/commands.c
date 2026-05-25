@@ -22,6 +22,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "comm_usb.h"
 #include "freertos/FreeRTOS.h"
@@ -62,16 +64,22 @@
 
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
+#if VESC_ENABLE_STORAGE
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs.h"
+#endif
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if VESC_ENABLE_BLE && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_bt_main.h"
+#endif
+#endif
+#if VESC_ENABLE_WIFI && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_wifi.h"
 #endif
 
@@ -150,12 +158,14 @@ static void block_task(void *arg) {
 			int32_t ind = 0;
 			send_buffer[ind++] = COMM_PING_CAN;
 
+#if HW_CAN_PING_SCAN_ENABLED
 			for (uint8_t i = 0;i < 255;i++) {
 				HW_TYPE hw_type;
 				if (comm_can_ping(i, &hw_type)) {
 					send_buffer[ind++] = i;
 				}
 			}
+#endif
 
 			if (send_func_blocking) {
 				send_func_blocking(send_buffer, ind);
@@ -294,12 +304,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if (update_handle != 0) {
 			if (esp_ota_end(update_handle) == ESP_OK) {
 				if (esp_ota_set_boot_partition(update_partition) == ESP_OK) {
+#if VESC_ENABLE_WIFI
 					comm_wifi_disconnect();
 					vTaskDelay(50 / portTICK_PERIOD_MS);
 
-					#if !CONFIG_IDF_TARGET_ESP32P4
+#if !CONFIG_IDF_TARGET_ESP32P4
 					esp_wifi_stop();
-					#endif
+#endif
 
 					// Here we must use esp_restart even though that does not play nicely
 					// with USB. That is because we skip image validation in the bootloader
@@ -361,10 +372,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_REBOOT: {
+#if VESC_ENABLE_WIFI
 		comm_wifi_disconnect();
-		#if !CONFIG_IDF_TARGET_ESP32P4
+#if !CONFIG_IDF_TARGET_ESP32P4
 		esp_wifi_stop();
-		#endif
+#endif
 
 		// Deep sleep to reboot as that disconnects USB properly
 //		esp_restart();
@@ -483,6 +495,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		mempools_free_packet_buffer(send_buffer_global);
 	} break;
 
+#if VESC_ENABLE_STORAGE
 	case COMM_FILE_LIST: {
 		int32_t ind = 0;
 		char *path = (char*)data + ind;
@@ -750,6 +763,50 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		send_buffer[ind++] = utils_rmtree(path_full);
 		reply_func(send_buffer, ind);
 	} break;
+#else
+	case COMM_FILE_LIST: {
+		uint8_t send_buffer[2];
+		send_buffer[0] = packet_id;
+		send_buffer[1] = 0;
+		reply_func(send_buffer, sizeof(send_buffer));
+	} break;
+
+	case COMM_FILE_READ: {
+		int32_t ind = 0;
+		char *path = (char*)data + ind;
+		ind += strlen(path) + 1;
+		int32_t offset = buffer_get_int32(data, &ind);
+
+		ind = 0;
+		uint8_t send_buffer[16];
+		send_buffer[ind++] = packet_id;
+		buffer_append_int32(send_buffer, offset, &ind);
+		buffer_append_int32(send_buffer, 0, &ind);
+		reply_func(send_buffer, ind);
+	} break;
+
+	case COMM_FILE_WRITE: {
+		int32_t ind = 0;
+		char *path = (char*)data + ind;
+		ind += strlen(path) + 1;
+		int32_t offset = buffer_get_int32(data, &ind);
+
+		ind = 0;
+		uint8_t send_buffer[16];
+		send_buffer[ind++] = packet_id;
+		buffer_append_int32(send_buffer, offset, &ind);
+		send_buffer[ind++] = false;
+		reply_func(send_buffer, ind);
+	} break;
+
+	case COMM_FILE_MKDIR:
+	case COMM_FILE_REMOVE: {
+		uint8_t send_buffer[2];
+		send_buffer[0] = packet_id;
+		send_buffer[1] = false;
+		reply_func(send_buffer, sizeof(send_buffer));
+	} break;
+#endif
 
 	case COMM_LOG_START:
 	case COMM_LOG_STOP:

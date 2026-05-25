@@ -35,6 +35,7 @@
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "sdkconfig.h"
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
@@ -126,13 +127,19 @@ void lispif_init(void) {
 #else
 	#error "Unsupported target"
 #endif
-	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
-			backup.config.ble_mode == BLE_MODE_DISABLED) {
+	bool wifi_active = false;
+	bool ble_active = false;
+#if VESC_ENABLE_WIFI
+	wifi_active = backup.config.wifi_mode != WIFI_MODE_DISABLED;
+#endif
+#if VESC_ENABLE_BLE
+	ble_active = backup.config.ble_mode != BLE_MODE_DISABLED;
+#endif
+	if (!wifi_active && !ble_active) {
 		heap_size *= 2;
 		mem_size = LBM_MEMORY_SIZE_KB(86);
 		bitmap_size = LBM_BITMAP_SIZE_KB(86);
-	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
-			backup.config.ble_mode == BLE_MODE_DISABLED) {
+	} else if (!wifi_active || !ble_active) {
 		heap_size *= 2;
 		mem_size = LBM_MEMORY_SIZE_KB(64);
 		bitmap_size = LBM_BITMAP_SIZE_KB(64);
@@ -268,6 +275,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		float mem_use = 0.0;
 
 		if (lisp_thd_running) {
+#if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
 			uint32_t timeTot = 0;
 #ifdef portALT_GET_RUN_TIME_COUNTER_VALUE
 			portALT_GET_RUN_TIME_COUNTER_VALUE( timeTot );
@@ -285,6 +293,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 			} else {
 				cpu_use = 11.0;
 			}
+#endif
 		} else {
 			break;
 		}
@@ -777,6 +786,11 @@ void lispif_stop(void) {
 		return;
 	}
 
+	TaskHandle_t task = eval_task;
+	if (task) {
+		(void)main_task_wdt_disable_task(task);
+	}
+
 	lispif_lock_lbm();
 
 	lbm_kill_eval();
@@ -790,10 +804,14 @@ void lispif_stop(void) {
 		}
 	}
 
-	if (lisp_thd_running) {
-		vTaskDelete(eval_task);
+	if (lisp_thd_running && task) {
+		vTaskDelete(task);
 		lisp_thd_running = false;
+		eval_task = 0;
 		commands_printf_lisp("Killed eval task as it didn't stop when asked to");
+	} else if (lisp_thd_running) {
+		lisp_thd_running = false;
+		commands_printf_lisp("Eval task did not stop, but no task handle was available");
 	}
 
 	lispif_unlock_lbm();
@@ -998,7 +1016,19 @@ static void sleep_callback(uint32_t us) {
 	if (t == 0) {
 		t = 1;
 	}
-	vTaskDelay(t);
+
+	while (t > 0) {
+		TickType_t step = t;
+		if (step > pdMS_TO_TICKS(1000)) {
+			step = pdMS_TO_TICKS(1000);
+		}
+
+		(void)main_task_wdt_reset();
+		vTaskDelay(step);
+		t -= step;
+	}
+
+	(void)main_task_wdt_reset();
 }
 
 static bool image_write(uint32_t w, int32_t ix, bool const_heap) {
@@ -1023,7 +1053,12 @@ static bool image_write(uint32_t w, int32_t ix, bool const_heap) {
 static void eval_thread(void *arg) {
 	(void)arg;
 	eval_task = xTaskGetCurrentTaskHandle();
+#if CONFIG_ESP_TASK_WDT_EN && (defined(HW_APP_WDT_TIMEOUT_S) || defined(HW_APP_WDT_STARTUP_TIMEOUT_S))
+	(void)main_task_wdt_enable();
+#endif
 	lbm_run_eval();
+	(void)main_task_wdt_disable();
 	lisp_thd_running = false;
+	eval_task = 0;
 	vTaskDelete(NULL);
 }

@@ -379,7 +379,7 @@ lbm_value disp_st7701_ext_orientation(lbm_value *args, lbm_uint argn) {
 void disp_st7701_init(int pin_rst, int lane_mbps) {
     m_pin_rst = pin_rst;
     m_lane_mbps = lane_mbps;
-    
+
     disp_st7701_init_internal();
 
     lbm_add_extension("ext-disp-orientation", disp_st7701_ext_orientation);

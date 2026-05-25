@@ -21,10 +21,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "i2c_compat.h"
 
 #include "disp_ssd1306.h"
-#include "driver/i2c.h"
 #include "lispif.h"
 #include "lispbm.h"
 

@@ -59,6 +59,10 @@
 	#error "Unsupported target"
 #endif
 
+#ifndef WIFI_TCP_TASK_STACK_SIZE
+#define WIFI_TCP_TASK_STACK_SIZE 3072
+#endif
+
 static EventGroupHandle_t s_wifi_event_group;
 static esp_ip4_addr_t ip = {0};
 static bool is_connecting = false;
@@ -91,13 +95,13 @@ static const char *wifi_reason_to_str(wifi_err_reason_t reason) {
 			return "AUTH_EXPIRE";
 		case WIFI_REASON_AUTH_LEAVE:
 			return "AUTH_LEAVE";
-		case WIFI_REASON_ASSOC_EXPIRE:
+		case WIFI_REASON_DISASSOC_DUE_TO_INACTIVITY:
 			return "ASSOC_EXPIRE";
 		case WIFI_REASON_ASSOC_TOOMANY:
 			return "ASSOC_TOOMANY";
-		case WIFI_REASON_NOT_AUTHED:
+		case WIFI_REASON_CLASS2_FRAME_FROM_NONAUTH_STA:
 			return "NOT_AUTHED";
-		case WIFI_REASON_NOT_ASSOCED:
+		case WIFI_REASON_CLASS3_FRAME_FROM_NONASSOC_STA:
 			return "NOT_ASSOCED";
 		case WIFI_REASON_ASSOC_LEAVE:
 			return "ASSOC_LEAVE";
@@ -487,9 +491,13 @@ void comm_wifi_init(void) {
 
 	esp_wifi_set_storage(WIFI_STORAGE_RAM);
 
+#ifdef HW_WIFI_PS_MODE
+	esp_wifi_set_ps(HW_WIFI_PS_MODE);
+#else
 	if (backup.config.ble_mode == BLE_MODE_DISABLED) {
 		esp_wifi_set_ps(WIFI_PS_NONE);
 	}
+#endif
 
 	esp_event_handler_instance_t instance_any_id;
 	esp_event_handler_instance_t instance_got_ip;
@@ -508,7 +516,14 @@ void comm_wifi_init(void) {
 			NULL,
 			&instance_got_ip);
 
-	esp_wifi_set_mode(WIFI_MODE_APSTA);
+	wifi_mode_t idf_wifi_mode = WIFI_MODE_STA;
+	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
+		idf_wifi_mode = WIFI_MODE_AP;
+	}
+#ifdef HW_WIFI_FORCE_APSTA
+	idf_wifi_mode = WIFI_MODE_APSTA;
+#endif
+	esp_wifi_set_mode(idf_wifi_mode);
 
 	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
 		wifi_config = (wifi_config_t){
@@ -522,7 +537,9 @@ void comm_wifi_init(void) {
 				.pmf_cfg = {
 					.required = false,
 				},
+#ifdef VESC_ENABLE_WIFI_FTM
 				.ftm_responder = true,
+#endif
 			},
 		};
 
@@ -543,31 +560,40 @@ void comm_wifi_init(void) {
 		strcpy((char*)wifi_config.sta.password, (char*)backup.config.wifi_sta_key);
 
 		esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-
-		// Enable FTM responder
+#ifdef VESC_ENABLE_WIFI_FTM
 		wifi_config_t ap_wifi_config;
 		esp_wifi_get_config(WIFI_IF_AP, &ap_wifi_config);
 		ap_wifi_config.ap.ftm_responder = true;
 		esp_wifi_set_config(WIFI_IF_AP, &ap_wifi_config);
+#endif
 
 		wifi_reconnect_disabled = false;
 	}
 
 	esp_wifi_start();
 
+#ifdef HW_WIFI_MAX_TX_POWER
+	esp_err_t tx_power_res = esp_wifi_set_max_tx_power(HW_WIFI_MAX_TX_POWER);
+	if (tx_power_res != ESP_OK) {
+		STORED_LOGF("esp_wifi_set_max_tx_power failed, result: %d", tx_power_res);
+	}
+#endif
+
 	if (backup.config.use_tcp_local) {
 		comm_local.packet = calloc(1, sizeof(PACKET_STATE_t));
 		packet_init(comm_wifi_send_raw_local, process_packet_local, comm_local.packet);
-		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", 3500, NULL, 8, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", WIFI_TCP_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
 	if (backup.config.use_tcp_hub) {
 		comm_hub.packet = calloc(1, sizeof(PACKET_STATE_t));
 		packet_init(comm_wifi_send_raw_hub, process_packet_hub, comm_hub.packet);
-		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 3500, NULL, 8, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", WIFI_TCP_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
-	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", UDP_MULTICAST_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
+	if (backup.config.use_tcp_local) {
+		xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", UDP_MULTICAST_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
+	}
 }
 
 WIFI_MODE comm_wifi_get_mode(void) {

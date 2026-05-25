@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define BMS_MAX_CELLS	50
+#define BMS_MAX_CELLS	255
 #define BMS_MAX_TEMPS	50
 #define BMS_STATUS_LEN	41
 

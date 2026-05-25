@@ -19,7 +19,7 @@
 
 #include "hw_vdisp_900.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "i2c_compat.h"
 #include "extensions.h"
 #include "heap.h"
 #include "soc/gpio_struct.h"
