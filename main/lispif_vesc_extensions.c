@@ -3669,12 +3669,14 @@ static void sleep_disable_radios(void) {
 static void sleep_deinit_radios(void) {
 	sleep_disable_radios();
 
+#if !CONFIG_IDF_TARGET_ESP32P4
 	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_INITIALIZED) {
 		esp_bluedroid_deinit();
 	}
 	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
 		esp_bt_controller_deinit();
 	}
+#endif
 }
 
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
