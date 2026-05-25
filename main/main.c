@@ -343,7 +343,7 @@ void app_main(void) {
 
 	vTaskDelay(1);
 
-#ifndef HW_IS_SLAVE
+#if !defined(HW_IS_SLAVE) && !CONFIG_IDF_TARGET_ESP32P4
 	switch (backup.config.ble_mode) {
 		case BLE_MODE_DISABLED: {
 			break;

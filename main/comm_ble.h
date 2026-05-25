@@ -23,9 +23,21 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#if !CONFIG_IDF_TARGET_ESP32P4
+
 void comm_ble_init(void);
 bool comm_ble_is_connected();
 int comm_ble_mtu_now(void);
 void comm_ble_send_packet(unsigned char *data, unsigned int len);
+
+#else
+
+void comm_ble_init(void);
+bool comm_ble_is_connected(void);
+int comm_ble_mtu_now(void);
+void comm_ble_send_packet(unsigned char *data, unsigned int len);
+
+
+#endif
 
 #endif /* MAIN_COMM_BLE_H_ */

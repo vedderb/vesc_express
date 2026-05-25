@@ -154,10 +154,11 @@ if(VESC_ENABLE_DISPLAY)
         "display/disp_axs15231.c"
         "display/disp_gc9a01.c"
         "display/disp_jd9853.c"
+        "display/disp_st7701.c"
     )
 endif()
 
-if(VESC_ENABLE_WIFI)
+if(VESC_ENABLE_WIFI AND NOT CONFIG_IDF_TARGET_ESP32P4)
     list(APPEND COMPONENT_SRCS
         "comm_wifi.c"
         "wifi/lispif_wifi_extensions.c"
@@ -168,7 +169,7 @@ else()
     )
 endif()
 
-if(VESC_ENABLE_BLE)
+if(VESC_ENABLE_BLE AND NOT CONFIG_IDF_TARGET_ESP32P4)
     list(APPEND COMPONENT_SRCS
         "ble/lispif_ble_extensions.c"
     )

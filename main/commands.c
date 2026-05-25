@@ -73,13 +73,13 @@
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
-#if VESC_ENABLE_BLE
+#if VESC_ENABLE_BLE && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
 #ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_bt_main.h"
 #endif
 #endif
-#if VESC_ENABLE_WIFI
+#if VESC_ENABLE_WIFI && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_wifi.h"
 #endif
 
@@ -308,6 +308,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 					comm_wifi_disconnect();
 					vTaskDelay(50 / portTICK_PERIOD_MS);
 
+#if !CONFIG_IDF_TARGET_ESP32P4
 					esp_wifi_stop();
 #endif
 
@@ -373,6 +374,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	case COMM_REBOOT: {
 #if VESC_ENABLE_WIFI
 		comm_wifi_disconnect();
+#if !CONFIG_IDF_TARGET_ESP32P4
 		esp_wifi_stop();
 #endif
 

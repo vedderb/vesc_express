@@ -1,6 +1,4 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
-
 	This file is part of the VESC firmware.
 
 	The VESC firmware is free software: you can redistribute it and/or modify
@@ -15,29 +13,23 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
-#ifndef MAIN_HWCONF_AVASPARK_HW_RGB_V3_H_
-#define MAIN_HWCONF_AVASPARK_HW_RGB_V3_H_
+#ifndef MAIN_DISPLAY_DISP_ST7701_H_
+#define MAIN_DISPLAY_DISP_ST7701_H_
 
-#define HW_NAME						"Avaspark RGB V3"
-#define HW_TARGET                   "esp32s3_fh4"
-#define HW_NO_UART
+#include <stdint.h>
+#include <stdbool.h>
+#include "lispif_disp_extensions.h"
 
-#define HW_INIT_HOOK()				hw_init()
+#if CONFIG_IDF_TARGET_ESP32P4
 
-// CAN
-#define CAN_TX_GPIO_NUM				11
-#define CAN_RX_GPIO_NUM				10
+void disp_st7701_init(int pin_rst, int lane_mbps);
+void disp_st7701_deinit(void);
+bool disp_st7701_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors);
+void disp_st7701_clear(uint32_t color);
+void disp_st7701_reset(void);
 
-// UART
-//#define UART_NUM					0
-//#define UART_BAUDRATE				115200
-//#define UART_TX						44
-//#define UART_RX						43
+#endif
 
-
-// Functions
-void hw_init(void);
-
-#endif /* MAIN_HWCONF_AVASPARK_HW_RGB_S3_H_ */
+#endif

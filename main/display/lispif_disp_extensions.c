@@ -41,6 +41,10 @@
 #include "display/disp_gc9a01.h"
 #include "display/disp_jd9853.h"
 
+#if CONFIG_IDF_TARGET_ESP32P4
+#include "display/disp_st7701.h"
+#endif
+
 #include <math.h>
 
 // Display Drivers
@@ -496,6 +500,36 @@ static lbm_value ext_disp_load_jd9853(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+static lbm_value ext_disp_load_st7701(lbm_value *args, lbm_uint argn) {
+#if CONFIG_IDF_TARGET_ESP32P4
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int pin_rst = lbm_dec_as_i32(args[0]);
+	int lane_mbps = lbm_dec_as_i32(args[1]);
+
+	if (pin_rst >= 0 && !utils_gpio_is_valid(pin_rst)) {
+		lbm_set_error_reason(msg_invalid_gpio);
+		return ENC_SYM_EERROR;
+	}
+	if (lane_mbps <= 0 || lane_mbps > 4000) {
+		lbm_set_error_reason(msg_invalid_clk_speed);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_st7701_init(pin_rst, lane_mbps);
+	lbm_display_extensions_set_callbacks(
+			disp_st7701_render_image,
+			disp_st7701_clear,
+			disp_st7701_reset);
+	return ENC_SYM_TRUE;
+#else
+	(void)args;
+	(void)argn;
+	lbm_set_error_reason("ST7701 display is only available on ESP32P4");
+	return ENC_SYM_EERROR;
+#endif
+}
+
 void lispif_load_disp_extensions(void) {
 
 	lbm_display_extensions_init();
@@ -513,5 +547,9 @@ void lispif_load_disp_extensions(void) {
 	lbm_add_extension("disp-load-axs15231", ext_disp_load_axs15231);
 	lbm_add_extension("disp-load-gc9a01", ext_disp_load_gc9a01);
 	lbm_add_extension("disp-load-jd9853", ext_disp_load_jd9853);
+
+	#if CONFIG_IDF_TARGET_ESP32P4
+	lbm_add_extension("disp-load-st7701", ext_disp_load_st7701);
+	#endif
 }
 

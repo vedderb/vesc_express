@@ -24,11 +24,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "datatypes.h"
+
 #ifndef VESC_ENABLE_WIFI
 #define VESC_ENABLE_WIFI 1
 #endif
 
-#if VESC_ENABLE_WIFI
+#if VESC_ENABLE_WIFI && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_netif.h"
 #include "esp_event_base.h"
 #include "lwip/sockets.h"
@@ -39,8 +41,6 @@ typedef struct {
 	uint32_t addr;
 } esp_ip4_addr_t;
 #endif
-
-#include "datatypes.h"
 
 /**
  * A event listener callback function used in the comm_wifi module.
@@ -159,7 +159,7 @@ bool comm_wifi_get_auto_reconnect();
  * to disable the existing event listener.
 */
 void comm_wifi_set_event_listener(comm_wifi_event_cb_t handler);
-#if VESC_ENABLE_WIFI
+#if VESC_ENABLE_WIFI && !CONFIG_IDF_TARGET_ESP32P4
 void comm_wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 #endif
 
@@ -183,7 +183,7 @@ void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len);
  * example come from the netconn_gethostbyname function.
  * @param port The port to connect to. Is in host byte order.
 */
-#if VESC_ENABLE_WIFI
+#if VESC_ENABLE_WIFI && !CONFIG_IDF_TARGET_ESP32P4
 struct sockaddr_in create_sockaddr_in(ip_addr_t addr, uint16_t port);
 #endif
 

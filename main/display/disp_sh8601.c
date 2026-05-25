@@ -20,7 +20,7 @@ static int m_pin_dc = -1;
 #if CONFIG_IDF_TARGET_ESP32S3
 	#define DISP_REG_SET		GPIO.out_w1ts
 	#define DISP_REG_CLR		GPIO.out_w1tc
-#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	#define DISP_REG_SET		GPIO.out_w1ts.val
 	#define DISP_REG_CLR		GPIO.out_w1tc.val
 #else
@@ -45,12 +45,12 @@ static inline uint16_t to_disp_color(uint32_t rgb) {
 	b >>= 3;
 
 	uint8_t color_high = 0;
-	color_high = g << 5;
-	color_high |= b;
+	color_high = r << 3;
+	color_high |= g >> 3;
 
 	uint8_t color_low = 0;
-	color_low = r << 3;
-	color_low |= g >> 3;
+	color_low = g << 5;
+	color_low |= b;
 
 	uint16_t color = color_high;
 	color |= (((uint16_t)color_low) << 8);
@@ -296,28 +296,28 @@ static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 
     switch (orientation) {
         case 0: // normal portrait
-            madctl = 0b00001000;
+            madctl = 0b00000000;
             display_width = 170;
             display_height = 320;
 			display_x_offset = 35;
 			display_y_offset = 0;
             break;
         case 1: // 90° CW
-            madctl = 0b10101000;
+            madctl = 0b10100000;
             display_width = 320;
             display_height = 170;
 			display_x_offset = 0;
 			display_y_offset = 35;
             break;
         case 2: // 180° 
-            madctl = 0b11001000;
+            madctl = 0b11000000;
             display_width = 170;
             display_height = 320;
 			display_x_offset = 35;
 			display_y_offset = 0;
             break;
         case 3: // 270° CW
-            madctl = 0b01101000;
+            madctl = 0b01100000;
             display_width = 320;
             display_height = 170;
 			display_x_offset = 0;
