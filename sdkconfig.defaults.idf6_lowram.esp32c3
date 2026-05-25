@@ -1,0 +1,4 @@
+# ESP32-C3 needs one controller activity for connectable advertising and
+# another for the connection. One activity can keep NimBLE from appearing.
+CONFIG_BT_CTRL_BLE_MAX_ACT=2
+CONFIG_BT_CTRL_BLE_MAX_ACT_EFF=2

@@ -36,10 +36,18 @@
 #include "extensions/mutex_extensions.h"
 #include "extensions/lbm_dyn_lib.h"
 #include "extensions/ttf_extensions.h"
+#if VESC_ENABLE_DISPLAY
 #include "lispif_disp_extensions.h"
+#endif
+#if VESC_ENABLE_TOUCH
 #include "lispif_touch_extensions.h"
+#endif
+#if VESC_ENABLE_WIFI
 #include "lispif_wifi_extensions.h"
+#endif
+#if VESC_ENABLE_BLE
 #include "lispif_ble_extensions.h"
+#endif
 #include "lispif_rgbled_extensions.h"
 #include "lbm_color_extensions.h"
 #include "lbm_constants.h"
@@ -69,10 +77,12 @@
 #include "packet.h"
 #include "bme280_if.h"
 
+#if VESC_ENABLE_WIFI
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #include "esp_now.h"
+#endif
 #include "esp_crc.h"
 #include "i2c_compat.h"
 #include "driver/uart.h"
@@ -83,24 +93,32 @@
 #include "esp_sleep.h"
 #include "soc/rtc.h"
 #include "esp_private/esp_clk.h"
+#if VESC_ENABLE_BLE
 #include "esp_bt.h"
 #ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_bt_main.h"
 #elif defined(CONFIG_BT_NIMBLE_ENABLED)
 #include "nimble/nimble_port.h"
 #endif
+#endif
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 
+#if VESC_ENABLE_STORAGE
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs.h"
 #include "lowzip.h"
+#endif
 #include "aes/esp_aes.h"
 
 #include <math.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdio.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <string.h>
 
 #if CONFIG_IDF_TARGET_ESP32S3
@@ -2370,6 +2388,7 @@ static lbm_value ext_ioboard_set_pwm(lbm_value *args, lbm_uint argn) {
 }
 
 // ESP NOW
+#if VESC_ENABLE_WIFI
 
 static bool esp_now_initialized = false;
 static volatile lbm_cid esp_now_send_cid = -1;
@@ -2488,7 +2507,7 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 		wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 		esp_wifi_init(&cfg);
 		esp_wifi_set_storage(WIFI_STORAGE_RAM);
-		esp_wifi_set_mode(WIFI_MODE_APSTA);
+		esp_wifi_set_mode(WIFI_MODE_AP);
 
 		if (backup.config.ble_mode == BLE_MODE_DISABLED) {
 			esp_wifi_set_ps(WIFI_PS_NONE);
@@ -2504,12 +2523,14 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 				NULL,
 				&instance_any_id);
 
+#ifdef VESC_ENABLE_WIFI_FTM
 		// Enable FTM responder
 		wifi_config_t wifi_config;
 		memset(&wifi_config, 0, sizeof(wifi_config));
 		esp_wifi_get_config(WIFI_IF_AP, &wifi_config);
 		wifi_config.ap.ftm_responder = true;
 		esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
+#endif
 
 		esp_wifi_start();
 	}
@@ -2823,6 +2844,7 @@ static lbm_value ext_esp_now_recv(lbm_value *args, lbm_uint argn) {
 
 	return ENC_SYM_TRUE;
 }
+#endif
 
 static bool i2c_started = false;
 static SemaphoreHandle_t i2c_mutex;
@@ -3720,8 +3742,11 @@ static lbm_value ext_set_pos_time(lbm_value *args, lbm_uint argn) {
 // Disable radios before sleeping. Reversible — safe for light sleep where
 // execution resumes after wake and the BT/WiFi stacks must still be usable.
 static void sleep_disable_radios(void) {
+#if VESC_ENABLE_WIFI
 	esp_wifi_stop();
+#endif
 
+#if VESC_ENABLE_BLE
 #ifdef CONFIG_BT_BLUEDROID_ENABLED
 	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) {
 		esp_bluedroid_disable();
@@ -3733,6 +3758,7 @@ static void sleep_disable_radios(void) {
 	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
 		esp_bt_controller_disable();
 	}
+#endif
 }
 
 // Full teardown for deep sleep only. The chip reboots on wake so deinit is
@@ -3741,6 +3767,7 @@ static void sleep_disable_radios(void) {
 static void sleep_deinit_radios(void) {
 	sleep_disable_radios();
 
+#if VESC_ENABLE_BLE
 #ifdef CONFIG_BT_BLUEDROID_ENABLED
 	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_INITIALIZED) {
 		esp_bluedroid_deinit();
@@ -3751,6 +3778,7 @@ static void sleep_deinit_radios(void) {
 	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
 		esp_bt_controller_deinit();
 	}
+#endif
 }
 
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
@@ -3927,11 +3955,6 @@ static lbm_value ext_canmsg_send(lbm_value *args, lbm_uint argn) {
 }
 
 // File System
-#define MAX_FILES 5
-static FILE *files_open[MAX_FILES + 1] = {0};
-static int file_now = 0;
-static const char* str_f_not_open = "File not open.";
-
 static char* dec_str_check(lbm_value val) {
 	char *res = 0;
 	if (lbm_is_array_r(val)) {
@@ -3946,6 +3969,12 @@ static char* dec_str_check(lbm_value val) {
 	}
 	return res;
 }
+
+#if VESC_ENABLE_STORAGE
+#define MAX_FILES 5
+static FILE *files_open[MAX_FILES + 1] = {0};
+static int file_now = 0;
+static const char* str_f_not_open = "File not open.";
 
 static FILE* file_from_arg(lbm_value arg) {
 	uint32_t fn = lbm_dec_as_u32(arg);
@@ -4528,6 +4557,7 @@ static lbm_value ext_f_fatinfo(lbm_value *args, lbm_uint argn) {
 
 	return res;
 }
+#endif
 
 typedef struct {
 	uint8_t version_major;
@@ -5819,6 +5849,7 @@ static lbm_value ext_pwm_set_duty(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_float((float)duty_i / (float)pwm_max[chan]);
 }
 
+#if VESC_ENABLE_STORAGE
 // Compression
 
 typedef struct {
@@ -6262,6 +6293,7 @@ static lbm_value ext_zip_ls(lbm_value *args, lbm_uint argn) {
 	lbm_free(st_file);
 	return r;
 }
+#endif
 
 // Connection checks
 
@@ -7023,6 +7055,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("ioboard-set-pwm", ext_ioboard_set_pwm);
 
 		// ESP NOW
+#if VESC_ENABLE_WIFI
 		lbm_add_extension("esp-now-start", ext_esp_now_start);
 		lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
 		lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
@@ -7035,6 +7068,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("wifi-set-bw", ext_wifi_set_bw);
 		lbm_add_extension("wifi-start", ext_wifi_start);
 		lbm_add_extension("wifi-stop", ext_wifi_stop);
+#endif
 
 		// Logging
 		lbm_add_extension("log-start", ext_log_start);
@@ -7062,18 +7096,27 @@ void lispif_load_vesc_extensions(bool main_found) {
 
 		lispif_load_rgbled_extensions();
 
+#if VESC_ENABLE_DISPLAY
 		lispif_load_disp_extensions();
+#endif
+#if VESC_ENABLE_TOUCH
 		lispif_load_touch_extensions();
+#endif
+		#if VESC_ENABLE_WIFI
 		lispif_load_wifi_extensions();
+		#endif
 
+		#if VESC_ENABLE_BLE
 		if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
 			lispif_load_ble_extensions();
 		}
+		#endif
 
 		// CAN-Messages
 		lbm_add_extension("canmsg-recv", ext_canmsg_recv);
 		lbm_add_extension("canmsg-send", ext_canmsg_send);
 
+#if VESC_ENABLE_STORAGE
 		// File System
 		lbm_add_extension("f-connect", ext_f_connect);
 		lbm_add_extension("f-connect-nand", ext_f_connect_nand);
@@ -7096,6 +7139,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("f-rename", ext_f_rename);
 		lbm_add_extension("f-sync", ext_f_sync);
 		lbm_add_extension("f-fatinfo", ext_f_fatinfo);
+#endif
 
 		// Firmware update
 		lbm_add_extension("fw-erase", ext_fw_erase);
@@ -7143,9 +7187,11 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("pwm-stop", ext_pwm_stop);
 		lbm_add_extension("pwm-set-duty", ext_pwm_set_duty);
 
+#if VESC_ENABLE_STORAGE
 		// Compression
 		lbm_add_extension("unzip", ext_unzip);
 		lbm_add_extension("zip-ls", ext_zip_ls);
+#endif
 
 		// Connection checks
 		lbm_add_extension("connected-wifi", ext_connected_wifi);
@@ -7226,7 +7272,9 @@ void lispif_disable_all_events(void) {
 
 	bms_register_cmd_handler(NULL);
 
+#if VESC_ENABLE_WIFI
 	esp_now_recv_cid = -1;
+#endif
 	can_recv_sid_cid = -1;
 	can_recv_eid_cid = -1;
 #ifdef CONFIG_IDF_TARGET_ESP32C6
@@ -7235,12 +7283,14 @@ void lispif_disable_all_events(void) {
 #endif
 	recv_data_cid = -1;
 
+#if VESC_ENABLE_STORAGE
 	for (int i = 0;i < file_now;i++) {
 		fclose(files_open[i]);
 		files_open[i] = 0;
 	}
 
 	file_now = 0;
+#endif
 
 	if (as504x_init_done) {
 		enc_as504x_deinit(&as504x);

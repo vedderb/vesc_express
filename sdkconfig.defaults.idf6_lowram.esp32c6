@@ -1,0 +1,3 @@
+# ESP32-C6 uses the BT_LE controller path. In ESP-IDF 6.0.1 the BT_LE memory
+# knobs are hidden while NimBLE is enabled, so the shared NimBLE host pool
+# settings in sdkconfig.defaults.idf6_lowram are the active low-RAM controls.

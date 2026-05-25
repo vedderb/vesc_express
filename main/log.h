@@ -22,8 +22,16 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "esp_err.h"
+
+#ifndef VESC_ENABLE_STORAGE
+#define VESC_ENABLE_STORAGE 1
+#endif
+
+#if VESC_ENABLE_STORAGE
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
+#endif
 
 // Functions
 bool log_init(void);

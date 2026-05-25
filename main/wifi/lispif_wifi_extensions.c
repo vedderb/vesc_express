@@ -105,9 +105,11 @@ static volatile bool is_waiting;
 static volatile waiting_op_t waiting_op;
 static volatile lbm_cid waiting_cid;
 
+#ifdef CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT
 static EventGroupHandle_t s_ftm_event_group;
 static const int FTM_REPORT_BIT = BIT0;
 static wifi_event_ftm_report_t ftm_report;
+#endif
 
 typedef enum precheck_flags {
     PRECHECK_MODE_NOT_DISABLED = 0b00,
@@ -287,8 +289,12 @@ static void event_listener(
 						f_cons(&value);                  // +1
 						f_i(&value, records[i].primary); // +5
 
+						int ftm_flags = 0;
+#ifdef CONFIG_ESP_WIFI_FTM_ENABLE
+						ftm_flags = records[i].ftm_responder + 2 * records[i].ftm_initiator;
+#endif
 						f_cons(&value);                  // +1
-						f_i(&value, records[i].ftm_responder + 2 * records[i].ftm_initiator); // +5
+						f_i(&value, ftm_flags);          // +5
 
 						f_cons(&value);                   // +1
 						f_cons(&value);                   // +1
@@ -374,12 +380,14 @@ static void event_listener(
 		}
 	}
 
+#ifdef CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT
 	if (event_id == WIFI_EVENT_FTM_REPORT) {
 		wifi_event_ftm_report_t *event = (wifi_event_ftm_report_t *) event_data;
 
 		memcpy(&ftm_report, event, sizeof(ftm_report));
 		xEventGroupSetBits(s_ftm_event_group, FTM_REPORT_BIT);
 	}
+#endif
 }
 
 /**
@@ -701,6 +709,7 @@ static lbm_value ext_wifi_max_tx_power(lbm_value *args, lbm_uint argn) {
 	return lbm_enc_i(new_power);
 }
 
+#ifdef CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT
 typedef struct {
 	lbm_cid id;
 	wifi_ftm_initiator_cfg_t cfg;
@@ -823,6 +832,7 @@ static lbm_value ext_wifi_ftm_measure(lbm_value *args, lbm_uint argn) {
 
 	return ENC_SYM_NIL;
 }
+#endif
 
 #define CUSTOM_SOCKET_COUNT 5
 static int custom_sockets[CUSTOM_SOCKET_COUNT];
@@ -1529,7 +1539,9 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 void lispif_load_wifi_extensions(void) {
 	if (!init_done) {
 		comm_wifi_set_event_listener(event_listener);
+#ifdef CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT
 		s_ftm_event_group = xEventGroupCreate();
+#endif
 
 		for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
 			custom_sockets[i] = -1;
@@ -1558,7 +1570,9 @@ void lispif_load_wifi_extensions(void) {
 	lbm_add_extension("wifi-status", ext_wifi_status);
 	lbm_add_extension("wifi-max-tx-power", ext_wifi_max_tx_power);
 	lbm_add_extension("wifi-auto-reconnect", ext_wifi_auto_reconnect);
+#ifdef CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT
 	lbm_add_extension("wifi-ftm-measure", ext_wifi_ftm_measure);
+#endif
 	lbm_add_extension("tcp-connect", ext_tcp_connect);
 	lbm_add_extension("tcp-close", ext_tcp_close);
 	lbm_add_extension("tcp-status", ext_tcp_status);

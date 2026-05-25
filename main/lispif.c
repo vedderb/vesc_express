@@ -35,6 +35,7 @@
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "sdkconfig.h"
 
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
@@ -115,13 +116,19 @@ void lispif_init(void) {
 #else
 	#error "Unsupported target"
 #endif
-	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
-			backup.config.ble_mode == BLE_MODE_DISABLED) {
+	bool wifi_active = false;
+	bool ble_active = false;
+#if VESC_ENABLE_WIFI
+	wifi_active = backup.config.wifi_mode != WIFI_MODE_DISABLED;
+#endif
+#if VESC_ENABLE_BLE
+	ble_active = backup.config.ble_mode != BLE_MODE_DISABLED;
+#endif
+	if (!wifi_active && !ble_active) {
 		heap_size *= 2;
 		mem_size = LBM_MEMORY_SIZE_KB(86);
 		bitmap_size = LBM_BITMAP_SIZE_KB(86);
-	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
-			backup.config.ble_mode == BLE_MODE_DISABLED) {
+	} else if (!wifi_active || !ble_active) {
 		heap_size *= 2;
 		mem_size = LBM_MEMORY_SIZE_KB(64);
 		bitmap_size = LBM_BITMAP_SIZE_KB(64);
@@ -257,6 +264,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		float mem_use = 0.0;
 
 		if (lisp_thd_running) {
+#if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
 			uint32_t timeTot = 0;
 #ifdef portALT_GET_RUN_TIME_COUNTER_VALUE
 			portALT_GET_RUN_TIME_COUNTER_VALUE( timeTot );
@@ -274,6 +282,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 			} else {
 				cpu_use = 11.0;
 			}
+#endif
 		} else {
 			break;
 		}

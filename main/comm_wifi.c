@@ -54,6 +54,10 @@
 	#error "Unsupported target"
 #endif
 
+#ifndef WIFI_TCP_TASK_STACK_SIZE
+#define WIFI_TCP_TASK_STACK_SIZE 3072
+#endif
+
 static EventGroupHandle_t s_wifi_event_group;
 static esp_ip4_addr_t ip = {0};
 static bool is_connecting = false;
@@ -507,7 +511,14 @@ void comm_wifi_init(void) {
 			NULL,
 			&instance_got_ip);
 
-	esp_wifi_set_mode(WIFI_MODE_APSTA);
+	wifi_mode_t idf_wifi_mode = WIFI_MODE_STA;
+	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
+		idf_wifi_mode = WIFI_MODE_AP;
+	}
+#ifdef HW_WIFI_FORCE_APSTA
+	idf_wifi_mode = WIFI_MODE_APSTA;
+#endif
+	esp_wifi_set_mode(idf_wifi_mode);
 
 	if (wifi_mode == WIFI_MODE_ACCESS_POINT) {
 		wifi_config = (wifi_config_t){
@@ -521,7 +532,9 @@ void comm_wifi_init(void) {
 				.pmf_cfg = {
 					.required = false,
 				},
+#ifdef VESC_ENABLE_WIFI_FTM
 				.ftm_responder = true,
+#endif
 			},
 		};
 
@@ -542,12 +555,12 @@ void comm_wifi_init(void) {
 		strcpy((char*)wifi_config.sta.password, (char*)backup.config.wifi_sta_key);
 
 		esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-
-		// Enable FTM responder
+#ifdef VESC_ENABLE_WIFI_FTM
 		wifi_config_t ap_wifi_config;
 		esp_wifi_get_config(WIFI_IF_AP, &ap_wifi_config);
 		ap_wifi_config.ap.ftm_responder = true;
 		esp_wifi_set_config(WIFI_IF_AP, &ap_wifi_config);
+#endif
 
 		wifi_reconnect_disabled = false;
 	}
@@ -564,16 +577,18 @@ void comm_wifi_init(void) {
 	if (backup.config.use_tcp_local) {
 		comm_local.packet = calloc(1, sizeof(PACKET_STATE_t));
 		packet_init(comm_wifi_send_raw_local, process_packet_local, comm_local.packet);
-		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", 3500, NULL, 8, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(tcp_task_local, "tcp_local", WIFI_TCP_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
 	if (backup.config.use_tcp_hub) {
 		comm_hub.packet = calloc(1, sizeof(PACKET_STATE_t));
 		packet_init(comm_wifi_send_raw_hub, process_packet_hub, comm_hub.packet);
-		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", 3500, NULL, 8, NULL, tskNO_AFFINITY);
+		xTaskCreatePinnedToCore(tcp_task_hub, "tcp_hub", WIFI_TCP_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
 	}
 
-	xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", UDP_MULTICAST_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
+	if (backup.config.use_tcp_local) {
+		xTaskCreatePinnedToCore(broadcast_task, "udp_multicast", UDP_MULTICAST_TASK_STACK_SIZE, NULL, 8, NULL, tskNO_AFFINITY);
+	}
 }
 
 WIFI_MODE comm_wifi_get_mode(void) {

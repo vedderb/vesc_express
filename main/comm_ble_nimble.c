@@ -129,20 +129,33 @@ static void apply_tx_power(void) {
 	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL2, HW_BLE_PWR_LVL_CONN);
 }
 
+static uint8_t ble_name_len(void) {
+	uint8_t len = 0;
+	while (len < (sizeof(backup.config.ble_name) - 1)
+		   && backup.config.ble_name[len] != '\0') {
+		len++;
+	}
+	return len;
+}
+
 static void start_advertising(void) {
 	struct ble_gap_adv_params adv_params = {0};
 	struct ble_hs_adv_fields adv_fields  = {0};
 	struct ble_hs_adv_fields rsp_fields  = {0};
 
+	const char *name = (const char *)backup.config.ble_name;
+	uint8_t name_len = ble_name_len();
+
+	// Match the Bluedroid advertisement layout. The stored BLE name is capped
+	// to 8 display bytes, so flags + complete VESC UART UUID + name fits in
+	// the 31-byte legacy advertisement.
 	adv_fields.flags        = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 	adv_fields.uuids128     = (ble_uuid128_t *)&svc_uuid;
 	adv_fields.num_uuids128 = 1;
 	adv_fields.uuids128_is_complete = 1;
-
-	const char *name            = (const char *)backup.config.ble_name;
-	adv_fields.name             = (uint8_t *)name;
-	adv_fields.name_len         = strlen(name);
-	adv_fields.name_is_complete = 1;
+	adv_fields.name                  = (uint8_t *)name;
+	adv_fields.name_len              = name_len;
+	adv_fields.name_is_complete      = 1;
 
 	int rc = ble_gap_adv_set_fields(&adv_fields);
 	if (rc != 0) {
@@ -151,9 +164,9 @@ static void start_advertising(void) {
 
 	rsp_fields.tx_pwr_lvl_is_present = 1;
 	rsp_fields.tx_pwr_lvl            = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-	rsp_fields.uuids128              = (ble_uuid128_t *)&svc_uuid;
-	rsp_fields.num_uuids128          = 1;
-	rsp_fields.uuids128_is_complete  = 1;
+	rsp_fields.name                  = (uint8_t *)name;
+	rsp_fields.name_len              = name_len;
+	rsp_fields.name_is_complete      = 1;
 	ble_gap_adv_rsp_set_fields(&rsp_fields);
 
 	adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
@@ -248,7 +261,7 @@ static int gatt_access_cb(
 			uint16_t out_len = 0;
 			ble_hs_mbuf_to_flat(ctxt->om, buf, len, &out_len);
 
-			if (ble_uuid_cmp(ctxt->chr->uuid, &rx_uuid.u) == 0) {
+			if (packet_state && ble_uuid_cmp(ctxt->chr->uuid, &rx_uuid.u) == 0) {
 				for (uint16_t i = 0; i < out_len; i++) {
 					packet_process_byte(buf[i], packet_state);
 				}
@@ -293,6 +306,13 @@ static void host_task(void *param) {
 
 static void process_packet(unsigned char *data, unsigned int len) {
 	commands_process_packet(data, len, comm_ble_send_packet);
+}
+
+static void free_packet_state(void) {
+	if (packet_state) {
+		free(packet_state);
+		packet_state = NULL;
+	}
 }
 
 static void send_packet_raw(unsigned char *buffer, unsigned int len) {
@@ -343,10 +363,15 @@ static void send_packet_raw(unsigned char *buffer, unsigned int len) {
 
 void comm_ble_init(void) {
 	packet_state = calloc(1, sizeof(PACKET_STATE_t));
+	if (!packet_state) {
+		return;
+	}
+
 	packet_init(send_packet_raw, process_packet, packet_state);
 
 	esp_err_t err = nimble_port_init();
 	if (err != ESP_OK) {
+		free_packet_state();
 		return;
 	}
 
@@ -377,10 +402,14 @@ void comm_ble_init(void) {
 
 	int rc = ble_gatts_count_cfg(gatt_svcs);
 	if (rc != 0) {
+		nimble_port_deinit();
+		free_packet_state();
 		return;
 	}
 	rc = ble_gatts_add_svcs(gatt_svcs);
 	if (rc != 0) {
+		nimble_port_deinit();
+		free_packet_state();
 		return;
 	}
 
@@ -398,5 +427,9 @@ int comm_ble_mtu_now(void) {
 }
 
 void comm_ble_send_packet(unsigned char *data, unsigned int len) {
+	if (!packet_state) {
+		return;
+	}
+
 	packet_send_packet(data, len, packet_state);
 }
