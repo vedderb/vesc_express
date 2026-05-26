@@ -110,9 +110,10 @@ static void blast_indexed16(image_buffer_t *img, color_t *colors) {
 		int bit = (1 - (i & 0x01)) * 4; // bit position to access within byte
 		int color_ind = (data[byte] & (0x0F << bit)) >> bit; // extract 4 bit value.
 
-		uint16_t c = COLOR_TO_RGB888(colors[color_ind],	i % img->width, i / img->width);
-		hwspi_data_stream_write((uint8_t)c);
-		hwspi_data_stream_write((uint8_t)(c >> 8));
+        uint32_t c = COLOR_TO_RGB888(colors[color_ind], i % img->width, i / img->width);
+        hwspi_data_stream_write((uint8_t)(c >> 16));  // R
+        hwspi_data_stream_write((uint8_t)(c >> 8));   // G
+        hwspi_data_stream_write((uint8_t)(c >> 0));   // B
 	}
 
 	hwspi_data_stream_finish();
