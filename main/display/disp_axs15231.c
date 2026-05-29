@@ -102,7 +102,7 @@ static inline uint16_t fetch_rgb565(image_buffer_t *img, uint32_t idx, color_t *
     }
     if (img->fmt == rgb565) {
         uint32_t pos = ((uint32_t)cur_y * (uint32_t)img->width + (uint32_t)cur_x) * 2U;
-        return (uint16_t)(((uint16_t)img->data[pos] << 8) | (uint16_t)img->data[pos + 1]);
+        return (uint16_t)((uint16_t)img->data[pos] | ((uint16_t)img->data[pos + 1] << 8));
     }
     uint32_t rgb = getpixel(img, cur_x, cur_y);
     return to_disp_color(rgb);
