@@ -317,7 +317,7 @@ void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 
 	const esp_lcd_panel_dev_config_t panel_config = {
 		.reset_gpio_num = pin_reset >= 0 ? (gpio_num_t)pin_reset : GPIO_NUM_NC,
-		.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_BGR,
+		.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB,
 		.bits_per_pixel = 16,
 		.vendor_config  = &vendor_config,
 	};
