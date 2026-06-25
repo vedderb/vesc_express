@@ -409,10 +409,11 @@ static bool is_symbol_true_false(lbm_value v) {
 
 static lbm_value ext_print(lbm_value *args, lbm_uint argn) {
 	const int str_len = 256;
-	char *print_val_buffer = lbm_malloc_reserve(str_len);
+	char *print_val_buffer = lbm_malloc_reserve(str_len + 1);
 	if (!print_val_buffer) {
 		return ENC_SYM_MERROR;
 	}
+	print_val_buffer[str_len] = '\0';
 
 	for (lbm_uint i = 0; i < argn; i ++) {
 		lbm_print_value(print_val_buffer, str_len, args[i]);
