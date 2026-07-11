@@ -37,11 +37,7 @@
 #define SD_PIN_SCK					4
 #define SD_PIN_CS					6
 
-// UART
-#define UART_NUM					0
-#define UART_BAUDRATE				115200
-#define UART_TX						21
-#define UART_RX						20
+#define HW_NO_UART
 
 // Functions
 void hw_init(void);
