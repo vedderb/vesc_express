@@ -111,6 +111,10 @@
 	#error "Unsupported target"
 #endif
 
+// Declare native lib extension
+lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn);
+lbm_value ext_unload_native_lib(lbm_value *args, lbm_uint argn);
+
 typedef struct {
 	// BMS
 	lbm_uint v_tot;
@@ -158,6 +162,7 @@ typedef struct {
 	lbm_uint fw_ver;
 	lbm_uint uuid;
 	lbm_uint hw_type;
+	lbm_uint hw_target;
 	lbm_uint part_running;
 	lbm_uint git_branch;
 	lbm_uint git_hash;
@@ -294,6 +299,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("uuid", comp);
 		} else if (comp == &syms_vesc.hw_type) {
 			lbm_add_symbol_const("hw-type", comp);
+		} else if (comp == &syms_vesc.hw_target) {
+			lbm_add_symbol_const("hw-target", comp);
 		} else if (comp == &syms_vesc.part_running) {
 			lbm_add_symbol_const("part-running", comp);
 		} else if (comp == &syms_vesc.git_branch) {
@@ -1160,6 +1167,18 @@ static lbm_value ext_sysinfo(lbm_value *args, lbm_uint argn) {
 		res = lbm_cons(lbm_enc_i(FW_VERSION_MAJOR), res);
 	} else if (compare_symbol(name, &syms_vesc.hw_type)) {
 		res = lbm_enc_sym(sym_hw_express);
+	} else if (compare_symbol(name, &syms_vesc.hw_target)) {
+		// Chip this firmware runs on, e.g. "esp32c3". Native libs only run
+		// on the chip they were built for, so multi-target packages use
+		// this to pick the right binary.
+		lbm_value lbm_res;
+		if (lbm_create_array(&lbm_res, strlen(CONFIG_IDF_TARGET) + 1)) {
+			lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(lbm_res);
+			strcpy((char*)arr->data, CONFIG_IDF_TARGET);
+			res = lbm_res;
+		} else {
+			res = ENC_SYM_MERROR;
+		}
 	} else if (compare_symbol(name, &syms_vesc.part_running)) {
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		if (running != NULL) {
@@ -6753,6 +6772,7 @@ static bool dynamic_loader(const char *str, const char **code) {
 }
 
 void lispif_load_vesc_extensions(bool main_found) {
+	lispif_stop_lib();
 	if (!i2c_mutex_init_done) {
 		i2c_mutex = xSemaphoreCreateMutex();
 		i2c_mutex_init_done = true;
@@ -6948,6 +6968,10 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("sleep-config-wakeup-pin", ext_sleep_config_wakeup_pin);
 		lbm_add_extension("rtc-data", ext_rtc_data);
 
+		// Native libraries
+		lbm_add_extension("load-native-lib", ext_load_native_lib);
+		lbm_add_extension("unload-native-lib", ext_unload_native_lib);
+
 		lispif_load_rgbled_extensions();
 
 		lispif_load_disp_extensions();
@@ -7098,6 +7122,8 @@ void lispif_disable_all_events(void) {
 		xSemaphoreGive(rmsg_mutex);
 	}
 
+	lispif_stop_lib();
+
 	event_can_sid_en = false;
 	event_can_eid_en = false;
 	event_can2_sid_en = false;
@@ -7147,6 +7173,8 @@ void lispif_disable_all_events(void) {
 
 	cmds_running = false;
 	cmds_state = 0;
+
+	vTaskDelay(pdMS_TO_TICKS(5));
 }
 
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {

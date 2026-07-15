@@ -152,6 +152,16 @@ get_filename_component(ProjectId ${CMAKE_CURRENT_LIST_DIR} NAME)
 string(REPLACE " " "_" ProjectId ${ProjectId})
 project(${ProjectId})
 
+# Fixed-address section for the native library C interface table. The address
+# is target-specific and must match VESC_IF in main/lispBM/include/extensions/vesc_c_if.h.
+idf_build_get_property(LIBIF_IDF_TARGET IDF_TARGET)
+set(LIBIF_LD "${CMAKE_CURRENT_SOURCE_DIR}/main/linker_libif_${LIBIF_IDF_TARGET}.ld")
+if(NOT EXISTS ${LIBIF_LD})
+    message(FATAL_ERROR "No native lib interface linker script for target ${LIBIF_IDF_TARGET} (expected ${LIBIF_LD})")
+endif()
+target_link_libraries(${PROJECT_NAME}.elf PRIVATE "-T${LIBIF_LD}")
+set_property(TARGET ${PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS ${LIBIF_LD})
+
 include(cmake/git_rev_parse.cmake)
 
 git_describe(GIT_COMMIT_HASH ".")
