@@ -614,6 +614,7 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		// version, code_size, data_size, entry_offset, reloc_count (all
 		// LE u32), relocs[], code[], data[].
 		uint32_t version, code_size, data_size, entry_offset, reloc_count;
+		const uint8_t *container_drom = (const uint8_t *)array->data;
 		memcpy(&version, container_drom + 4, 4);
 		memcpy(&code_size, container_drom + 8, 4);
 		memcpy(&data_size, container_drom + 12, 4);
