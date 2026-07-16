@@ -102,7 +102,7 @@ static inline uint16_t fetch_rgb565(image_buffer_t *img, uint32_t idx, color_t *
     }
     if (img->fmt == rgb565) {
         uint32_t pos = ((uint32_t)cur_y * (uint32_t)img->width + (uint32_t)cur_x) * 2U;
-        return (uint16_t)(((uint16_t)img->data[pos] << 8) | (uint16_t)img->data[pos + 1]);
+        return (uint16_t)((uint16_t)img->data[pos] | ((uint16_t)img->data[pos + 1] << 8));
     }
     uint32_t rgb = getpixel(img, cur_x, cur_y);
     return to_disp_color(rgb);
@@ -317,7 +317,7 @@ void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 
 	const esp_lcd_panel_dev_config_t panel_config = {
 		.reset_gpio_num = pin_reset >= 0 ? (gpio_num_t)pin_reset : GPIO_NUM_NC,
-		.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_BGR,
+		.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB,
 		.bits_per_pixel = 16,
 		.vendor_config  = &vendor_config,
 	};
