@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <math.h>
+#include "soc/soc.h"
 
 // Global variables
 extern char *string_pin_invalid;
@@ -110,6 +111,30 @@ static inline void utils_truncate_number(float *number, float min, float max) {
 static inline void utils_norm_angle_rad(float *angle) {
 	while (*angle < -M_PI) { *angle += 2.0 * M_PI; }
 	while (*angle >=  M_PI) { *angle -= 2.0 * M_PI; }
+}
+
+// Translate between the flash data bus (DROM) and instruction bus (IROM)
+// mappings of the same flash page. The flash MMU maps each page at the same
+// offset on both buses, so this is a constant-offset translation. On chips
+// with a unified bus (C6, P4) both mappings are the same address.
+static inline void* utils_drom_to_irom(void* drom_addr) {
+	uintptr_t addr = (uintptr_t)drom_addr;
+#if SOC_DROM_LOW != SOC_IROM_LOW
+	if (addr >= SOC_DROM_LOW && addr < SOC_DROM_HIGH) {
+		return (void*)(addr - SOC_DROM_LOW + SOC_IROM_LOW);
+	}
+#endif
+	return (void*)addr;
+}
+
+static inline void* utils_irom_to_drom(void* irom_addr) {
+	uintptr_t addr = (uintptr_t)irom_addr;
+#if SOC_DROM_LOW != SOC_IROM_LOW
+	if (addr >= SOC_IROM_LOW && addr < SOC_IROM_HIGH) {
+		return (void*)(addr - SOC_IROM_LOW + SOC_DROM_LOW);
+	}
+#endif
+	return (void*)addr;
 }
 
 #endif /* MAIN_UTILS_H_ */
