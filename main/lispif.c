@@ -941,33 +941,8 @@ bool lispif_restart(bool print, bool load_code, bool load_imports) {
 						}
 
 						lbm_value val;
-						bool handled = false;
-
-						// Try native lib path if it's big enough to have a header
-						if (len > 12) {
-							uint32_t magic_be = 0;
-							memcpy(
-								&magic_be, (const uint8_t *)code_data + offset,
-								sizeof(magic_be)
-							);
-
-							if (magic_be == __builtin_bswap32(NATIVE_LIB_MAGIC) ||
-								magic_be == __builtin_bswap32(NATIVE_LIB_RELOC_MAGIC)) {
-								uint8_t *irom_base =
-									(uint8_t *)utils_drom_to_irom(code_data)
-									+ offset;
-
-								lbm_value lib_addr = lbm_enc_u32((uint32_t)irom_base);
-								lbm_define(name, lib_addr);
-								handled = true;
-							}
-						}
-
-						// Fallback: normal Lisp import
-						if (!handled) {
-							if (lbm_share_array_const(&val, code_data + offset, len)) {
-								lbm_define(name, val);
-							}
+						if (lbm_share_array_const(&val, code_data + offset, len)) {
+							lbm_define(name, val);
 						}
 					}
 				}

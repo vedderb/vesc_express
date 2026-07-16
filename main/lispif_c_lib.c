@@ -20,6 +20,7 @@
     breaking layout changes.
 */
 
+#include "lbm_defines.h"
 #pragma GCC optimize("Os")
 #include <string.h>
 #include <stdlib.h>
@@ -403,10 +404,44 @@ void lispif_stop_lib(void) {
 }
 
 lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
-	lbm_value res = lbm_enc_sym(SYM_EERROR);
+	lbm_value res = ENC_SYM_EERROR;
 
-	// Expect a single numeric argument containing the IROM base address
-	if (argn != 1 || !lbm_is_number(args[0])) {
+	if (argn != 1) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (!lbm_is_array_r(args[0])) {
+		return ENC_SYM_TERROR;
+	}
+
+	if (lbm_is_array_rw(args[0])) {
+		lbm_set_error_reason("Native library must be in flash");
+		return ENC_SYM_TERROR;
+	}
+
+	uint32_t irom_base = 0;
+	bool is_reloc = false;
+
+	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
+	if (array->size > 12) {
+		uint32_t magic_be = 0;
+		memcpy(
+			&magic_be, (const uint8_t *)array->data,
+			sizeof(magic_be)
+		);
+
+		if (magic_be == __builtin_bswap32(NATIVE_LIB_MAGIC) ||
+			magic_be == __builtin_bswap32(NATIVE_LIB_RELOC_MAGIC)) {
+			irom_base = (uint32_t)utils_drom_to_irom(array->data);
+			is_reloc = magic_be == __builtin_bswap32(NATIVE_LIB_RELOC_MAGIC);
+		} else {
+			lbm_set_error_reason("Magic number not found at IROM address");
+			return res;
+		}
+	}
+
+	if (irom_base == 0 || (irom_base & 0x3) != 0) {
+		lbm_set_error_reason("Invalid address");
 		return res;
 	}
 
@@ -528,27 +563,6 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		cif.cif.thread_set_priority = lib_thread_set_priority;
 
 		lib_init_done = true;
-	}
-
-	// Read IROM header base directly
-	uint32_t irom_base = lbm_dec_as_u32(args[0]);
-
-	// Basic pointer/alignment sanity
-	if (irom_base == 0 || (irom_base & 0x3) != 0) {
-		lbm_set_error_reason("Invalid IROM base pointer");
-		return res;
-	}
-
-	// Validate native header magic. Read through the DROM alias, as data
-	// reads through the instruction bus fault on some targets.
-	const uint8_t *container_drom = utils_irom_to_drom((void *)irom_base);
-	uint32_t magic_be = 0;
-	memcpy(&magic_be, container_drom, sizeof(magic_be));
-
-	bool is_reloc = magic_be == __builtin_bswap32(NATIVE_LIB_RELOC_MAGIC);
-	if (!is_reloc && magic_be != __builtin_bswap32(NATIVE_LIB_MAGIC)) {
-		lbm_set_error_reason("Magic number not found at IROM address");
-		return res;
 	}
 
 	// Duplicate check by container flash address
