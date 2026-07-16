@@ -447,6 +447,10 @@ static void gap_event_handler(
 			esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
 			break;
 
+		case ESP_GAP_BLE_SET_LOCAL_PRIVACY_COMPLETE_EVT:
+			esp_ble_gap_start_advertising(&ble_adv_params);
+			break;
+
 		default:
 			break;
 	}
@@ -723,6 +727,9 @@ void comm_ble_init(void) {
 		esp_ble_gap_set_security_param(
 			ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t)
 		);
+
+		// Enable BLE address resolution
+		esp_ble_gap_config_local_privacy(true);
 	} else {
 		esp_ble_auth_req_t auth_req = ESP_LE_AUTH_NO_BOND;
 		esp_ble_gap_set_security_param(
