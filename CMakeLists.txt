@@ -153,7 +153,7 @@ string(REPLACE " " "_" ProjectId ${ProjectId})
 project(${ProjectId})
 
 # Fixed-address section for the native library C interface table. The address
-# is target-specific and must match VESC_IF in main/lispBM/include/extensions/vesc_c_if.h.
+# is target-specific and must match VESC_IF in main/c_libs/vesc_c_if.h.
 idf_build_get_property(LIBIF_IDF_TARGET IDF_TARGET)
 set(LIBIF_LD "${CMAKE_CURRENT_SOURCE_DIR}/main/linker_libif_${LIBIF_IDF_TARGET}.ld")
 if(NOT EXISTS ${LIBIF_LD})

@@ -1,5 +1,5 @@
 /*
-    Copyright 2022‑2024 Benjamin Vedder     <benjamin@vedder.se>
+    Copyright 2022‑2026 Benjamin Vedder     <benjamin@vedder.se>
     Copyright 2022      Joel Svensson      <svenssonjoel@yahoo.se>
 
     This file is part of the VESC firmware and is released under the
@@ -13,7 +13,7 @@
     work unmodified on ESP32 targets.
 
     This implements the VESC Express native lib interface (see
-    extensions/vesc_c_if.h) - a fresh interface separate from the bldc
+    c_libs/vesc_c_if.h) - a fresh interface separate from the bldc
     one, starting from the platform-neutral core: LispBM access,
     threads, timing, mutexes/semaphores, memory and printf. New slots
     are appended to the struct; VESC_C_IF_VERSION is only bumped on
@@ -35,7 +35,7 @@
 #include "lispif.h"
 #include "lispbm.h"
 #include "utils.h"
-#include "extensions/vesc_c_if.h"
+#include "c_libs/vesc_c_if.h"
 #include "freertos/task.h"
 
 _Static_assert(sizeof(vesc_c_if) <= 2048, "cif pad too small");

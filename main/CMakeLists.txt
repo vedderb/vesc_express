@@ -29,6 +29,7 @@ set(COMPONENT_SRCS
 "hwconf/hw.c"
 
 "lispif.c"
+"lispif_c_lib.c"
 "lispif_events.c"
 "lbm_vesc_utils.c"
 "lispif_vesc_extensions.c"
@@ -58,7 +59,6 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/string_extensions.c"
 "lispBM/src/extensions/display_extensions.c"
 "lispBM/src/extensions/tjpgd.c"
-"lispBM/src/extensions/vesc_c_if.c"
 "lispBM/src/extensions/mutex_extensions.c"
 "lispBM/src/extensions/lbm_dyn_lib.c"
 "lispBM/src/extensions/ttf_extensions.c"
