@@ -136,7 +136,7 @@ void app_main(void) {
 
 	vTaskDelay(1);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
+#if !CONFIG_IDF_TARGET_ESP32P4 && !defined(HW_IS_SLAVE)
 	switch (backup.config.ble_mode) {
 		case BLE_MODE_DISABLED: {
 			break;
@@ -155,7 +155,7 @@ void app_main(void) {
 	if (backup.config.wifi_mode != WIFI_MODE_DISABLED) {
 		comm_wifi_init();
 	}
-	#endif
+#endif
 
 	nmea_init();
 	log_init();
@@ -218,8 +218,10 @@ uint32_t main_calc_hw_crc(void) {
 
 void main_store_backup_data(void) {
 	nvs_handle_t my_handle;
+#ifndef HW_IS_SLAVE
 	backup.controller_id = backup.config.controller_id;
 	backup.can_baud_rate = backup.config.can_baud_rate;
+#endif
 	nvs_open("vesc", NVS_READWRITE, &my_handle);
 	nvs_set_blob(my_handle, "backup", (void*)&backup, sizeof(backup_data));
 	nvs_commit(my_handle);

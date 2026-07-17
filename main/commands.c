@@ -150,12 +150,14 @@ static void block_task(void *arg) {
 			int32_t ind = 0;
 			send_buffer[ind++] = COMM_PING_CAN;
 
+#if HW_CAN_PING_SCAN_ENABLED
 			for (uint8_t i = 0;i < 255;i++) {
 				HW_TYPE hw_type;
 				if (comm_can_ping(i, &hw_type)) {
 					send_buffer[ind++] = i;
 				}
 			}
+#endif
 
 			if (send_func_blocking) {
 				send_func_blocking(send_buffer, ind);

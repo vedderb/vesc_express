@@ -66,6 +66,28 @@
 #define LOGS_ENABLED 0
 #endif
 
+// Set to 0 in a hwconf header to skip the COMM_PING_CAN scan loop. Useful for
+// headless variants that share a bus with a master and should never respond to
+// or initiate VESC ping discovery.
+#ifndef HW_CAN_PING_SCAN_ENABLED
+#define HW_CAN_PING_SCAN_ENABLED 1
+#endif
+
+// Set to 1 in a hwconf header to bring up TWAI in TWAI_MODE_NO_ACK instead of
+// TWAI_MODE_NORMAL. Useful for diagnostic builds that should not generate ACKs
+// on a live bus.
+#ifndef HW_CAN_NO_ACK_MODE
+#define HW_CAN_NO_ACK_MODE 0
+#endif
+
+// Hardware-specific CAN acceptance filter hook. A hwconf header can override
+// this macro to forward to a function that fills a twai_filter_config_t and
+// returns true. The default expands to false, which the compiler eliminates
+// so no filter override is applied.
+#ifndef HW_CAN_FILTER_CONFIG
+#define HW_CAN_FILTER_CONFIG(cfg) ((void)(cfg), false)
+#endif
+
 #ifndef UART_NUM
 #define HW_NO_UART
 #define UART_NUM					0
