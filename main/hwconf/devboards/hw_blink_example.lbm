@@ -1,0 +1,14 @@
+; LED blink (e.g. Supermini)
+
+; Getting started
+; - https://github.com/svenssonjoel/lispBM/tree/master/doc
+; - https://github.com/vedderb/bldc/tree/master/lispBM
+
+(gpio-configure 8 'pin-mode-out) ; configure pin 8 as output
+
+(loopwhile t {              ; loop endlessly
+        (gpio-write 8 1)    ; set pin 8 high
+        (sleep 1.0)         ; wait 1s
+        (gpio-write 8 0)    ; set pin 8 low
+        (sleep 0.5)         ; wait 0.5s
+})

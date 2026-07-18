@@ -112,6 +112,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "."
 "config"
 "hwconf"
+"hwconf/devboards"
 "hwconf/trampa"
 "hwconf/trampa/bms_rb"
 "hwconf/vesc"
@@ -126,6 +127,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/vesc/rmcore"
 "hwconf/vesc/dash16"
 "hwconf/vesc/wcore"
+"hwconf/xiao"
 "hwconf/rescue"
 "hwconf/avaspark"
 
