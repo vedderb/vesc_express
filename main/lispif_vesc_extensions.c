@@ -87,7 +87,11 @@
 #include "esp_private/esp_clk.h"
 #if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_bt.h"
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_bt_main.h"
+#elif defined(CONFIG_BT_NIMBLE_ENABLED)
+#include "nimble/nimble_port.h"
+#endif
 #endif
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
@@ -3667,16 +3671,57 @@ static lbm_value ext_set_pos_time(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// Disable radios before sleeping. Reversible; safe for light sleep where
+// execution resumes after wake and the BT/WiFi stacks must still be usable.
+static void sleep_disable_radios(void) {
+#if !CONFIG_IDF_TARGET_ESP32P4
+	esp_wifi_stop();
+
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
+	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) {
+		esp_bluedroid_disable();
+	}
+#elif defined(CONFIG_BT_NIMBLE_ENABLED)
+	nimble_port_stop();
+#endif
+
+	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
+		esp_bt_controller_disable();
+	}
+#endif
+}
+
+// Full teardown for deep sleep only. The chip reboots on wake so deinit is
+// free; doing it here prevents BLE state corruption observed across many
+// 2h-cycle wakes (BMS freeze after weeks).
+static void sleep_deinit_radios(void) {
+	sleep_disable_radios();
+
+#if !CONFIG_IDF_TARGET_ESP32P4
+#ifdef CONFIG_BT_BLUEDROID_ENABLED
+	if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_INITIALIZED) {
+		esp_bluedroid_deinit();
+	}
+#elif defined(CONFIG_BT_NIMBLE_ENABLED)
+	nimble_port_deinit();
+#endif
+	if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
+		esp_bt_controller_deinit();
+	}
+#endif
+}
+
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
-	esp_wifi_stop();
-	#endif
+	sleep_deinit_radios();
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
-		esp_sleep_enable_timer_wakeup((uint32_t)(sleep_time * 1.0e6));
+		// esp_sleep_enable_timer_wakeup takes microseconds. With uint32_t the
+		// limit is ~4294 s (71.6 min); longer sleeps wrap modulo 2^32, so
+		// 2 h becomes ~2905 s (~48.4 min). Use uint64_t for multi-hour sleeps.
+		esp_sleep_enable_timer_wakeup((uint64_t)(sleep_time * 1.0e6));
 	}
 
 	esp_deep_sleep_start();
@@ -3687,13 +3732,14 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
-	esp_wifi_stop();
-	#endif
+	// Light sleep returns to the caller with stacks intact, so use the
+	// reversible disable path; a deinit here would leave the unit
+	// permanently without BT/WiFi until reboot.
+	sleep_disable_radios();
 
 	float sleep_time = lbm_dec_as_float(args[0]);
 	if (sleep_time > 0) {
-		esp_sleep_enable_timer_wakeup((uint32_t)(sleep_time * 1.0e6));
+		esp_sleep_enable_timer_wakeup((uint64_t)(sleep_time * 1.0e6));
 	}
 
 	esp_light_sleep_start();
