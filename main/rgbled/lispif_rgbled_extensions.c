@@ -16,6 +16,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #include "lispif_rgbled_extensions.h"
 #include "lispif.h"
@@ -26,12 +29,27 @@
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
 #include "soc/rmt_periph.h"
+#include "soc/soc_caps.h"
 #include "soc/io_mux_reg.h"
 #include "soc/gpio_periph.h"
 #include "hal/gpio_hal.h"
 #include "driver/gpio.h"
 
 #define RMT_LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
+
+// Hardware RMT TX channels available for LED output (e.g. 2 on ESP32-C3/C6,
+// 4 on ESP32-S3). These are pooled across pins: callers address strips by
+// pin, and the pool binds a channel to a pin on demand, so more pins than
+// channels can be driven (pins sharing a channel are refreshed in turn).
+#if defined(SOC_RMT_TX_CANDIDATES_PER_GROUP) && defined(SOC_RMT_GROUPS)
+#define LED_RMT_CH_MAX (SOC_RMT_GROUPS * SOC_RMT_TX_CANDIDATES_PER_GROUP)
+#else
+#define LED_RMT_CH_MAX 2
+#endif
+
+// Max distinct pins (strips) tracked at once. A pin is registered by
+// rgbled_init and remembers its timing; a channel is bound to it on demand.
+#define LED_STRIP_MAX 8
 
 typedef struct {
 	rmt_encoder_t base;
@@ -41,10 +59,43 @@ typedef struct {
 	rmt_symbol_word_t reset_code;
 } rmt_led_strip_encoder_t;
 
-static rmt_channel_handle_t led_chan = NULL;
-static rmt_encoder_handle_t led_encoder = NULL;
-static int led_pin_driver = -1;
-static unsigned int led_timing_driver = 0;
+// A pooled hardware channel. When bound, chan/encoder drive `pin` with the
+// wire timing `timing`; last_use orders LRU eviction when the pool is full.
+typedef struct {
+	rmt_channel_handle_t chan;    // NULL when this pool slot is free
+	rmt_encoder_handle_t encoder;
+	int pin;                      // pin currently driven, -1 when free
+	unsigned int timing;
+	uint32_t last_use;
+} led_chan_t;
+
+// A registered strip: a pin and the timing it was init'd with. The bound
+// channel (if any) is found by scanning the pool for a matching pin.
+typedef struct {
+	int pin;                      // -1 = free entry
+	unsigned int timing;
+} led_strip_t;
+
+static led_chan_t led_pool[LED_RMT_CH_MAX];
+static led_strip_t led_strip[LED_STRIP_MAX];
+static uint32_t led_use_ctr = 0;
+static int led_lisp_pin = -1; // pin targeted by the arg-less lisp rgbled-update
+static bool led_state_init_done = false;
+
+static void rgbled_state_init_once(void) {
+	if (led_state_init_done) {
+		return;
+	}
+	for (int i = 0; i < LED_RMT_CH_MAX; i++) {
+		led_pool[i].chan = NULL;
+		led_pool[i].encoder = NULL;
+		led_pool[i].pin = -1;
+	}
+	for (int i = 0; i < LED_STRIP_MAX; i++) {
+		led_strip[i].pin = -1;
+	}
+	led_state_init_done = true;
+}
 
 static float led_t0h;
 static float led_t0l;
@@ -168,71 +219,34 @@ esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
 	return ESP_OK;
 }
 
-static void rgbled_deinit_internal(int mode) {
-	if (led_chan != NULL) {
-		rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
-		rmt_disable(led_chan);
-		rmt_del_channel(led_chan);
-		led_chan = NULL;
+// Tear down a pool slot's channel. hold_low leaves the pin driven LOW (used when it may be rebound immediately)
+// otherwise the pin is reset to its default (input, pull-up).
+static void led_chan_close(led_chan_t *c, bool hold_low) {
+	if (c->chan != NULL) {
+		rmt_tx_wait_all_done(c->chan, pdMS_TO_TICKS(100));
+		rmt_disable(c->chan);
+		rmt_del_channel(c->chan);
+		c->chan = NULL;
 	}
-
-	if (led_encoder != NULL) {
-		rmt_del_encoder(led_encoder);
-		led_encoder = NULL;
+	if (c->encoder != NULL) {
+		rmt_del_encoder(c->encoder);
+		c->encoder = NULL;
 	}
-
-	if (led_pin_driver >= 0) {
-		if (mode == 1) {
-			// Mode 1: Pull/Hold LOW
-			gpio_set_direction((gpio_num_t)led_pin_driver, GPIO_MODE_OUTPUT);
-			gpio_set_level((gpio_num_t)led_pin_driver, 0);
+	if (c->pin >= 0) {
+		if (hold_low) {
+			gpio_set_direction((gpio_num_t)c->pin, GPIO_MODE_OUTPUT);
+			gpio_set_level((gpio_num_t)c->pin, 0);
 		} else {
-			// Mode 0: Default hardware reset (Input with Pull-up)
-			gpio_reset_pin(led_pin_driver);
+			gpio_reset_pin(c->pin);
 		}
-		led_pin_driver = -1;
+		c->pin = -1;
 	}
 }
 
-static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
-	int mode = 0;
-	if (argn >= 1 && lbm_is_number(args[0])) {
-		mode = lbm_dec_as_i32(args[0]);
-	}
-
-	rgbled_deinit_internal(mode);
-
-	return ENC_SYM_TRUE;
-}
-
-static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
-	LBM_CHECK_NUMBER_ALL();
-
-	if (argn < 1 || argn > 2) {
-		lbm_set_error_reason((char*)lbm_error_str_num_args);
-		return ENC_SYM_TERROR;
-	}
-
-	int pin = lbm_dec_as_i32(args[0]);
-	if (!utils_gpio_is_valid(pin)) {
-		lbm_set_error_reason(string_pin_invalid);
-		return ENC_SYM_TERROR;
-	}
-
-	unsigned int timing_preset = 0;
-	if (argn >= 2) {
-		timing_preset = lbm_dec_as_u32(args[1]);
-	}
-
-	// Skip full reinit if already configured on the same pin with the same type.
-	// Avoids tearing down the RMT channel every frame, which leaves the pin floating.
-	if (pin == led_pin_driver && timing_preset == led_timing_driver && led_chan != NULL) {
-		return ENC_SYM_TRUE;
-	}
-
-	rgbled_deinit_internal(1); // Pull/Hold LOW when switching pins
-
-	switch (timing_preset) {
+// Configure a free pool slot to drive `pin` with `timing`.
+static bool led_chan_open(led_chan_t *c, int pin, unsigned int timing,
+		const char **err_reason) {
+	switch (timing) {
 	case 1: // WS2812B
 		led_t0h = 0.40; led_t0l = 0.85; led_t1h = 0.80; led_t1l = 0.45; led_reset_us = 300;
 		break;
@@ -257,9 +271,6 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
 	gpio_set_level((gpio_num_t)pin, 0);
 
-	led_pin_driver = pin;
-	led_timing_driver = timing_preset;
-
 	rmt_tx_channel_config_t tx_chan_config = {
 			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
 			.gpio_num = pin,
@@ -272,22 +283,206 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
 			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
 	};
-	if (rmt_new_tx_channel(&tx_chan_config, &led_chan) != ESP_OK) {
-		led_chan = NULL;
-		led_pin_driver = -1;
-		lbm_set_error_reason("RMT channel init failed");
+	if (rmt_new_tx_channel(&tx_chan_config, &c->chan) != ESP_OK) {
+		c->chan = NULL;
+		if (err_reason) {
+			*err_reason = "RMT channel init failed";
+		}
+		return false;
+	}
+	if (rmt_new_led_strip_encoder(&c->encoder) != ESP_OK) {
+		rmt_del_channel(c->chan);
+		c->chan = NULL;
+		if (err_reason) {
+			*err_reason = "RMT encoder init failed";
+		}
+		return false;
+	}
+	rmt_enable(c->chan);
+
+	c->pin = pin;
+	c->timing = timing;
+	c->last_use = ++led_use_ctr;
+	return true;
+}
+
+static led_strip_t *strip_find(int pin) {
+	if (pin < 0) {
+		return NULL; // -1 is the "free entry" sentinel, never a real pin
+	}
+	for (int i = 0; i < LED_STRIP_MAX; i++) {
+		if (led_strip[i].pin == pin) {
+			return &led_strip[i];
+		}
+	}
+	return NULL;
+}
+
+// The pool slot currently bound to `pin`, or NULL if none.
+static led_chan_t *chan_for_pin(int pin) {
+	for (int i = 0; i < LED_RMT_CH_MAX; i++) {
+		if (led_pool[i].chan != NULL && led_pool[i].pin == pin) {
+			return &led_pool[i];
+		}
+	}
+	return NULL;
+}
+
+// A pool slot ready to drive `pin` with `timing`: the slot already bound to
+// the pin (reconfigured if the timing changed), else a free slot, else the
+// least-recently-used slot evicted from another pin (whose strip holds its
+// last latched frame until it is refreshed again). NULL on failure.
+static led_chan_t *chan_acquire(int pin, unsigned int timing,
+		const char **err_reason) {
+	led_chan_t *c = chan_for_pin(pin);
+	if (c != NULL) {
+		if (c->timing != timing) {
+			led_chan_close(c, true);
+			if (!led_chan_open(c, pin, timing, err_reason)) {
+				return NULL;
+			}
+		}
+		return c;
+	}
+
+	// Prefer a free slot.
+	for (int i = 0; i < LED_RMT_CH_MAX; i++) {
+		if (led_pool[i].chan == NULL) {
+			c = &led_pool[i];
+			break;
+		}
+	}
+
+	// Otherwise evict the least-recently-used bound slot.
+	if (c == NULL) {
+		c = &led_pool[0];
+		for (int i = 1; i < LED_RMT_CH_MAX; i++) {
+			if (led_pool[i].last_use < c->last_use) {
+				c = &led_pool[i];
+			}
+		}
+		led_chan_close(c, true);
+	}
+
+	if (!led_chan_open(c, pin, timing, err_reason)) {
+		return NULL;
+	}
+	return c;
+}
+
+bool rgbled_init(int pin, unsigned int timing_preset) {
+	rgbled_state_init_once();
+
+	// Register the strip (or update its timing).
+	led_strip_t *s = strip_find(pin);
+	if (s == NULL) {
+		for (int i = 0; i < LED_STRIP_MAX; i++) {
+			if (led_strip[i].pin < 0) {
+				s = &led_strip[i];
+				break;
+			}
+		}
+		if (s == NULL) {
+			return false; // registry full
+		}
+		s->pin = pin;
+	}
+	s->timing = timing_preset;
+
+	// Eagerly bind a channel if one is free (or reconfigure this pin's
+	// channel when the timing changed), so a strip that fits the pool lights
+	// up without waiting for its first update. When the pool is full the
+	// binding happens on update via LRU eviction instead.
+	led_chan_t *c = chan_for_pin(pin);
+	if (c == NULL) {
+		for (int i = 0; i < LED_RMT_CH_MAX; i++) {
+			if (led_pool[i].chan == NULL) {
+				led_chan_open(&led_pool[i], pin, timing_preset, NULL);
+				break;
+			}
+		}
+	} else if (c->timing != timing_preset) {
+		led_chan_close(c, true);
+		led_chan_open(c, pin, timing_preset, NULL);
+	}
+
+	return true;
+}
+
+// Release the channel (if any) bound to `pin` and unregister the strip.
+// hold_low drives the pin LOW; otherwise it is reset to its default.
+static void rgbled_release(int pin, bool hold_low) {
+	rgbled_state_init_once();
+	led_chan_t *c = chan_for_pin(pin);
+	if (c != NULL) {
+		led_chan_close(c, hold_low);
+	}
+	led_strip_t *s = strip_find(pin);
+	if (s != NULL) {
+		s->pin = -1;
+	}
+}
+
+void rgbled_deinit(int pin) {
+	rgbled_release(pin, false);
+}
+
+static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
+	rgbled_state_init_once();
+
+	// Backward compatible with the master interface: (rgbled-deinit [mode])
+	// releases the strip(s); mode 1 holds the pin(s) LOW, mode 0 (default)
+	// resets them. An optional 2nd arg selects a single pin; without it,
+	// every registered strip is released (matching the old single strip).
+	int mode = 0;
+	if (argn >= 1 && lbm_is_number(args[0])) {
+		mode = lbm_dec_as_i32(args[0]);
+	}
+	bool hold_low = (mode == 1);
+
+	if (argn >= 2 && lbm_is_number(args[1])) {
+		int pin = lbm_dec_as_i32(args[1]);
+		rgbled_release(pin, hold_low);
+		if (led_lisp_pin == pin) {
+			led_lisp_pin = -1;
+		}
+	} else {
+		for (int i = 0; i < LED_STRIP_MAX; i++) {
+			if (led_strip[i].pin >= 0) {
+				rgbled_release(led_strip[i].pin, hold_low);
+			}
+		}
+		led_lisp_pin = -1;
+	}
+
+	return ENC_SYM_TRUE;
+}
+
+static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_NUMBER_ALL();
+
+	if (argn < 1 || argn > 2) {
+		lbm_set_error_reason((char*)lbm_error_str_num_args);
+		return ENC_SYM_TERROR;
+	}
+
+	int pin = lbm_dec_as_i32(args[0]);
+	if (!utils_gpio_is_valid(pin)) {
+		lbm_set_error_reason(string_pin_invalid);
+		return ENC_SYM_TERROR;
+	}
+
+	unsigned int timing_preset = 0;
+	if (argn >= 2) {
+		timing_preset = lbm_dec_as_u32(args[1]);
+	}
+
+	if (!rgbled_init(pin, timing_preset)) {
+		lbm_set_error_reason("Too many LED strips");
 		return ENC_SYM_EERROR;
 	}
 
-	if (rmt_new_led_strip_encoder(&led_encoder) != ESP_OK) {
-		rmt_del_channel(led_chan);
-		led_chan = NULL;
-		led_pin_driver = -1;
-		lbm_set_error_reason("RMT encoder init failed");
-		return ENC_SYM_EERROR;
-	}
-
-	rmt_enable(led_chan);
+	led_lisp_pin = pin;
 
 	return ENC_SYM_TRUE;
 }
@@ -300,7 +495,7 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 	uint8_t type_led = 0;
 	if (argn >= 2) {
 		type_led = lbm_dec_as_u32(args[1]);
-		if (type_led >= 4) {
+		if (type_led > 4) {
 			lbm_set_error_reason("Invalid LED type");
 			return ENC_SYM_TERROR;
 		}
@@ -350,7 +545,7 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	char *invalid_arr_msg = "Invalid LED array";
 
 	uint8_t type_led = led_data[0] & 0x0F;
-	if (type_led >= 4) {
+	if (type_led > 4) {
 		lbm_set_error_reason(invalid_arr_msg);
 		return ENC_SYM_TERROR;
 	}
@@ -471,23 +666,49 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
-	if (led_encoder == NULL || led_chan == NULL) {
-		lbm_set_error_reason("Please run rgbled-init first");
-		if (led_encoder == NULL) {
-			commands_printf_lisp("led_encoder null");
-		}
-
-		if (led_chan == NULL) {
-			commands_printf_lisp("led_chan null");
-		}
-
-		return ENC_SYM_EERROR;
+void rgbled_update(int pin, uint8_t *data, size_t size) {
+	rgbled_state_init_once();
+	if (size < 1) {
+		return;
 	}
 
-	if (argn != 1 || !lbm_is_array_r(args[0])) {
+	led_strip_t *s = strip_find(pin);
+	if (s == NULL) {
+		return; // pin not registered - call rgbled_init first
+	}
+
+	// Bind a channel to this pin (reusing, or sharing one via LRU eviction when there are more pins than channels), then transmit.
+	led_chan_t *c = chan_acquire(pin, s->timing, NULL);
+	if (c == NULL || c->chan == NULL || c->encoder == NULL) {
+		return;
+	}
+
+	c->last_use = ++led_use_ctr;
+	// Wait for any in-progress transmission to complete before sending new data.
+	rmt_tx_wait_all_done(c->chan, pdMS_TO_TICKS(100));
+	rmt_transmit(c->chan, c->encoder, data, size, &tx_config);
+}
+
+static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
+	if (argn < 1 || argn > 2 || !lbm_is_array_r(args[0])) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
+	}
+
+	// (rgbled-update array)      -> the strip from the last rgbled-init
+	// (rgbled-update array pin)  -> a specific strip
+	int pin = led_lisp_pin;
+	if (argn >= 2) {
+		if (!lbm_is_number(args[1])) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+		pin = lbm_dec_as_i32(args[1]);
+	}
+
+	if (pin < 0 || strip_find(pin) == NULL) {
+		lbm_set_error_reason("Please run rgbled-init first");
+		return ENC_SYM_EERROR;
 	}
 
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
@@ -496,13 +717,7 @@ static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	// Wait for any in-progress transmission to complete before sending new data.
-	rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
-	esp_err_t err = rmt_transmit(led_chan, led_encoder, (uint8_t*)array->data + 1, array->size - 1, &tx_config);
-	if (err != ESP_OK) {
-		commands_printf_lisp("RMT transmit failed: %d", err);
-		return ENC_SYM_EERROR;
-	}
+	rgbled_update(pin, (uint8_t*)array->data + 1, array->size - 1);
 
 	return ENC_SYM_TRUE;
 }

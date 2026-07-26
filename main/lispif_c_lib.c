@@ -39,6 +39,7 @@
 #include "extensions.h"
 #include "lbm_flat_value.h"
 #include "lispif.h"
+#include "lispif_rgbled_extensions.h"
 #include "lispbm.h"
 #include "utils.h"
 #include "c_libs/vesc_c_if.h"
@@ -663,6 +664,11 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 
 		// I2C
 		cif.cif.i2c_tx_rx = i2c_tx_rx_wrapper;
+
+		// RGB LED strip
+		cif.cif.rgbled_init   = rgbled_init;
+		cif.cif.rgbled_deinit = rgbled_deinit;
+		cif.cif.rgbled_update = rgbled_update;
 
 		lib_init_done = true;
 	}
