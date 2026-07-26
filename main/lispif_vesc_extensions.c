@@ -50,6 +50,7 @@
 #include "mempools.h"
 #include "log.h"
 #include "buffer.h"
+#include "flash_helper.h"
 #include "nvs.h"
 #include "print.h"
 #include "utils.h"
@@ -1006,54 +1007,13 @@ static lbm_value ext_recv_data(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-typedef union {
-	uint32_t as_u32;
-	int32_t as_i32;
-	float as_float;
-} eeprom_var;
-
-#define EEPROM_VARS		256
-
 static bool check_eeprom_addr(int addr) {
 	if (addr < 0 || addr >= EEPROM_VARS) {
-		lbm_set_error_reason("Address must be 0 to 255");
+		lbm_set_error_reason("Address must be 0 to 511");
 		return false;
 	}
 
 	return true;
-}
-
-static bool store_eeprom_var(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS) {
-		return false;
-	}
-
-	char buf[10];
-	sprintf(buf, "v%d", address);
-
-	nvs_handle_t my_handle;
-	esp_err_t ok_op = nvs_open("lbm", NVS_READWRITE, &my_handle);
-	esp_err_t ok_set = nvs_set_u32(my_handle, buf, v->as_u32);
-	esp_err_t ok_com = nvs_commit(my_handle);
-	nvs_close(my_handle);
-
-	return ok_op == ESP_OK && ok_set == ESP_OK && ok_com == ESP_OK;
-}
-
-static bool read_eeprom_var(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS) {
-		return false;
-	}
-
-	char buf[10];
-	sprintf(buf, "v%d", address);
-
-	nvs_handle_t my_handle;
-	esp_err_t ok_op = nvs_open("lbm", NVS_READONLY, &my_handle);
-	esp_err_t ok_set = nvs_get_u32(my_handle, buf, &v->as_u32);
-	nvs_close(my_handle);
-
-	return ok_op == ESP_OK && ok_set == ESP_OK;
 }
 
 static lbm_value ext_eeprom_store_f(lbm_value *args, lbm_uint argn) {
@@ -1066,7 +1026,7 @@ static lbm_value ext_eeprom_store_f(lbm_value *args, lbm_uint argn) {
 
 	eeprom_var v;
 	v.as_float = lbm_dec_as_float(args[1]);
-	return store_eeprom_var(&v, addr) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	return store_eeprom_var(&v, addr, 1) ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_eeprom_read_f(lbm_value *args, lbm_uint argn) {
@@ -1078,7 +1038,7 @@ static lbm_value ext_eeprom_read_f(lbm_value *args, lbm_uint argn) {
 	}
 
 	eeprom_var v;
-	bool res = read_eeprom_var(&v, addr);
+	bool res = read_eeprom_var(&v, addr, 1);
 	return res ? lbm_enc_float(v.as_float) : ENC_SYM_NIL;
 }
 
@@ -1092,7 +1052,7 @@ static lbm_value ext_eeprom_store_i(lbm_value *args, lbm_uint argn) {
 
 	eeprom_var v;
 	v.as_i32 = lbm_dec_as_i32(args[1]);
-	return store_eeprom_var(&v, addr) ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	return store_eeprom_var(&v, addr, 1) ? ENC_SYM_TRUE : ENC_SYM_NIL;
 }
 
 static lbm_value ext_eeprom_read_i(lbm_value *args, lbm_uint argn) {
@@ -1104,7 +1064,7 @@ static lbm_value ext_eeprom_read_i(lbm_value *args, lbm_uint argn) {
 	}
 
 	eeprom_var v;
-	bool res = read_eeprom_var(&v, addr);
+	bool res = read_eeprom_var(&v, addr, 1);
 	return res ? lbm_enc_i32(v.as_i32) : ENC_SYM_NIL;
 }
 
@@ -1116,20 +1076,7 @@ static lbm_value ext_eeprom_erase(lbm_value *args, lbm_uint argn){
 		return ENC_SYM_EERROR;
 	}
 
-	char key[10];
-	sprintf(key, "v%d", addr);
-
-	nvs_handle_t nvs_handle;
-	esp_err_t ok_op = nvs_open("lbm", NVS_READWRITE, &nvs_handle);
-	if (ok_op != ESP_OK) {
-		return ENC_SYM_EERROR;
-	}
-
-	esp_err_t ok_set = nvs_erase_key(nvs_handle, key);
-	esp_err_t ok_com = nvs_commit(nvs_handle);
-	nvs_close(nvs_handle);
-
-	if (ok_set != ESP_OK || ok_com != ESP_OK) {
+	if (!erase_eeprom_var(addr, 1)) {
 		return ENC_SYM_EERROR;
 	}
 	return ENC_SYM_TRUE;

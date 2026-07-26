@@ -30,7 +30,12 @@
 #include "esp_heap_caps.h"
 #include "esp_memory_utils.h"
 #include "heap_memory_layout.h"
+#include "driver/gpio.h"
 #include "commands.h"
+#include "comm_can.h"
+#include "conf_custom.h"
+#include "flash_helper.h"
+#include "conf_general.h"
 #include "extensions.h"
 #include "lbm_flat_value.h"
 #include "lispif.h"
@@ -403,6 +408,76 @@ void lispif_stop_lib(void) {
 	}
 }
 
+// The RX callback / app-data handler pointers come from the native lib, whose
+// code is reached through the flash instruction bus (IROM). Translate the
+// DROM-side pointer the lib hands us to its IROM alias before the firmware
+// stores and later calls it.
+static void can_set_sid_rx_callback_wrapper(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len)) {
+	bool (*p_func_irom)(uint32_t, uint8_t *, uint8_t) = utils_drom_to_irom(p_func);
+	comm_can_set_sid_rx_callback(p_func_irom);
+}
+
+static void can_set_eid_rx_callback_wrapper(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len)) {
+	bool (*p_func_irom)(uint32_t, uint8_t *, uint8_t) = utils_drom_to_irom(p_func);
+	comm_can_set_eid_rx_callback(p_func_irom);
+}
+
+static bool set_app_data_handler_wrapper(void (*func)(unsigned char *data, unsigned int len)) {
+	void (*func_irom)(unsigned char *, unsigned int) = utils_drom_to_irom(func);
+	return commands_set_app_data_handler(func_irom);
+}
+
+// Custom config registration takes three lib callbacks; translate each to its
+// IROM alias before the firmware stores and later calls them.
+static void conf_custom_add_config_wrapper(
+		int (*get_cfg)(uint8_t *data, bool is_default),
+		bool (*set_cfg)(uint8_t *data), int (*get_cfg_xml)(uint8_t **data)) {
+	int (*get_cfg_irom)(uint8_t *, bool) = utils_drom_to_irom(get_cfg);
+	bool (*set_cfg_irom)(uint8_t *)      = utils_drom_to_irom(set_cfg);
+	int (*get_cfg_xml_irom)(uint8_t **)  = utils_drom_to_irom(get_cfg_xml);
+	conf_custom_add_config(get_cfg_irom, set_cfg_irom, get_cfg_xml_irom);
+}
+
+// GPIO helpers. mode: 0=input, 1=input/output, 2=open-drain. pull: 0=none,
+// 1=up, 2=down. Guarded by utils_gpio_is_valid so a bad pin is a no-op.
+static void gpio_configure_wrapper(int pin, int mode, int pull) {
+	if (!utils_gpio_is_valid(pin)) {
+		return;
+	}
+	gpio_config_t c = {0};
+	c.pin_bit_mask = 1ULL << pin;
+	c.intr_type    = GPIO_INTR_DISABLE;
+	switch (mode) {
+		case 0:  c.mode = GPIO_MODE_INPUT; break;
+		case 2:  c.mode = GPIO_MODE_INPUT_OUTPUT_OD; break;
+		case 1:  c.mode = GPIO_MODE_INPUT_OUTPUT; break;
+		default: c.mode = GPIO_MODE_DISABLE; break;
+	}
+	c.pull_up_en   = (pull == 1) ? GPIO_PULLUP_ENABLE   : GPIO_PULLUP_DISABLE;
+	c.pull_down_en = (pull == 2) ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE;
+	gpio_reset_pin(pin);
+	gpio_config(&c);
+}
+
+static void gpio_write_wrapper(int pin, bool state) {
+	if (utils_gpio_is_valid(pin)) {
+		gpio_set_level(pin, state ? 1 : 0);
+	}
+}
+
+static bool gpio_read_wrapper(int pin) {
+	if (!utils_gpio_is_valid(pin)) {
+		return false;
+	}
+	return gpio_get_level(pin) != 0;
+}
+
+// I2C combined transaction. Returns the esp_err_t as an int (0 == ESP_OK).
+static int i2c_tx_rx_wrapper(uint8_t addr, const uint8_t *write, size_t wlen,
+		uint8_t *read, size_t rlen) {
+	return (int)lispif_i2c_tx_rx(addr, write, wlen, read, rlen);
+}
+
 lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 	lbm_value res = ENC_SYM_EERROR;
 
@@ -561,6 +636,33 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		cif.cif.sem_reset   = lib_sem_reset;
 
 		cif.cif.thread_set_priority = lib_thread_set_priority;
+
+		// CAN bus
+		cif.cif.can_transmit_sid = comm_can_transmit_sid;
+		cif.cif.can_transmit_eid = comm_can_transmit_eid;
+		cif.cif.can_send_buffer  = comm_can_send_buffer;
+		cif.cif.can_set_sid_rx_callback = can_set_sid_rx_callback_wrapper;
+		cif.cif.can_set_eid_rx_callback = can_set_eid_rx_callback_wrapper;
+
+		// App comms
+		cif.cif.send_app_data        = commands_send_app_data;
+		cif.cif.set_app_data_handler = set_app_data_handler_wrapper;
+
+		// Persistent storage
+		cif.cif.store_eeprom_var = store_eeprom_var;
+		cif.cif.read_eeprom_var  = read_eeprom_var;
+
+		// Custom config (VESC Tool settings page)
+		cif.cif.conf_custom_add_config    = conf_custom_add_config_wrapper;
+		cif.cif.conf_custom_clear_configs = conf_custom_clear_configs;
+
+		// GPIO
+		cif.cif.gpio_configure = gpio_configure_wrapper;
+		cif.cif.gpio_write     = gpio_write_wrapper;
+		cif.cif.gpio_read      = gpio_read_wrapper;
+
+		// I2C
+		cif.cif.i2c_tx_rx = i2c_tx_rx_wrapper;
 
 		lib_init_done = true;
 	}

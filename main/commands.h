@@ -42,6 +42,7 @@ void commands_plot_add_graph(char *name);
 void commands_plot_set_graph(int graph);
 void commands_send_plot_points(float x, float y);
 void commands_send_app_data(unsigned char *data, unsigned int len);
+bool commands_set_app_data_handler(void(*func)(unsigned char *data, unsigned int len));
 
 #if LOGS_ENABLED
 

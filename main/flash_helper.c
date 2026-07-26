@@ -21,8 +21,10 @@
 #include "esp_partition.h"
 #include "crc.h"
 #include "buffer.h"
+#include "nvs_flash.h"
 
 #include <string.h>
+#include <stdio.h>
 
 typedef struct {
 	bool check_done;
@@ -256,4 +258,88 @@ uint16_t flash_helper_code_flags(int ind) {
 
 flast_stats flash_helper_stats(void) {
 	return m_stats;
+}
+
+// Stores count variables from base_addr in one NVS transaction. Pass count 1 to store a single value.
+bool store_eeprom_var(eeprom_var *v, int base_addr, int count) {
+	if (base_addr < 0 || count < 0 || base_addr + count > EEPROM_VARS) {
+		return false;
+	}
+
+	nvs_handle_t my_handle;
+	if (nvs_open("lbm", NVS_READWRITE, &my_handle) != ESP_OK) {
+		return false;
+	}
+
+	bool ok = true;
+	char buf[10];
+	for (int i = 0; i < count; i++) {
+		sprintf(buf, "v%d", base_addr + i);
+		if (nvs_set_u32(my_handle, buf, v[i].as_u32) != ESP_OK) {
+			ok = false;
+			break;
+		}
+	}
+
+	if (ok && nvs_commit(my_handle) != ESP_OK) {
+		ok = false;
+	}
+
+	nvs_close(my_handle);
+	return ok;
+}
+
+// Reads count variables from base_addr in one NVS transaction. Fails as a whole if any of them is missing.
+bool read_eeprom_var(eeprom_var *v, int base_addr, int count) {
+	if (base_addr < 0 || count < 0 || base_addr + count > EEPROM_VARS) {
+		return false;
+	}
+
+	nvs_handle_t my_handle;
+	if (nvs_open("lbm", NVS_READONLY, &my_handle) != ESP_OK) {
+		return false;
+	}
+
+	bool ok = true;
+	char buf[10];
+	for (int i = 0; i < count; i++) {
+		sprintf(buf, "v%d", base_addr + i);
+		if (nvs_get_u32(my_handle, buf, &v[i].as_u32) != ESP_OK) {
+			ok = false;
+			break;
+		}
+	}
+
+	nvs_close(my_handle);
+	return ok;
+}
+
+// Erases count variables from base_addr in one NVS transaction. Erasing a key that was never stored is not an error.
+bool erase_eeprom_var(int base_addr, int count) {
+	if (base_addr < 0 || count < 0 || base_addr + count > EEPROM_VARS) {
+		return false;
+	}
+
+	nvs_handle_t my_handle;
+	if (nvs_open("lbm", NVS_READWRITE, &my_handle) != ESP_OK) {
+		return false;
+	}
+
+	bool ok = true;
+	char buf[10];
+	for (int i = 0; i < count; i++) {
+		sprintf(buf, "v%d", base_addr + i);
+		esp_err_t res = nvs_erase_key(my_handle, buf);
+		if (res != ESP_OK && res != ESP_ERR_NVS_NOT_FOUND) {
+			ok = false;
+			break;
+		}
+	}
+
+	if (ok && nvs_commit(my_handle) != ESP_OK) {
+		ok = false;
+	}
+
+	nvs_close(my_handle);
+	return ok;
 }
