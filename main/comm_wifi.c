@@ -33,7 +33,7 @@
 #include "freertos/event_groups.h"
 #include "esp_system.h"
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
@@ -46,7 +46,7 @@
 #include "lwip/netdb.h"
 #endif
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 
 #define WIFI_CONNECTED_BIT		BIT0
 #define WIFI_FAIL_BIT			BIT1
@@ -55,6 +55,8 @@
 	#define UDP_MULTICAST_TASK_STACK_SIZE 2028
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 	#define UDP_MULTICAST_TASK_STACK_SIZE 1024
+#elif CONFIG_IDF_TARGET_ESP32P4
+	#define UDP_MULTICAST_TASK_STACK_SIZE 2028
 #else
 	#error "Unsupported target"
 #endif

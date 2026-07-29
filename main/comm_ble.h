@@ -22,8 +22,9 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "sdkconfig.h"
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_BT_BLUEDROID_ENABLED
 
 void comm_ble_init(void);
 bool comm_ble_is_connected();

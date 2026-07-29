@@ -103,7 +103,7 @@ set(COMPONENT_SRCS
 "lowzip/lowzip.c"
 )
 
-if(NOT CONFIG_IDF_TARGET_ESP32P4)
+if(CONFIG_BT_BLUEDROID_ENABLED)
     list(APPEND COMPONENT_SRCS
         "ble/lispif_ble_extensions.c"
     )
