@@ -2493,12 +2493,12 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 
 	int rate = -1;
 	if (argn >= 2) {
-		if (!lbm_is_number(args[1]) || lbm_dec_as_i32(args[2]) > 15) {
+		if (!lbm_is_number(args[1]) || lbm_dec_as_i32(args[1]) > 15) {
 			lbm_set_error_reason(lbm_error_str_incorrect_arg);
 			return ENC_SYM_TERROR;
 		}
 
-		rate = lbm_dec_as_i32(args[2]);
+		rate = lbm_dec_as_i32(args[1]);
 	}
 
 	uint8_t addr[ESP_NOW_ETH_ALEN] = {255, 255, 255, 255, 255, 255};
