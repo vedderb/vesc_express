@@ -655,6 +655,8 @@ static void gatts_event_handler(
 			}
 
 			gatts_profile.conn_id = param->connect.conn_id;
+			notify_gatts_if = gatts_if;
+			notify_conn_id = param->connect.conn_id;
 			ble_current_mtu = DEFAULT_BLE_MTU; 
 			is_connected = true;
 			LED_BLUE_ON();
@@ -671,6 +673,8 @@ static void gatts_event_handler(
 
 		case ESP_GATTS_DISCONNECT_EVT:
 			is_connected = false;
+			notify_gatts_if = ESP_GATT_IF_NONE;
+			notify_conn_id = 0;
 			LED_BLUE_OFF();
 			esp_ble_gap_start_advertising(&ble_adv_params);
 			break;
@@ -691,7 +695,8 @@ static void process_packet(unsigned char *data, unsigned int len) {
 }
 
 static void send_packet_raw(unsigned char *buffer, unsigned int len) {
-	if (!is_connected) {
+	if (!is_connected || notify_gatts_if == ESP_GATT_IF_NONE ||
+			ble_chars[1].char_handle == 0) {
 		return;
 	}
 

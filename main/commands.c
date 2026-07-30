@@ -203,7 +203,11 @@ static void block_task(void *arg) {
 void commands_init(void) {
 	print_mutex = xSemaphoreCreateMutex();
 	block_sem = xSemaphoreCreateBinary();
+	#if CONFIG_IDF_TARGET_ESP32P4
+	xTaskCreatePinnedToCore(block_task, "comm_block", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+	#else
 	xTaskCreatePinnedToCore(block_task, "comm_block", 2500, NULL, 7, NULL, tskNO_AFFINITY);
+	#endif
 	init_done = true;
 }
 

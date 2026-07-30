@@ -19,11 +19,11 @@ dependencies:
   espressif/esp_lcd_st7701:
     version: ^2.0.2
     rules:
-    - if: target in [esp32p4, esp32s3]
+    - if: target == esp32p4
   espressif/esp_lcd_jd9165:
     version: ^2.0.2
     rules:
-    - if: target in [esp32p4, esp32s3]
+    - if: target == esp32p4
   ## Required IDF version
   idf:
     version: '>=4.1.0'
