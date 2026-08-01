@@ -136,7 +136,7 @@ void app_main(void) {
 
 	vTaskDelay(1);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
+	#if CONFIG_BT_BLUEDROID_ENABLED
 	switch (backup.config.ble_mode) {
 		case BLE_MODE_DISABLED: {
 			break;
@@ -151,7 +151,9 @@ void app_main(void) {
 			break;
 		}
 	}
+	#endif
 
+	#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 	if (backup.config.wifi_mode != WIFI_MODE_DISABLED) {
 		comm_wifi_init();
 	}

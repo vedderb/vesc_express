@@ -1,5 +1,13 @@
 ## IDF Component Manager Manifest File
 dependencies:
+  espressif/esp_hosted:
+    version: 3.0.0
+    rules:
+    - if: target == esp32p4
+  espressif/esp_wifi_remote:
+    version: 1.5.1
+    rules:
+    - if: target == esp32p4
   espressif/dhara: ^0.1.0
   espressif/spi_nand_flash: ^0.1.0
   espressif/esp_lcd_touch: ^1.2.1
@@ -8,10 +16,14 @@ dependencies:
   waveshare/esp_lcd_touch_cst9217: ^1.0.4
   atanisoft/esp_lcd_touch_xpt2046: ^1.0.6
   espressif/esp_lcd_axs15231b: ^2.1.0
-  espressif/esp_lcd_st7701: 
+  espressif/esp_lcd_st7701:
     version: ^2.0.2
     rules:
-      - if: "target in [esp32p4, esp32s3]"
+    - if: target == esp32p4
+  espressif/esp_lcd_jd9165:
+    version: ^2.0.2
+    rules:
+    - if: target == esp32p4
   ## Required IDF version
   idf:
     version: '>=4.1.0'
@@ -26,3 +38,4 @@ dependencies:
   #   # `public` flag doesn't have an effect dependencies of the `main` component.
   #   # All dependencies of `main` are public by default.
   #   public: true
+

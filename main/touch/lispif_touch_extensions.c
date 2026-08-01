@@ -485,6 +485,48 @@ static lbm_value touch_get_point_locked(void) {
 			lbm_enc_u(point.track_id));
 }
 
+static lbm_value touch_get_points_locked(void) {
+	lispif_touch_point_data_t points[CONFIG_ESP_LCD_TOUCH_MAX_POINTS];
+	uint8_t point_cnt = 0;
+	esp_err_t res = touch_driver.get_data(points, &point_cnt, CONFIG_ESP_LCD_TOUCH_MAX_POINTS);
+	if (res != ESP_OK) {
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
+
+	if (point_cnt == 0) {
+		return ENC_SYM_NIL;
+	}
+
+	lbm_value result = ENC_SYM_NIL;
+	for (int i = (int)point_cnt - 1; i >= 0; i--) {
+		lbm_value point = ENC_SYM_NIL;
+		point = lbm_cons(lbm_enc_u(points[i].track_id), point);
+		if (point == ENC_SYM_MERROR) {
+			return ENC_SYM_MERROR;
+		}
+		point = lbm_cons(lbm_enc_u(points[i].strength), point);
+		if (point == ENC_SYM_MERROR) {
+			return ENC_SYM_MERROR;
+		}
+		point = lbm_cons(lbm_enc_u(points[i].y), point);
+		if (point == ENC_SYM_MERROR) {
+			return ENC_SYM_MERROR;
+		}
+		point = lbm_cons(lbm_enc_u(points[i].x), point);
+		if (point == ENC_SYM_MERROR) {
+			return ENC_SYM_MERROR;
+		}
+
+		result = lbm_cons(point, result);
+		if (result == ENC_SYM_MERROR) {
+			return ENC_SYM_MERROR;
+		}
+	}
+
+	return result;
+}
+
 static void touch_emit_event(bool pressed, const lispif_touch_point_data_t *point) {
 	lbm_flat_value_t flat;
 	if (!start_flatten_with_gc(&flat, 96)) {
@@ -967,6 +1009,25 @@ static lbm_value ext_touch_read(lbm_value *args, lbm_uint argn) {
 	return res;
 }
 
+static lbm_value ext_touch_read_all(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN(0);
+
+	if (!touch_lock_loaded_or_error()) {
+		return ENC_SYM_EERROR;
+	}
+
+	esp_err_t read_res = touch_driver.read_data();
+	if (read_res != ESP_OK) {
+		xSemaphoreGive(touch_mutex);
+		lbm_set_esp_error_reason(read_res);
+		return ENC_SYM_EERROR;
+	}
+
+	lbm_value res = touch_get_points_locked();
+	xSemaphoreGive(touch_mutex);
+	return res;
+}
+
 static lbm_value ext_touch_delete(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(0);
 
@@ -1040,6 +1101,7 @@ void lispif_load_touch_extensions(void) {
 	lbm_add_extension("touch-load-axs15231", ext_touch_load_axs15231);
 	lbm_add_extension("touch-load-cst836u", ext_touch_load_cst836u);
 	lbm_add_extension("touch-read", ext_touch_read);
+	lbm_add_extension("touch-read-all", ext_touch_read_all);
 	lbm_add_extension("touch-delete", ext_touch_delete);
 	lbm_add_extension("touch-apply-transforms", ext_touch_apply_transforms);
 }

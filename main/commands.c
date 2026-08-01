@@ -70,9 +70,7 @@
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
 #include "soc/rtc.h"
-#if !CONFIG_IDF_TARGET_ESP32P4
-#include "esp_bt.h"
-#include "esp_bt_main.h"
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 #include "esp_wifi.h"
 #endif
 
@@ -207,7 +205,11 @@ static void block_task(void *arg) {
 void commands_init(void) {
 	print_mutex = xSemaphoreCreateMutex();
 	block_sem = xSemaphoreCreateBinary();
+	#if CONFIG_IDF_TARGET_ESP32P4
+	xTaskCreatePinnedToCore(block_task, "comm_block", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+	#else
 	xTaskCreatePinnedToCore(block_task, "comm_block", 2500, NULL, 7, NULL, tskNO_AFFINITY);
+	#endif
 	init_done = true;
 }
 
@@ -299,7 +301,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 					comm_wifi_disconnect();
 					vTaskDelay(50 / portTICK_PERIOD_MS);
 
-					#if !CONFIG_IDF_TARGET_ESP32P4
+					#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 					esp_wifi_stop();
 					#endif
 
@@ -364,7 +366,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_REBOOT: {
 		comm_wifi_disconnect();
-		#if !CONFIG_IDF_TARGET_ESP32P4
+		#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 		esp_wifi_stop();
 		#endif
 

@@ -1,6 +1,4 @@
 /*
-	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
-
 	This file is part of the VESC firmware.
 
 	The VESC firmware is free software: you can redistribute it and/or modify
@@ -15,30 +13,23 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
-#ifndef MAIN_COMM_BLE_H_
-#define MAIN_COMM_BLE_H_
+#ifndef MAIN_DISPLAY_DISP_JD9165_H_
+#define MAIN_DISPLAY_DISP_JD9165_H_
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "sdkconfig.h"
+#include "soc/soc_caps.h"
+#include "lispif_disp_extensions.h"
 
-#if CONFIG_BT_BLUEDROID_ENABLED
+#if SOC_MIPI_DSI_SUPPORTED
 
-void comm_ble_init(void);
-bool comm_ble_is_connected();
-int comm_ble_mtu_now(void);
-void comm_ble_send_packet(unsigned char *data, unsigned int len);
-
-#else
-
-void comm_ble_init(void);
-bool comm_ble_is_connected(void);
-int comm_ble_mtu_now(void);
-void comm_ble_send_packet(unsigned char *data, unsigned int len);
-
+void disp_jd9165_init(int pin_rst, int lane_mbps);
+bool disp_jd9165_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors);
+void disp_jd9165_clear(uint32_t color);
+void disp_jd9165_reset(void);
 
 #endif
 
-#endif /* MAIN_COMM_BLE_H_ */
+#endif /* MAIN_DISPLAY_DISP_JD9165_H_ */
