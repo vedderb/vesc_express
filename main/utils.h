@@ -39,6 +39,7 @@ float utils_throttle_curve(float val, float curve_acc, float curve_brake, int mo
 
 const char *utils_bool_to_str(bool value);
 bool utils_gpio_is_valid(int pin);
+bool utils_is_func_valid(void *func);
 
 #define UTILS_AGE_S(x)		((float)(xTaskGetTickCount() - x) / ((float)portTICK_PERIOD_MS * 1000.0))
 

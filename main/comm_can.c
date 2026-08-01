@@ -92,6 +92,9 @@ static volatile int rx_write = 0;
 static volatile int rx_read = 0;
 static volatile bool use_vesc_decoder = true;
 
+static bool (*sid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
+static bool (*eid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
+
 #ifdef CONFIG_IDF_TARGET_ESP32C6
 static volatile bool can2_use_vesc_dec   = true;
 
@@ -631,7 +634,20 @@ static void process_task(void *arg) {
 
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
 
-			if (use_vesc_decoder) {
+			// Application RX callbacks (e.g. native lib). If the callback
+			// consumes the frame, skip the built-in VESC decoding.
+			bool consumed = false;
+			if (msg->extd) {
+				if (eid_callback) {
+					consumed = eid_callback(msg->identifier, msg->data, msg->data_length_code);
+				}
+			} else {
+				if (sid_callback) {
+					consumed = sid_callback(msg->identifier, msg->data, msg->data_length_code);
+				}
+			}
+
+			if (!consumed && use_vesc_decoder) {
 				if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
 					if (msg->extd) {
 						decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
@@ -1031,6 +1047,17 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 	twai_transmit(&tx_msg, 5);
 
 	xSemaphoreGive(send_mutex);
+}
+
+// Set a callback for received standard-ID CAN frames. The callback returns
+// true if it consumed the frame (skipping the built-in VESC decoding).
+void comm_can_set_sid_rx_callback(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len)) {
+	sid_callback = p_func;
+}
+
+// Set a callback for received extended-ID CAN frames. See above.
+void comm_can_set_eid_rx_callback(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len)) {
+	eid_callback = p_func;
 }
 
 /**

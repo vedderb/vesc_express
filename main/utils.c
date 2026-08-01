@@ -23,6 +23,7 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs.h"
+#include "esp_memory_utils.h"
 
 #include <sys/time.h>
 #include <dirent.h>
@@ -193,4 +194,9 @@ bool utils_gpio_is_valid(int pin) {
 		return false;
 	}
 	return (SOC_GPIO_VALID_GPIO_MASK >> pin) & 1;
+}
+
+// True if the pointer is in an executable memory region (IRAM/IROM). Used to validate function pointers handed over by native libs
+bool utils_is_func_valid(void *func) {
+	return esp_ptr_executable(func);
 }

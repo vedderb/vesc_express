@@ -83,6 +83,14 @@ typedef lbm_value (*extension_fptr)(lbm_value*,lbm_uint);
 
 // For double precision literals
 #define D(x) 				((double)x##L)
+
+// Persistent EEPROM/NVS variable (mirrors flash_helper.h).
+typedef union {
+	uint32_t as_u32;
+	int32_t as_i32;
+	float as_float;
+} eeprom_var;
+
 #endif
 
 typedef bool (*load_extension_fptr)(char*,extension_fptr);
@@ -212,6 +220,52 @@ typedef struct {
 	void (*sem_signal)(lib_semaphore);
 	bool (*sem_wait_to)(lib_semaphore, systime_t); // Returns false on timeout
 	void (*sem_reset)(lib_semaphore);
+
+	// CAN bus. Transmit raw standard/extended frames, or register a callback
+	// to receive them (return true from the callback to consume the frame).
+	// The can_set_* / can_get_status_* helpers command and read other VESC-
+	// protocol devices on the bus.
+	void (*can_transmit_sid)(uint32_t id, const uint8_t *data, uint8_t len);
+	void (*can_transmit_eid)(uint32_t id, const uint8_t *data, uint8_t len);
+	void (*can_send_buffer)(uint8_t controller_id, uint8_t *data, unsigned int len, uint8_t send);
+	void (*can_set_sid_rx_callback)(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len));
+	void (*can_set_eid_rx_callback)(bool (*p_func)(uint32_t id, uint8_t *data, uint8_t len));
+
+	// App comms: send a custom-app-data packet to the connected VESC Tool /
+	// app (over whatever link is active - USB, BLE, ...), or register a
+	// handler to receive custom-app-data packets.
+	void (*send_app_data)(unsigned char *data, unsigned int len);
+	bool (*set_app_data_handler)(void(*func)(unsigned char *data, unsigned int len));
+
+	// Persistent storage: read/write count variables from base_addr (NVS-backed,
+	// shared with the lisp eeprom-store/-read extensions). Addresses are
+	// 0..EEPROM_VARS-1. Each call is one NVS transaction, so storing a struct
+	// as a single call is both faster and atomic - pass count 1 for one value.
+	bool (*store_eeprom_var)(eeprom_var *v, int base_addr, int count);
+	bool (*read_eeprom_var)(eeprom_var *v, int base_addr, int count);
+
+	// Custom config: register a settings page that appears in VESC Tool.
+	// get_cfg serializes current/default settings, set_cfg applies them,
+	// get_cfg_xml returns the config XML. clear removes registered configs.
+	void (*conf_custom_add_config)(
+			int (*get_cfg)(uint8_t *data, bool is_default),
+			bool (*set_cfg)(uint8_t *data),
+			int (*get_cfg_xml)(uint8_t **data));
+	void (*conf_custom_clear_configs)(void);
+
+	// GPIO: configure/read/write a pin directly. mode: 0=input, 1=output
+	// (input+output), 2=open-drain. pull: 0=none, 1=pull-up, 2=pull-down.
+	// Invalid pins are ignored (write) or read back false.
+	void (*gpio_configure)(int pin, int mode, int pull);
+	void (*gpio_write)(int pin, bool state);
+	bool (*gpio_read)(int pin);
+
+	// I2C: single combined write-then-read transaction on the shared bus
+	// (bus is brought up on first use). Pass write=NULL/wlen=0 for read-only,
+	// read=NULL/rlen=0 for write-only. Returns 0 (ESP_OK) on success.
+	int (*i2c_tx_rx)(uint8_t addr, const uint8_t *write, size_t wlen,
+			uint8_t *read, size_t rlen);
+
 } vesc_c_if;
 
 typedef struct {

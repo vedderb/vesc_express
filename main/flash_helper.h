@@ -44,4 +44,16 @@ uint32_t flash_helper_code_size(int ind);
 uint16_t flash_helper_code_flags(int ind);
 flast_stats flash_helper_stats(void);
 
+#define EEPROM_VARS		512
+
+typedef union {
+	uint32_t as_u32;
+	int32_t as_i32;
+	float as_float;
+} eeprom_var;
+
+bool store_eeprom_var(eeprom_var *v, int base_addr, int count);
+bool read_eeprom_var(eeprom_var *v, int base_addr, int count);
+bool erase_eeprom_var(int base_addr, int count);
+
 #endif /* FLASH_HELPER_H_ */
