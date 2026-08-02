@@ -26,7 +26,6 @@
 #include "lbm_custom_type.h"
 #include "commands.h"
 #include "utils.h"
-
 #include "display/disp_sh8501b.h"
 #include "display/disp_sh8601.h"
 #include "display/disp_ili9341.h"
@@ -43,6 +42,7 @@
 
 #if CONFIG_IDF_TARGET_ESP32P4
 #include "display/disp_st7701.h"
+#include "display/disp_jd9165.h"
 #endif
 
 #include <math.h>
@@ -52,8 +52,6 @@
 
 static char *msg_invalid_gpio = "Invalid GPIO";
 static char *msg_invalid_clk_speed = "Invalid clock speed";
-
-
 static lbm_value ext_disp_load_sh8501b(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(5);
 
@@ -499,6 +497,34 @@ static lbm_value ext_disp_load_jd9853(lbm_value *args, lbm_uint argn) {
 
 	return ENC_SYM_TRUE;
 }
+#if CONFIG_IDF_TARGET_ESP32P4
+static lbm_value ext_disp_load_jd9165(lbm_value *args, lbm_uint argn) {
+	
+	LBM_CHECK_ARGN_NUMBER(2);
+
+	int pin_rst = lbm_dec_as_i32(args[0]);
+	int lane_mbps = lbm_dec_as_i32(args[1]);
+
+	if (pin_rst >= 0 && !utils_gpio_is_valid(pin_rst)) {
+		lbm_set_error_reason(msg_invalid_gpio);
+		return ENC_SYM_EERROR;
+	}
+
+	if (lane_mbps <= 0) {
+		lbm_set_error_reason(msg_invalid_clk_speed);
+		return ENC_SYM_EERROR;
+	}
+
+	disp_jd9165_init(pin_rst, lane_mbps);
+
+	lbm_display_extensions_set_callbacks(
+			disp_jd9165_render_image,
+			disp_jd9165_clear,
+			disp_jd9165_reset);
+
+	return ENC_SYM_TRUE;
+}
+#endif
 
 static lbm_value ext_disp_load_st7701(lbm_value *args, lbm_uint argn) {
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -550,6 +576,7 @@ void lispif_load_disp_extensions(void) {
 
 	#if CONFIG_IDF_TARGET_ESP32P4
 	lbm_add_extension("disp-load-st7701", ext_disp_load_st7701);
+	lbm_add_extension("disp-load-jd9165", ext_disp_load_jd9165);
 	#endif
 }
 

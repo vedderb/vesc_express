@@ -23,8 +23,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include "sdkconfig.h"
 
-#if CONFIG_IDF_TARGET_ESP32P4
+#if !CONFIG_BT_BLUEDROID_ENABLED
 
 typedef enum {
 	CUSTOM_BLE_DISABLED = 0,

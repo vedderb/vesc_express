@@ -50,7 +50,7 @@
 #include "comm_wifi.h"
 #include "lispif.h"
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 
 #define SSID_SIZE SIZEOF_MEMBER(wifi_ap_record_t, ssid)
 

@@ -71,9 +71,11 @@
 #include "bme280_if.h"
 
 #include "esp_netif.h"
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 #include "esp_wifi.h"
 #include "esp_mac.h"
+#endif
+#if !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_now.h"
 #include "esp_crc.h"
 #endif
@@ -86,10 +88,6 @@
 #include "esp_sleep.h"
 #include "soc/rtc.h"
 #include "esp_private/esp_clk.h"
-#if !CONFIG_IDF_TARGET_ESP32P4
-#include "esp_bt.h"
-#include "esp_bt_main.h"
-#endif
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 
@@ -2440,12 +2438,12 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 
 	int rate = -1;
 	if (argn >= 2) {
-		if (!lbm_is_number(args[1]) || lbm_dec_as_i32(args[2]) > 15) {
+		if (!lbm_is_number(args[1]) || lbm_dec_as_i32(args[1]) > 15) {
 			lbm_set_error_reason(lbm_error_str_incorrect_arg);
 			return ENC_SYM_TERROR;
 		}
 
-		rate = lbm_dec_as_i32(args[2]);
+		rate = lbm_dec_as_i32(args[1]);
 	}
 
 	uint8_t addr[ESP_NOW_ETH_ALEN] = {255, 255, 255, 255, 255, 255};
@@ -3617,7 +3615,7 @@ static lbm_value ext_set_pos_time(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
+	#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 	esp_wifi_stop();
 	#endif
 
@@ -3634,7 +3632,7 @@ static lbm_value ext_sleep_deep(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_sleep_light(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
+	#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 	esp_wifi_stop();
 	#endif
 
@@ -6923,12 +6921,12 @@ void lispif_load_vesc_extensions(bool main_found) {
 
 		lispif_load_disp_extensions();
 		lispif_load_touch_extensions();
-		#if !CONFIG_IDF_TARGET_ESP32P4
+		#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 		lispif_load_wifi_extensions();
 		#endif
 
 		if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
-			#if !CONFIG_IDF_TARGET_ESP32P4
+			#if CONFIG_BT_BLUEDROID_ENABLED
 			lispif_load_ble_extensions();
 			#endif
 		}

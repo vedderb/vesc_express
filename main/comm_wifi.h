@@ -24,11 +24,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "sdkconfig.h"
 #include "datatypes.h"
 #include "esp_netif.h"
 #include "esp_event_base.h"
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 #include "lwip/sockets.h"
 #include "lwip/ip_addr.h"
 
