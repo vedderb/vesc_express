@@ -3659,7 +3659,7 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 
 	gpio_set_direction(pin, GPIO_MODE_INPUT);
 #if CONFIG_IDF_TARGET_ESP32S3
-	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0); 
+	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0);
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	esp_deep_sleep_enable_gpio_wakeup(1 << pin,mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
@@ -3703,12 +3703,6 @@ static lbm_value ext_import(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	// Using the raw accessors here, not flash_helper_code_data_ptr()/
-	// flash_helper_code_size(): those gate on a cached check that gets
-	// invalidated by any flash write "before" the checked size, including
-	// the image-erase loop on a fresh-image boot -- before any lisp code,
-	// including this, ever runs. By the time import is actually evaluated
-	// the source is already known-good, since we're executing it.
 	const char *code_data = (const char*)flash_helper_code_data_raw(CODE_IND_LISP);
 	int32_t code_len = (int32_t)flash_helper_code_size_raw(CODE_IND_LISP);
 	if (!code_data || code_len <= 8) {
@@ -3751,10 +3745,6 @@ static lbm_value ext_import(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_MERROR;
 		}
 
-		// lbm_define() won't work here: it gates on the eval state being
-		// paused, which can never be true while we're running as an
-		// extension. Bind directly, the same way cont_set_global_env
-		// (eval_cps.c) does for a normal (def ...).
 		lbm_uint ix_key = sym_id & GLOBAL_ENV_MASK;
 		lbm_value *global_env = lbm_get_global_env();
 		lbm_value new_env_entry = lbm_env_set(global_env[ix_key], args[1], val);
