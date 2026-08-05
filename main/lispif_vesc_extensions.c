@@ -3687,6 +3687,92 @@ static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
+// (import "path" 'sym): the path is only used by VESC Tool at upload time
+// to bundle the file into the (name, offset, len) table appended after the
+// program's own source in the CODE_IND_LISP flash region. Looks sym up in
+// that table and shares the matching flash range as a const array.
+static lbm_value ext_import(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 || !lbm_is_array_r(args[0]) || !lbm_is_symbol(args[1])) {
+		return ENC_SYM_TERROR;
+	}
+
+	lbm_uint sym_id = lbm_dec_sym(args[1]);
+	const char *sym_name = lbm_get_name_by_symbol(sym_id);
+	if (!sym_name) {
+		lbm_set_error_reason("import: could not look up the name of the destination symbol");
+		return ENC_SYM_EERROR;
+	}
+
+	// Using the raw accessors here, not flash_helper_code_data_ptr()/
+	// flash_helper_code_size(): those gate on a cached check that gets
+	// invalidated by any flash write "before" the checked size, including
+	// the image-erase loop on a fresh-image boot -- before any lisp code,
+	// including this, ever runs. By the time import is actually evaluated
+	// the source is already known-good, since we're executing it.
+	const char *code_data = (const char*)flash_helper_code_data_raw(CODE_IND_LISP);
+	int32_t code_len = (int32_t)flash_helper_code_size_raw(CODE_IND_LISP);
+	if (!code_data || code_len <= 8) {
+		lbm_set_error_reason("No program stored to import from");
+		return ENC_SYM_EERROR;
+	}
+	code_data += 8;
+	code_len -= 8;
+
+	int32_t code_chars = (int32_t)strnlen(code_data, (size_t)code_len);
+	if (code_len <= code_chars + 3) {
+		lbm_set_error_reason("No bundled imports found");
+		return ENC_SYM_EERROR;
+	}
+
+	int32_t ind = code_chars + 1;
+	uint16_t num_imports = buffer_get_uint16((uint8_t*)code_data, &ind);
+	if (num_imports == 0 || num_imports >= 500) {
+		lbm_set_error_reason("No bundled imports found");
+		return ENC_SYM_EERROR;
+	}
+
+	for (int i = 0; i < num_imports; i++) {
+		const char *name = code_data + ind;
+		ind += (int32_t)strnlen(name, (size_t)(code_len - ind)) + 1;
+		int32_t offset = buffer_get_int32((uint8_t*)code_data, &ind);
+		int32_t len = buffer_get_int32((uint8_t*)code_data, &ind);
+
+		if (strcmp(name, sym_name) != 0) {
+			continue;
+		}
+
+		if (offset < 0 || len < 0 || (int64_t)offset + len > (int64_t)code_len) {
+			lbm_set_error_reason("Bundled import has an invalid offset/length");
+			return ENC_SYM_EERROR;
+		}
+
+		lbm_value val;
+		if (!lbm_share_array_const(&val, (char*)(code_data + offset), (lbm_uint)len)) {
+			return ENC_SYM_MERROR;
+		}
+
+		// lbm_define() won't work here: it gates on the eval state being
+		// paused, which can never be true while we're running as an
+		// extension. Bind directly, the same way cont_set_global_env
+		// (eval_cps.c) does for a normal (def ...).
+		lbm_uint ix_key = sym_id & GLOBAL_ENV_MASK;
+		lbm_value *global_env = lbm_get_global_env();
+		lbm_value new_env_entry = lbm_env_set(global_env[ix_key], args[1], val);
+		if (lbm_is_symbol_merror(new_env_entry)) {
+			return ENC_SYM_MERROR;
+		}
+		if (lbm_is_symbol(new_env_entry)) {
+			lbm_set_error_reason("import: could not bind the destination symbol");
+			return ENC_SYM_EERROR;
+		}
+		global_env[ix_key] = new_env_entry;
+		return ENC_SYM_TRUE;
+	}
+
+	lbm_set_error_reason("Symbol not found among bundled imports");
+	return ENC_SYM_EERROR;
+}
+
 // Remote Messages
 #define RMSG_SLOT_NUM	8
 
@@ -6768,7 +6854,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("send-data", ext_send_data);
 		lbm_add_extension("recv-data", ext_recv_data);
 		lbm_add_extension("sysinfo", ext_sysinfo);
-		lbm_add_extension("import", ext_empty);
+		lbm_add_extension("import", ext_import);
 		lbm_add_extension("main-init-done", ext_main_init_done);
 		lbm_add_extension("crc16", ext_crc16);
 		lbm_add_extension("crc32", ext_crc32);
