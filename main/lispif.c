@@ -567,7 +567,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 						lbm_create_string_char_channel(&string_tok_state, &string_tok, repl_buffer);
 						repl_cid = lbm_load_and_eval_expression(&string_tok);
 						repl_cid_for_buffer = repl_cid;
-						lbm_image_save_constant_heap_ix();
+						//lbm_image_save_constant_heap_ix();
 						lbm_continue_eval();
 
 						if (reply_func != NULL) {
@@ -713,7 +713,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		if (ind == (int32_t)len) {
 			if ((offset + written) == tot_len) {
 				lbm_channel_writer_close(&buffered_string_tok);
-				lbm_image_save_constant_heap_ix();
+				//lbm_image_save_constant_heap_ix();
 				string_tok_valid = false;
 				offset_last = -1;
 				commands_printf_lisp("Stream done, starting...");
@@ -767,7 +767,7 @@ static void done_callback(eval_context_t *ctx) {
 	}
 
 	if (cid == main_cid) {
-		lbm_image_save_constant_heap_ix();
+		//lbm_image_save_constant_heap_ix();
 		main_cid = -1;
 	}
 }
@@ -823,7 +823,7 @@ bool lispif_restart(bool print, bool load_code) {
 		lispif_stop();
 
 		if (save_heap) {
-			lbm_image_save_constant_heap_ix();
+			//lbm_image_save_constant_heap_ix();
 		}
 
 		int code_chars = 0;
