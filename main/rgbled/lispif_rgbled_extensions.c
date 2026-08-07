@@ -81,6 +81,7 @@ static led_strip_t led_strip[LED_STRIP_MAX];
 static uint32_t led_use_ctr = 0;
 static int led_lisp_pin = -1; // pin targeted by the arg-less lisp rgbled-update
 static bool led_state_init_done = false;
+static const char *led_init_err = "LED strip init failed";
 
 static void rgbled_state_init_once(void) {
 	if (led_state_init_done) {
@@ -274,16 +275,27 @@ static bool led_chan_open(led_chan_t *c, int pin, unsigned int timing,
 	rmt_tx_channel_config_t tx_chan_config = {
 			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
 			.gpio_num = pin,
-#if SOC_RMT_SUPPORT_DMA
-			.mem_block_symbols = 256,
-			.flags.with_dma = 1,
-#else
-			.mem_block_symbols = 64,
-#endif
+			.mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL,
 			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
 			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
 	};
-	if (rmt_new_tx_channel(&tx_chan_config, &c->chan) != ESP_OK) {
+
+	esp_err_t err = ESP_FAIL;
+#if SOC_RMT_SUPPORT_DMA
+	// Take the DMA-backed channel when it is still free
+	tx_chan_config.flags.with_dma = 1;
+	tx_chan_config.mem_block_symbols = 256;
+	err = rmt_new_tx_channel(&tx_chan_config, &c->chan);
+	if (err != ESP_OK) {
+		tx_chan_config.flags.with_dma = 0;
+		tx_chan_config.mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL;
+	}
+#endif
+	if (err != ESP_OK) {
+		c->chan = NULL;
+		err = rmt_new_tx_channel(&tx_chan_config, &c->chan);
+	}
+	if (err != ESP_OK) {
 		c->chan = NULL;
 		if (err_reason) {
 			*err_reason = "RMT channel init failed";
@@ -348,21 +360,24 @@ static led_chan_t *chan_acquire(int pin, unsigned int timing,
 	// Prefer a free slot.
 	for (int i = 0; i < LED_RMT_CH_MAX; i++) {
 		if (led_pool[i].chan == NULL) {
-			c = &led_pool[i];
+			if (led_chan_open(&led_pool[i], pin, timing, err_reason)) {
+				return &led_pool[i];
+			}
 			break;
 		}
 	}
 
 	// Otherwise evict the least-recently-used bound slot.
-	if (c == NULL) {
-		c = &led_pool[0];
-		for (int i = 1; i < LED_RMT_CH_MAX; i++) {
-			if (led_pool[i].last_use < c->last_use) {
-				c = &led_pool[i];
-			}
+	c = NULL;
+	for (int i = 0; i < LED_RMT_CH_MAX; i++) {
+		if (led_pool[i].chan != NULL && (c == NULL || led_pool[i].last_use < c->last_use)) {
+			c = &led_pool[i];
 		}
-		led_chan_close(c, true);
 	}
+	if (c == NULL) {
+		return NULL; // nothing bound and nothing openable
+	}
+	led_chan_close(c, true);
 
 	if (!led_chan_open(c, pin, timing, err_reason)) {
 		return NULL;
@@ -374,6 +389,7 @@ bool rgbled_init(int pin, unsigned int timing_preset) {
 	rgbled_state_init_once();
 
 	// Register the strip (or update its timing).
+	bool is_new = false;
 	led_strip_t *s = strip_find(pin);
 	if (s == NULL) {
 		for (int i = 0; i < LED_STRIP_MAX; i++) {
@@ -383,9 +399,11 @@ bool rgbled_init(int pin, unsigned int timing_preset) {
 			}
 		}
 		if (s == NULL) {
+			led_init_err = "Too many LED strips";
 			return false; // registry full
 		}
 		s->pin = pin;
+		is_new = true;
 	}
 	s->timing = timing_preset;
 
@@ -393,17 +411,30 @@ bool rgbled_init(int pin, unsigned int timing_preset) {
 	// channel when the timing changed), so a strip that fits the pool lights
 	// up without waiting for its first update. When the pool is full the
 	// binding happens on update via LRU eviction instead.
+	const char *reason = NULL;
 	led_chan_t *c = chan_for_pin(pin);
 	if (c == NULL) {
 		for (int i = 0; i < LED_RMT_CH_MAX; i++) {
 			if (led_pool[i].chan == NULL) {
-				led_chan_open(&led_pool[i], pin, timing_preset, NULL);
+				if (!led_chan_open(&led_pool[i], pin, timing_preset, &reason)) {
+					led_init_err = reason ? reason : "RMT channel init failed";
+					if (is_new) {
+						s->pin = -1;
+					}
+					return false;
+				}
 				break;
 			}
 		}
 	} else if (c->timing != timing_preset) {
 		led_chan_close(c, true);
-		led_chan_open(c, pin, timing_preset, NULL);
+		if (!led_chan_open(c, pin, timing_preset, &reason)) {
+			led_init_err = reason ? reason : "RMT channel init failed";
+			if (is_new) {
+				s->pin = -1;
+			}
+			return false;
+		}
 	}
 
 	return true;
@@ -478,7 +509,7 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 	}
 
 	if (!rgbled_init(pin, timing_preset)) {
-		lbm_set_error_reason("Too many LED strips");
+		lbm_set_error_reason(led_init_err);
 		return ENC_SYM_EERROR;
 	}
 
