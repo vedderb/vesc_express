@@ -34,19 +34,21 @@
 #include "soc/gpio_periph.h"
 #include "hal/gpio_hal.h"
 #include "driver/gpio.h"
-#include "esp_idf_version.h"
+#include "esp_rom_gpio.h"
+#include "soc/gpio_sig_map.h"
+#include "soc/gpio_struct.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 #define RMT_LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
 
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)
-#error "rgbled needs rmt_tx_switch_gpio(), added in ESP-IDF 5.5"
-#endif
-
 #define LED_STRIP_MAX 8   // distinct pins tracked at once
 #define LED_TIMING_MAX 5  // wire timing presets, one encoder each
+
+// Width of the GPIO matrix out-select field. Read as a whole word because the
+// bitfield is named func_sel on some targets and out_sel on others.
+#define LED_OUT_SEL_MASK ((uint32_t)((SIG_GPIO_OUT_IDX << 1) - 1))
 
 typedef struct {
 	rmt_encoder_t base;
@@ -65,6 +67,7 @@ static led_strip_t led_strip[LED_STRIP_MAX];
 static rmt_channel_handle_t led_chan = NULL;          // the one TX channel
 static rmt_encoder_handle_t led_enc[LED_TIMING_MAX];  // built on demand
 static int led_routed_pin = -1;   // pin the channel's output is wired to
+static int led_tx_sig = -1;       // the channel's TX signal, -1 if undiscovered
 static int led_lisp_pin = -1; // pin targeted by the arg-less lisp rgbled-update
 static bool led_state_init_done = false;
 static const char *led_init_err = "LED strip init failed";
@@ -96,6 +99,7 @@ static void rgbled_state_init_once(void) {
 	}
 	led_chan = NULL;
 	led_routed_pin = -1;
+	led_tx_sig = -1;
 	led_state_init_done = true;
 }
 
@@ -221,10 +225,26 @@ esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
 	return ESP_OK;
 }
 
-// Addressable strips idle low, and a disconnected pin floats
+// Detach from the RMT signal and hold low. Addressable strips idle low, and a
+// pin left on the signal would mirror whatever the next strip is sent.
 static void led_pin_idle(int pin) {
+	esp_rom_gpio_connect_out_signal((uint32_t)pin, SIG_GPIO_OUT_IDX, false, false);
 	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
 	gpio_set_level((gpio_num_t)pin, 0);
+}
+
+// Which TX signal the driver wired to `pin` when it created the channel. There
+// is no public API for the channel id, so match what it actually routed
+// against the group's signals.
+static void led_find_tx_sig(int pin) {
+	led_tx_sig = -1;
+	uint32_t routed = GPIO.func_out_sel_cfg[pin].val & LED_OUT_SEL_MASK;
+	for (int i = 0; i < SOC_RMT_CHANNELS_PER_GROUP; i++) {
+		if ((uint32_t)rmt_periph_signals.groups[0].channels[i].tx_sig == routed) {
+			led_tx_sig = rmt_periph_signals.groups[0].channels[i].tx_sig;
+			return;
+		}
+	}
 }
 
 // Timing for the next encoder built.
@@ -292,6 +312,7 @@ static bool led_chan_ensure(int pin, const char **err_reason) {
 	}
 	rmt_enable(led_chan);
 	led_routed_pin = pin;
+	led_find_tx_sig(pin);
 	return true;
 }
 
@@ -319,27 +340,27 @@ static bool led_route(int pin) {
 		return true;
 	}
 
-	int prev = led_routed_pin;
-
-	// rmt_tx_switch_gpio only works from the INIT state.
-	rmt_disable(led_chan);
-	esp_err_t err = rmt_tx_switch_gpio(led_chan, (gpio_num_t)pin, false);
-	rmt_enable(led_chan);
-	if (err != ESP_OK) {
+	if (led_tx_sig < 0) {
 		return false;
 	}
-	led_routed_pin = pin;
 
-	// The switch leaves the old pin an input; its strip must not see noise.
-	if (prev >= 0) {
-		led_pin_idle(prev);
+	// Move the signal in the GPIO matrix with the channel left running. The
+	// driver's rmt_tx_switch_gpio would do this too, but only from the INIT
+	// state, so it costs a disable/enable - a DMA re-arm and a polled wait -
+	// on every strip.
+	if (led_routed_pin >= 0) {
+		led_pin_idle(led_routed_pin);
 	}
+	esp_rom_gpio_pad_select_gpio((uint32_t)pin);
+	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+	esp_rom_gpio_connect_out_signal((uint32_t)pin, (uint32_t)led_tx_sig, false, false);
+	led_routed_pin = pin;
 	return true;
 }
 
 static void led_hw_teardown(void) {
 	if (led_chan != NULL) {
-		rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
+		rmt_tx_wait_all_done(led_chan, 100);
 		rmt_disable(led_chan);
 		rmt_del_channel(led_chan);
 		led_chan = NULL;
@@ -351,6 +372,7 @@ static void led_hw_teardown(void) {
 		}
 	}
 	led_routed_pin = -1;
+	led_tx_sig = -1;
 }
 
 bool rgbled_init(int pin, unsigned int timing_preset) {
@@ -419,7 +441,7 @@ static void rgbled_release(int pin, bool hold_low) {
 
 	if (led_chan != NULL && led_routed_pin == pin) {
 		// Let the frame on the wire finish before the pin stops being driven.
-		rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
+		rmt_tx_wait_all_done(led_chan, 100);
 		led_routed_pin = -1; // force the next update to re-route
 	}
 
@@ -704,7 +726,7 @@ void rgbled_update(int pin, uint8_t *data, size_t size) {
 
 	if (enc != NULL) {
 		// An in-flight frame belongs to whichever pin is still wired up.
-		rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
+		rmt_tx_wait_all_done(led_chan, 100);
 
 		if (led_route(pin)) {
 			rmt_transmit(led_chan, enc, data, size, &tx_config);
