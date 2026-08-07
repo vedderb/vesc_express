@@ -3,8 +3,7 @@
 ; The single-strip driver released the previous strip whenever rgbled-init was
 ; called on a new pin. This driver registers an additional strip instead, so
 ; several pins can be driven at once and a strip is released explicitly with
-; rgbled-deinit. Hardware channels are pooled behind the pins, so more strips
-; than the chip has RMT TX channels still work (they are refreshed in turn).
+; rgbled-deinit.
 ;
 ; Uses the two-argument forms of rgbled-update and rgbled-deinit, so it does
 ; NOT run on the single-strip driver - see led_strip.lisp for the script that
