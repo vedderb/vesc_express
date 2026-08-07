@@ -388,6 +388,11 @@ static led_chan_t *chan_acquire(int pin, unsigned int timing,
 bool rgbled_init(int pin, unsigned int timing_preset) {
 	rgbled_state_init_once();
 
+	if (!utils_gpio_is_valid(pin)) {
+		led_init_err = string_pin_invalid;
+		return false;
+	}
+
 	// Register the strip (or update its timing).
 	bool is_new = false;
 	led_strip_t *s = strip_find(pin);
