@@ -266,6 +266,10 @@ typedef struct {
 	int (*i2c_tx_rx)(uint8_t addr, const uint8_t *write, size_t wlen,
 			uint8_t *read, size_t rlen);
 
+	// Accessory: RGB LED
+	bool (*rgbled_init)(int pin, unsigned int timing_preset);
+	void (*rgbled_deinit)(int pin);
+	void (*rgbled_update)(int pin, uint8_t *data, size_t size);
 } vesc_c_if;
 
 typedef struct {

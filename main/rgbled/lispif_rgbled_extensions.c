@@ -16,6 +16,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #include "lispif_rgbled_extensions.h"
 #include "lispif.h"
@@ -26,12 +29,26 @@
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
 #include "soc/rmt_periph.h"
+#include "soc/soc_caps.h"
 #include "soc/io_mux_reg.h"
 #include "soc/gpio_periph.h"
 #include "hal/gpio_hal.h"
 #include "driver/gpio.h"
+#include "esp_rom_gpio.h"
+#include "soc/gpio_sig_map.h"
+#include "soc/gpio_struct.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #define RMT_LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz resolution, 1 tick = 0.1us (led strip needs a high resolution)
+
+#define LED_STRIP_MAX 8   // distinct pins tracked at once
+#define LED_TIMING_MAX 5  // wire timing presets, one encoder each
+
+// Width of the GPIO matrix out-select field. Read as a whole word because the
+// bitfield is named func_sel on some targets and out_sel on others.
+#define LED_OUT_SEL_MASK ((uint32_t)((SIG_GPIO_OUT_IDX << 1) - 1))
 
 typedef struct {
 	rmt_encoder_t base;
@@ -41,10 +58,50 @@ typedef struct {
 	rmt_symbol_word_t reset_code;
 } rmt_led_strip_encoder_t;
 
-static rmt_channel_handle_t led_chan = NULL;
-static rmt_encoder_handle_t led_encoder = NULL;
-static int led_pin_driver = -1;
-static unsigned int led_timing_driver = 0;
+typedef struct {
+	int pin;                      // -1 = free entry
+	unsigned int timing;
+} led_strip_t;
+
+static led_strip_t led_strip[LED_STRIP_MAX];
+static rmt_channel_handle_t led_chan = NULL;          // the one TX channel
+static rmt_encoder_handle_t led_enc[LED_TIMING_MAX];  // built on demand
+static int led_routed_pin = -1;   // pin the channel's output is wired to
+static int led_tx_sig = -1;       // the channel's TX signal, -1 if undiscovered
+static int led_lisp_pin = -1; // pin targeted by the arg-less lisp rgbled-update
+static bool led_state_init_done = false;
+static const char *led_init_err = "LED strip init failed";
+
+static SemaphoreHandle_t led_mtx = NULL;
+static StaticSemaphore_t led_mtx_buf;
+
+static void led_lock(void) {
+	if (led_mtx != NULL) {
+		xSemaphoreTakeRecursive(led_mtx, portMAX_DELAY);
+	}
+}
+
+static void led_unlock(void) {
+	if (led_mtx != NULL) {
+		xSemaphoreGiveRecursive(led_mtx);
+	}
+}
+
+static void rgbled_state_init_once(void) {
+	if (led_state_init_done) {
+		return;
+	}
+	for (int i = 0; i < LED_TIMING_MAX; i++) {
+		led_enc[i] = NULL;
+	}
+	for (int i = 0; i < LED_STRIP_MAX; i++) {
+		led_strip[i].pin = -1;
+	}
+	led_chan = NULL;
+	led_routed_pin = -1;
+	led_tx_sig = -1;
+	led_state_init_done = true;
+}
 
 static float led_t0h;
 static float led_t0l;
@@ -168,39 +225,277 @@ esp_err_t rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder) {
 	return ESP_OK;
 }
 
-static void rgbled_deinit_internal(int mode) {
+// Detach from the RMT signal and hold low. Addressable strips idle low, and a
+// pin left on the signal would mirror whatever the next strip is sent.
+static void led_pin_idle(int pin) {
+	esp_rom_gpio_connect_out_signal((uint32_t)pin, SIG_GPIO_OUT_IDX, false, false);
+	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+	gpio_set_level((gpio_num_t)pin, 0);
+}
+
+// Which TX signal the driver wired to `pin` when it created the channel. There
+// is no public API for the channel id, so match what it actually routed
+// against the group's signals.
+static void led_find_tx_sig(int pin) {
+	led_tx_sig = -1;
+	uint32_t routed = GPIO.func_out_sel_cfg[pin].val & LED_OUT_SEL_MASK;
+	for (int i = 0; i < SOC_RMT_CHANNELS_PER_GROUP; i++) {
+		if ((uint32_t)rmt_periph_signals.groups[0].channels[i].tx_sig == routed) {
+			led_tx_sig = rmt_periph_signals.groups[0].channels[i].tx_sig;
+			return;
+		}
+	}
+}
+
+// Timing for the next encoder built.
+static void led_timing_apply(unsigned int timing) {
+	switch (timing) {
+	case 1: // WS2812B
+		led_t0h = 0.40; led_t0l = 0.85; led_t1h = 0.80; led_t1l = 0.45; led_reset_us = 300;
+		break;
+	case 2: // WS2815
+		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.90; led_t1l = 0.30; led_reset_us = 300;
+		break;
+	case 3: // SK6812
+		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.60; led_t1l = 0.60; led_reset_us = 80;
+		break;
+	case 4: // SK6815
+		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.60; led_t1l = 0.60; led_reset_us = 300;
+		break;
+	case 0:
+	default: // Generic
+		// Universal timing compromise: sits within the tolerance overlap zone of WS2812B, WS2815, SK6812, and SK6815.
+		led_t0h = 0.35; led_t0l = 1.00; led_t1h = 0.95; led_t1l = 0.30; led_reset_us = 300;
+		break;
+	}
+}
+
+static led_strip_t *strip_find(int pin) {
+	if (pin < 0) {
+		return NULL; // -1 is the "free entry" sentinel, never a real pin
+	}
+	for (int i = 0; i < LED_STRIP_MAX; i++) {
+		if (led_strip[i].pin == pin) {
+			return &led_strip[i];
+		}
+	}
+	return NULL;
+}
+
+// Build the shared channel, pointed at `pin`. Only the first call does work.
+static bool led_chan_ensure(int pin, const char **err_reason) {
 	if (led_chan != NULL) {
-		rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
+		return true;
+	}
+
+	led_pin_idle(pin);
+
+	rmt_tx_channel_config_t tx_chan_config = {
+			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
+			.gpio_num = pin,
+#if SOC_RMT_SUPPORT_DMA
+			.mem_block_symbols = 256,
+			.flags.with_dma = 1,
+#else
+			.mem_block_symbols = 64,
+#endif
+			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
+			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
+	};
+
+	if (rmt_new_tx_channel(&tx_chan_config, &led_chan) != ESP_OK) {
+		led_chan = NULL;
+		if (err_reason) {
+			*err_reason = "RMT channel init failed";
+		}
+		return false;
+	}
+	rmt_enable(led_chan);
+	led_routed_pin = pin;
+	led_find_tx_sig(pin);
+	return true;
+}
+
+// Timing is baked into the encoder, so each preset in use needs its own.
+static rmt_encoder_handle_t led_encoder_get(unsigned int timing,
+		const char **err_reason) {
+	if (timing >= LED_TIMING_MAX) {
+		timing = 0;
+	}
+	if (led_enc[timing] == NULL) {
+		led_timing_apply(timing);
+		if (rmt_new_led_strip_encoder(&led_enc[timing]) != ESP_OK) {
+			led_enc[timing] = NULL;
+			if (err_reason) {
+				*err_reason = "RMT encoder init failed";
+			}
+		}
+	}
+	return led_enc[timing];
+}
+
+// Point the channel at `pin`. Caller must have waited for the previous frame.
+static bool led_route(int pin) {
+	if (led_routed_pin == pin) {
+		return true;
+	}
+
+	if (led_tx_sig < 0) {
+		return false;
+	}
+
+	// Move the signal in the GPIO matrix with the channel left running. The
+	// driver's rmt_tx_switch_gpio would do this too, but only from the INIT
+	// state, so it costs a disable/enable - a DMA re-arm and a polled wait -
+	// on every strip.
+	if (led_routed_pin >= 0) {
+		led_pin_idle(led_routed_pin);
+	}
+	esp_rom_gpio_pad_select_gpio((uint32_t)pin);
+	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+	esp_rom_gpio_connect_out_signal((uint32_t)pin, (uint32_t)led_tx_sig, false, false);
+	led_routed_pin = pin;
+	return true;
+}
+
+static void led_hw_teardown(void) {
+	if (led_chan != NULL) {
+		rmt_tx_wait_all_done(led_chan, 100);
 		rmt_disable(led_chan);
 		rmt_del_channel(led_chan);
 		led_chan = NULL;
 	}
-
-	if (led_encoder != NULL) {
-		rmt_del_encoder(led_encoder);
-		led_encoder = NULL;
-	}
-
-	if (led_pin_driver >= 0) {
-		if (mode == 1) {
-			// Mode 1: Pull/Hold LOW
-			gpio_set_direction((gpio_num_t)led_pin_driver, GPIO_MODE_OUTPUT);
-			gpio_set_level((gpio_num_t)led_pin_driver, 0);
-		} else {
-			// Mode 0: Default hardware reset (Input with Pull-up)
-			gpio_reset_pin(led_pin_driver);
+	for (int i = 0; i < LED_TIMING_MAX; i++) {
+		if (led_enc[i] != NULL) {
+			rmt_del_encoder(led_enc[i]);
+			led_enc[i] = NULL;
 		}
-		led_pin_driver = -1;
 	}
+	led_routed_pin = -1;
+	led_tx_sig = -1;
+}
+
+bool rgbled_init(int pin, unsigned int timing_preset) {
+	rgbled_state_init_once();
+
+	// Native libs reach this directly, so it cannot rely on the lisp wrapper.
+	if (!utils_gpio_is_valid(pin)) {
+		led_init_err = string_pin_invalid;
+		return false;
+	}
+
+	if (timing_preset >= LED_TIMING_MAX) {
+		timing_preset = 0;
+	}
+
+	led_lock();
+
+	bool ok = false;
+	bool is_new = false;
+	led_strip_t *s = strip_find(pin);
+	if (s == NULL) {
+		for (int i = 0; i < LED_STRIP_MAX; i++) {
+			if (led_strip[i].pin < 0) {
+				s = &led_strip[i];
+				break;
+			}
+		}
+		if (s != NULL) {
+			s->pin = pin;
+			is_new = true;
+		}
+	}
+
+	if (s == NULL) {
+		led_init_err = "Too many LED strips";
+	} else {
+		s->timing = timing_preset;
+
+		led_pin_idle(pin);
+
+		const char *reason = NULL;
+		if (led_chan_ensure(pin, &reason)
+				&& led_encoder_get(timing_preset, &reason) != NULL) {
+			ok = true;
+		} else {
+			led_init_err = reason ? reason : "LED strip init failed";
+			if (is_new) {
+				s->pin = -1;
+			}
+		}
+	}
+
+	led_unlock();
+	return ok;
+}
+
+// hold_low leaves the pin LOW, else it resets. The shared channel is torn down once the last strip is gone.
+static void rgbled_release(int pin, bool hold_low) {
+	rgbled_state_init_once();
+	led_lock();
+
+	led_strip_t *s = strip_find(pin);
+	if (s != NULL) {
+		s->pin = -1;
+	}
+
+	if (led_chan != NULL && led_routed_pin == pin) {
+		// Let the frame on the wire finish before the pin stops being driven.
+		rmt_tx_wait_all_done(led_chan, 100);
+		led_routed_pin = -1; // force the next update to re-route
+	}
+
+	if (hold_low) {
+		led_pin_idle(pin);
+	} else {
+		gpio_reset_pin(pin);
+	}
+
+	bool any = false;
+	for (int i = 0; i < LED_STRIP_MAX; i++) {
+		if (led_strip[i].pin >= 0) {
+			any = true; // strips remain, keep the channel
+			break;
+		}
+	}
+	if (!any) {
+		led_hw_teardown();
+	}
+
+	led_unlock();
+}
+
+void rgbled_deinit(int pin) {
+	rgbled_release(pin, false);
 }
 
 static lbm_value ext_rgbled_deinit(lbm_value *args, lbm_uint argn) {
+	rgbled_state_init_once();
+
+	// (rgbled-deinit [mode] [pin]): mode 1 holds the pin(s) LOW, 0 resets.
+	// Without a pin every strip is released, matching the single-strip driver.
 	int mode = 0;
 	if (argn >= 1 && lbm_is_number(args[0])) {
 		mode = lbm_dec_as_i32(args[0]);
 	}
+	bool hold_low = (mode == 1);
 
-	rgbled_deinit_internal(mode);
+	led_lock();
+	if (argn >= 2 && lbm_is_number(args[1])) {
+		int pin = lbm_dec_as_i32(args[1]);
+		rgbled_release(pin, hold_low);
+		if (led_lisp_pin == pin) {
+			led_lisp_pin = -1;
+		}
+	} else {
+		for (int i = 0; i < LED_STRIP_MAX; i++) {
+			if (led_strip[i].pin >= 0) {
+				rgbled_release(led_strip[i].pin, hold_low);
+			}
+		}
+		led_lisp_pin = -1;
+	}
+	led_unlock();
 
 	return ENC_SYM_TRUE;
 }
@@ -224,70 +519,12 @@ static lbm_value ext_rgbled_init(lbm_value *args, lbm_uint argn) {
 		timing_preset = lbm_dec_as_u32(args[1]);
 	}
 
-	// Skip full reinit if already configured on the same pin with the same type.
-	// Avoids tearing down the RMT channel every frame, which leaves the pin floating.
-	if (pin == led_pin_driver && timing_preset == led_timing_driver && led_chan != NULL) {
-		return ENC_SYM_TRUE;
-	}
-
-	rgbled_deinit_internal(1); // Pull/Hold LOW when switching pins
-
-	switch (timing_preset) {
-	case 1: // WS2812B
-		led_t0h = 0.40; led_t0l = 0.85; led_t1h = 0.80; led_t1l = 0.45; led_reset_us = 300;
-		break;
-	case 2: // WS2815
-		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.90; led_t1l = 0.30; led_reset_us = 300;
-		break;
-	case 3: // SK6812
-		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.60; led_t1l = 0.60; led_reset_us = 80;
-		break;
-	case 4: // SK6815
-		led_t0h = 0.30; led_t0l = 0.90; led_t1h = 0.60; led_t1l = 0.60; led_reset_us = 300;
-		break;
-	case 0:
-	default: // Generic
-		// Universal timing compromise: sits within the tolerance overlap zone of WS2812B, WS2815, SK6812, and SK6815.
-		led_t0h = 0.35; led_t0l = 1.00; led_t1h = 0.95; led_t1l = 0.30; led_reset_us = 300;
-		break;
-	}
-
-	// Explicitly drive pin LOW as push-pull output before handing it to RMT.
-	// Prevents the pin from floating in an undefined state during channel setup.
-	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
-	gpio_set_level((gpio_num_t)pin, 0);
-
-	led_pin_driver = pin;
-	led_timing_driver = timing_preset;
-
-	rmt_tx_channel_config_t tx_chan_config = {
-			.clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
-			.gpio_num = pin,
-#if SOC_RMT_SUPPORT_DMA
-			.mem_block_symbols = 256,
-			.flags.with_dma = 1,
-#else
-			.mem_block_symbols = 64,
-#endif
-			.resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
-			.trans_queue_depth = 4, // set the number of transactions that can be pending in the background
-	};
-	if (rmt_new_tx_channel(&tx_chan_config, &led_chan) != ESP_OK) {
-		led_chan = NULL;
-		led_pin_driver = -1;
-		lbm_set_error_reason("RMT channel init failed");
+	if (!rgbled_init(pin, timing_preset)) {
+		lbm_set_error_reason(led_init_err);
 		return ENC_SYM_EERROR;
 	}
 
-	if (rmt_new_led_strip_encoder(&led_encoder) != ESP_OK) {
-		rmt_del_channel(led_chan);
-		led_chan = NULL;
-		led_pin_driver = -1;
-		lbm_set_error_reason("RMT encoder init failed");
-		return ENC_SYM_EERROR;
-	}
-
-	rmt_enable(led_chan);
+	led_lisp_pin = pin;
 
 	return ENC_SYM_TRUE;
 }
@@ -300,7 +537,7 @@ static lbm_value ext_rgbled_color_buffer(lbm_value *args, lbm_uint argn) {
 	uint8_t type_led = 0;
 	if (argn >= 2) {
 		type_led = lbm_dec_as_u32(args[1]);
-		if (type_led >= 4) {
+		if (type_led > 4) {
 			lbm_set_error_reason("Invalid LED type");
 			return ENC_SYM_TERROR;
 		}
@@ -350,7 +587,7 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	char *invalid_arr_msg = "Invalid LED array";
 
 	uint8_t type_led = led_data[0] & 0x0F;
-	if (type_led >= 4) {
+	if (type_led > 4) {
 		lbm_set_error_reason(invalid_arr_msg);
 		return ENC_SYM_TERROR;
 	}
@@ -471,23 +708,57 @@ static lbm_value ext_rgbled_color(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
-	if (led_encoder == NULL || led_chan == NULL) {
-		lbm_set_error_reason("Please run rgbled-init first");
-		if (led_encoder == NULL) {
-			commands_printf_lisp("led_encoder null");
-		}
-
-		if (led_chan == NULL) {
-			commands_printf_lisp("led_chan null");
-		}
-
-		return ENC_SYM_EERROR;
+void rgbled_update(int pin, uint8_t *data, size_t size) {
+	rgbled_state_init_once();
+	if (size < 1) {
+		return;
 	}
 
-	if (argn != 1 || !lbm_is_array_r(args[0])) {
+	// Held across the transmit: a concurrent deinit must not delete or re-point the shared channel between the route and the handover.
+	led_lock();
+
+	led_strip_t *s = strip_find(pin);
+	rmt_encoder_handle_t enc = NULL;
+
+	if (s != NULL && led_chan_ensure(pin, NULL)) {
+		enc = led_encoder_get(s->timing, NULL);
+	}
+
+	if (enc != NULL) {
+		// An in-flight frame belongs to whichever pin is still wired up.
+		rmt_tx_wait_all_done(led_chan, 100);
+
+		if (led_route(pin)) {
+			rmt_transmit(led_chan, enc, data, size, &tx_config);
+		}
+	}
+
+	led_unlock();
+}
+
+static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
+	if (argn < 1 || argn > 2 || !lbm_is_array_r(args[0])) {
 		lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
 		return ENC_SYM_TERROR;
+	}
+
+	// (rgbled-update array)      -> the strip from the last rgbled-init
+	// (rgbled-update array pin)  -> a specific strip
+	int pin = led_lisp_pin;
+	if (argn >= 2) {
+		if (!lbm_is_number(args[1])) {
+			lbm_set_error_reason((char*)lbm_error_str_incorrect_arg);
+			return ENC_SYM_TERROR;
+		}
+		pin = lbm_dec_as_i32(args[1]);
+	}
+
+	led_lock();
+	bool known = pin >= 0 && strip_find(pin) != NULL;
+	led_unlock();
+	if (!known) {
+		lbm_set_error_reason("Please run rgbled-init first");
+		return ENC_SYM_EERROR;
 	}
 
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
@@ -496,18 +767,16 @@ static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	// Wait for any in-progress transmission to complete before sending new data.
-	rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(100));
-	esp_err_t err = rmt_transmit(led_chan, led_encoder, (uint8_t*)array->data + 1, array->size - 1, &tx_config);
-	if (err != ESP_OK) {
-		commands_printf_lisp("RMT transmit failed: %d", err);
-		return ENC_SYM_EERROR;
-	}
+	rgbled_update(pin, (uint8_t*)array->data + 1, array->size - 1);
 
 	return ENC_SYM_TRUE;
 }
 
 void lispif_load_rgbled_extensions(void) {
+	if (led_mtx == NULL) {
+		led_mtx = xSemaphoreCreateRecursiveMutexStatic(&led_mtx_buf);
+	}
+
 	lbm_add_extension("rgbled-init", ext_rgbled_init);
 	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
 	lbm_add_extension("rgbled-buffer", ext_rgbled_color_buffer);
