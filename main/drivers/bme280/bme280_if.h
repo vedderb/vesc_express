@@ -20,11 +20,12 @@
 #ifndef MAIN_DRIVERS_BME280_BME280_IF_H_
 #define MAIN_DRIVERS_BME280_BME280_IF_H_
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
+#include "freertos/FreeRTOS.h"
 
 // Functions
 void bme280_if_init(int pin_sda, int pin_scl);
-void bme280_if_init_with_mutex(SemaphoreHandle_t mutex);
+void bme280_if_init_with_mutex(SemaphoreHandle_t mutex, i2c_master_bus_handle_t bus);
 void bme280_if_stop(void);
 float bme280_if_get_hum(void);
 float bme280_if_get_temp(void);

@@ -21,11 +21,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 #include "disp_ssd1306.h"
-#include "driver/i2c.h"
 #include "lispif.h"
+
+static i2c_master_bus_handle_t ssd1306_bus;
+static i2c_master_dev_handle_t ssd1306_device;
 #include "lispbm.h"
 
 #define DISPLAY_WIDTH		128
@@ -36,17 +38,24 @@
 
 void disp_ssd1306_init(int pin_sda, int pin_scl, uint32_t clk_speed) {
 
-	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
+	i2c_master_bus_config_t bus_config = {
+			.i2c_port = I2C_NUM_0,
 			.sda_io_num = pin_sda,
 			.scl_io_num = pin_scl,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = clk_speed,
+			.clk_source = I2C_CLK_SRC_DEFAULT,
+			.glitch_ignore_cnt = 7,
+			.flags.enable_internal_pullup = true,
 	};
+	if (i2c_new_master_bus(&bus_config, &ssd1306_bus) != ESP_OK) {
+		return;
+	}
 
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	i2c_device_config_t device_config = {
+		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
+		.device_address = DISPLAY_I2C_ADDRESS,
+		.scl_speed_hz = clk_speed,
+	};
+	i2c_master_bus_add_device(ssd1306_bus, &device_config, &ssd1306_device);
 }
 
 static const uint8_t disp_ssd1306_init_sequence[19][5] = {
@@ -79,13 +88,13 @@ void disp_ssd1306_clear(uint32_t color) {
 	buffer[0] = 0x40;
 
 	memset(&buffer[1], color ? 1 : 0 , 1024);
-	i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS, buffer, 1025, 2000);
+	i2c_master_transmit(ssd1306_device, buffer, 1025, 2000);
 	free(buffer);
 }
 
 void disp_ssd1306_reset(void) {
 	for (int i = 0; i < 19; i ++ ) {
-		i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS,
+		i2c_master_transmit(ssd1306_device,
 				&disp_ssd1306_init_sequence[i][1],
 				disp_ssd1306_init_sequence[i][0], 2000);
 	}
@@ -126,7 +135,7 @@ bool disp_ssd1306_render_image(image_buffer_t *img, uint16_t x, uint16_t y, colo
 			}
 		}
 
-		i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS, buffer, 1025, 2000);
+		i2c_master_transmit(ssd1306_device, buffer, 1025, 2000);
 		free(buffer);
 	}
 	break;

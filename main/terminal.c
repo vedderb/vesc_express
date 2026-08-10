@@ -194,6 +194,7 @@ void terminal_process_string(char *str) {
 		commands_printf("Custom BLE Started: %d", custom_ble_started());
 		commands_printf("CAN RX Recoveries : %d", comm_can_get_rx_recovery_cnt());
 
+		#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 		esp_ip4_addr_t ip = comm_wifi_get_ip();
 		esp_ip4_addr_t ip_client = comm_wifi_get_ip_client();
 
@@ -204,7 +205,6 @@ void terminal_process_string(char *str) {
 		commands_printf("WIFI Client Con   : %d", comm_wifi_is_client_connected());
 
 		uint8_t ch_primary;
-		#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 		wifi_second_chan_t ch_second;
 		esp_err_t ch_res = esp_wifi_get_channel(&ch_primary, &ch_second);
 
@@ -215,9 +215,6 @@ void terminal_process_string(char *str) {
 		} else {
 			commands_printf("WIFI Channel      : error %d", ch_res);
 		}
-		#else
-		(void)ch_primary;
-		commands_printf("WIFI Channel      : unavailable");
 		#endif
 
 		const esp_partition_t *running = esp_ota_get_running_partition();

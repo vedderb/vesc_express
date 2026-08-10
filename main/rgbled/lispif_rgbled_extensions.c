@@ -28,7 +28,8 @@
 
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
-#include "soc/rmt_periph.h"
+#include "esp_private/rmt.h"
+#include "hal/rmt_periph.h"
 #include "soc/soc_caps.h"
 #include "soc/io_mux_reg.h"
 #include "soc/gpio_periph.h"
@@ -36,7 +37,6 @@
 #include "driver/gpio.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
-#include "soc/gpio_struct.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -45,10 +45,6 @@
 
 #define LED_STRIP_MAX 8   // distinct pins tracked at once
 #define LED_TIMING_MAX 5  // wire timing presets, one encoder each
-
-// Width of the GPIO matrix out-select field. Read as a whole word because the
-// bitfield is named func_sel on some targets and out_sel on others.
-#define LED_OUT_SEL_MASK ((uint32_t)((SIG_GPIO_OUT_IDX << 1) - 1))
 
 typedef struct {
 	rmt_encoder_t base;
@@ -233,17 +229,12 @@ static void led_pin_idle(int pin) {
 	gpio_set_level((gpio_num_t)pin, 0);
 }
 
-// Which TX signal the driver wired to `pin` when it created the channel. There
-// is no public API for the channel id, so match what it actually routed
-// against the group's signals.
 static void led_find_tx_sig(int pin) {
+	(void)pin;
 	led_tx_sig = -1;
-	uint32_t routed = GPIO.func_out_sel_cfg[pin].val & LED_OUT_SEL_MASK;
-	for (int i = 0; i < SOC_RMT_CHANNELS_PER_GROUP; i++) {
-		if ((uint32_t)rmt_periph_signals.groups[0].channels[i].tx_sig == routed) {
-			led_tx_sig = rmt_periph_signals.groups[0].channels[i].tx_sig;
-			return;
-		}
+	int channel_id;
+	if (rmt_get_channel_id(led_chan, &channel_id) == ESP_OK) {
+		led_tx_sig = soc_rmt_signals[0].channels[channel_id].tx_sig;
 	}
 }
 

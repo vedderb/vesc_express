@@ -33,7 +33,7 @@
 #include "freertos/task.h"
 
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/spi_master.h"
 #include "esp_err.h"
 
@@ -64,8 +64,8 @@ static TaskHandle_t touch_event_task_handle = 0;
 static lispif_touch_driver_t touch_driver = {0};
 static esp_lcd_touch_handle_t touch_handle = NULL;
 static esp_lcd_panel_io_handle_t touch_io_handle = NULL;
-static i2c_port_t touch_i2c_port = TOUCH_I2C_PORT;
-static bool touch_owns_i2c_driver = false;
+static i2c_master_bus_handle_t touch_i2c_bus = NULL;
+static bool touch_owns_i2c_bus = false;
 static spi_host_device_t touch_spi_host = SPI2_HOST;
 static bool touch_owns_spi_bus = false;
 static bool touch_has_int = false;
@@ -167,14 +167,20 @@ static esp_err_t touch_esp_lcd_deinit(void) {
 		touch_io_handle = NULL;
 	}
 
-	if (touch_owns_i2c_driver) {
-		esp_err_t res = i2c_driver_delete(touch_i2c_port);
+	esp_err_t cst836u_res = touch_cst836u_deinit();
+	if (cst836u_res != ESP_OK && first_err == ESP_OK) {
+		first_err = cst836u_res;
+	}
+
+	if (touch_owns_i2c_bus) {
+		esp_err_t res = i2c_del_master_bus(touch_i2c_bus);
 		if (res != ESP_OK && first_err == ESP_OK) {
 			first_err = res;
 		}
 	}
 
-	touch_owns_i2c_driver = false;
+	touch_i2c_bus = NULL;
+	touch_owns_i2c_bus = false;
 
 	if (touch_owns_spi_bus) {
 		esp_err_t res = spi_bus_free(touch_spi_host);
@@ -228,38 +234,26 @@ static esp_err_t touch_esp_lcd_get_data(lispif_touch_point_data_t *data, uint8_t
 }
 
 static esp_err_t touch_init_i2c_bus(int sda, int scl, uint32_t freq) {
-	i2c_config_t i2c_conf = {
-			.mode = I2C_MODE_MASTER,
+	(void)freq;
+	i2c_master_bus_config_t i2c_conf = {
+			.i2c_port = TOUCH_I2C_PORT,
 			.sda_io_num = sda,
 			.scl_io_num = scl,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = freq,
+			.clk_source = I2C_CLK_SRC_DEFAULT,
+			.glitch_ignore_cnt = 7,
+			.flags.enable_internal_pullup = true,
 	};
 
-	bool reuse_existing_i2c = false;
-	esp_err_t cfg_res = i2c_param_config(TOUCH_I2C_PORT, &i2c_conf);
-	if (cfg_res == ESP_ERR_INVALID_ARG) {
-		i2c_conf.sda_pullup_en = GPIO_PULLUP_DISABLE;
-		i2c_conf.scl_pullup_en = GPIO_PULLUP_DISABLE;
-		cfg_res = i2c_param_config(TOUCH_I2C_PORT, &i2c_conf);
+	touch_owns_i2c_bus = false;
+	esp_err_t res = i2c_master_get_bus_handle(TOUCH_I2C_PORT, &touch_i2c_bus);
+	if (res == ESP_ERR_NOT_FOUND) {
+		res = i2c_new_master_bus(&i2c_conf, &touch_i2c_bus);
+		touch_owns_i2c_bus = res == ESP_OK;
 	}
-	if (cfg_res != ESP_OK) {
-		if (cfg_res != ESP_FAIL && cfg_res != ESP_ERR_INVALID_STATE) {
-			return cfg_res;
-		}
-		reuse_existing_i2c = true;
-	}
-
-	esp_err_t res = i2c_driver_install(TOUCH_I2C_PORT, i2c_conf.mode, 0, 0, 0);
-	if (res == ESP_ERR_INVALID_STATE) {
-		reuse_existing_i2c = true;
-	} else if (res != ESP_OK) {
+	if (res != ESP_OK) {
 		return res;
 	}
 
-	touch_owns_i2c_driver = !reuse_existing_i2c;
-	touch_i2c_port = TOUCH_I2C_PORT;
 	return ESP_OK;
 }
 
@@ -281,7 +275,7 @@ static esp_err_t touch_init_i2c_esp_lcd(int sda, int scl, int rst, int int_pin, 
 	}
 
 	io_conf.scl_speed_hz = 0;
-	res = esp_lcd_new_panel_io_i2c(TOUCH_I2C_PORT, &io_conf, &touch_io_handle);
+	res = esp_lcd_new_panel_io_i2c(touch_i2c_bus, &io_conf, &touch_io_handle);
 	if (res != ESP_OK) {
 		touch_esp_lcd_deinit();
 		return res;
@@ -903,8 +897,9 @@ static lbm_value ext_touch_load_cst836u(lbm_value *args, lbm_uint argn) {
 	}
 
 	lispif_touch_driver_t driver = {0};
-	res = touch_cst836u_init(touch_i2c_port, (uint16_t)width, (uint16_t)height, &driver);
+	res = touch_cst836u_init(touch_i2c_bus, (uint16_t)width, (uint16_t)height, (uint32_t)freq, &driver);
 	if (res != ESP_OK) {
+		touch_esp_lcd_deinit();
 		lbm_set_esp_error_reason(res);
 		return ENC_SYM_EERROR;
 	}
