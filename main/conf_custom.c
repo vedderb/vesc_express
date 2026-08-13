@@ -24,6 +24,7 @@
 #include "buffer.h"
 #include "utils.h"
 #include "commands.h"
+#include "esp_memory_utils.h"
 
 #include <string.h>
 
@@ -32,16 +33,50 @@ static int (*m_get_cfg)(uint8_t *data, bool is_default) = 0;
 static bool (*m_set_cfg)(uint8_t *data)                 = 0;
 static int (*m_get_cfg_xml)(uint8_t **data)             = 0;
 
+// A lib executing in place returns the address of its XML in the instruction
+// window, which cannot be read as data. Other addresses pass through.
+static int get_xml(uint8_t **data) {
+	if (m_get_cfg_xml == 0) {
+		return 0;
+	}
+
+	int len = m_get_cfg_xml(data);
+
+	if (*data != NULL) {
+		*data = utils_irom_to_drom(*data);
+	}
+
+	return len;
+}
+
+static bool xml_is_valid(const uint8_t *data, int len) {
+	return len > 0 && data != NULL
+		&& (esp_ptr_internal(data) || esp_ptr_external_ram(data)
+			|| esp_ptr_in_drom(data));
+}
+
 void conf_custom_add_config(
 	int (*get_cfg)(uint8_t *data, bool is_default),
 	bool (*set_cfg)(uint8_t *data), int (*get_cfg_xml)(uint8_t **data)
 ) {
-	if (utils_is_func_valid(get_cfg) && utils_is_func_valid(set_cfg)
-		&& utils_is_func_valid(get_cfg_xml)) {
-		m_get_cfg     = get_cfg;
-		m_set_cfg     = set_cfg;
-		m_get_cfg_xml = get_cfg_xml;
+	if (!utils_is_func_valid(get_cfg) || !utils_is_func_valid(set_cfg)
+		|| !utils_is_func_valid(get_cfg_xml)) {
+		return;
 	}
+
+	// Assigned before the probe so get_xml can map it, cleared again if unusable.
+	m_get_cfg_xml = get_cfg_xml;
+
+	uint8_t *xml_data = 0;
+	int xml_len       = get_xml(&xml_data);
+
+	if (!xml_is_valid(xml_data, xml_len)) {
+		m_get_cfg_xml = 0;
+		return;
+	}
+
+	m_get_cfg = get_cfg;
+	m_set_cfg = set_cfg;
 }
 
 void conf_custom_clear_configs(void) {
@@ -55,12 +90,9 @@ int conf_custom_cfg_num(void) {
 
 	if (m_get_cfg_xml) {
 		uint8_t *xml_data = 0;
-		int xml_len = m_get_cfg_xml(&xml_data);
+		int xml_len = get_xml(&xml_data);
 
-		// xml_data points at the lib's XML in its (non-executable) data
-		// block, so validate it as a readable pointer with a real length -
-		// NOT with esp_ptr_executable, which only passes for code.
-		if (xml_data != NULL && xml_len > 0) {
+		if (xml_is_valid(xml_data, xml_len)) {
 			res = 1;
 		}
 	}
@@ -73,7 +105,7 @@ int conf_custom_get_cfg_xml(int conf_ind, uint8_t **data) {
 		return 0;
 	}
 
-	return m_get_cfg_xml(data);
+	return get_xml(data);
 }
 
 void conf_custom_process_cmd(
@@ -130,7 +162,7 @@ void conf_custom_process_cmd(
 			int32_t ofs_conf = buffer_get_int32(data, &ind);
 
 			uint8_t *xml_data = 0;
-			int xml_len       = m_get_cfg_xml(&xml_data);
+			int xml_len       = get_xml(&xml_data);
 
 			if ((len_conf + ofs_conf) > xml_len
 				|| len_conf > (PACKET_MAX_PL_LEN - 10)) {
