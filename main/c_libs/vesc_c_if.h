@@ -324,6 +324,20 @@ typedef struct {
 						return false; \
 					}
 
+// Runtime address of a global defined in another translation unit. On the XIP
+// targets a plain &sym resolves through the GOT, which holds unrelocated
+// link-time addresses. Not needed for same-file statics, literals or functions,
+// nor on the esp32s3, which is relocated at load time.
+#if defined(__riscv)
+#define VESC_LIB_SYM_ADDR(sym) ({ \
+		void *_addr; \
+		__asm__ ("lla %0, " #sym : "=r" (_addr)); \
+		_addr; \
+	})
+#else
+#define VESC_LIB_SYM_ADDR(sym)	((void *)(sym))
+#endif
+
 // Address of this program in memory
 #define PROG_ADDR	((uint32_t)&prog_ptr)
 
