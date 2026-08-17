@@ -2,12 +2,18 @@
 .settings
 .cproject
 build
+build-*/
 esp_idf_components
 sdkconfig.old
 sdkconfig
+sdkconfig_*
 .vscode
 .DS_Store
 build_output/
+notes/*.log
+vesc_pkg/**/build-package.log
+vesc_pkg/**/qml-runtime*.log
+vesc_pkg/**/fonts/eurostile-120.bin
 main/hwconf/**/*/qmlui_hw.c
 main/hwconf/**/*/qmlui_hw.h
 

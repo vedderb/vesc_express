@@ -25,9 +25,11 @@
 #include "esp_heap_caps.h"
 
 #include "disp_axs15231.h"
+#include "display_backend.h"
 #include "main.h"
 #include "lispif.h"
 #include "lispbm.h"
+#include "esp_log.h"
 #include <string.h>
 
 #define TAG "AXS15231"
@@ -48,6 +50,32 @@ static int m_rotation = 0;
 static esp_lcd_panel_io_handle_t m_io    = NULL;
 static esp_lcd_panel_handle_t    m_panel = NULL;
 static uint8_t *m_pix_buf = NULL;
+static SemaphoreHandle_t m_refresh_done = NULL;
+
+static bool IRAM_ATTR notify_refresh_done(esp_lcd_panel_io_handle_t panel_io,
+		esp_lcd_panel_io_event_data_t *event_data, void *user_ctx) {
+	(void)panel_io;
+	(void)event_data;
+	(void)user_ctx;
+	BaseType_t need_yield = pdFALSE;
+	xSemaphoreGiveFromISR(m_refresh_done, &need_yield);
+	return need_yield == pdTRUE;
+}
+
+static esp_err_t draw_bitmap_sync(int x_start, int y_start, int x_end,
+		int y_end, const void *pixels) {
+	if (!m_panel || !m_refresh_done || !pixels) {
+		return ESP_ERR_INVALID_STATE;
+	}
+
+	esp_err_t result = esp_lcd_panel_draw_bitmap(
+		m_panel, x_start, y_start, x_end, y_end, pixels);
+	if (result != ESP_OK) {
+		return result;
+	}
+	return xSemaphoreTake(m_refresh_done, portMAX_DELAY) == pdTRUE ?
+		ESP_OK : ESP_ERR_TIMEOUT;
+}
 
 static const axs15231b_lcd_init_cmd_t lcd_init_cmds[] = {
     {0xBB, (const uint8_t []){0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x5A, 0xA5}, 8, 0},
@@ -139,12 +167,14 @@ bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, col
             }
 
             uint8_t *src = img->data + ((size_t)line * (size_t)img->width * 2U);
-			esp_lcd_panel_draw_bitmap(m_panel,
+			if (draw_bitmap_sync(
 					x,
                     y + line,
 					x + img->width,
                     y + line + lines_now,
-					src);
+					src) != ESP_OK) {
+				return false;
+			}
 		}
         return true;
     }
@@ -215,7 +245,10 @@ bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, col
 
         int p_start_y = py_min + (pix_idx / target_w);
         int p_end_y = p_start_y + (chunk_now / target_w);
-        esp_lcd_panel_draw_bitmap(m_panel, px_min, p_start_y, px_min + target_w, p_end_y, buf);
+        if (draw_bitmap_sync(px_min, p_start_y, px_min + target_w,
+                p_end_y, buf) != ESP_OK) {
+            return false;
+        }
 
         pix_idx += chunk_now;
     }
@@ -243,7 +276,11 @@ void disp_axs15231_clear(uint32_t color) {
             lines_now = chunk_lines;
         }
 
-        esp_lcd_panel_draw_bitmap(m_panel, 0, y, DISPLAY_WIDTH_PHYS, y + lines_now, buf);
+        if (draw_bitmap_sync(0, y, DISPLAY_WIDTH_PHYS,
+                y + lines_now, buf) != ESP_OK) {
+            ESP_LOGE(TAG, "display clear failed at line %d", y);
+            return;
+        }
     }
 }
 
@@ -291,21 +328,37 @@ static lbm_value ext_disp_orientation(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
+esp_err_t disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 		int pin_clk, int pin_cs, int pin_reset, int clock_mhz) {
 
 	if (!m_pix_buf) {
 		m_pix_buf = heap_caps_malloc(PIX_BUF_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+		if (!m_pix_buf) {
+			return ESP_ERR_NO_MEM;
+		}
+	}
+	if (!m_refresh_done) {
+		m_refresh_done = xSemaphoreCreateBinary();
+		if (!m_refresh_done) {
+			return ESP_ERR_NO_MEM;
+		}
 	}
 
 	const spi_bus_config_t buscfg = AXS15231B_PANEL_BUS_QSPI_CONFIG(
 			pin_clk, pin_sd0, pin_sd1, pin_sd2, pin_sd3,
 			DISPLAY_WIDTH_PHYS * DISPLAY_HEIGHT_PHYS * 2);
-	spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
+	esp_err_t result = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
+	if (result != ESP_OK) {
+		return result;
+	}
 
-	const esp_lcd_panel_io_spi_config_t io_cfg =
-			AXS15231B_PANEL_IO_QSPI_CONFIG(pin_cs, NULL, NULL);
-	esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_cfg, &m_io);
+	esp_lcd_panel_io_spi_config_t io_cfg =
+			AXS15231B_PANEL_IO_QSPI_CONFIG(pin_cs, notify_refresh_done, NULL);
+	result = esp_lcd_new_panel_io_spi(
+		(esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_cfg, &m_io);
+	if (result != ESP_OK) {
+		return result;
+	}
 
 	static axs15231b_vendor_config_t vendor_config = {
 		.init_cmds      = lcd_init_cmds,
@@ -322,16 +375,54 @@ void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 		.vendor_config  = &vendor_config,
 	};
 
-	esp_lcd_new_panel_axs15231b(m_io, &panel_config, &m_panel);
-	esp_lcd_panel_reset(m_panel);
-	esp_lcd_panel_init(m_panel);
+	result = esp_lcd_new_panel_axs15231b(m_io, &panel_config, &m_panel);
+	if (result == ESP_OK) {
+		result = esp_lcd_panel_reset(m_panel);
+	}
+	if (result == ESP_OK) {
+		result = esp_lcd_panel_init(m_panel);
+	}
+	if (result != ESP_OK) {
+		return result;
+	}
 
 	lbm_add_extension("ext-disp-cmd", ext_disp_cmd);
 	lbm_add_extension("ext-disp-orientation", ext_disp_orientation);
+
+	static const display_backend_ops_t backend_ops = {
+		.name = "AXS15231",
+		.render_image = disp_axs15231_render_image,
+		.clear = disp_axs15231_clear,
+		.reset = disp_axs15231_reset,
+		.draw_rgb565 = disp_axs15231_draw_rgb565,
+		.get_width = disp_axs15231_get_width,
+		.get_height = disp_axs15231_get_height,
+		.pixel_format = DISPLAY_BACKEND_PIXEL_FORMAT_RGB565_SWAPPED,
+		.invalidate_x_alignment = 1,
+		.invalidate_y_alignment = 1,
+	};
+	return display_backend_register(&backend_ops);
 }
 
 void disp_axs15231_reset(void) {
 	esp_lcd_panel_reset(m_panel);
 	esp_lcd_panel_init(m_panel);
 	disp_axs15231_clear(0);
+}
+
+esp_err_t disp_axs15231_draw_rgb565(int x_start, int y_start, int x_end,
+		int y_end, const void *pixels) {
+	if (x_start < 0 || y_start < 0 || x_end <= x_start || y_end <= y_start ||
+		x_end > m_display_width || y_end > m_display_height) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	return draw_bitmap_sync(x_start, y_start, x_end, y_end, pixels);
+}
+
+int disp_axs15231_get_width(void) {
+	return m_display_width;
+}
+
+int disp_axs15231_get_height(void) {
+	return m_display_height;
 }
