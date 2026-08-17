@@ -74,9 +74,11 @@ static void create_smoke_screen(void) {
 	lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
 	lv_obj_t *label = lv_label_create(screen);
-	lv_label_set_text(label, "Hello LVGL");
-	lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
+	lv_label_set_text(label, "Please install\ndisplay package");
+	lv_obj_set_width(label, 420);
+	lv_obj_set_style_text_font(label, &lv_font_montserrat_32, LV_PART_MAIN);
 	lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+	lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 	lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 }
 

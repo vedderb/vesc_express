@@ -1,4 +1,4 @@
-"""Create package LVIM resources from the RFP200 SquareLine C image arrays."""
+"""Create package LVIM resources from generated C image arrays."""
 
 from __future__ import annotations
 
@@ -46,13 +46,17 @@ def write_lvim(destination: Path, width: int, height: int,
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rfp200", type=Path, default=Path(r"C:\esp\RFP200"))
+    parser.add_argument(
+        "--source",
+        type=Path,
+        required=True,
+        help="Directory containing the generated C image arrays",
+    )
     parser.add_argument("--output", type=Path,
                         default=Path(__file__).resolve().parents[1] / "assets")
     args = parser.parse_args()
 
-    source_dir = (args.rfp200 / "components" / "ui" / "src" /
-                  "assets" / "images")
+    source_dir = args.source
     args.output.mkdir(parents=True, exist_ok=True)
     for output_name, source_name in IMAGE_SOURCES.items():
         width, height, pixels = parse_image(source_dir / source_name)

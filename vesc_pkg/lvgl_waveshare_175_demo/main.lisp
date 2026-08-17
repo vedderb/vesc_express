@@ -1,13 +1,12 @@
 @const-start
 
-; Exact RFP200 Eurostile display font, subset to the glyphs used here.
-; This screen includes power, so it follows RFP200's speedversion2 layout.
+; Eurostile display font subsets for the dashboard values and units.
 (import "fonts/eurostile-100.bin" 'font-speed-data)
 (import "fonts/eurostile-40.bin" 'font-large-data)
 (import "fonts/eurostile-30.bin" 'font-medium-data)
 (import "fonts/eurostile-20.bin" 'font-small-data)
 
-; RFP200 Main UI icons, stored as RGB565 plus an A8 alpha plane.
+; Dashboard icons stored as RGB565 plus an A8 alpha plane.
 (import "assets/battery.lvim" 'image-battery-data)
 (import "assets/controller.lvim" 'image-controller-data)
 (import "assets/motor.lvim" 'image-motor-data)
@@ -91,9 +90,9 @@
 (def telemetry-stale-seconds 1.0)
 (def telemetry-filter-alpha 0.25)
 
-; canget-rpm returns electrical RPM. These package-local defaults match the
-; original RFP200 fallback calibration and can be changed without reflashing
-; VESC Express. A later settings package can persist these values in LispBM.
+; canget-rpm returns electrical RPM. These package-local defaults can be
+; changed without reflashing VESC Express. A later settings package can
+; persist these values in LispBM.
 (def motor-pole-pairs 14.0)       ; 28 motor poles / 2
 (def drive-gear-ratio 1.0)
 (def wheel-diameter-m 0.5)
@@ -420,7 +419,7 @@
                 (if (= opcode settings-op-save-profile)
                     (profile-save-request data request-id)
                     (if (= opcode settings-op-commit-profile)
-                        (profile-commit-request data request-id)))))))
+                        (profile-commit-request data request-id))))))
     })
 }))
 
@@ -605,7 +604,7 @@
                 (setq guardian-request-profile -1)
                 (setq guardian-request-id 0)
                 (guardian-apply-profile requested-profile requested-id)
-            }
+            })
             (if (and (= profile-enabled 1)
                      (not guardian-busy)
                      (< guardian-request-profile 0)) {
@@ -651,9 +650,17 @@
 (def settings-event-handler (fn () {
     (loopwhile t
         (recv
-            ((event-data-rx . (? data)) (settings-receive data))
-            ((event-cmds-data-tx . (? data))
-                (guardian-handle-command-response data))
+            ((event-data-rx . (? data)) {
+                (var settings-result (trap (settings-receive data)))
+                (if (not (eq (car settings-result) 'exit-ok))
+                    (print "LVGL settings request failed"))
+            })
+            ((event-cmds-data-tx . (? data)) {
+                (var guardian-result
+                    (trap (guardian-handle-command-response data)))
+                (if (not (eq (car guardian-result) 'exit-ok))
+                    (print "LVGL guardian response failed"))
+            })
             (_ nil)))
 }))
 
@@ -818,7 +825,7 @@
     (def screen (lv-screen-create))
     (lv-object-style-bg screen color-black 255 0)
 
-    ; Three moving perimeter gauges from the RFP200 Main UI.
+    ; Three moving perimeter gauges for temperature and battery state.
     (def arc-controller (make-arc screen 452 controller-temp-arc-max 10 70 arc-mode-normal 5))
     (def arc-motor (make-arc screen 456 motor-temp-arc-max 290 350 arc-mode-reverse 5))
     (def arc-battery (make-arc screen 456 100 110 250 arc-mode-normal 5))
@@ -834,8 +841,7 @@
     (def label-battery (make-label screen font-medium "--%" 120 size-content
         align-top-mid -8 10 color-white text-align-right))
 
-    ; Central RFP200 speedversion2 card. Font sizes and coordinates below are
-    ; copied from ui_screen_mainui.c in the RFP200 source.
+    ; Central speed and power card.
     (def speed-card (lv-object-create screen))
     (lv-object-remove-style-all speed-card)
     (lv-object-set-size speed-card 260 260)
@@ -883,15 +889,29 @@
     (def display-brightness default-brightness)
     (def speed-unit default-speed-unit)
     (def power-unit default-power-unit)
-    (settings-load)
-    (settings-apply)
+
+    ; Make the package screen visible before reading persistent settings or
+    ; starting optional subsystems. A storage, brightness, profile, command,
+    ; or telemetry error must never leave the native Hello LVGL screen active.
     (lv-screen-load screen)
+    (var settings-load-result (trap (settings-load)))
+    (if (not (eq (car settings-load-result) 'exit-ok))
+        (print "LVGL settings storage initialization failed"))
+    (var settings-apply-result (trap (settings-apply)))
+    (if (not (eq (car settings-apply-result) 'exit-ok))
+        (print "LVGL settings application failed"))
+
     (event-register-handler (spawn settings-event-handler))
     (event-enable 'event-data-rx)
     (spawn profile-runtime-start)
     (loopwhile-thd ("LVGL-live" 320) t {
-        (live-update)
-        (sleep 0.10)
+        (var live-result (trap (live-update)))
+        (if (eq (car live-result) 'exit-ok)
+            (sleep 0.10)
+            {
+                (print "LVGL telemetry update failed")
+                (sleep 1.0)
+            })
     })
 }))
 

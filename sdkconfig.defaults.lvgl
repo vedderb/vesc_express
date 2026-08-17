@@ -32,8 +32,8 @@ CONFIG_LV_USE_BUILTIN_MALLOC=y
 CONFIG_LV_MEM_SIZE_KILOBYTES=64
 CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=0
 
-# Keep the runtime package widget set narrow. Fonts and images are loaded from
-# package resources rather than compiled into the Express firmware.
+# Keep the runtime package widget set narrow. Dashboard fonts and images are
+# loaded from package resources; the built-in fonts support the native fallback.
 CONFIG_LV_USE_LABEL=y
 CONFIG_LV_USE_ARC=y
 CONFIG_LV_USE_IMAGE=y
@@ -44,6 +44,7 @@ CONFIG_LV_USE_FONT_COMPRESSED=y
 CONFIG_LV_USE_FS_MEMFS=y
 CONFIG_LV_FS_MEMFS_LETTER=77
 CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_32=y
 # CONFIG_LV_FONT_UNSCII_8 is not set
 CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y
 # CONFIG_LV_FONT_DEFAULT_UNSCII_8 is not set

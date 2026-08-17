@@ -35,22 +35,26 @@ idf.py -B build-demo-waveshare build
 Result: PASS.
 
 - Image: `build-demo-waveshare/vesc_express_lvgl.bin`
-- Size: 1,533,344 bytes (`0x1765a0`)
-- App partition free: 63%
+- Size: 1,579,392 bytes (`0x181980`)
+- App partition free: 62%
 - SHA-256:
-  `7F4AF009C23E7C51508D1A5AF4659F46B16E647D09D7815CF622830B777B0337`
+  `3E93CB3382FD9D2D4C98853B10FC4224A578A21573C68CA7B4492B46B50C7E34`
 
-The complete ESP32-S3 image was flashed to COM29. Esptool identified the
-expected ESP32-S3, 8 MB PSRAM, MAC `80:b5:4e:da:66:e8`, and verified every
-written region by SHA digest.
+The native package-missing screen now displays `Please install display
+package` as a centered two-line Montserrat 32 label instead of the Montserrat
+14 `Hello LVGL` smoke-test text. The current image was flashed to COM29.
+Esptool identified the expected ESP32-S3, 8 MB PSRAM, and MAC
+`80:b5:4e:da:66:e8`; bootloader, application, partition-table, and OTA-data
+writes all passed SHA verification. A post-reset VESC Tool query returned
+V7.00, hardware `Waveshare AMOLED 1.75`, and the matching UUID.
 
 ## Package validation
 
 The live dashboard package was built with VESC Tool 7.00 from `pkgdesc.qml`.
 
-- Size: 28,689 bytes
+- Size: 28,722 bytes
 - SHA-256:
-  `BD5436E3329204157709A7D267A3049B7317FA8B8B3B714BCADC5DBE566E92F5`
+  `9FED4D577A5BE7A22A29E69A1FF45666649A0D79E049DA5A54F2DDE8DBA0680B`
 - QML payload: `ui.qml` configuration App UI
 - LispBM payload: `main.lisp`, four LVGL binary fonts, and six LVIM image
   resources
@@ -93,10 +97,26 @@ This proves the uploaded Lisp update loop is running. It also proves that no
 controller was broadcasting fresh status 1, 4, or 5 frames during this bench
 capture, so live nonzero telemetry remains a controller-on-CAN bench test.
 
-The current 28,689-byte package containing the QML settings page and profile
+The current 28,722-byte package containing the QML settings page and profile
 guardian has been built and QML/package-compiler validated but has not been
 installed on the hardware. Hardware behavior for automatic profile restoration
 and periodic alignment therefore remains unverified.
+
+The preceding package showed the updated QML App UI while the physical display
+remained on the native `Hello LVGL` screen. A direct COM29 LispBM restart and
+print capture proved that the installed script failed during source parsing:
+`read_error`, context `main-u`, line 424, column 4. The new profile command
+dispatch contained one extra closing parenthesis, and the periodic profile
+guardian contained a separate missing closing parenthesis. Because parsing
+failed before `(main)` ran, the package screen was never created; the QML App
+UI remained available because it is a separate package payload.
+
+Both profile delimiter defects are corrected in the current package. A
+whole-source delimiter scan now passes, VESC Tool 7.00 builds the package with
+the target Lisp data at 96,730 / 131,072 bytes (73.8%), and decompression of the
+finished package confirms that both corrected source forms are present. The
+dashboard also loads before settings/profile recovery and traps optional
+subsystem errors. Physical display boot still requires user installation proof.
 
 ## Live telemetry mapping
 

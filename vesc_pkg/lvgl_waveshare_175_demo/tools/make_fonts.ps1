@@ -7,13 +7,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if (-not (Test-Path -LiteralPath $FontPath -PathType Leaf)) {
-    throw "RFP200 font not found: $FontPath"
+    throw "Font file not found: $FontPath"
 }
 
 $fontDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) 'fonts'
 New-Item -ItemType Directory -Path $fontDirectory -Force | Out-Null
 
-function New-Rfp200BinaryFont {
+function New-DashboardBinaryFont {
     param(
         [int]$Size,
         [string]$Symbols,
@@ -38,8 +38,8 @@ function New-Rfp200BinaryFont {
     }
 
     # Subsetting removes unused ascender/descender glyphs, which makes the
-    # generated line box shorter. Restore the exact metrics from the RFP200
-    # ui_font_jm*.c files without carrying all ASCII glyph bitmaps.
+    # generated line box shorter. Restore the configured dashboard metrics
+    # without carrying all ASCII glyph bitmaps.
     [byte[]]$fontData = [System.IO.File]::ReadAllBytes($destination)
     if ($fontData.Length -lt 48 -or $fontData[41] -ne 1) {
         throw "Unexpected LVGL binary font header in $OutputName"
@@ -53,12 +53,12 @@ function New-Rfp200BinaryFont {
     Write-Host "${OutputName}: size=$Size line_height=$lineHeight base_line=$baseLine"
 }
 
-# Values come directly from RFP200 ui_font_jm100/40/30/20.c.
-New-Rfp200BinaryFont -Size 100 -Symbols ' -0123456789' `
+# Dashboard line-height and baseline values.
+New-DashboardBinaryFont -Size 100 -Symbols ' -0123456789' `
     -OutputName 'eurostile-100.bin' -Ascent 76 -Descent -17
-New-Rfp200BinaryFont -Size 40 -Symbols ' -0123456789' `
+New-DashboardBinaryFont -Size 40 -Symbols ' -0123456789' `
     -OutputName 'eurostile-40.bin' -Ascent 31 -Descent -7
-New-Rfp200BinaryFont -Size 30 -Symbols ' %-0123456789ahkmpstw' `
+New-DashboardBinaryFont -Size 30 -Symbols ' %-0123456789ahkmpstw' `
     -OutputName 'eurostile-30.bin' -Ascent 24 -Descent -5
-New-Rfp200BinaryFont -Size 20 -Symbols ' -.0123456789c' `
+New-DashboardBinaryFont -Size 20 -Symbols ' -.0123456789c' `
     -OutputName 'eurostile-20.bin' -Ascent 16 -Descent -3
