@@ -5,12 +5,25 @@ Waveshare ESP32-S3 Touch AMOLED 1.75 target. It uses LVGL widgets, the original
 Eurostile-derived display font, and the battery, controller, motor, Eco, and
 Race icon artwork from the user's RFP200 project.
 
+## BMS scope
+
+This package does not provide a BMS function. It has no BMS page, BMS scan or
+connection workflow, cell telemetry, balancing controls, or BMS configuration.
+Use VESC Tool's standard BMS pages for those features.
+
+The Main dashboard's battery gauge is display-only. It can passively use a
+standard VESC BMS state-of-charge value that is already present on the VESC
+network; otherwise it estimates charge from controller input voltage. Reading
+that existing value does not add BMS management or configuration to this
+package.
+
 Every displayed value is live. The package automatically selects the first
 VESC controller with a fresh CAN status-1 frame, then maps the available VESC
 Express data as follows:
 
 - speed: status-1 electrical RPM, displayed in the selected km/h or mph unit
-- battery: fresh VESC BMS SOC when available, otherwise status-5 input voltage
+- battery gauge: existing standard VESC BMS SOC when available, otherwise an
+  estimate from status-5 input voltage; this is not a BMS control function
 - controller and motor temperatures: status 4
 - selected power value: signed input watts or signed battery/input amps
 
@@ -53,8 +66,9 @@ therefore cannot leave the display on the native `Hello LVGL` fallback.
 
 `main.lisp` contains package-local speed and voltage calibration constants.
 Their defaults match the original RFP200 fallback (28 motor poles, direct
-drive, 500 mm wheel, 13S lithium pack). BMS SOC takes priority over voltage
-scaling. These constants can be changed in the package without reflashing the
+drive, 500 mm wheel, 13S lithium pack). An existing standard VESC BMS SOC value
+takes priority for the display-only battery gauge; otherwise voltage scaling is
+used. These constants can be changed in the package without reflashing the
 generic VESC Express firmware.
 
 ## Requirements
