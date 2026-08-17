@@ -48,9 +48,9 @@ written region by SHA digest.
 
 The live dashboard package was built with VESC Tool 7.00 from `pkgdesc.qml`.
 
-- Size: 30,369 bytes
+- Size: 28,689 bytes
 - SHA-256:
-  `E81C2838A9CB0E7CBAD9F41B2BEF8FD912E885154E010FDEB84C7E434C788D73`
+  `BD5436E3329204157709A7D267A3049B7317FA8B8B3B714BCADC5DBE566E92F5`
 - QML payload: `ui.qml` configuration App UI
 - LispBM payload: `main.lisp`, four LVGL binary fonts, and six LVIM image
   resources
@@ -93,7 +93,7 @@ This proves the uploaded Lisp update loop is running. It also proves that no
 controller was broadcasting fresh status 1, 4, or 5 frames during this bench
 capture, so live nonzero telemetry remains a controller-on-CAN bench test.
 
-The current 30,369-byte package containing the QML settings page and profile
+The current 28,689-byte package containing the QML settings page and profile
 guardian has been built and QML/package-compiler validated but has not been
 installed on the hardware. Hardware behavior for automatic profile restoration
 and periodic alignment therefore remains unverified.
