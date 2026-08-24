@@ -7,7 +7,7 @@ FEATURES ?= $(shell cat $(FEATURE_FILE) 2>/dev/null)
 
 include $(LISPBM)/lispbm.mk
 
-CCFLAGS = -DUSE_EFFICIENT_HLINE_VLINE
+CCFLAGS = -DUSE_EFFICIENT_HLINE_VLINE -DUSE_TINYGFX_FONT_ALL
 
 LBMFLAGS = -DFULL_RTS_LIB \
            -DLBM_USE_DYN_MACROS \
@@ -107,7 +107,7 @@ endif
 
 # Use freetype
 ifneq (,$(filter freetype, $(FEATURES)))
-	CCFLAGS += -DLBM_TTF_USE_FREETYPE -I$(FREETYPE_PATH)
+	CCFLAGS += -DLBM_USE_TTF_FREETYPE -I$(FREETYPE_PATH)
 	LDFLAGS += -lfreetype
 	REPL_SRC := $(filter-out %/schrift.c,$(REPL_SRC))
 	REPL_SRC += $(LISPBM)/src/extensions/ttf_backend_freetype.c
