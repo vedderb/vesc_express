@@ -59,12 +59,13 @@ set(COMPONENT_SRCS
 "lispBM/src/extensions/math_extensions.c"
 "lispBM/src/extensions/string_extensions.c"
 "lispBM/src/extensions/display_extensions.c"
-"lispBM/src/extensions/tjpgd.c"
 "lispBM/src/extensions/mutex_extensions.c"
 "lispBM/src/extensions/lbm_dyn_lib.c"
 "lispBM/src/extensions/ttf_extensions.c"
 "lispBM/src/extensions/schrift.c"
 "lispBM/src/extensions/ttf_backend.c"
+"lispBM/utils/tjpgd.c"
+"lispBM/utils/tinygfx.c"
 
 "wifi/lispif_wifi_extensions.c"
 
@@ -135,6 +136,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "lispBM"
 "lispBM/include"
 "lispBM/platform/freertos/include"
+"lispBM/utils"
 "display"
 "wifi"
 "ble"
