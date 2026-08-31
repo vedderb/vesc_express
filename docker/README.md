@@ -3,7 +3,7 @@ This is a Docker based environment to build your vesc express.
 
 If you don't know what Docker is look here: [Docker in 100 seconds](https://www.youtube.com/watch?v=Gjnup-PuquQ)
 
-The Docker container contains the toolchain and the ESP release 5.2.2 that you need to build vesc express.
+The Docker container contains the toolchain and the ESP release 5.5.4 that you need to build vesc express.
 
 If you do not have Docker installed, look here: [Install Docker](#install-docker-engine-in-ubuntu) 
 
@@ -12,14 +12,14 @@ If you are running Windows, look here [Install WSL](#install-wsl)
 ## Make the Docker image
 Using the Dockerfile in this folder you can make an image
 ```
-sudo docker build -t esp-builder:5.2.2 .
+sudo docker build -t esp-builder:5.5.4 .
 ```
-This will take some time and build a quite large image (~4.1GB)
+This will take some time and build a quite large image
 
 ## Spin up a container
 You can then make a container of this image using the command:
 ```
-sudo docker run -it -v ~/vesc:/home/vesc esp-builder:5.2.2 bash
+sudo docker run -it -v ~/vesc:/home/vesc esp-builder:5.5.4 bash
 ```
 You are now inside the container.
 
@@ -75,5 +75,5 @@ The C drive of Windows is available under `/mnt/c`
 
 _Tip:_ If you clone vesc_express here: `C:\Users\username\vesc\vesc_express` the command to start the Docker container would be: 
 ```
-sudo docker run -it -v /mnt/c/Users/username/vesc:/home/vesc esp-builder:5.2.2 bash
+sudo docker run -it -v /mnt/c/Users/username/vesc:/home/vesc esp-builder:5.5.4 bash
 ```
