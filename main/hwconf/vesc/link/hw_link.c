@@ -21,7 +21,6 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
 #include "driver/gpio.h"

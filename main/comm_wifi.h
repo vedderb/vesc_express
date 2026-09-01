@@ -26,10 +26,11 @@
 
 #include "sdkconfig.h"
 #include "datatypes.h"
-#include "esp_netif.h"
-#include "esp_event_base.h"
+#include "hw.h"
 
 #if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
+#include "esp_netif.h"
+#include "esp_event_base.h"
 #include "lwip/sockets.h"
 #include "lwip/ip_addr.h"
 
@@ -177,6 +178,10 @@ struct sockaddr_in create_sockaddr_in(ip_addr_t addr, uint16_t port);
 #else
 
 typedef void (*comm_wifi_event_cb_t)(void* event_base, int32_t event_id, void* event_data);
+typedef struct {
+    uint32_t addr;
+} esp_ip4_addr_t;
+typedef void *esp_event_base_t;
 
 void comm_wifi_init(void);
 WIFI_MODE comm_wifi_get_mode(void);

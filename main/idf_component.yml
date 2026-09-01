@@ -1,15 +1,16 @@
 ## IDF Component Manager Manifest File
 dependencies:
   espressif/esp_hosted:
-    version: 3.0.0
+    version: 3.0.5
     rules:
     - if: target == esp32p4
   espressif/esp_wifi_remote:
-    version: 1.5.1
+    version: 1.5.3
     rules:
     - if: target == esp32p4
-  espressif/dhara: ^0.1.0
-  espressif/spi_nand_flash: ^0.1.0
+  espressif/dhara: ^1.0.0
+  espressif/spi_nand_flash: ^1.3.0
+  espressif/spi_nand_flash_fatfs: ^1.0.0
   espressif/esp_lcd_touch: ^1.2.1
   espressif/esp_lcd_touch_cst816s: ^1.1.1
   espressif/esp_lcd_touch_gt911: ^1.2.0
@@ -26,7 +27,7 @@ dependencies:
     - if: target == esp32p4
   ## Required IDF version
   idf:
-    version: '>=4.1.0'
+    version: '>=6.0.2'
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"

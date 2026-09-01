@@ -69,9 +69,10 @@
 #include "lbm_image.h"
 #include "packet.h"
 #include "bme280_if.h"
+#include "hw.h"
 
-#include "esp_netif.h"
 #if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
+#include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #endif
@@ -79,7 +80,7 @@
 #include "esp_now.h"
 #include "esp_crc.h"
 #endif
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -2469,7 +2470,7 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	esp_now_peer_info_t peer;
 	memset(&peer, 0, sizeof(peer));
 	peer.channel = 0; // Must be the same as the wifi-channel when using wifi. 0 means current channel.
-	peer.ifidx = ESP_IF_WIFI_AP;
+	peer.ifidx = WIFI_IF_AP;
 	peer.encrypt = false;
 	memcpy(peer.peer_addr, addr, ESP_NOW_ETH_ALEN);
 
@@ -2600,9 +2601,9 @@ static lbm_value ext_wifi_set_bw(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	wifi_bandwidth_t bwt = WIFI_BW_HT20;
+	wifi_bandwidth_t bwt = WIFI_BW20;
 	if (bw == 40) {
-		bwt = WIFI_BW_HT40;
+		bwt = WIFI_BW40;
 	}
 
 	esp_err_t res = esp_wifi_set_bandwidth(WIFI_IF_AP, bwt);
@@ -2618,7 +2619,7 @@ static lbm_value ext_wifi_set_bw(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	wifi_bandwidth_t bwt = WIFI_BW_HT20;
+	wifi_bandwidth_t bwt = WIFI_BW20;
 	esp_err_t res = esp_wifi_get_bandwidth(WIFI_IF_AP, &bwt);
 
 	if (res == ESP_ERR_WIFI_NOT_INIT) {
@@ -2626,7 +2627,7 @@ static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	return lbm_enc_i(bwt == WIFI_BW_HT20 ? 20 : 40);
+	return lbm_enc_i(bwt == WIFI_BW20 ? 20 : 40);
 }
 
 static lbm_value ext_wifi_start(lbm_value *args, lbm_uint argn) {
@@ -2722,20 +2723,37 @@ static lbm_value ext_esp_now_recv(lbm_value *args, lbm_uint argn) {
 static bool i2c_started = false;
 static SemaphoreHandle_t i2c_mutex;
 static bool i2c_mutex_init_done = false;
+static i2c_master_bus_handle_t i2c_bus;
+static i2c_master_dev_handle_t i2c_device;
+static bool i2c_owns_bus = false;
+
+static esp_err_t i2c_select_device(uint8_t address) {
+	if (!i2c_device) {
+		i2c_device_config_t device_config = {
+			.dev_addr_length = I2C_ADDR_BIT_LEN_7,
+			.device_address = address,
+			.scl_speed_hz = 200000,
+		};
+		return i2c_master_bus_add_device(i2c_bus, &device_config, &i2c_device);
+	}
+
+	return i2c_master_device_change_address(i2c_device, address, 50);
+}
 
 static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 	if (argn > 3) {
 		return ENC_SYM_EERROR;
 	}
 
-	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
+	i2c_master_bus_config_t bus_config = {
+			.i2c_port = I2C_NUM_0,
 			.sda_io_num = 7,
 			.scl_io_num = 6,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = 200000,
+			.clk_source = I2C_CLK_SRC_DEFAULT,
+			.glitch_ignore_cnt = 7,
+			.flags.enable_internal_pullup = true,
 	};
+	uint32_t speed = 200000;
 
 	if (argn >= 1) {
 		if (!lbm_is_symbol(args[0])) {
@@ -2743,13 +2761,13 @@ static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 		}
 
 		if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_100k)) {
-			conf.master.clk_speed = 100000;
+			speed = 100000;
 		} else if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_200k)) {
-			conf.master.clk_speed = 200000;
+			speed = 200000;
 		} else if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_400k)) {
-			conf.master.clk_speed = 400000;
+			speed = 400000;
 		} else if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_700k)) {
-			conf.master.clk_speed = 700000;
+			speed = 700000;
 		} else {
 			return ENC_SYM_EERROR;
 		}
@@ -2760,7 +2778,7 @@ static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 
-		conf.sda_io_num = lbm_dec_as_i32(args[1]);
+		bus_config.sda_io_num = lbm_dec_as_i32(args[1]);
 	}
 
 	if (argn >= 3) {
@@ -2768,11 +2786,46 @@ static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 
-		conf.scl_io_num = lbm_dec_as_i32(args[2]);
+		bus_config.scl_io_num = lbm_dec_as_i32(args[2]);
 	}
 
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	i2c_started = false;
+	if (i2c_device) {
+		i2c_master_bus_rm_device(i2c_device);
+		i2c_device = NULL;
+	}
+	if (i2c_bus) {
+		if (i2c_owns_bus) {
+			i2c_del_master_bus(i2c_bus);
+		}
+		i2c_bus = NULL;
+		i2c_owns_bus = false;
+	}
+
+	i2c_owns_bus = false;
+	esp_err_t res = i2c_master_get_bus_handle(I2C_NUM_0, &i2c_bus);
+	if (res == ESP_ERR_NOT_FOUND) {
+		res = i2c_new_master_bus(&bus_config, &i2c_bus);
+		i2c_owns_bus = res == ESP_OK;
+	}
+	if (res != ESP_OK) {
+		return lbm_enc_i(res);
+	}
+
+	i2c_device_config_t device_config = {
+		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
+		.device_address = 0,
+		.scl_speed_hz = speed,
+	};
+	res = i2c_master_bus_add_device(i2c_bus, &device_config, &i2c_device);
+	if (res != ESP_OK) {
+		if (i2c_owns_bus) {
+			i2c_del_master_bus(i2c_bus);
+		}
+		i2c_bus = NULL;
+		i2c_owns_bus = false;
+		return lbm_enc_i(res);
+	}
 	i2c_started = true;
 
 	return ENC_SYM_TRUE;
@@ -2787,15 +2840,19 @@ esp_err_t lispif_i2c_tx_rx(uint8_t addr,
 	}
 
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-	esp_err_t res;
+	esp_err_t res = i2c_select_device(addr);
+	if (res != ESP_OK) {
+		xSemaphoreGive(i2c_mutex);
+		return res;
+	}
 	if (read_size > 0 && read_buffer != NULL) {
 		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
+			res = i2c_master_transmit_receive(i2c_device, write_buffer, write_size, read_buffer, read_size, 2000);
 		} else {
-			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 2000);
+			res = i2c_master_receive(i2c_device, read_buffer, read_size, 2000);
 		}
 	} else {
-		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 2000);
+		res = i2c_master_transmit(i2c_device, write_buffer, write_size, 2000);
 	}
 	xSemaphoreGive(i2c_mutex);
 
@@ -2882,12 +2939,7 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 
 	uint8_t address = lbm_dec_as_u32(args[0]);
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-	i2c_master_start(cmd);
-	i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
-	i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(0, cmd, 50 / portTICK_PERIOD_MS);
-	i2c_cmd_link_delete(cmd);
+	esp_err_t ret = i2c_master_probe(i2c_bus, address, 50);
 	xSemaphoreGive(i2c_mutex);
 
 	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -3662,7 +3714,8 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0);
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin,mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
+	esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(1ULL << pin,
+			mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
 #else
 	#error "Unsupported target"
 #endif
@@ -5238,7 +5291,7 @@ static lbm_value ext_imu_start_lsm6(lbm_value *args, lbm_uint argn) {
 	imu_cfg.mahony_ki = 0.0;
 	imu_cfg.madgwick_beta = 0.1;
 
-	imu_init(&imu_cfg, i2c_mutex);
+	imu_init(&imu_cfg, i2c_mutex, i2c_bus);
 
 	return ENC_SYM_TRUE;
 }
@@ -6742,7 +6795,7 @@ static lbm_value ext_bme280_start(lbm_value *args, lbm_uint argn) {
 		return res;
 	}
 
-	bme280_if_init_with_mutex(i2c_mutex);
+	bme280_if_init_with_mutex(i2c_mutex, i2c_bus);
 	return ENC_SYM_TRUE;
 }
 

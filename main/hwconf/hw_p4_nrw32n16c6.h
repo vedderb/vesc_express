@@ -8,11 +8,11 @@
 #define HW_INIT_HOOK()			hw_init()
 
 /* C6 SDIO uses GPIO14..19, so ADC inputs are moved to GPIO20..23. */
-#define HW_ADC_CH0				ADC1_CHANNEL_4
-#define HW_ADC_CH1				ADC1_CHANNEL_5
-#define HW_ADC_CH2				ADC1_CHANNEL_6
-#define HW_ADC_CH3				ADC1_CHANNEL_7
-#define HW_ADC_CH4				ADC1_CHANNEL_4
+#define HW_ADC_CH0				ADC_CHANNEL_4
+#define HW_ADC_CH1				ADC_CHANNEL_5
+#define HW_ADC_CH2				ADC_CHANNEL_6
+#define HW_ADC_CH3				ADC_CHANNEL_7
+#define HW_ADC_CH4				ADC_CHANNEL_4
 
 void hw_init(void);
 
