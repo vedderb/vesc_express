@@ -77,6 +77,7 @@ set(COMPONENT_SRCS
 "touch/touch_cst836u.c"
 
 "display/lispif_disp_extensions.c"
+"display/display_backend.c"
 "display/disp_sh8501b.c"
 "display/disp_ili9341.c"
 "display/disp_ssd1306.c"
@@ -88,6 +89,7 @@ set(COMPONENT_SRCS
 "display/disp_icna3306.c"
 "display/disp_sh8601.c"
 "display/disp_axs15231.c"
+"display/disp_co5300.c"
 "display/disp_gc9a01.c"
 "display/disp_jd9853.c"
 "display/disp_jd9165.c"
@@ -95,6 +97,7 @@ set(COMPONENT_SRCS
 
 "drivers/bme280/bme280.c"
 "drivers/bme280/bme280_if.c"
+"drivers/axp2101.c"
 "drivers/hwspi.c"
 "drivers/spi_bb.c"
 "drivers/enc_as504x.c"
@@ -103,6 +106,11 @@ set(COMPONENT_SRCS
 "drivers/imu/ahrs.c"
 
 "lowzip/lowzip.c"
+
+"lvgl/lvgl_runtime.c"
+"lvgl/lvgl_display.c"
+"lvgl/lvgl_objects.c"
+"lvgl/lispif_lvgl_extensions.c"
 )
 
 if(CONFIG_BT_BLUEDROID_ENABLED)
@@ -138,6 +146,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "lispBM/platform/freertos/include"
 "lispBM/utils"
 "display"
+"lvgl"
 "wifi"
 "ble"
 "rgbled"
@@ -145,6 +154,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "drivers"
 "drivers/bme280"
 "drivers/imu"
+"hwconf/waveshare/amoled_175"
 "lowzip"
 )
 

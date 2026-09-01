@@ -20,12 +20,17 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "esp_err.h"
 #include "lispif_disp_extensions.h"
 
-void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3, int pin_clk, int pin_cs, int pin_reset, int clock_mhz);
+esp_err_t disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3, int pin_clk, int pin_cs, int pin_reset, int clock_mhz);
 void disp_axs15231_command(uint8_t command, const uint8_t *args, int argn);
 bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *colors);
 void disp_axs15231_clear(uint32_t color);
 void disp_axs15231_reset(void);
+esp_err_t disp_axs15231_draw_rgb565(int x_start, int y_start, int x_end,
+	int y_end, const void *pixels);
+int disp_axs15231_get_width(void);
+int disp_axs15231_get_height(void);
 
 #endif /* MAIN_DISPLAY_DISP_AXS15231_H_ */

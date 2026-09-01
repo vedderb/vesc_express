@@ -103,7 +103,10 @@ if(DEFINED HW_NAME AND DEFINED HW_TARGET AND DEFINED HW_FILE_NAME)
     else()
         message(STATUS "Using shared sdkconfig defaults ${SDKCONFIG_DEFAULTS_FILE} for ${HW_NAME}")
     endif()
-    set(SDKCONFIG_DEFAULTS ${SDKCONFIG_DEFAULTS_FILE})
+    # Keep LVGL policy in one small overlay so every existing Express target
+    # uses the same pinned, firmware-safe baseline without duplicating options
+    # across the target-specific sdkconfig files.
+    set(SDKCONFIG_DEFAULTS "${SDKCONFIG_DEFAULTS_FILE};sdkconfig.defaults.lvgl")
 
     # Auto-generate QML files if any *.qml files exist alongside the HW config
     get_filename_component(HW_DIR ${HW_FILE_NAME} DIRECTORY)
@@ -159,7 +162,11 @@ set(LIBIF_LD "${CMAKE_CURRENT_SOURCE_DIR}/main/linker_libif_${LIBIF_IDF_TARGET}.
 if(NOT EXISTS ${LIBIF_LD})
     message(FATAL_ERROR "No native lib interface linker script for target ${LIBIF_IDF_TARGET} (expected ${LIBIF_LD})")
 endif()
-target_link_libraries(${PROJECT_NAME}.elf PRIVATE "-T${LIBIF_LD}")
+# Keep the linker option free of spaces. GNU ld response files split an
+# absolute -T path at workspace spaces even when CMake treats it as one item.
+file(RELATIVE_PATH LIBIF_LD_LINK_PATH "${CMAKE_BINARY_DIR}" "${LIBIF_LD}")
+file(TO_CMAKE_PATH "${LIBIF_LD_LINK_PATH}" LIBIF_LD_LINK_PATH)
+target_link_libraries(${PROJECT_NAME}.elf PRIVATE "-T${LIBIF_LD_LINK_PATH}")
 set_property(TARGET ${PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS ${LIBIF_LD})
 
 include(cmake/git_rev_parse.cmake)
