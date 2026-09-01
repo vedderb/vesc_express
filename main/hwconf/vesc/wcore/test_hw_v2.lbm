@@ -1,0 +1,80 @@
+(import "pkg@://vesc_packages/lib_bq27441/bq27441.vescpkg" 'bq27441)
+(read-eval-program bq27441)
+
+(def ts-chg 0)
+(def ts-no-chg 0)
+(def time-chg-last 0.0)
+(def time-no-chg-last 0.0)
+(def ledbuf (rgbled-buffer 2 0 1))
+
+@const-start
+
+(defun bq-config () {
+        (bq-set-sealed false) ; Make sure that device is not sealed
+        (bq-set-cfgupdate t) ; Enter configuration update mode
+        (bq-set-capacity 4500) ; 4500 mAh capacity
+        (bq-set-energy (* 4500 3.7)) ; 4500 * 3.7 mWh energy
+        (bq-set-terminate-voltage 3.0) ; 3.0 V is 0% SOC
+        (bq-soft-reset) ; Reset after applying configuration
+})
+
+(defun main () {
+        ; LED and ADC enable
+        (gpio-configure 10 'pin-mode-out)
+        (gpio-write 10 1)
+
+        ; LEDs on PCB
+        (rgbled-init 2)
+        (rgbled-color ledbuf 0 (color-make 0.3 0.3 0.3))
+        (rgbled-color ledbuf 1 (color-make 0.3 0.3 0.3))
+        (rgbled-update ledbuf)
+
+        ; i2c-rate 100k, pin7 is SDA, pin8 is SCL
+        (bq-init 'rate-100k 7 8)
+        (gpio-configure 5 'pin-mode-in-pu)
+
+        (if (= (gpio-read 5) 1) {
+                ;(sleep 5)
+                (sleep-config-wakeup-pin 5 0)
+                (sleep-deep 10)
+        })
+
+        (def t-start (secs-since 0))
+
+        ; This means the configuration isn't done
+        ; TODO: Use status register
+        (if (< (bq-cap-full) 2000) {
+                (bq-config)
+        })
+
+        (loopwhile-thd 200 t {
+                (def i-bat (bq-i-avg))
+                (def v-bat (bq-v))
+                (def soc (bq-soc))
+                (if (< i-bat 0.1)
+                    {
+                        (setq ts-chg (systime))
+                        (if (> (secs-since ts-no-chg) 2.0) {
+                                (setq time-no-chg-last (secs-since ts-no-chg))
+                        })
+                    }
+                    {
+                        (setq ts-no-chg (systime))
+                        (if (> (secs-since ts-chg) 2.0) {
+                                (setq time-chg-last (secs-since ts-chg))
+                        })
+                    }
+                )
+
+                (if (= (gpio-read 5) 1) {
+                        ;(sleep 5)
+                        (sleep-config-wakeup-pin 5 0)
+                        (sleep-deep 10)
+                })
+
+                (sleep 0.1)
+        })
+})
+
+(image-save)
+(main)
