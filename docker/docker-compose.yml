@@ -1,6 +1,6 @@
 services:
   app:
-    image: esp-builder:5.2.2
+    image: esp-builder:5.5.4
     container_name: vesc_express_builder
     tty: true
     volumes:
