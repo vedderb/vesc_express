@@ -1,0 +1,28 @@
+; RGB LED blink (e.g. ESP32-C3-DevKit boards)
+
+; Getting started
+; - https://github.com/svenssonjoel/lispBM/tree/master/doc
+; - https://github.com/vedderb/bldc/tree/master/lispBM
+
+; LED functions
+; - https://github.com/vedderb/bldc/blob/master/lispBM/README.md#rgb-led-eg-ws2812
+
+(rgbled-init 8) ; Initialize RGB LEDs on pin 8
+
+(def led-num 1) ; Number of LEDs in strip
+(def strip1 (rgbled-buffer led-num 1)) ; type 1=RGB
+
+(def colors '(
+    0x00550000i32 ; red   (R channel)
+    0x00005500i32 ; green (G channel)
+    0x00000055i32 ; blue  (B channel)
+    0x55000000i32 ; white (W channel, if present)
+))
+
+(loopwhile t
+    (loopforeach c colors
+        (progn
+            (rgbled-color strip1 0 c) ; Set first LED of strip1 to color c
+            (rgbled-update strip1)    ; Apply configured color
+            (sleep 0.2)               ; Wait 200ms
+)))
