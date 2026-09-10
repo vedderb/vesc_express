@@ -37,6 +37,7 @@
 #include "display/disp_ssd1351.h"
 #include "display/disp_icna3306.h"
 #include "display/disp_axs15231.h"
+#include "display/display_backend.h"
 #include "display/disp_gc9a01.h"
 #include "display/disp_jd9853.h"
 
@@ -420,12 +421,12 @@ static lbm_value ext_disp_load_axs15231(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	disp_axs15231_init(gpio_sd0, gpio_sd1, gpio_sd2, gpio_sd3, gpio_clk, gpio_cs, gpio_reset, spi_mhz);
-
-	lbm_display_extensions_set_callbacks(
-			disp_axs15231_render_image,
-			disp_axs15231_clear,
-			disp_axs15231_reset);
+	if (disp_axs15231_init(gpio_sd0, gpio_sd1, gpio_sd2, gpio_sd3,
+			gpio_clk, gpio_cs, gpio_reset, spi_mhz) != ESP_OK ||
+			display_backend_bind_lisp() != ESP_OK) {
+		lbm_set_error_reason("Display initialization failed");
+		return ENC_SYM_EERROR;
+	}
 
 	return ENC_SYM_TRUE;
 }

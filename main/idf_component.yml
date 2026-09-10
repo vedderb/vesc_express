@@ -16,6 +16,8 @@ dependencies:
   waveshare/esp_lcd_touch_cst9217: ^1.0.4
   atanisoft/esp_lcd_touch_xpt2046: ^1.0.6
   espressif/esp_lcd_axs15231b: ^2.1.0
+  espressif/esp_lcd_co5300: 2.1.0
+  lvgl/lvgl: 9.5.0
   espressif/esp_lcd_st7701:
     version: ^2.0.2
     rules:
@@ -26,7 +28,7 @@ dependencies:
     - if: target == esp32p4
   ## Required IDF version
   idf:
-    version: '>=4.1.0'
+    version: '>=5.5.4,<5.6.0'
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"
