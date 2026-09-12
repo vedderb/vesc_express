@@ -524,7 +524,6 @@ static lbm_value ext_disp_load_jd9165(lbm_value *args, lbm_uint argn) {
 
 	return ENC_SYM_TRUE;
 }
-#endif
 
 static lbm_value ext_disp_load_st7701(lbm_value *args, lbm_uint argn) {
 #if CONFIG_IDF_TARGET_ESP32P4
@@ -555,6 +554,7 @@ static lbm_value ext_disp_load_st7701(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_EERROR;
 #endif
 }
+#endif
 
 void lispif_load_disp_extensions(void) {
 
