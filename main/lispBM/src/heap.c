@@ -87,19 +87,17 @@ static bool    lbm_const_heap_mutex_initialized = false;
 static lbm_mutex_t lbm_mark_mutex;
 static bool    lbm_mark_mutex_initialized = false;
 
-#ifdef USE_GC_PTR_REV
+// These mutexes are not currently used. There was a thought
+// related to these and pointer-revesal.
+// It is actually more important to lock out accesses to the heap
+// when in the middle of ptr-rev gc as it temporarlity
+// distorts the heap pointer structure.
 void lbm_gc_lock(void) {
   lbm_mutex_lock(&lbm_mark_mutex);
 }
 void lbm_gc_unlock(void) {
   lbm_mutex_unlock(&lbm_mark_mutex);
 }
-#else
-void lbm_gc_lock(void) {
-}
-void lbm_gc_unlock(void) {
-}
-#endif
 
 // ////////////////////////////////////////////////////////////
 // ENCODERS DECODERS
@@ -616,7 +614,7 @@ lbm_value lbm_heap_allocate_list(lbm_uint n) {
 
   lbm_value curr = lbm_heap_state.freelist;
   lbm_value res  = curr;
-  
+
   lbm_cons_t *c_cell = NULL;
   lbm_uint count = 0;
   do {
@@ -688,7 +686,6 @@ static inline void value_assign(lbm_value *a, lbm_value b) {
   *a = a_old | (b & ~LBM_GC_MASK);
 }
 
-#ifdef LBM_USE_GC_PTR_REV
 // ////////////////////////////////////////////////////////////
 // Deutch-Schorr-Waite (DSW) pointer reversal GC
 //
@@ -716,13 +713,12 @@ static int do_nothing(lbm_value v, bool shared, void *arg) {
   return TRAV_FUN_SUBTREE_CONTINUE;
 }
 
-void lbm_gc_mark_phase(lbm_value root) {
+void lbm_gc_mark_phase_ptr_rev(lbm_value root) {
     lbm_mutex_lock(&lbm_const_heap_mutex);
     lbm_ptr_rev_trav(do_nothing, root, NULL);
     lbm_mutex_unlock(&lbm_const_heap_mutex);
 }
 
-#else
 // ////////////////////////////////////////////////////////////
 // Check if a value is currently on the stack
 
@@ -788,7 +784,12 @@ void lbm_gc_mark_phase(lbm_value root) {
       }
       lbm_array_header_extended_t *arr = (lbm_array_header_extended_t*)cell->car;
       lbm_value *arrdata = (lbm_value *)arr->data;
-      lbm_push(s, curr); // put array back as bookkeeping.
+      if (!lbm_push(s, curr)) { // put array back as bookkeeping.
+        // Switch to pointer reversal here.
+        // This is a new array that we have not yet started descending into.
+        lbm_gc_mark_phase_ptr_rev(curr);
+        continue;
+      }
       // Example A: Array with 10 elements
       // A: assume arr->index == 9
       // Example B: Array with 0 elements
@@ -830,6 +831,8 @@ void lbm_gc_mark_phase(lbm_value root) {
       // TODO: Can channels be explicitly freed ?
       if (cell->car != ENC_SYM_NIL) {
         lbm_char_channel_t *chan = (lbm_char_channel_t *)cell->car;
+        // A channel dependency is currently assumed to be a byte array (a string)
+        // or NIL.
         curr = chan->dependency;
         goto mark_shortcut;
       }
@@ -842,8 +845,9 @@ void lbm_gc_mark_phase(lbm_value root) {
     if (t_ptr == LBM_TYPE_CONS) {
       if (lbm_is_ptr(cell->cdr)) {
         if (!lbm_push(s, cell->cdr)) {
-          lbm_critical_error();
-          break;
+          // This is the only place where we grab a new stack position.
+          // If the stack is full switch to ptr-rev GC.
+          lbm_gc_mark_phase_ptr_rev(cell->cdr);
         }
       }
       curr = cell->car;
@@ -851,7 +855,6 @@ void lbm_gc_mark_phase(lbm_value root) {
     }
   }
 }
-#endif
 
 //Environments are proper lists with a 2 element list stored in each car.
 void lbm_gc_mark_env(lbm_value env) {
@@ -1427,7 +1430,8 @@ void lbm_ptr_rev_trav(trav_fun f, lbm_value v, void* arg) {
     // If curr is marked here there is a cycle in the graph.
     // In case of a cycle or leaf, this first loop is exited.
     while (((lbm_is_cons_rw(curr)) ||
-            (lbm_is_lisp_array_rw(curr))) && !gc_marked(curr)) {
+            (lbm_is_lisp_array_rw(curr)) ||
+            (lbm_is_channel(curr))) && !gc_marked(curr)) {
       lbm_cons_t *cell = lbm_ref_cell(curr);
       if (lbm_is_cons(curr)) {
         // In-order traversal
@@ -1442,26 +1446,40 @@ void lbm_ptr_rev_trav(trav_fun f, lbm_value v, void* arg) {
         value_assign(&cell->car, prev);
         value_assign(&prev, curr);
         value_assign(&curr, next);
-      } else { // it is an array
+      } else if (lbm_is_channel (curr)) {
+        if (f(curr, false, arg) == TRAV_FUN_SUBTREE_DONE) {
+          lbm_gc_mark_phase(curr);
+          goto trav_backtrack;
+        }
+        gc_mark(curr);
 
+        lbm_char_channel_t *chan = (lbm_char_channel_t*)cell->car;
+        lbm_value next = 0;
+        value_assign(&next, chan->dependency);
+        value_assign(&chan->dependency, prev);
+        value_assign(&prev, curr);
+        value_assign(&curr, next);
+      } else { // it is an array
         lbm_array_header_extended_t *arr = (lbm_array_header_extended_t*)cell->car;
         lbm_value *arr_data = (lbm_value *)arr->data;
-        uint32_t index = arr->index;
         if (arr->size == 0) break;
-        if (index == 0) { // index should only be 0 or there is a potential cycle
-          if (f(curr, false, arg) == TRAV_FUN_SUBTREE_DONE) {
-            lbm_gc_mark_phase(curr);
-            break;
-          }
-          arr->index = 1;
-          gc_mark(curr);
 
-          lbm_value next = 0;
-          value_assign(&next, arr_data[0]);
-          value_assign(&arr_data[0], prev);
-          value_assign(&prev, curr);
-          value_assign(&curr, next);
+        if (f(curr, false, arg) == TRAV_FUN_SUBTREE_DONE) {
+          lbm_gc_mark_phase(curr);
+          break;
         }
+        // Cycles in arrays are not detected using the index
+        // in this algorithm. If we enter into an array, we take
+        // full ownership of it here, even if the  stack based marker
+        // has partially walked it already.
+        arr->index = 1; // Explicitly sets array index to one.
+        gc_mark(curr);
+
+        lbm_value next = 0;
+        value_assign(&next, arr_data[0]);
+        value_assign(&arr_data[0], prev);
+        value_assign(&prev, curr);
+        value_assign(&curr, next);
       }
     }
     // Currently there are a few different users of this traversal.
@@ -1493,7 +1511,8 @@ void lbm_ptr_rev_trav(trav_fun f, lbm_value v, void* arg) {
     while ((lbm_is_cons(prev) &&
             (lbm_dec_ptr(prev) != LBM_PTR_NULL) && // is LBM_NULL a cons type?
             lbm_get_gc_flag(lbm_car(prev))) ||
-           lbm_is_lisp_array_rw(prev)) {
+           lbm_is_lisp_array_rw(prev) ||
+           lbm_is_channel(prev)) {
       lbm_cons_t *cell = lbm_ref_cell(prev);
       if (lbm_is_cons(prev)) {
 
@@ -1518,6 +1537,13 @@ void lbm_ptr_rev_trav(trav_fun f, lbm_value v, void* arg) {
         lbm_value next = 0;
         value_assign(&next, cell->cdr);
         value_assign(&cell->cdr, curr);
+        value_assign(&curr, prev);
+        value_assign(&prev, next);
+      } else if (lbm_is_channel(prev)) {
+        lbm_char_channel_t *chan = (lbm_char_channel_t*)cell->car;
+        lbm_value next = 0;
+        value_assign(&next, chan->dependency);
+        value_assign(&chan->dependency, curr);
         value_assign(&curr, prev);
         value_assign(&prev, next);
       } else { // is an array

@@ -1,5 +1,5 @@
 /*
-    Copyright 2019, 2021 - 2025      Joel Svensson   svenssonjoel@yahoo.se
+    Copyright 2019, 2021 - 2026      Joel Svensson   svenssonjoel@yahoo.se
                            2022      Benjamin Vedder
 
     This program is free software: you can redistribute it and/or modify
@@ -228,7 +228,8 @@ static bool bytearray_equality(lbm_value a, lbm_value b) {
 }
 
 // a and b must be arrays!
-static bool array_struct_equality(lbm_value a, lbm_value b) {
+static bool array_struct_equality(lbm_value a, lbm_value b, int rlevel) {
+  if (rlevel >= LBM_MAX_C_RECURSION) return false;
   lbm_array_header_t *a_ = (lbm_array_header_t*)lbm_car(a);
   lbm_array_header_t *b_ = (lbm_array_header_t*)lbm_car(b);
   bool res = false;
@@ -238,7 +239,7 @@ static bool array_struct_equality(lbm_value a, lbm_value b) {
     lbm_value *bdata = (lbm_value*)b_->data;
     lbm_uint size = (lbm_uint)a_->size / (lbm_uint)sizeof(lbm_value);
     for (lbm_uint i = 0; i < size; i ++ ) {
-      res = struct_eq(adata[i], bdata[i]);
+      res = struct_eq(adata[i], bdata[i], rlevel+1);
       if (!res) break;
     }
   }
@@ -256,9 +257,11 @@ static bool array_struct_equality(lbm_value a, lbm_value b) {
 //
 // Unknowns that impact this is argument is that
 // the stack depth is unknown to me (it is a result of the integrator's choices).
-bool struct_eq(lbm_value a, lbm_value b) {
-
-  bool res = false;
+bool struct_eq(lbm_value a, lbm_value b, int rlevel) {
+  if (rlevel >= LBM_MAX_C_RECURSION) return false;
+  bool res;
+ struct_eq_quickpath:
+  res = false;
   lbm_type ta = lbm_type_of_functional(a);
   lbm_type tb = lbm_type_of_functional(b);
 
@@ -277,8 +280,13 @@ bool struct_eq(lbm_value a, lbm_value b) {
         res = true;
         break;
       }
-      res = ( struct_eq(lbm_car(a),lbm_car(b)) &&
-              struct_eq(lbm_cdr(a),lbm_cdr(b)) ); break;
+      if (struct_eq(lbm_car(a),lbm_car(b),rlevel+1)) {
+        a = lbm_cdr(a);
+        b = lbm_cdr(b);
+        // Do not use any stack in the proper lisp case.
+        goto struct_eq_quickpath;
+      }
+      return false;
     case LBM_TYPE_I32:
       res = (lbm_dec_i32(a) == lbm_dec_i32(b)); break;
     case LBM_TYPE_U32:
@@ -298,7 +306,7 @@ bool struct_eq(lbm_value a, lbm_value b) {
         res = true;
         break;
       }
-      res =  array_struct_equality(a, b); break;
+      res =  array_struct_equality(a, b, rlevel+1); break;
     }
   }
   return res;
@@ -339,7 +347,7 @@ static lbm_value assoc_lookup(lbm_value key, lbm_value assoc) {
   while (lbm_is_cons(curr)) {
     lbm_value c = lbm_ref_cell(curr)->car;
     if (lbm_is_cons(c)) {
-      if (struct_eq(lbm_ref_cell(c)->car, key)) {
+      if (struct_eq(lbm_ref_cell(c)->car, key,0)) {
         res = lbm_ref_cell(c)->cdr;
         break;
       }
@@ -357,7 +365,7 @@ static lbm_value cossa_lookup(lbm_value key, lbm_value assoc) {
   while (lbm_is_cons(curr)) {
     lbm_value c = lbm_ref_cell(curr)->car;
     if (lbm_is_cons(c)) {
-      if (struct_eq(lbm_ref_cell(c)->cdr, key)) {
+      if (struct_eq(lbm_ref_cell(c)->cdr, key,0)) {
         return lbm_ref_cell(c)->car;
       }
     } else {
@@ -497,7 +505,7 @@ static lbm_value fundamental_eq(lbm_value *args, lbm_uint nargs) {
   lbm_uint a = args[0];
   for (lbm_uint i = 1; i < nargs; i ++) {
     lbm_uint b = args[i];
-    if (!struct_eq(a, b)) return ENC_SYM_NIL;
+    if (!struct_eq(a, b,0)) return ENC_SYM_NIL;
   }
   return ENC_SYM_TRUE;
 }
@@ -550,10 +558,10 @@ static lbm_value fundamental_leq(lbm_value *args, lbm_uint nargs) {
     for (lbm_uint i = 1; i < nargs; i ++) {
       lbm_uint b = args[i];
       if (IS_NUMBER(b)) {
-	r = r && (compare_num(a, b) <= 0);
+        r = r && (compare_num(a, b) <= 0);
       } else {
-	lbm_set_error_suspect(b);
-	goto leq_type_error;
+        lbm_set_error_suspect(b);
+        goto leq_type_error;
       }
     }
   } else {
@@ -934,7 +942,7 @@ static lbm_value set_assoc(lbm_value assoc_list, lbm_value keyval) {
   lbm_value key = lbm_car(keyval);
   while (lbm_is_cons(curr)) {
     lbm_cons_t *curr_cell = lbm_ref_cell(curr);
-    if (struct_eq(key, lbm_car(curr_cell->car))) {
+    if (struct_eq(key, lbm_car(curr_cell->car),0)) {
       if (!lbm_ptr_is_constant(curr)) {
         curr_cell->car = keyval;
       }
@@ -1453,7 +1461,7 @@ static lbm_value fundamental_member(lbm_value *args, lbm_uint argn) {
 
     while (lbm_is_cons(curr)) {
       lbm_cons_t *cell = lbm_ref_cell(curr);
-      if (struct_eq(cell->car, args[0])) {
+      if (struct_eq(cell->car, args[0],0)) {
         res = args[1];
         break;
       }
