@@ -20,7 +20,9 @@
 #ifndef IMU_IMU_H_
 #define IMU_IMU_H_
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 typedef enum {
 	IMU_TYPE_OFF = 0,
@@ -64,7 +66,7 @@ typedef struct {
 	float gyro_offsets[3];
 } imu_config;
 
-void imu_init(imu_config *set, SemaphoreHandle_t i2c_mutex);
+void imu_init(imu_config *set, SemaphoreHandle_t i2c_mutex, i2c_master_bus_handle_t i2c_bus);
 bool imu_i2c_tx_rx(uint8_t addr,
 		const uint8_t* write_buffer, size_t write_size,
 		uint8_t* read_buffer, size_t read_size);

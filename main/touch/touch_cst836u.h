@@ -21,10 +21,11 @@
 #define TOUCH_CST836U_H_
 
 #include <stdbool.h>
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "lispif_touch_extensions.h"
 
-esp_err_t touch_cst836u_init(i2c_port_t port, uint16_t width, uint16_t height, lispif_touch_driver_t *driver);
+esp_err_t touch_cst836u_init(i2c_master_bus_handle_t bus, uint16_t width, uint16_t height, uint32_t frequency, lispif_touch_driver_t *driver);
+esp_err_t touch_cst836u_deinit(void);
 void touch_cst836u_set_transforms(bool swap_xy, bool mirror_x, bool mirror_y);
 void touch_cst836u_reset(void);
 

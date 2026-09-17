@@ -1,12 +1,10 @@
 #include <stdbool.h>
-#include <string.h>
+#include <reent.h>
 
 #include "sdkconfig.h"
-#include "esp_log.h"
 #include "bootloader_init.h"
 #include "bootloader_utility.h"
 #include "bootloader_common.h"
-#include "bootloader_flash_priv.h"
 
 // Private functions
 static int select_partition_number(bootloader_state_t *bs);
@@ -41,6 +39,8 @@ static int select_partition_number(bootloader_state_t *bs) {
 	return bootloader_utility_get_selected_boot_partition(bs);
 }
 
+#if CONFIG_LIBC_NEWLIB
 struct _reent *__getreent(void) {
 	return _GLOBAL_REENT;
 }
+#endif

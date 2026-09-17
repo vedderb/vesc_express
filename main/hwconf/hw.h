@@ -75,19 +75,19 @@
 #endif
 
 #ifndef HW_ADC_CH0
-#define HW_ADC_CH0					ADC1_CHANNEL_0
+#define HW_ADC_CH0					ADC_CHANNEL_0
 #endif
 #ifndef HW_ADC_CH1
-#define HW_ADC_CH1					ADC1_CHANNEL_1
+#define HW_ADC_CH1					ADC_CHANNEL_1
 #endif
 #ifndef HW_ADC_CH2
-#define HW_ADC_CH2					ADC1_CHANNEL_2
+#define HW_ADC_CH2					ADC_CHANNEL_2
 #endif
 #ifndef HW_ADC_CH3
-#define HW_ADC_CH3					ADC1_CHANNEL_3
+#define HW_ADC_CH3					ADC_CHANNEL_3
 #endif
 #ifndef HW_ADC_CH4
-#define HW_ADC_CH4					ADC1_CHANNEL_4
+#define HW_ADC_CH4					ADC_CHANNEL_4
 #endif
 
 #endif /* MAIN_HWCONF_HW_H_ */

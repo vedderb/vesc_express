@@ -35,6 +35,8 @@
 #include "lispif.h"
 #include "bms.h"
 #include "utils.h"
+#include "driver/gpio.h"
+#include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
 #include <string.h>
 

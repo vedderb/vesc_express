@@ -21,10 +21,13 @@
 #define MAIN_ADC_H_
 
 #include "conf_general.h"
-#include "driver/adc.h"
+#include "esp_adc/adc_oneshot.h"
+#include "soc/soc_caps.h"
+
+#define ADC_CHANNEL_COUNT SOC_ADC_CHANNEL_NUM(ADC_UNIT_1)
 
 // Functions
 void adc_init(void);
-float adc_get_voltage(adc1_channel_t ch);
+float adc_get_voltage(adc_channel_t ch);
 
 #endif /* MAIN_ADC_H_ */

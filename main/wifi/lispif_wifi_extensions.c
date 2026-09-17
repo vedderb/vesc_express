@@ -25,14 +25,6 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
-#include "esp_err.h"
-#include "esp_wifi.h"
-#include "esp_wifi_types.h"
-#include "esp_netif_types.h"
-#include "esp_event_base.h"
-#include "errno.h"
-#include "lwip/api.h"
-
 #include "eval_cps.h"
 #include "heap.h"
 #include "lbm_defines.h"
@@ -49,8 +41,17 @@
 #include "commands.h"
 #include "comm_wifi.h"
 #include "lispif.h"
+#include "hw.h"
 
 #if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
+
+#include "esp_err.h"
+#include "esp_wifi.h"
+#include "esp_wifi_types.h"
+#include "esp_netif_types.h"
+#include "esp_event_base.h"
+#include "errno.h"
+#include "lwip/api.h"
 
 #define SSID_SIZE SIZEOF_MEMBER(wifi_ap_record_t, ssid)
 
@@ -815,7 +816,6 @@ static lbm_value ext_wifi_ftm_measure(lbm_value *args, lbm_uint argn) {
 
 
 	a->id = lbm_get_current_cid();
-	a->cfg.use_get_report_api = true;
 	a->cfg.channel = lbm_dec_as_i32(args[1]);
 	a->cfg.frm_count = 8;
 	a->cfg.burst_period = 2;

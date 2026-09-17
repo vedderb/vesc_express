@@ -46,12 +46,12 @@
 #define I2C_SDA						5
 #define I2C_SCL						3
 #define I2C_ADDR_GPIO_EXP			0x20
-#define HW_ADC_CH0					ADC1_CHANNEL_2 // Button
-#define HW_ADC_CH1					ADC1_CHANNEL_4 // External Button
+#define HW_ADC_CH0					ADC_CHANNEL_2 // Button
+#define HW_ADC_CH1					ADC_CHANNEL_4 // External Button
 #else
-#define HW_ADC_CH0					ADC1_CHANNEL_3 // Button
-#define HW_ADC_CH1					ADC1_CHANNEL_4 // External Button
-#define HW_ADC_CH3					ADC1_CHANNEL_2 // Button on proto
+#define HW_ADC_CH0					ADC_CHANNEL_3 // Button
+#define HW_ADC_CH1					ADC_CHANNEL_4 // External Button
+#define HW_ADC_CH3					ADC_CHANNEL_2 // Button on proto
 #endif
 
 // Functions
