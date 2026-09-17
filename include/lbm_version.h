@@ -30,13 +30,39 @@ extern "C" {
 /** LBM major version */
 #define LBM_MAJOR_VERSION 0u
 /** LBM minor version */
-#define LBM_MINOR_VERSION 38u
+#define LBM_MINOR_VERSION 40u
 /** LBM patch revision */
 #define LBM_PATCH_VERSION 0u
 
 #define LBM_VERSION_STRING STR(LBM_MAJOR_VERSION) "." STR(LBM_MINOR_VERSION) "." STR(LBM_PATCH_VERSION)
 
 /*! \page changelog Changelog
+
+Sep 6 2026: Version 0.40.0
+  - Fix bug in handover to ptr-rev gc from stack gc. Large nested
+    arrays could still exhaust gc stack and crash.
+  - Add a recursion counter to struct_eq.
+  - Add a quickpath to struct_eq that does not grow call-stack.
+  - Add a recursion counter to match.
+  - Add a quickpath to match that does not grow call-stack.
+
+Sep 5 2026: Version 0.39.0
+  - Garbage collector fix: switches to ptr-rev garbage collection
+    when the explicit stack version runs out of stack. Combines
+    ptr-rev correctness and stack version efficiency.
+  - Fix to generic pointer reversal traversal to correctly follow
+    channel dependencies. Also, to correctly error out if someone
+    tries to store a channel into an Image.
+  - Format safety check in str-from-n to rule out segfault if abused.
+  - Send can now deliver messages to named threads by name rather than
+    ID.
+  - Fix in defrag_mem: It did additional and pointless compactions.
+  - Reset atomic state if the RTS resets.
+  - Fix in lbm_allocate_const_raw and write_raw to correctly track
+    size.
+  - Fix off by one error in lbm_memory_shrink.
+  - Fix in read-eval-program that could make locals forever
+    bound in closures created by the read program.
 
 Jul 11 2026: Version 0.38.0
   - Important bug fix in the image system after update to store symbols names in top half.
