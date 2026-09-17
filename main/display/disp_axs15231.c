@@ -48,6 +48,31 @@ static int m_rotation = 0;
 static esp_lcd_panel_io_handle_t m_io    = NULL;
 static esp_lcd_panel_handle_t    m_panel = NULL;
 static uint8_t *m_pix_buf = NULL;
+static SemaphoreHandle_t m_refresh_done = NULL;
+
+static bool IRAM_ATTR notify_refresh_done(esp_lcd_panel_io_handle_t panel_io,
+		esp_lcd_panel_io_event_data_t *event_data, void *user_ctx) {
+	(void)panel_io;
+	(void)event_data;
+	(void)user_ctx;
+	BaseType_t need_yield = pdFALSE;
+	xSemaphoreGiveFromISR(m_refresh_done, &need_yield);
+	return need_yield == pdTRUE;
+}
+
+static bool draw_bitmap_sync(int x_start, int y_start, int x_end,
+		int y_end, const void *pixels) {
+	if (!m_panel || !m_refresh_done || !pixels) {
+		return false;
+	}
+
+	if (esp_lcd_panel_draw_bitmap(
+			m_panel, x_start, y_start, x_end, y_end, pixels) != ESP_OK) {
+		return false;
+	}
+
+	return xSemaphoreTake(m_refresh_done, portMAX_DELAY) == pdTRUE;
+}
 
 static const axs15231b_lcd_init_cmd_t lcd_init_cmds[] = {
     {0xBB, (const uint8_t []){0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x5A, 0xA5}, 8, 0},
@@ -139,12 +164,14 @@ bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, col
             }
 
             uint8_t *src = img->data + ((size_t)line * (size_t)img->width * 2U);
-			esp_lcd_panel_draw_bitmap(m_panel,
+			if (!draw_bitmap_sync(
 					x,
                     y + line,
 					x + img->width,
                     y + line + lines_now,
-					src);
+					src)) {
+				return false;
+			}
 		}
         return true;
     }
@@ -215,7 +242,10 @@ bool disp_axs15231_render_image(image_buffer_t *img, uint16_t x, uint16_t y, col
 
         int p_start_y = py_min + (pix_idx / target_w);
         int p_end_y = p_start_y + (chunk_now / target_w);
-        esp_lcd_panel_draw_bitmap(m_panel, px_min, p_start_y, px_min + target_w, p_end_y, buf);
+		if (!draw_bitmap_sync(px_min, p_start_y, px_min + target_w,
+				p_end_y, buf)) {
+			return false;
+		}
 
         pix_idx += chunk_now;
     }
@@ -243,7 +273,10 @@ void disp_axs15231_clear(uint32_t color) {
             lines_now = chunk_lines;
         }
 
-        esp_lcd_panel_draw_bitmap(m_panel, 0, y, DISPLAY_WIDTH_PHYS, y + lines_now, buf);
+		if (!draw_bitmap_sync(0, y, DISPLAY_WIDTH_PHYS,
+				y + lines_now, buf)) {
+			return;
+		}
     }
 }
 
@@ -297,14 +330,17 @@ void disp_axs15231_init(int pin_sd0, int pin_sd1, int pin_sd2, int pin_sd3,
 	if (!m_pix_buf) {
 		m_pix_buf = heap_caps_malloc(PIX_BUF_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
 	}
+	if (!m_refresh_done) {
+		m_refresh_done = xSemaphoreCreateBinary();
+	}
 
 	const spi_bus_config_t buscfg = AXS15231B_PANEL_BUS_QSPI_CONFIG(
 			pin_clk, pin_sd0, pin_sd1, pin_sd2, pin_sd3,
 			DISPLAY_WIDTH_PHYS * DISPLAY_HEIGHT_PHYS * 2);
 	spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
 
-	const esp_lcd_panel_io_spi_config_t io_cfg =
-			AXS15231B_PANEL_IO_QSPI_CONFIG(pin_cs, NULL, NULL);
+	esp_lcd_panel_io_spi_config_t io_cfg =
+			AXS15231B_PANEL_IO_QSPI_CONFIG(pin_cs, notify_refresh_done, NULL);
 	esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_cfg, &m_io);
 
 	static axs15231b_vendor_config_t vendor_config = {
