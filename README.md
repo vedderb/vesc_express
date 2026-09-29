@@ -7,17 +7,17 @@ The is the codebase for the VESC Express, which is a WiFi and Bluetooth-enabled 
 Instructions for how to set up the toolchain can be found here:
 [https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html)
 
-### Get Release 5.5.4
+### Get Release 5.5.5
 
 The instructions linked above will install the master branch of ESP-IDF. To install the stable release you can navigate to the installation directory and use the following commands:
 
 ```bash
-git clone -b v5.5.4 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.5.4
-cd esp-idf-v5.5.4/
+git clone -b v5.5.5 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.5.5
+cd esp-idf-v5.5.5/
 ./install.sh esp32c3 esp32c6 esp32s3
 ```
 
-At the moment development is done using the stable 5.5.4-release. Note that different IDF-versions are very likely to cause compatibility issues, so it is strongly recommended to use version 5.5.4.
+At the moment development is done using the stable 5.5.5-release. Note that different IDF-versions are very likely to cause compatibility issues, so it is strongly recommended to use version 5.5.5.
 
 ## Building
 
