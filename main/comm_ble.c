@@ -492,6 +492,13 @@ static void gap_event_handler(
 	esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param
 ) {
 	switch (event) {
+		case ESP_GAP_BLE_SET_LOCAL_PRIVACY_COMPLETE_EVT:
+			if (param->local_privacy_cmpl.status == ESP_BT_STATUS_SUCCESS) {
+				esp_ble_gap_config_adv_data(&ble_adv_data);
+				esp_ble_gap_config_adv_data(&ble_rsp_data);
+			}
+			break;
+
 		case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
 			adv_config_done &= (~ADV_CFG_FLAG);
 			if (adv_config_done == 0) {
@@ -555,11 +562,16 @@ static void gatts_event_handler(
 
 			esp_ble_gap_set_device_name((char *)backup.config.ble_name);
 
-			esp_ble_gap_config_adv_data(&ble_adv_data);
-			adv_config_done |= ADV_CFG_FLAG;
+			if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
+				adv_config_done = ADV_CFG_FLAG | SCAN_RSP_CFG_FLAG;
+				esp_ble_gap_config_local_privacy(true);
+			} else {
+				esp_ble_gap_config_adv_data(&ble_adv_data);
+				adv_config_done |= ADV_CFG_FLAG;
 
-			esp_ble_gap_config_adv_data(&ble_rsp_data);
-			adv_config_done |= SCAN_RSP_CFG_FLAG;
+				esp_ble_gap_config_adv_data(&ble_rsp_data);
+				adv_config_done |= SCAN_RSP_CFG_FLAG;
+			}
 
 			esp_ble_gatts_create_service(
 				gatts_if, &gatts_profile.service_id, BLE_SERVICE_HANDLE_NUM
