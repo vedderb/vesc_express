@@ -785,7 +785,6 @@ static lbm_value allocate_binding(lbm_value key, lbm_value val, lbm_value the_cd
 #define LOOP_BODY  2
 
 static void atomic_error(void) {
-  is_atomic = false;
   lbm_set_error_reason((char*)lbm_error_str_forbidden_in_atomic);
   ERROR_CTX(ENC_SYM_EERROR);
 }
@@ -1114,6 +1113,9 @@ static void unlink_ctx_nm(eval_context_queue_t *q, eval_context_t *ctx) {
 /* End execution of the running context. */
 static void finish_ctx(void) {
 
+  // Reset atomic status if this finish_ctx is part of an
+  // untrapper error or a self-kill within an atomic block.
+  is_atomic = false;
   if (!ctx_running) {
     return;
   }
@@ -1157,6 +1159,8 @@ sizeopt static noreturn void error_ctx_base(lbm_value err_val, bool has_at, lbm_
 sizeopt static noreturn void error_ctx_base(lbm_value err_val, bool has_at, lbm_value at, unsigned int row, unsigned int column) {
 #endif
   bool print_trapped = !lbm_hide_trapped_error && (ctx_running->flags & EVAL_CPS_CONTEXT_FLAG_TRAP_UNROLL_RETURN);
+  // An error always exists atomic status.
+  is_atomic = false;
 
   if (!(lbm_hide_trapped_error &&
         (ctx_running->flags & EVAL_CPS_CONTEXT_FLAG_TRAP_UNROLL_RETURN))) {
@@ -2794,7 +2798,6 @@ static void apply_read_base(lbm_value *args, lbm_uint nargs, eval_context_t *ctx
       // enforced in the case where it can cause problems.
       if (lbm_channel_may_block(lbm_dec_channel(chan)) && is_atomic) {
        lbm_set_error_reason((char*)lbm_error_str_forbidden_in_atomic);
-       is_atomic = false;
        ERROR_CTX(ENC_SYM_EERROR);
       }
     } else {
@@ -3075,7 +3078,6 @@ static void apply_ok(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   if (nargs >= 1) {
     ok_val = args[0];
   }
-  is_atomic = false;
   ctx->r = ok_val;
   ok_ctx();
 }
@@ -3086,7 +3088,6 @@ static void apply_error(lbm_value *args, lbm_uint nargs, eval_context_t *ctx) {
   if (nargs >= 1) {
     err_val = args[0];
   }
-  is_atomic = false;
   ERROR_AT_CTX(err_val, ENC_SYM_EXIT_ERROR);
 }
 

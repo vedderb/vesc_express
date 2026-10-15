@@ -131,6 +131,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "hwconf/rescue"
 "hwconf/avaspark"
 "hwconf/vesc/vbms_inf_sat"
+"hwconf/vesc/vbms_inf_mas"
 "hwconf/seeed"
 
 "lispBM"
