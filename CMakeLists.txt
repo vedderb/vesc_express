@@ -143,6 +143,22 @@ message("Processing target ${HW_NAME} on ${HW_TARGET} for file ${HW_FILE_NAME}")
 # CMakeLists in this exact order for cmake to work correctly
 set(PROJECT_VER "6.0") 
 
+if(SDKCONFIG)
+    get_filename_component(sdkconfig_path "${SDKCONFIG}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+else()
+    set(sdkconfig_path "${CMAKE_SOURCE_DIR}/sdkconfig")
+endif()
+set(sdkconfig_board_key "${HW_NAME}\n${HW_TARGET}\n")
+set(sdkconfig_owner_file "${sdkconfig_path}.board")
+set(sdkconfig_previous_board "")
+if(EXISTS "${sdkconfig_owner_file}")
+    file(READ "${sdkconfig_owner_file}" sdkconfig_previous_board)
+endif()
+if(NOT "${sdkconfig_previous_board}" STREQUAL "${sdkconfig_board_key}" AND EXISTS "${sdkconfig_path}")
+    message(STATUS "Hardware changed or sdkconfig ownership unknown; regenerating ${sdkconfig_path} from ${SDKCONFIG_DEFAULTS}")
+    file(REMOVE "${sdkconfig_path}")
+endif()
+
 # Include ESP-IDF project cmake
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(VESC_HW_FILE ${HW_FILE})
@@ -151,6 +167,8 @@ idf_build_set_property(VESC_HW_FILE ${HW_FILE})
 get_filename_component(ProjectId ${CMAKE_CURRENT_LIST_DIR} NAME)
 string(REPLACE " " "_" ProjectId ${ProjectId})
 project(${ProjectId})
+
+file(WRITE "${sdkconfig_owner_file}" "${sdkconfig_board_key}")
 
 # Fixed-address section for the native library C interface table. The address
 # is target-specific and must match VESC_IF in main/c_libs/vesc_c_if.h.
