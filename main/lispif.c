@@ -127,12 +127,14 @@ void lispif_init(void) {
 	#error "Unsupported target"
 #endif
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
-			backup.config.ble_mode == BLE_MODE_DISABLED) {
+			backup.config.ble_mode == BLE_MODE_DISABLED &&
+			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED) {
 		heap_size *= 2;
 		mem_size = LBM_MEMORY_SIZE_KB(86);
 		bitmap_size = LBM_BITMAP_SIZE_KB(86);
 	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
-			backup.config.ble_mode == BLE_MODE_DISABLED) {
+			(backup.config.ble_mode == BLE_MODE_DISABLED &&
+			 backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED)) {
 		heap_size *= 2;
 		mem_size = LBM_MEMORY_SIZE_KB(64);
 		bitmap_size = LBM_BITMAP_SIZE_KB(64);

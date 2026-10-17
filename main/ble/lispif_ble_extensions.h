@@ -22,6 +22,6 @@
 #include "datatypes.h"
 
 // Load extensions
-void lispif_load_ble_extensions(BLE_MODE mode);
+void lispif_load_ble_extensions(BLE_MODE_LBM mode);
 
 #endif /* LISPIF_BLE_EXTENSIONS_H_ */

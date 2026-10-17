@@ -91,11 +91,17 @@ static QueueHandle_t client_events;
 typedef struct {
 	volatile uint16_t conn;
 	bool busy;
+	bool securing;
+	bool require_auth;
+	uint8_t passkey_action;
 } client_connection_t;
 
 static client_connection_t client_connections[BLE_CLIENT_CONNECTIONS_MAX];
 static unsigned int client_limit;
 static bool client_connecting;
+static bool client_pair_on_connect;
+static uint8_t client_pair_io;
+static bool client_pair_bond;
 static uint32_t client_dropped;
 
 static service_instance_t *get_service(uint16_t handle) {
@@ -126,6 +132,7 @@ static void start_advertising(void) {
 	uint8_t adv_data[31] = { 2, BLE_HS_ADV_TYPE_FLAGS, BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP, 17,
 		BLE_HS_ADV_TYPE_COMP_UUIDS128, 0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01,
 		0x00, 0x40, 0x6E };
+	size_t adv_len = backup.config.ble_mode == BLE_MODE_DISABLED ? 3 : 21;
 	size_t len = strlen(device_name);
 	// A 30-byte name fits in a scan response only when shortened to 29 bytes.
 	if (len > 29) {
@@ -136,7 +143,7 @@ static void start_advertising(void) {
 	scan_rsp_data[1] = strlen(device_name) > len ? BLE_HS_ADV_TYPE_INCOMP_NAME : BLE_HS_ADV_TYPE_COMP_NAME;
 	memcpy(scan_rsp_data + 2, device_name, len);
 	int res = comm_ble_host_advertise(&ble_adv_params, use_custom_adv_data ? ble_adv_data_raw : adv_data,
-		use_custom_adv_data ? ble_adv_data_raw_len : 21, use_custom_adv_data ? ble_scan_rsp_data_raw : scan_rsp_data,
+		use_custom_adv_data ? ble_adv_data_raw_len : adv_len, use_custom_adv_data ? ble_scan_rsp_data_raw : scan_rsp_data,
 		use_custom_adv_data ? ble_scan_rsp_data_raw_len : len + 2);
 	if (res != 0) {
 		commands_printf("Custom BLE advertising failed: %d", res);
@@ -373,7 +380,7 @@ custom_ble_result_t custom_ble_start(void) {
 	if (init_result != CUSTOM_BLE_OK) {
 		return CUSTOM_BLE_INIT_FAILED;
 	}
-	// The standard VESC service owns the host in scripting mode too.
+	// Wait for the shared BLE host to synchronize.
 	for (int i = 0; i < 100; i++) {
 		if (comm_ble_host_ready()) {
 			return comm_ble_host_call(start_script_services, NULL) == 0 ? CUSTOM_BLE_OK : CUSTOM_BLE_ESP_ERROR;
@@ -629,15 +636,15 @@ bool custom_ble_started(void) {
 }
 
 static unsigned int client_capacity(void) {
-	unsigned int capacity = CONFIG_BT_NIMBLE_MAX_CONNECTIONS - (backup.config.ble_mode != BLE_MODE_SCRIPTING_CLIENT);
+	unsigned int capacity = CONFIG_BT_NIMBLE_MAX_CONNECTIONS - (backup.config.ble_mode != BLE_MODE_DISABLED || server_enabled);
 	return capacity < BLE_CLIENT_CONNECTIONS_MAX ? capacity : BLE_CLIENT_CONNECTIONS_MAX;
 }
 
 void custom_ble_init(void) {
-	server_enabled = backup.config.ble_mode == BLE_MODE_SCRIPTING
-		|| backup.config.ble_mode == BLE_MODE_SCRIPTING_SERVER;
-	client_enabled = backup.config.ble_mode == BLE_MODE_SCRIPTING
-		|| backup.config.ble_mode == BLE_MODE_SCRIPTING_CLIENT;
+	server_enabled = backup.config.ble_mode_lbm == BLE_MODE_LBM_CLIENT_SERVER
+		|| backup.config.ble_mode_lbm == BLE_MODE_LBM_SERVER;
+	client_enabled = backup.config.ble_mode_lbm == BLE_MODE_LBM_CLIENT_SERVER
+		|| backup.config.ble_mode_lbm == BLE_MODE_LBM_CLIENT;
 	client_limit = client_capacity();
 	for (unsigned int i = 0; i < BLE_CLIENT_CONNECTIONS_MAX; i++) {
 		client_connections[i].conn = BLE_HS_CONN_HANDLE_NONE;
@@ -736,6 +743,28 @@ static void client_push(ble_client_event_t *event) {
 	}
 }
 
+static int client_secure(client_connection_t *client, uint8_t io, bool bond) {
+	if (io > BLE_HS_IO_KEYBOARD_DISPLAY) {
+		return BLE_HS_EINVAL;
+	}
+	uint8_t io_cap = ble_hs_cfg.sm_io_cap;
+	bool bonding = ble_hs_cfg.sm_bonding;
+	bool mitm = ble_hs_cfg.sm_mitm;
+	ble_hs_cfg.sm_io_cap = io;
+	ble_hs_cfg.sm_bonding = bond;
+	ble_hs_cfg.sm_mitm = io != BLE_HS_IO_NO_INPUT_OUTPUT;
+	client->require_auth = ble_hs_cfg.sm_mitm;
+	client->securing = true;
+	int res = ble_gap_security_initiate(client->conn);
+	ble_hs_cfg.sm_io_cap = io_cap;
+	ble_hs_cfg.sm_bonding = bonding;
+	ble_hs_cfg.sm_mitm = mitm;
+	if (res != 0) {
+		client->securing = false;
+	}
+	return res;
+}
+
 static int client_gap_event(struct ble_gap_event *event, void *arg) {
 	(void)arg;
 	ble_client_event_t result = { .conn = BLE_HS_CONN_HANDLE_NONE };
@@ -764,6 +793,9 @@ static int client_gap_event(struct ble_gap_event *event, void *arg) {
 					if (client_connections[i].conn == BLE_HS_CONN_HANDLE_NONE) {
 						client_connections[i].conn = event->connect.conn_handle;
 						client_connections[i].busy = false;
+						client_connections[i].securing = false;
+						client_connections[i].require_auth = false;
+						client_connections[i].passkey_action = BLE_SM_IOACT_NONE;
 						result.handle = event->connect.conn_handle;
 						result.conn = result.handle;
 						break;
@@ -772,6 +804,14 @@ static int client_gap_event(struct ble_gap_event *event, void *arg) {
 				if (result.handle == BLE_HS_CONN_HANDLE_NONE) {
 					ble_gap_terminate(event->connect.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
 					result.status = BLE_HS_ENOMEM;
+				} else if (client_pair_on_connect) {
+					client_push(&result);
+					int res = client_secure(client_find(result.conn), client_pair_io, client_pair_bond);
+					if (res == 0) {
+						return 0;
+					}
+					result.type = BLE_CLIENT_SECURITY;
+					result.status = res;
 				}
 			}
 			break;
@@ -783,10 +823,55 @@ static int client_gap_event(struct ble_gap_event *event, void *arg) {
 			client_connection_t *client = client_find(result.conn);
 			if (client) {
 				client->busy = false;
+				client->securing = false;
+				client->passkey_action = BLE_SM_IOACT_NONE;
 				client->conn = BLE_HS_CONN_HANDLE_NONE;
 			}
 			break;
 		}
+		case BLE_GAP_EVENT_PASSKEY_ACTION: {
+			result.conn = event->passkey.conn_handle;
+			client_connection_t *client = client_find(result.conn);
+			if (!client) {
+				return 0;
+			}
+			client->securing = true;
+			client->passkey_action = event->passkey.params.action;
+			result.type = BLE_CLIENT_PASSKEY;
+			result.handle = result.conn;
+			result.status = client->passkey_action;
+			if (client->passkey_action == BLE_SM_IOACT_NUMCMP) {
+				result.passkey = event->passkey.params.numcmp;
+			}
+			break;
+		}
+		case BLE_GAP_EVENT_ENC_CHANGE: {
+			result.type = BLE_CLIENT_SECURITY;
+			result.conn = event->enc_change.conn_handle;
+			result.handle = result.conn;
+			result.status = event->enc_change.status;
+			client_connection_t *client = client_find(result.conn);
+			if (!client) {
+				return 0;
+			}
+			bool require_auth = client->securing && client->require_auth;
+			client->securing = false;
+			client->passkey_action = BLE_SM_IOACT_NONE;
+			struct ble_gap_conn_desc desc;
+			int res = ble_gap_conn_find(result.conn, &desc);
+			if (res == 0) {
+				result.properties = desc.sec_state.encrypted | (desc.sec_state.authenticated << 1) |
+					(desc.sec_state.bonded << 2);
+				if (result.status == 0 && (!desc.sec_state.encrypted || (require_auth && !desc.sec_state.authenticated))) {
+					result.status = require_auth ? BLE_HS_EAUTHEN : BLE_HS_EENCRYPT;
+				}
+			} else if (result.status == 0) {
+				result.status = res;
+			}
+			break;
+		}
+		case BLE_GAP_EVENT_REPEAT_PAIRING:
+			return BLE_GAP_REPEAT_PAIRING_IGNORE;
 		case BLE_GAP_EVENT_NOTIFY_RX:
 			result.type = BLE_CLIENT_NOTIFY;
 			result.conn = event->notify_rx.conn_handle;
@@ -948,12 +1033,45 @@ static int client_request_on_host(void *arg) {
 		if (ble_gap_disc_active()) {
 			ble_gap_disc_cancel();
 		}
+		client_pair_on_connect = r->security;
+		client_pair_io = r->io_cap;
+		client_pair_bond = r->bond;
 		int res = ble_gap_connect(client_addr_type, &r->address, r->duration_ms, NULL, client_gap_event, NULL);
 		client_connecting = res == 0;
 		return res;
 	}
-	if (client->busy) {
+	if (r->op == BLE_CLIENT_OP_PASSKEY) {
+		struct ble_sm_io io = { .action = client->passkey_action };
+		if (io.action == BLE_SM_IOACT_NUMCMP && r->action == BLE_SM_IOACT_NUMCMP && r->passkey <= 1) {
+			io.numcmp_accept = r->passkey;
+		} else if ((io.action == BLE_SM_IOACT_INPUT || io.action == BLE_SM_IOACT_DISP) &&
+				r->action == BLE_SM_IOACT_INPUT && r->passkey <= 999999) {
+			io.passkey = r->passkey;
+		} else {
+			return BLE_HS_EINVAL;
+		}
+		int res = ble_sm_inject_io(conn, &io);
+		if (res == 0) {
+			client->passkey_action = BLE_SM_IOACT_NONE;
+		}
+		return res;
+	}
+	if (client->busy || client->securing) {
 		return BLE_HS_EBUSY;
+	}
+	if (r->op == BLE_CLIENT_OP_SECURITY) {
+		return client_secure(client, r->io_cap, r->bond);
+	}
+	if (r->op == BLE_CLIENT_OP_FORGET) {
+		struct ble_gap_conn_desc desc;
+		int res = ble_gap_conn_find(conn, &desc);
+		if (res == 0) {
+			res = ble_store_util_delete_peer(&desc.peer_id_addr);
+		}
+		if (res == 0) {
+			res = ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
+		}
+		return res;
 	}
 	client->busy = true;
 	void *callback_arg = (void *)(((uintptr_t)conn << 8) | r->op);

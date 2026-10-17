@@ -79,6 +79,7 @@ typedef struct {
 	char tcp_hub_id[26];
 	char tcp_hub_pass[26];
 	BLE_MODE ble_mode;
+	BLE_MODE_LBM ble_mode_lbm;
 	char ble_name[9];
 	uint32_t ble_pin;
 	uint32_t ble_service_capacity;

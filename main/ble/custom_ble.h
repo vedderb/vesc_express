@@ -373,7 +373,9 @@ typedef enum {
 	BLE_CLIENT_WRITE,
 	BLE_CLIENT_NOTIFY,
 	BLE_CLIENT_DONE,
-	BLE_CLIENT_MTU
+	BLE_CLIENT_MTU,
+	BLE_CLIENT_SECURITY,
+	BLE_CLIENT_PASSKEY
 } ble_client_event_type_t;
 
 typedef enum {
@@ -388,13 +390,20 @@ typedef enum {
 	BLE_CLIENT_OP_WRITE,
 	BLE_CLIENT_OP_WRITE_NR,
 	BLE_CLIENT_OP_MTU,
-	BLE_CLIENT_OP_LIMIT
+	BLE_CLIENT_OP_LIMIT,
+	BLE_CLIENT_OP_SECURITY,
+	BLE_CLIENT_OP_PASSKEY,
+	BLE_CLIENT_OP_FORGET
 } ble_client_op_t;
 
 typedef struct {
 	ble_client_op_t op;
 	ble_addr_t address;
 	uint32_t duration_ms;
+	uint32_t passkey;
+	uint8_t action;
+	uint8_t io_cap;
+	bool security, bond;
 	uint16_t conn;
 	uint16_t start, end, len;
 	const uint8_t *data;
@@ -404,6 +413,7 @@ typedef struct {
 typedef struct {
 	ble_client_event_type_t type;
 	int status;
+	uint32_t passkey;
 	uint16_t conn;
 	uint16_t handle, end, len;
 	uint8_t properties;

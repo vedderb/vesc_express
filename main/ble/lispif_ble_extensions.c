@@ -93,9 +93,10 @@ static lbm_value prepared_handles_list;
 
 static const char *client_event_names[] = { "ble-scan-result", "ble-scan-done", "ble-connect-result",
 	"ble-disconnected", "ble-service", "ble-characteristic", "ble-descriptor", "ble-read-result", "ble-write-result",
-	"ble-notification", "ble-procedure-done", "ble-mtu-result" };
-static lbm_uint client_event_symbols[12];
+	"ble-notification", "ble-procedure-done", "ble-mtu-result", "ble-security-result", "ble-passkey-action" };
+static lbm_uint client_event_symbols[sizeof(client_event_names) / sizeof(client_event_names[0])];
 static lbm_uint symbol_client_limit;
+static lbm_uint symbol_client_forget;
 
 /**
  * Reverse the elements of an array.
@@ -1286,13 +1287,17 @@ static lbm_value ext_ble_client_connect(lbm_value *args, lbm_uint argn) {
 		return client_request(&request);
 	}
 
-	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0]) || lbm_heap_array_get_size(args[0]) != 6
-		|| !client_number(args[1], 0, 1) || (argn == 3 && !client_number(args[2], 1, 60000))) {
+	if (argn < 2 || argn > 5 || !lbm_is_array_r(args[0]) || lbm_heap_array_get_size(args[0]) != 6
+		|| !client_number(args[1], 0, 1) || (argn >= 3 && !client_number(args[2], 1, 60000))
+		|| (argn >= 4 && !client_number(args[3], 0, 4))
+		|| (argn == 5 && args[4] != ENC_SYM_TRUE && !lbm_is_symbol_nil(args[4]))) {
 		return ENC_SYM_TERROR;
 	}
 
 	ble_client_request_t request = { .op = BLE_CLIENT_OP_CONNECT,
-		.duration_ms = argn == 3 ? lbm_dec_as_u32(args[2]) : 10000 };
+		.duration_ms = argn >= 3 ? lbm_dec_as_u32(args[2]) : 10000,
+		.security = argn >= 4, .io_cap = argn >= 4 ? lbm_dec_as_u32(args[3]) : 4,
+		.bond = argn < 5 || args[4] == ENC_SYM_TRUE };
 	request.address.type = lbm_dec_as_u32(args[1]);
 	const uint8_t *address = lbm_heap_array_get_data_ro(args[0]);
 	for (int i = 0; i < 6; i++) {
@@ -1378,6 +1383,46 @@ static lbm_value ext_ble_client_subscribe(lbm_value *args, lbm_uint argn) {
 	return client_request(&request);
 }
 
+static lbm_value ext_ble_client_security(lbm_value *args, lbm_uint argn) {
+	if (argn < 1 || argn > 3 || !client_number(args[0], 0, BLE_HS_CONN_HANDLE_NONE - 1)) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_SECURITY, .conn = lbm_dec_as_u32(args[0]),
+		.io_cap = BLE_HS_IO_KEYBOARD_DISPLAY, .bond = true };
+	if (argn == 2 && args[1] == lbm_enc_sym(symbol_client_forget)) {
+		request.op = BLE_CLIENT_OP_FORGET;
+	} else {
+		if ((argn >= 2 && !client_number(args[1], 0, 4)) ||
+				(argn == 3 && args[2] != ENC_SYM_TRUE && !lbm_is_symbol_nil(args[2]))) {
+			return ENC_SYM_TERROR;
+		}
+		if (argn >= 2) {
+			request.io_cap = lbm_dec_as_u32(args[1]);
+		}
+		if (argn == 3) {
+			request.bond = args[2] == ENC_SYM_TRUE;
+		}
+	}
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_passkey(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 || !client_number(args[0], 0, BLE_HS_CONN_HANDLE_NONE - 1)) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_PASSKEY, .conn = lbm_dec_as_u32(args[0]) };
+	if (args[1] == ENC_SYM_TRUE || lbm_is_symbol_nil(args[1])) {
+		request.action = BLE_SM_IOACT_NUMCMP;
+		request.passkey = args[1] == ENC_SYM_TRUE;
+	} else if (client_number(args[1], 0, 999999)) {
+		request.action = BLE_SM_IOACT_INPUT;
+		request.passkey = lbm_dec_as_u32(args[1]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+	return client_request(&request);
+}
+
 static lbm_value client_array(const uint8_t *data, unsigned int len) {
 	lbm_value value;
 	if (!lbm_create_array(&value, len)) {
@@ -1448,6 +1493,18 @@ static lbm_value ext_ble_client_event(lbm_value *args, lbm_uint argn) {
 		case BLE_CLIENT_SCAN_DONE:
 			values[count++] = lbm_enc_i(event.status);
 			break;
+		case BLE_CLIENT_SECURITY:
+			values[count++] = lbm_enc_u(event.conn);
+			values[count++] = lbm_enc_i(event.status);
+			values[count++] = lbm_enc_u(event.properties & 1);
+			values[count++] = lbm_enc_u((event.properties >> 1) & 1);
+			values[count++] = lbm_enc_u((event.properties >> 2) & 1);
+			break;
+		case BLE_CLIENT_PASSKEY:
+			values[count++] = lbm_enc_u(event.conn);
+			values[count++] = lbm_enc_u(event.status);
+			values[count++] = lbm_enc_u(event.passkey);
+			break;
 		default:
 			values[count++] = lbm_enc_u(event.handle);
 			values[count++] = lbm_enc_i(event.status);
@@ -1484,26 +1541,20 @@ static lbm_value ext_ble_client_dropped(lbm_value *args, lbm_uint argn) {
 // Extension registration
 static void register_extensions(const ble_extension_t *extensions, unsigned int count, bool enabled) {
 	for (unsigned int i = 0; i < count; i++) {
-		if (enabled) {
-			lbm_add_extension(extensions[i].name, extensions[i].function);
-		} else {
-			lbm_uint id;
-			if (lbm_lookup_extension_id((char *)extensions[i].name, &id)) {
-				lbm_clr_extension(id);
-			}
-		}
+		lbm_add_extension(extensions[i].name, enabled ? extensions[i].function : lbm_extensions_default);
 	}
 }
 
-void lispif_load_ble_extensions(BLE_MODE mode) {
-	bool server = mode == BLE_MODE_SCRIPTING || mode == BLE_MODE_SCRIPTING_SERVER;
-	bool client = mode == BLE_MODE_SCRIPTING || mode == BLE_MODE_SCRIPTING_CLIENT;
+void lispif_load_ble_extensions(BLE_MODE_LBM mode) {
+	bool server = mode == BLE_MODE_LBM_CLIENT_SERVER || mode == BLE_MODE_LBM_SERVER;
+	bool client = mode == BLE_MODE_LBM_CLIENT_SERVER || mode == BLE_MODE_LBM_CLIENT;
 
 	if (server) {
 		register_symbols();
 	}
 	if (client) {
 		lbm_add_symbol_const("limit", &symbol_client_limit);
+		lbm_add_symbol_const("forget", &symbol_client_forget);
 		for (unsigned int i = 0; i < sizeof(client_event_symbols) / sizeof(client_event_symbols[0]); i++) {
 			lbm_add_symbol_const(client_event_names[i], &client_event_symbols[i]);
 		}
@@ -1532,6 +1583,8 @@ void lispif_load_ble_extensions(BLE_MODE mode) {
 		{ "ble-client-read", ext_ble_client_read },
 		{ "ble-client-write", ext_ble_client_write },
 		{ "ble-client-subscribe", ext_ble_client_subscribe },
+		{ "ble-client-security", ext_ble_client_security },
+		{ "ble-client-passkey", ext_ble_client_passkey },
 		{ "ble-client-event", ext_ble_client_event },
 		{ "ble-client-dropped", ext_ble_client_dropped },
 	};

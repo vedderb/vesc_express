@@ -78,6 +78,11 @@
 #define CONF_BLE_MODE 1
 #endif
 
+
+#ifndef CONF_BLE_MODE_LBM
+#define CONF_BLE_MODE_LBM 0
+#endif
+
 // Name
 #ifndef CONF_BLE_NAME
 #define CONF_BLE_NAME "Express"

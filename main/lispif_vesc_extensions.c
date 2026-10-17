@@ -76,7 +76,7 @@
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #endif
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_now.h"
 #include "esp_crc.h"
 #endif
@@ -196,6 +196,7 @@ typedef struct {
 	lbm_uint tcp_hub_id;
 	lbm_uint tcp_hub_pass;
 	lbm_uint ble_mode;
+	lbm_uint ble_mode_lbm;
 	lbm_uint ble_name;
 	lbm_uint ble_pin;
 	lbm_uint ble_service_capacity;
@@ -361,6 +362,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("tcp-hub-pass", comp);
 		} else if (comp == &syms_vesc.ble_mode) {
 			lbm_add_symbol_const("ble-mode", comp);
+		} else if (comp == &syms_vesc.ble_mode_lbm) {
+			lbm_add_symbol_const("ble-mode-lbm", comp);
 		} else if (comp == &syms_vesc.ble_name) {
 			lbm_add_symbol_const("ble-name", comp);
 		} else if (comp == &syms_vesc.ble_pin) {
@@ -794,6 +797,10 @@ static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
 		int v = conf->ble_mode;
 		res = get_or_set_i(set, &v, &set_arg);
 		conf->ble_mode = v;
+	} else if (compare_symbol(name, &syms_vesc.ble_mode_lbm)) {
+		int v = conf->ble_mode_lbm;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->ble_mode_lbm = v;
 	} else if (compare_symbol(name, &syms_vesc.ble_name)) {
 		res = get_or_set_string(set, conf->ble_name, &set_arg, sizeof(conf->ble_name));
 	} else if (compare_symbol(name, &syms_vesc.ble_pin)) {
@@ -2263,7 +2270,7 @@ static lbm_value ext_ioboard_set_pwm(lbm_value *args, lbm_uint argn) {
 
 // ESP NOW
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 
 static bool esp_now_initialized = false;
 static volatile lbm_cid esp_now_send_cid = -1;
@@ -2380,7 +2387,8 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 		esp_wifi_set_storage(WIFI_STORAGE_RAM);
 		esp_wifi_set_mode(WIFI_MODE_APSTA);
 
-		if (backup.config.ble_mode == BLE_MODE_DISABLED) {
+		if (backup.config.ble_mode == BLE_MODE_DISABLED &&
+			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED) {
 			esp_wifi_set_ps(WIFI_PS_NONE);
 		}
 
@@ -6932,7 +6940,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("ioboard-set-pwm", ext_ioboard_set_pwm);
 
 		// ESP NOW
-		#if !CONFIG_IDF_TARGET_ESP32P4
+		#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 		lbm_add_extension("esp-now-start", ext_esp_now_start);
 		lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
 		lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
@@ -7107,7 +7115,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 	}
 
 	#if CONFIG_BT_NIMBLE_ENABLED
-	lispif_load_ble_extensions(backup.config.ble_mode);
+	lispif_load_ble_extensions(backup.config.ble_mode_lbm);
 	#endif
 
 	lbm_set_dynamic_load_callback(dynamic_loader);
@@ -7145,7 +7153,7 @@ void lispif_disable_all_events(void) {
 
 	bms_register_cmd_handler(NULL);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
+	#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 	esp_now_recv_cid = -1;
 	#endif
 	can_recv_sid_cid = -1;

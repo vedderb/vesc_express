@@ -118,7 +118,7 @@ static int char2_read_handler(uint16_t conn_id, uint16_t attr_handle, struct ble
 }
 
 static void start_advertising(void) {
-	if (is_connected || custom_ble_started()) {
+	if (backup.config.ble_mode == BLE_MODE_DISABLED || is_connected || custom_ble_started()) {
 		return;
 	}
 	uint8_t adv_data[21] = { 2, BLE_HS_ADV_TYPE_FLAGS, BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP, 17,
@@ -154,7 +154,7 @@ static void send_queued_packets(struct ble_npl_event *event) {
 	}
 	if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
 		struct ble_gap_conn_desc desc;
-		if (ble_gap_conn_find(notify_conn_id, &desc) != 0 || !desc.sec_state.encrypted) {
+		if (ble_gap_conn_find(notify_conn_id, &desc) != 0 || !desc.sec_state.encrypted || !desc.sec_state.authenticated) {
 			ble_npl_callout_reset(&send_callout, 1);
 			return;
 		}
@@ -212,8 +212,10 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 			notify_enabled = false;
 			notify_conn_id = BLE_HS_CONN_HANDLE_NONE;
 			ble_current_mtu = DEFAULT_BLE_MTU;
-			packet_reset(packet_state);
-			send_queued_packets(NULL);
+			if (packet_state) {
+				packet_reset(packet_state);
+				send_queued_packets(NULL);
+			}
 			LED_BLUE_OFF();
 			start_advertising();
 			break;
@@ -311,39 +313,35 @@ static void free_packet_resources(void) {
 }
 
 void comm_ble_init(void) {
-	if (backup.config.ble_mode == BLE_MODE_SCRIPTING_CLIENT) {
-		int res = comm_ble_host_init((char *)backup.config.ble_name, false, NULL);
-		if (res == 0) {
-			comm_ble_host_start();
-		} else {
-			commands_printf("BLE initialization failed: %d", res);
+	bool vesc_enabled = backup.config.ble_mode != BLE_MODE_DISABLED;
+	if (vesc_enabled) {
+		send_mutex = xSemaphoreCreateMutex();
+		// A Lisp error report can enqueue several packets before the host drains it.
+		send_queue = xQueueCreate(32, sizeof(ble_tx_packet_t *));
+
+		packet_state = calloc(1, sizeof(PACKET_STATE_t));
+		char1_str = calloc(2, GATTS_CHAR_VAL_LEN_MAX);
+		if (!packet_state || !char1_str || !send_mutex || !send_queue) {
+			free_packet_resources();
+			return;
 		}
-		return;
+		char2_str = char1_str + GATTS_CHAR_VAL_LEN_MAX;
+		packet_init(send_packet_raw, process_packet, packet_state);
 	}
-
-	send_mutex = xSemaphoreCreateMutex();
-	// A Lisp error report can enqueue several packets before the host drains it.
-	send_queue = xQueueCreate(32, sizeof(ble_tx_packet_t *));
-
-	packet_state = calloc(1, sizeof(PACKET_STATE_t));
-	char1_str = calloc(2, GATTS_CHAR_VAL_LEN_MAX);
-	if (!packet_state || !char1_str || !send_mutex || !send_queue) {
-		free_packet_resources();
-		return;
-	}
-	char2_str = char1_str + GATTS_CHAR_VAL_LEN_MAX;
-	packet_init(send_packet_raw, process_packet, packet_state);
 	bool encrypted = backup.config.ble_mode == BLE_MODE_ENCRYPTED;
 	if (encrypted) {
-		ble_chars[0].flags |= BLE_GATT_CHR_F_WRITE_ENC;
-		ble_chars[1].flags |= BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC;
+		ble_chars[0].flags |= BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_WRITE_AUTHEN;
+		ble_chars[1].flags |= BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN |
+			BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC;
 	}
-	int res = comm_ble_host_init((char *)backup.config.ble_name, encrypted, gap_event_handler);
-	if (res == 0) {
+	bool server_enabled = vesc_enabled || backup.config.ble_mode_lbm == BLE_MODE_LBM_SERVER ||
+		backup.config.ble_mode_lbm == BLE_MODE_LBM_CLIENT_SERVER;
+	int res = comm_ble_host_init((char *)backup.config.ble_name, encrypted, server_enabled ? gap_event_handler : NULL);
+	if (res == 0 && vesc_enabled) {
 		ble_npl_callout_init(&send_callout, nimble_port_get_dflt_eventq(), send_queued_packets, NULL);
 		res = ble_gatts_count_cfg(ble_services);
 	}
-	if (res == 0) {
+	if (res == 0 && vesc_enabled) {
 		res = ble_gatts_add_svcs(ble_services);
 	}
 	if (res == 0) {
