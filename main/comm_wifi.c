@@ -32,6 +32,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_system.h"
+#include <errno.h>
 
 #if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 #include "esp_wifi.h"
@@ -232,6 +233,8 @@ static void set_socket_options(int sock) {
 	int keepInterval = 5;
 	int keepCount = 3;
 	int nodelay = 1;
+	struct timeval send_timeout = {.tv_sec = 0, .tv_usec = 250000};
+	setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
 
 	setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
 	setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
@@ -242,32 +245,42 @@ static void set_socket_options(int sock) {
 
 static void tcp_task_local(void *arg) {
 	for (;;) {
-		struct sockaddr_storage dest_addr;
-		struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
-		dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-		dest_addr_ip4->sin_family = AF_INET;
-		dest_addr_ip4->sin_port = htons(65102);
+		struct sockaddr_in dest_addr = {
+			.sin_family = AF_INET,
+			.sin_port = htons(65102),
+			.sin_addr.s_addr = htonl(INADDR_ANY)
+		};
 
 		int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+		if (listen_sock < 0) {
+			vTaskDelay(pdMS_TO_TICKS(1000));
+			continue;
+		}
 		int opt = 1;
 		setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-		bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-		listen(listen_sock, 1);
+		if (bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0 &&
+				listen(listen_sock, 1) == 0) {
+			struct sockaddr_in addr;
+			for (;;) {
+				socklen_t addr_len = sizeof(addr);
+				int sock = accept(listen_sock, (struct sockaddr *)&addr, &addr_len);
+				if (sock < 0) {
+					if (errno == EINTR) {
+						continue;
+					}
+					break;
+				}
+				comm_local.ip_client.addr = addr.sin_addr.s_addr;
+				set_socket_options(sock);
+				packet_reset(comm_local.packet);
+				do_comm(sock, &comm_local);
+				shutdown(sock, SHUT_RDWR);
+				close(sock);
+			}
+		}
 
-		struct sockaddr addr;
-		socklen_t addr_len = sizeof(addr);
-		int sock = accept(listen_sock, &addr, &addr_len);
-
-		memcpy(&comm_local.ip_client, addr.sa_data + 2, 4);
-		set_socket_options(sock);
-
-		do_comm(sock, &comm_local);
-		shutdown(sock, 0);
-		close(sock);
-
-		shutdown(listen_sock, 0);
 		close(listen_sock);
-		vTaskDelay(10 / portTICK_PERIOD_MS);
+		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
 
 	vTaskDelete(NULL);
@@ -419,56 +432,35 @@ void comm_wifi_send_packet_hub(unsigned char *data, unsigned int len) {
 	packet_send_packet(data, len, comm_hub.packet);
 }
 
-#define SEND_RAW_MAX_RETRIES 100
-
-void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len) {
-	if (comm_local.socket < 0) {
+static void send_raw(int sock, unsigned char *buffer, unsigned int len) {
+	if (sock < 0) {
 		return;
 	}
 
-	int error_cnt = 0;
-
-	int to_write = len;
-	while (to_write > 0) {
-		int written = send(comm_local.socket, buffer + (len - to_write), to_write, 0);
-		if (written < 0) {
-			error_cnt++;
-
-			if (error_cnt > SEND_RAW_MAX_RETRIES) {
-				return;
-			}
-
+	TickType_t started = xTaskGetTickCount();
+	unsigned int sent = 0;
+	while (sent < len) {
+		int written = send(sock, buffer + sent, len - sent, 0);
+		if (written > 0) {
+			sent += written;
+		} else if (written == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+			return;
+		} else {
 			vTaskDelay(1);
-			continue;
 		}
-
-		to_write -= written;
+		if (sent < len && xTaskGetTickCount() - started >= pdMS_TO_TICKS(1000)) {
+			shutdown(sock, SHUT_RDWR);
+			return;
+		}
 	}
 }
 
+void comm_wifi_send_raw_local(unsigned char *buffer, unsigned int len) {
+	send_raw(comm_local.socket, buffer, len);
+}
+
 void comm_wifi_send_raw_hub(unsigned char *buffer, unsigned int len) {
-	if (comm_hub.socket < 0) {
-		return;
-	}
-
-	int error_cnt = 0;
-
-	int to_write = len;
-	while (to_write > 0) {
-		int written = send(comm_hub.socket, buffer + (len - to_write), to_write, 0);
-		if (written < 0) {
-			error_cnt++;
-
-			if (error_cnt > SEND_RAW_MAX_RETRIES) {
-				return;
-			}
-
-			vTaskDelay(1);
-			continue;
-		}
-
-		to_write -= written;
-	}
+	send_raw(comm_hub.socket, buffer, len);
 }
 
 void comm_wifi_init(void) {
@@ -489,8 +481,12 @@ void comm_wifi_init(void) {
 
 	esp_wifi_set_storage(WIFI_STORAGE_RAM);
 
-	if (backup.config.ble_mode == BLE_MODE_DISABLED &&
-			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED) {
+	bool disable_power_save = backup.config.ble_mode == BLE_MODE_DISABLED &&
+			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED;
+#if CONFIG_IDF_TARGET_ESP32P4
+	disable_power_save = true;
+#endif
+	if (disable_power_save) {
 		esp_wifi_set_ps(WIFI_PS_NONE);
 	}
 
@@ -607,14 +603,12 @@ bool comm_wifi_is_connected(void) {
 
 void comm_wifi_disconnect(void) {
 	if (comm_local.socket >= 0) {
-		shutdown(comm_local.socket, 0);
-		close(comm_local.socket);
+		shutdown(comm_local.socket, SHUT_RDWR);
 		comm_local.socket = -1;
 	}
 
 	if (comm_hub.socket >= 0) {
-		shutdown(comm_hub.socket, 0);
-		close(comm_hub.socket);
+		shutdown(comm_hub.socket, SHUT_RDWR);
 		comm_hub.socket = -1;
 	}
 }
