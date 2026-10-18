@@ -1,6 +1,3 @@
-set(COMPONENT_REQUIRES )
-set(COMPONENT_PRIV_REQUIRES )
-
 set(COMPONENT_SRCS
 "main.c"
 "buffer.c"
@@ -75,6 +72,7 @@ set(COMPONENT_SRCS
 
 "touch/lispif_touch_extensions.c"
 "touch/touch_cst836u.c"
+"touch/touch_axs5106.c"
 
 "display/lispif_disp_extensions.c"
 "display/disp_sh8501b.c"
@@ -95,6 +93,7 @@ set(COMPONENT_SRCS
 
 "drivers/bme280/bme280.c"
 "drivers/bme280/bme280_if.c"
+"drivers/hwi2c.c"
 "drivers/hwspi.c"
 "drivers/spi_bb.c"
 "drivers/enc_as504x.c"
@@ -105,7 +104,7 @@ set(COMPONENT_SRCS
 "lowzip/lowzip.c"
 )
 
-if(CONFIG_BT_BLUEDROID_ENABLED)
+if(CONFIG_BT_NIMBLE_ENABLED)
     list(APPEND COMPONENT_SRCS
         "ble/lispif_ble_extensions.c"
     )
@@ -150,9 +149,17 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "lowzip"
 )
 
-register_component()
+idf_component_register(SRCS ${COMPONENT_SRCS}
+    INCLUDE_DIRS ${COMPONENT_ADD_INCLUDEDIRS}
+)
+
+if(NOT DEFINED ENV{HW_SRC} AND NOT DEFINED ENV{HW_HEADER})
+    idf_build_get_property(hw_file VESC_HW_FILE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE HW_HEADER="${hw_file}.h" HW_SOURCE="${hw_file}.c")
+endif()
 
 add_compile_definitions(
+    USE_TINYGFX_FONT_ALL
     LBM_USE_DYN_FUNS
     LBM_USE_DYN_MACROS
     LBM_USE_DYN_LOOPS

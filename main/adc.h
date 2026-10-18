@@ -20,11 +20,10 @@
 #ifndef MAIN_ADC_H_
 #define MAIN_ADC_H_
 
-#include "conf_general.h"
-#include "driver/adc.h"
+#include "hal/adc_types.h"
 
 // Functions
 void adc_init(void);
-float adc_get_voltage(adc1_channel_t ch);
+float adc_get_voltage(adc_channel_t channel);
 
 #endif /* MAIN_ADC_H_ */

@@ -28,7 +28,7 @@
 
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
-#include "soc/rmt_periph.h"
+#include "hal/rmt_periph.h"
 #include "soc/soc_caps.h"
 #include "soc/io_mux_reg.h"
 #include "soc/gpio_periph.h"
@@ -239,9 +239,9 @@ static void led_pin_idle(int pin) {
 static void led_find_tx_sig(int pin) {
 	led_tx_sig = -1;
 	uint32_t routed = GPIO.func_out_sel_cfg[pin].val & LED_OUT_SEL_MASK;
-	for (int i = 0; i < SOC_RMT_CHANNELS_PER_GROUP; i++) {
-		if ((uint32_t)rmt_periph_signals.groups[0].channels[i].tx_sig == routed) {
-			led_tx_sig = rmt_periph_signals.groups[0].channels[i].tx_sig;
+	for (int i = 0; i < RMT_LL_GET(CHANS_PER_INST); i++) {
+		if ((uint32_t)soc_rmt_signals[0].channels[i].tx_sig == routed) {
+			led_tx_sig = soc_rmt_signals[0].channels[i].tx_sig;
 			return;
 		}
 	}

@@ -17,11 +17,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "hwi2c.h"
 #include "lispif_touch_extensions.h"
 
 #include "lispif_events.h"
 #include "lbm_vesc_utils.h"
 #include "touch_cst836u.h"
+#include "touch_axs5106.h"
 #include "eval_cps.h"
 #include "extensions.h"
 #include "heap.h"
@@ -33,7 +35,6 @@
 #include "freertos/task.h"
 
 #include "driver/gpio.h"
-#include "driver/i2c.h"
 #include "driver/spi_master.h"
 #include "esp_err.h"
 
@@ -64,7 +65,7 @@ static TaskHandle_t touch_event_task_handle = 0;
 static lispif_touch_driver_t touch_driver = {0};
 static esp_lcd_touch_handle_t touch_handle = NULL;
 static esp_lcd_panel_io_handle_t touch_io_handle = NULL;
-static i2c_port_t touch_i2c_port = TOUCH_I2C_PORT;
+static i2c_port_num_t touch_i2c_port = TOUCH_I2C_PORT;
 static bool touch_owns_i2c_driver = false;
 static spi_host_device_t touch_spi_host = SPI2_HOST;
 static bool touch_owns_spi_bus = false;
@@ -77,6 +78,7 @@ static lbm_uint sym_cst9217 = 0;
 static lbm_uint sym_xpt2046 = 0;
 static lbm_uint sym_axs15231 = 0;
 static lbm_uint sym_cst836u = 0;
+static lbm_uint sym_axs5106 = 0;
 
 typedef esp_err_t (*touch_i2c_create_fn_t)(esp_lcd_panel_io_handle_t io, const esp_lcd_touch_config_t *cfg, esp_lcd_touch_handle_t *tp);
 
@@ -168,7 +170,7 @@ static esp_err_t touch_esp_lcd_deinit(void) {
 	}
 
 	if (touch_owns_i2c_driver) {
-		esp_err_t res = i2c_driver_delete(touch_i2c_port);
+		esp_err_t res = hwi2c_stop(touch_i2c_port);
 		if (res != ESP_OK && first_err == ESP_OK) {
 			first_err = res;
 		}
@@ -228,33 +230,12 @@ static esp_err_t touch_esp_lcd_get_data(lispif_touch_point_data_t *data, uint8_t
 }
 
 static esp_err_t touch_init_i2c_bus(int sda, int scl, uint32_t freq) {
-	i2c_config_t i2c_conf = {
-			.mode = I2C_MODE_MASTER,
-			.sda_io_num = sda,
-			.scl_io_num = scl,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = freq,
-	};
-
-	bool reuse_existing_i2c = false;
-	esp_err_t cfg_res = i2c_param_config(TOUCH_I2C_PORT, &i2c_conf);
-	if (cfg_res == ESP_ERR_INVALID_ARG) {
-		i2c_conf.sda_pullup_en = GPIO_PULLUP_DISABLE;
-		i2c_conf.scl_pullup_en = GPIO_PULLUP_DISABLE;
-		cfg_res = i2c_param_config(TOUCH_I2C_PORT, &i2c_conf);
+	bool reuse_existing_i2c = hwi2c_bus(TOUCH_I2C_PORT) != NULL;
+	esp_err_t res = hwi2c_init(TOUCH_I2C_PORT, sda, scl, freq, true);
+	if (res == ESP_ERR_INVALID_ARG) {
+		res = hwi2c_init(TOUCH_I2C_PORT, sda, scl, freq, false);
 	}
-	if (cfg_res != ESP_OK) {
-		if (cfg_res != ESP_FAIL && cfg_res != ESP_ERR_INVALID_STATE) {
-			return cfg_res;
-		}
-		reuse_existing_i2c = true;
-	}
-
-	esp_err_t res = i2c_driver_install(TOUCH_I2C_PORT, i2c_conf.mode, 0, 0, 0);
-	if (res == ESP_ERR_INVALID_STATE) {
-		reuse_existing_i2c = true;
-	} else if (res != ESP_OK) {
+	if (res != ESP_OK) {
 		return res;
 	}
 
@@ -280,8 +261,8 @@ static esp_err_t touch_init_i2c_esp_lcd(int sda, int scl, int rst, int int_pin, 
 		return res;
 	}
 
-	io_conf.scl_speed_hz = 0;
-	res = esp_lcd_new_panel_io_i2c(TOUCH_I2C_PORT, &io_conf, &touch_io_handle);
+	io_conf.scl_speed_hz = freq;
+	res = esp_lcd_new_panel_io_i2c(hwi2c_bus(TOUCH_I2C_PORT), &io_conf, &touch_io_handle);
 	if (res != ESP_OK) {
 		touch_esp_lcd_deinit();
 		return res;
@@ -916,6 +897,62 @@ static lbm_value ext_touch_load_cst836u(lbm_value *args, lbm_uint argn) {
 	return touch_load_driver(driver, sym_cst836u, width, height);
 }
 
+static lbm_value ext_touch_load_axs5106(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_RANGE(6, 7);
+
+	int pin_sda = lbm_dec_as_i32(args[0]);
+	int pin_scl = lbm_dec_as_i32(args[1]);
+	int pin_rst = lbm_dec_as_i32(args[2]);
+	int pin_int = lbm_dec_as_i32(args[3]);
+	int width = lbm_dec_as_i32(args[4]);
+	int height = lbm_dec_as_i32(args[5]);
+	int freq = TOUCH_I2C_DEFAULT_FREQ;
+
+	if (argn == 7) {
+		freq = lbm_dec_as_i32(args[6]);
+	}
+
+	if (!touch_validate_i2c_load_args(pin_sda, pin_scl, pin_rst, pin_int, width, height, freq)) {
+		return ENC_SYM_EERROR;
+	}
+
+	if (!touch_runtime_init()) {
+		lbm_set_error_reason(msg_touch_runtime);
+		return ENC_SYM_EERROR;
+	}
+
+	xSemaphoreTake(touch_mutex, portMAX_DELAY);
+	touch_delete_locked();
+	xSemaphoreGive(touch_mutex);
+
+	esp_err_t res = touch_init_i2c_bus(pin_sda, pin_scl, (uint32_t)freq);
+	if (res != ESP_OK) {
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
+
+	if (pin_rst >= 0) {
+		gpio_reset_pin((gpio_num_t)pin_rst);
+		gpio_set_direction((gpio_num_t)pin_rst, GPIO_MODE_OUTPUT);
+		gpio_set_level((gpio_num_t)pin_rst, 0);
+		vTaskDelay(pdMS_TO_TICKS(10));
+		gpio_set_level((gpio_num_t)pin_rst, 1);
+		vTaskDelay(pdMS_TO_TICKS(50));
+	}
+
+	lispif_touch_driver_t driver = {0};
+	res = touch_axs5106_init(touch_i2c_port, (uint16_t)width, (uint16_t)height, &driver);
+	if (res != ESP_OK) {
+		lbm_set_esp_error_reason(res);
+		return ENC_SYM_EERROR;
+	}
+
+	driver.deinit = touch_esp_lcd_deinit;
+	touch_has_int = false;
+
+	return touch_load_driver(driver, sym_axs5106, width, height);
+}
+
 static lbm_value ext_touch_load_xpt2046(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_RANGE(8, 9);
 
@@ -1054,6 +1091,7 @@ static lbm_value ext_touch_apply_transforms(lbm_value *args, lbm_uint argn) {
 	bool mirror_y = lbm_dec_as_i32(args[2]) != 0;
 
 	touch_cst836u_set_transforms(swap_xy, mirror_x, mirror_y);
+	touch_axs5106_set_transforms(swap_xy, mirror_x, mirror_y);
 
 	 if (!touch_handle) {
 	  xSemaphoreGive(touch_mutex);
@@ -1093,6 +1131,7 @@ void lispif_load_touch_extensions(void) {
 	lbm_add_symbol_const("xpt2046", &sym_xpt2046);
 	lbm_add_symbol_const("axs15231", &sym_axs15231);
 	lbm_add_symbol_const("cst836u", &sym_cst836u);
+	lbm_add_symbol_const("axs5106", &sym_axs5106);
 
 	lbm_add_extension("touch-load-cst816s", ext_touch_load_cst816s);
 	lbm_add_extension("touch-load-gt911", ext_touch_load_gt911);
@@ -1100,6 +1139,7 @@ void lispif_load_touch_extensions(void) {
 	lbm_add_extension("touch-load-xpt2046", ext_touch_load_xpt2046);
 	lbm_add_extension("touch-load-axs15231", ext_touch_load_axs15231);
 	lbm_add_extension("touch-load-cst836u", ext_touch_load_cst836u);
+	lbm_add_extension("touch-load-axs5106", ext_touch_load_axs5106);
 	lbm_add_extension("touch-read", ext_touch_read);
 	lbm_add_extension("touch-read-all", ext_touch_read_all);
 	lbm_add_extension("touch-delete", ext_touch_delete);

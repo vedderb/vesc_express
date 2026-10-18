@@ -18,82 +18,73 @@
     */
 
 #include "adc.h"
-#include "terminal.h"
-#include "commands.h"
-
-#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
+#include "hw.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+
+static adc_oneshot_unit_handle_t adc_unit;
+static adc_cali_handle_t adc_cal[SOC_ADC_MAX_CHANNEL_NUM];
+
+static void configure_channel(adc_channel_t channel) {
+	if (adc_cal[channel]) {
+		return;
+}
+
+	adc_oneshot_chan_cfg_t config = {
+		.atten = ADC_ATTEN_DB_12,
+		.bitwidth = ADC_BITWIDTH_DEFAULT,
+	};
+	ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_unit, channel, &config));
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+	adc_cali_curve_fitting_config_t calibration = {
+		.unit_id = ADC_UNIT_1,
+		.chan = channel,
+		.atten = ADC_ATTEN_DB_12,
+		.bitwidth = ADC_BITWIDTH_DEFAULT,
+	};
+	adc_cali_create_scheme_curve_fitting(&calibration, &adc_cal[channel]);
 #else
-#include "esp_adc_cal.h"
-#endif
-
-#include <math.h>
-
-// Private variables
-static bool cal_ok = false;
-
-#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
-static adc_cali_handle_t adc1_cali_handle = NULL;
-#else
-static esp_adc_cal_characteristics_t adc1_chars;
-#endif
-
-void adc_init(void) {
-	adc1_config_width(ADC_WIDTH_BIT_DEFAULT);
-
-#ifdef HW_ADC_CH0
-	adc1_config_channel_atten(HW_ADC_CH0, ADC_ATTEN_DB_12);
-#endif
-#ifdef HW_ADC_CH1
-	adc1_config_channel_atten(HW_ADC_CH1, ADC_ATTEN_DB_12);
-#endif
-#ifdef HW_ADC_CH2
-	adc1_config_channel_atten(HW_ADC_CH2, ADC_ATTEN_DB_12);
-#endif
-#ifdef HW_ADC_CH3
-	adc1_config_channel_atten(HW_ADC_CH3, ADC_ATTEN_DB_12);
-#endif
-#ifdef HW_ADC_CH4
-	adc1_config_channel_atten(HW_ADC_CH4, ADC_ATTEN_DB_12);
-#endif
-
-	#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
-	adc_cali_curve_fitting_config_t cali_config = {
+	adc_cali_line_fitting_config_t calibration = {
 		.unit_id = ADC_UNIT_1,
 		.atten = ADC_ATTEN_DB_12,
 		.bitwidth = ADC_BITWIDTH_DEFAULT,
 	};
-
-	if (adc_cali_create_scheme_curve_fitting(&cali_config, &adc1_cali_handle) == ESP_OK) {
-		cal_ok = true;
-	}
-	#elif CONFIG_IDF_TARGET_ESP32S3
-	if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP_FIT) == ESP_OK) {
-		esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_DEFAULT, 0, &adc1_chars);
-		cal_ok = true;
-	}
-	#else
-	if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
-		esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_DEFAULT, 0, &adc1_chars);
-		cal_ok = true;
-	}
+	adc_cali_create_scheme_line_fitting(&calibration, &adc_cal[channel]);
 	#endif
 }
 
-float adc_get_voltage(adc1_channel_t ch) {
-	float res = -1.0;
+void adc_init(void) {
+	adc_oneshot_unit_init_cfg_t config = {
+		.unit_id = ADC_UNIT_1,
+	};
+	ESP_ERROR_CHECK(adc_oneshot_new_unit(&config, &adc_unit));
 
-	if (cal_ok) {
-		#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
-		int voltage_mv = 0;
-		if (adc_cali_raw_to_voltage(adc1_cali_handle, adc1_get_raw(ch), &voltage_mv) == ESP_OK) {
-			res = (float)voltage_mv / 1000.0;
-		}
-		#else
-		res = (float)esp_adc_cal_raw_to_voltage(adc1_get_raw(ch), &adc1_chars) / 1000.0;
+#ifdef HW_ADC_CH0
+	configure_channel(HW_ADC_CH0);
+		#endif
+#ifdef HW_ADC_CH1
+	configure_channel(HW_ADC_CH1);
+		#endif
+#ifdef HW_ADC_CH2
+	configure_channel(HW_ADC_CH2);
+		#endif
+#ifdef HW_ADC_CH3
+	configure_channel(HW_ADC_CH3);
+		#endif
+#ifdef HW_ADC_CH4
+	configure_channel(HW_ADC_CH4);
 		#endif
 	}
 
-	return res;
+float adc_get_voltage(adc_channel_t channel) {
+	int raw;
+	int voltage_mv;
+	if (channel < 0 || channel >= SOC_ADC_MAX_CHANNEL_NUM || !adc_cal[channel]
+		|| adc_oneshot_read(adc_unit, channel, &raw) != ESP_OK
+		|| adc_cali_raw_to_voltage(adc_cal[channel], raw, &voltage_mv) != ESP_OK) {
+		return -1.0;
+}
+
+	return (float)voltage_mv / 1000.0;
 }

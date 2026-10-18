@@ -24,6 +24,8 @@
 #include "soc/gpio_struct.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
 #include "soc/gpio_reg.h"
 #include "conf_general.h"
 

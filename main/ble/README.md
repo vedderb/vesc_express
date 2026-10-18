@@ -2,10 +2,10 @@
 
 ## Introduction
 
-The BLE interface provides a set of function allowing you to control control the
-devices BLE behavior from LispBM scripts, allowing it to act as a BLE server.
-The library is quite limited at the moment (it does not support encryption at
-all at the moment for instance). It only supports the following actions:
+The BLE interface controls the device from LispBM scripts as a BLE server and
+client simultaneously. Outgoing connections support script-controlled pairing and
+passkey entry.
+Server operations include:
 
 1. Defining services with UUIDs and a list of characteristics with their own UUIDs.
 2. Defining the access permissions of said charactersistics, including read, write,
@@ -13,19 +13,56 @@ all at the moment for instance). It only supports the following actions:
 3. Defining a list of charactersistic descriptors to assign to a characteristic.
 4. Reading and writing the values of the characteristics and their descriptors.
 5. Customizing the advertisement and scan response packets sent.
+6. Scanning, connecting as a GATT client, discovering attributes, reading,
+   writing and subscribing while the normal VESC BLE server stays connected.
+
+The BLE host uses NimBLE. One incoming
+server connection and multiple outgoing client connections are supported. NimBLE owns
+the standard GAP and GATT services. Client behavior is implemented in `custom_ble`;
+`comm_ble` provides the optional VESC packet transport and the shared host lifecycle.
+Before starting the host, `custom_ble` reserves CCCD resources for the configured
+script attribute capacity across the compiled connection limit and NimBLE's server cache.
+This allows adding notify/indicate services after startup while retaining space
+for outgoing client connections.
 
 ## Configuring BLE Scripting
 
-To make use of the BLE scripting library, you first need to configure the custom
-config of the VESC in VESC Tool. This is done by first connecting your VESC to
-VESC Tool and then going to **VESC Express** > **Bluetooth** and setting
-**Bluetooth Mode** to **Enabled with Scripting**. Don't forget to write the
-value after editing it! Note that this will disable your ability to connect
-VESC Tool through Bluetooth. It is currently not possible to connect VESC Tool
-through Bluetooth while BLE scripting is enabled. If this option isn't enabled,
-the libraries extensions are simply not defined.
+In VESC Tool, open **VESC Express** > **Bluetooth**. The two modes are
+independent; write the configuration and reboot after changing them.
 
-You also need to configure the amount of services, characteristics and
+| `ble-mode` | VESC Tool service |
+| --- | --- |
+| 0 | Disabled |
+| 1 | Enabled |
+| 2 | Enabled and Encrypted (PIN) |
+
+| `ble-mode-lbm` | LispBM roles | Script server | Script client |
+| --- | --- | --- | --- |
+| 0 | Disabled | No | No |
+| 1 | Server | Yes | No |
+| 2 | Client | No | Yes |
+| 3 | Client & Server | Yes | Yes |
+
+Bluetooth is stopped only when both modes are disabled. The name and PIN
+remain shared settings. Script service and attribute capacities apply when the
+LispBM server is enabled. Only extensions for the selected LispBM roles are
+enabled. Use `(conf-get 'ble-mode-lbm)` to check those roles.
+
+The VESC service can run alongside either scripting role. One incoming connection
+is supported, shared by VESC and script services, with the same encryption state.
+Encrypted VESC mode requires authenticated pairing to access the VESC service.
+Encryption without authentication does not grant access. Outgoing pairing is
+controlled independently through `ble-client-security` and
+`ble-client-passkey`.
+
+With VESC disabled and LispBM set to Client, no advertising or server services
+are registered. This combination also skips VESC packet buffers, transmit queue,
+transport mutex, custom service arrays, attribute mutex and additional CCCD
+reservation. Use USB or CAN to configure the device. The client event queue is
+allocated lazily when scanning or connecting. Shared NimBLE host/controller pools
+and compiled connection slots remain allocated according to the build configuration.
+
+For server scripting, configure the amount of services, characteristics and
 descriptors you plan to define. Internal arrays that contain these are allocated
 at startup, so you need to define the sizes of these. This is done through the
 **BLE Service Capacity** and **BLE Characteristic and Descriptor Capacity**
@@ -43,8 +80,8 @@ by selecting **Terminal** > **Reboot**.
 (ble-start-app)
 ```
 
-This starts the BLE server with the configured name, allowing other devices to
-connect and you to create services.
+This enables script services on the already running VESC BLE server. The VESC
+packet service and its connection remain available.
 This should be called once at the start of the program. It has no effect on
 subsequent calls (currently, the only way to stop the BLE server is to power
 cycle the VESC). It returns `true` the first time it is called and `nil` on
@@ -63,10 +100,9 @@ Configure the name that the BLE server advertises as the device's name. So
 essentially, the devices name in the BLE system.
 
 The name must not be longer than 30 characters. Providing a longer name will
-throw an `eval_error`. In practice the limit is probably much shorter, since the
-name is placed in a advertising packet together with other data which has a
-limit of 31 bytes in total. (TODO: The precise mechanics of this need to be figured
-out.)
+throw an `eval_error`. The default scan response includes up to 29 name bytes;
+a 30-byte name is advertised as a shortened name. The complete name remains
+available through the GAP Device Name characteristic.
 
 This should be called *before* the BLE server has started (so before
 [`ble-start-app`](#ble-start-app) is called). Then `true` is returned. Calling it afterwards has no effect
@@ -198,6 +234,10 @@ big endian, which means that you write the bytes in the same order as you would
 write it in text (so the UUID 4be24176-71ae-11ee-b962-0242ac120002 would be represented
 by the lbm value `[0x4b 0xe2 0x41 0x76 0x71 ... 0x12 0x00 0x02]`).
 
+Service UUIDs must be unique among scripted services. UUIDs `0x1800` (GAP)
+and `0x1801` (GATT) are reserved. Attempts to use these or duplicate service
+UUIDs return an `eval_error`.
+
 This function returns a list of service, characteristic, and descriptor handles
 in the order they were defined, with the service handle being first (See the
 example below). This function can also return a `type_error` or `eval_error`.
@@ -225,10 +265,13 @@ The valid entries are as follows:
 The descriptor list follows a very similar format to the characteristic list,
 except only the `'uuid`, `'max-len`, and `'default-value` entries are valid.
 
-**Note**: If you configure `'prop` to include either of the flags `prop-indicate` or
-`prop-notify`, you also need to include a client characteristic control (CCC)
-descriptor. This is easily done by adding a characteristic with the 16-bit UUID
-`[0x29 0x02]`, a max length of 2, and a initial value of `[0 0]` (see the example below).  
+**Note**: NimBLE automatically adds a client characteristic configuration
+(CCCD) descriptor for `prop-notify` or `prop-indicate`. Existing scripts may keep
+an explicit descriptor with UUID `[0x29 0x02]`, max length 2, and initial value
+`[0 0]`: its returned handle maps to the CCCD created by NimBLE. If omitted,
+this automatic descriptor is not included in the script's returned handle list.
+Clients control subscriptions; `ble-attr-set-value` cannot write a CCCD.
+Notifications and indications are sent only to subscribed clients.
 
 #### Example
 
@@ -528,7 +571,7 @@ and has no special meaning.
 
 ; Remove any existing services (services are not automatically removed when
 ; reloading a script!)
-(map ble-remove-service (ble-get-services))
+(map ble-remove-service (reverse (ble-get-services)))
 
 (ble-conf-adv true adv-data scan-rsp-data)
 (ble-set-name name)
@@ -589,3 +632,191 @@ But here is a table of links to the specifications mentioned:
 In case any of the links have died since writing this you can try to search for
 the document name without the **Bluetooth** part here:
 https://www.bluetooth.com/specifications/specs/?types=specs-docs
+
+## BLE client (NimBLE)
+
+BLE client scripting modes (`ble-mode-lbm = 2` or `3`, stored and rebooted) support multiple outgoing
+client connections. Incoming connections are available when the VESC service or
+LispBM server is enabled.
+Client operations do not require `ble-start-app` or custom service capacity.
+Setting `ble-mode-lbm` to 0 and rebooting disables both client and custom server
+scripting operations without changing the VESC service mode.
+
+Operations start asynchronously: `t` means accepted, a nonzero integer is the
+NimBLE host error code (for example not connected, busy or packet too long).
+Invalid arguments raise `type_error`. Compare against `t`, not truthiness.
+Poll `(ble-client-event)` from **one** Lisp context; it returns `nil` when empty.
+Yield with `(sleep 0.01)` between polls so the GUI can run. Only one GATT
+procedure per connection can be outstanding; different peers can have procedures
+in progress simultaneously. Connection establishment is sequential: wait for a
+connection result before starting another attempt.
+
+| Function | Arguments / behavior |
+| --- | --- |
+| `ble-client-scan` | Duration in milliseconds, 1?60000; active scan with duplicate filtering. Use `(ble-client-scan 0)` to cancel. Cancellation does not emit a scan completion event. |
+| `ble-client-connect` | Six-byte address array in displayed MAC order, address type (0 public / 1 random), optional timeout in milliseconds (default 10000, range 1?60000). Optional fourth argument selects security I/O capability (0-4); optional fifth argument selects bonding (`t` default / `nil`). With security selected, pairing starts as soon as the connection is established. Stops an active scan. Use `(ble-client-connect nil)` to disconnect all outgoing peers or cancel a pending connection; the phone remains connected. Add a connection handle after `nil` to disconnect just that peer. With no arguments, returns the outgoing connection handle or `nil`. Handle **0 is valid**. |
+| `ble-client-exchange-mtu` | No arguments; negotiate preferred MTU 256. Wait for the result before other GATT operations. |
+| `ble-client-discover-services` | No arguments; discover all primary services. |
+| `ble-client-discover-chars` | Start and end service handles, inclusive. |
+| `ble-client-discover-descriptors` | Characteristic value handle and last handle before the next characteristic declaration (or service end). |
+| `ble-client-read` | Attribute handle; one ordinary ATT read, up to MTU−1 bytes. No long-read assembly. |
+| `ble-client-write` | Attribute handle, byte array, optional response flag (1 default / 0 without response). Up to min(255, MTU−3) bytes; no long write. Without-response success means queued, not acknowledged by the peer. |
+| `ble-client-subscribe` | Discovered CCCD handle, mode: 0 disable, 1 notify, 2 indicate. Uses an acknowledged CCCD write. |
+| `ble-client-security` | Connection handle, optional I/O capability (0-4, default 4) and bond flag (`t` default / `nil`). Start pairing or restore encryption from a stored bond. `(ble-client-security conn 'forget)` deletes that peer's bond and disconnects it. |
+| `ble-client-passkey` | Connection handle and response (required): integer 0-999999 for passkey input/display, or `t`/`nil` to accept/reject numeric comparison. Only valid in response to `ble-passkey-action`. |
+| `ble-client-event` | Return and consume one event; optional `t` adds its connection handle immediately after the event symbol. Allocation failure leaves it queued for a GC retry. |
+| `ble-client-dropped` | Number of events lost since boot because the bounded queue filled. |
+
+Events use these list layouts (UUID arrays are big endian, as in the server API).
+Discovery returns the UUID width transmitted over ATT: a 32-bit UUID is expanded
+to its 128-bit Bluetooth Base UUID form on the wire.
+
+```lisp
+(ble-scan-result address-array address-type rssi advertising-array)
+(ble-scan-done reason)
+(ble-connect-result connection-handle status)
+(ble-disconnected connection-handle reason)
+(ble-service start-handle end-handle uuid-array)
+(ble-characteristic value-handle declaration-handle properties uuid-array)
+(ble-descriptor handle uuid-array)
+(ble-procedure-done operation status) ; operation: 4 services, 5 chars, 6 descriptors
+(ble-read-result handle status value-array)
+(ble-write-result handle status)
+(ble-notification handle status value-array indication) ; indication = 0 or 1
+(ble-mtu-result negotiated-mtu status)
+(ble-passkey-action connection-handle action number)
+(ble-security-result connection-handle status encrypted authenticated bonded)
+```
+
+Completion status 0 means success. A failed connection reports handle 65535.
+Characteristic properties are the standard GATT bitmask: `0x02` read,
+`0x04` write without response, `0x08` write, `0x10` notify, `0x20` indicate.
+Disconnect and scan completion reasons are native NimBLE codes. Failed reads or
+oversized notifications must not be treated as valid data. Values are bounded
+to 255 bytes. The event queue scales with the compiled connection capacity and
+reserves capacity plus one slots for completion and connection events. It is
+allocated lazily on the first scan or connection request; callbacks copy their
+data and do not allocate Lisp memory. If the
+drop counter increases, stop the scan/disconnect, drain events and repeat
+discovery before trusting handles or values. Discard old events before
+reconnecting; handles belong to the current peer/session only. The queue and
+connection survive a Lisp reload; stop existing consumers before starting a
+new one. Reboot clears all client state.
+
+### Pairing an outgoing connection
+
+`(ble-client-security conn [io-cap [bond]])` starts pairing or restores
+encryption from stored keys. `io-cap` describes the input and display available
+to the script; the peer's capabilities determine the pairing method.
+
+| I/O capability | Available interaction | Authentication |
+| --- | --- | --- |
+| 0 | Display only | Show a PIN for entry on the peer |
+| 1 | Display with confirmation | Compare numbers or show a PIN |
+| 2 | Keyboard only | Enter the peer's PIN |
+| 3 | No input or output | Encrypted pairing without MITM authentication |
+| 4 (default) | Keyboard and display | PIN entry, PIN display or numeric comparison |
+
+`bond` defaults to `t`. Use `nil` to pair without requesting storage of new keys.
+This flag does not delete an existing bond. PINs require Legacy Pairing or
+Secure Connections; numeric comparison requires Secure Connections.
+
+For a peer that requests security immediately, select the policy when connecting:
+
+```lisp
+(ble-client-connect address address-type 10000 2 t) ; PIN input with bonding
+```
+
+Otherwise, wait for `ble-connect-result` and call `(ble-client-security conn)`.
+Wait for `ble-security-result` before starting GATT operations. Passkey responses
+are accepted while pairing is in progress. I/O capabilities apply to the outgoing
+pairing request; the incoming VESC connection uses its configured PIN policy.
+
+Respond to `(ble-passkey-action conn action number)` from a single event consumer:
+
+| Action | Response |
+| --- | --- |
+| 2 (input) | Read the six-digit PIN from the peer, then call `(ble-client-passkey conn pin)`. |
+| 3 (display) | Choose a six-digit PIN, show it to the operator for entry on the peer, and submit that same PIN with `(ble-client-passkey conn pin)`. |
+| 4 (numeric comparison) | Show `number` with leading zeros. After the operator compares both devices, call `(ble-client-passkey conn t)` to accept or `(ble-client-passkey conn nil)` to reject. |
+
+PINs are integers; `123` represents `000123`. They can be supplied later by a
+GUI or through the REPL, rather than embedded in a script. The pending action is
+tracked per connection. Wrong response types, out-of-range PINs and replies with
+no matching pending action are rejected. To cancel passkey entry, disconnect
+that peer with `(ble-client-connect nil conn)`. Unsupported OOB actions are not
+handled by this API; disconnect rather than accepting them.
+
+For example, after an input request for connection 0:
+
+```lisp
+(ble-client-passkey 0 123456)
+```
+
+`ble-security-result` reports the status and three 0/1 flags: encrypted,
+authenticated and bonded. Status 0 requires encryption and, for I/O modes other
+than 3, MITM authentication. If the negotiated connection or stored keys do not
+meet the required authentication level, the operation reports an authentication
+error. The API does not automatically retry with a weaker security policy.
+
+The supplied profiles enable NimBLE NVS persistence. Reconnect and call
+`ble-client-security` to restore encryption from a bond. Unsolicited repeat
+pairing does not erase an outgoing peer's bond. If a peer loses its keys, discard
+its bond explicitly before pairing again:
+
+```lisp
+(ble-client-security conn 'forget)
+```
+
+This deletes keys for that peer identity and disconnects the outgoing connection.
+Wait for `ble-disconnected`, then reconnect to pair again. Bond removal is
+rejected while GATT or pairing is in progress. Keys belong to the peer, not to
+an individual service. PIN entry does not store the PIN as an application setting.
+Numeric comparison requires an operator's decision; do not accept it automatically.
+
+### Multiple peripherals
+
+Scripting supports at most 4 outgoing client connections when `ble-mode-lbm`
+is 2 or 3. An incoming connection slot is reserved when the VESC service or
+LispBM server is enabled. The supplied build profiles set `CONFIG_BT_NIMBLE_MAX_CONNECTIONS=5`;
+C3/S3 controller profiles set `CONFIG_BT_CTRL_BLE_MAX_ACT=7` to leave room for
+scanning and advertising alongside the connections. These are build-time
+allocations; lowering them before building saves RAM.
+
+`(ble-client-connect 'limit)` returns the outgoing limit, which defaults to 4.
+Set a smaller logical limit with `(ble-client-connect 'limit 2)`. Values above
+4 are rejected. This setting resets on reboot and does not release the shared
+host/controller pools. Apply it in your startup script. Lowering it below the
+number of connected/pending peers fails with a busy error.
+`(ble-client-connect t)` returns all active handles. The argument-free call
+still returns the first handle or `nil`.
+
+Client GATT operations accept an optional connection handle as their last
+argument. Omitting it selects the first outgoing connection for compatibility:
+
+```lisp
+(ble-client-exchange-mtu connection)
+(ble-client-discover-services connection)
+(ble-client-discover-chars start end connection)
+(ble-client-discover-descriptors value-handle end connection)
+(ble-client-read value-handle connection)
+(ble-client-write value-handle data response connection)
+(ble-client-subscribe cccd-handle mode connection)
+(ble-client-connect nil connection)
+```
+
+Use `(ble-client-event t)` in a single dispatcher to distinguish peers. It
+inserts the connection handle immediately after the event symbol. Scan events
+carry 65535 because they are not connection-specific. Connect and disconnect
+events contain the connection handle twice:
+
+```lisp
+(ble-connect-result connection connection-handle status)
+(ble-read-result connection attribute-handle status data)
+(ble-notification connection attribute-handle status data indication)
+(ble-procedure-done connection operation status)
+(ble-disconnected connection connection-handle reason)
+```
+
+Without the `t` argument, events use the layouts listed in the events table.
+Handles and discovered attributes belong to a single peer; discard them on disconnect.

@@ -17,9 +17,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "hwi2c.h"
 #include "hw_vdisp_900.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "hw.h"
 #include "extensions.h"
 #include "heap.h"
 #include "soc/gpio_struct.h"
@@ -80,17 +81,13 @@ static esp_err_t i2c_tx_rx(
 	esp_err_t res;
 	if (read_size > 0 && read_buffer != NULL) {
 		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(
-				0, addr, write_buffer, write_size, read_buffer, read_size, 2000
-			);
+			res = hwi2c_tx_rx(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
 		} else {
-			res = i2c_master_read_from_device(
-				0, addr, read_buffer, read_size, 2000
-			);
+			res = hwi2c_tx_rx(0, addr, NULL, 0, read_buffer, read_size, 2000);
 		}
 	} else {
 		res =
-			i2c_master_write_to_device(0, addr, write_buffer, write_size, 2000);
+			hwi2c_tx_rx(0, addr, write_buffer, write_size, NULL, 0, 2000);
 	}
 	xSemaphoreGive(i2c_mutex);
 
@@ -170,12 +167,7 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 
 	uint8_t address = lbm_dec_as_u32(args[0]);
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-	i2c_master_start(cmd);
-	i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
-	i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(0, cmd, 50 / portTICK_PERIOD_MS);
-	i2c_cmd_link_delete(cmd);
+	esp_err_t ret = hwi2c_tx_rx(0, address, NULL, 0, NULL, 0, 50);
 	xSemaphoreGive(i2c_mutex);
 
 	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -776,16 +768,7 @@ static void load_extensions(bool main_found) {
 void hw_init(void) {
 	i2c_mutex = xSemaphoreCreateMutex();
 
-	i2c_config_t conf = {
-		.mode             = I2C_MODE_MASTER,
-		.sda_io_num       = I2C_SDA,
-		.scl_io_num       = I2C_SCL,
-		.sda_pullup_en    = GPIO_PULLUP_ENABLE,
-		.scl_pullup_en    = GPIO_PULLUP_ENABLE,
-		.master.clk_speed = 400000,
-	};
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	hwi2c_init(0, I2C_SDA, I2C_SCL, 400000, true);
 
 	gpio_config_t gpconf = {0};
 	gpconf.pin_bit_mask  = 0xff | BIT(DISP_WR);

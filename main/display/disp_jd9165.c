@@ -26,7 +26,6 @@
 #include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
-#include "esp_idf_version.h"
 #include "esp_lcd_jd9165.h"
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_commands.h"
@@ -277,11 +276,7 @@ static void disp_jd9165_init_internal(void) {
     esp_lcd_dbi_io_config_t dbi_cfg = JD9165_PANEL_IO_DBI_CONFIG();
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_dbi(m_ctx.dsi_bus, &dbi_cfg, &m_ctx.io));
 
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
-    esp_lcd_dpi_panel_config_t dpi_cfg = JD9165_1024_600_PANEL_60HZ_DPI_CONFIG(LCD_COLOR_PIXEL_FORMAT_RGB565);
-#else
     esp_lcd_dpi_panel_config_t dpi_cfg = JD9165_1024_600_PANEL_60HZ_DPI_CONFIG_CF(LCD_COLOR_FMT_RGB565);
-#endif
 
     jd9165_vendor_config_t vendor_cfg = {
         .init_cmds = vendor_specific_init_default,

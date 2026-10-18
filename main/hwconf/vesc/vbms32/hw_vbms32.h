@@ -79,6 +79,7 @@ typedef struct {
 	char tcp_hub_id[26];
 	char tcp_hub_pass[26];
 	BLE_MODE ble_mode;
+	BLE_MODE_LBM ble_mode_lbm;
 	char ble_name[9];
 	uint32_t ble_pin;
 	uint32_t ble_service_capacity;
@@ -211,15 +212,15 @@ typedef struct {
 #define PIN_PSW_EN					10
 
 // ADC
-#define HW_ADC_CH0					ADC1_CHANNEL_0 // DIV_CHG
-#define HW_ADC_CH1					ADC1_CHANNEL_1 // DIV_OUT
+#define HW_ADC_CH0					ADC_CHANNEL_0 // DIV_CHG
+#define HW_ADC_CH1					ADC_CHANNEL_1 // DIV_OUT
 
 // Parameters
 #define HW_R_SHUNT					0.0002
 
 // Macros
-#define HW_GET_VOUT()				((adc_get_voltage(ADC1_CHANNEL_1) * (220.0e3 + 4.7e3)) / 4.7e3)
-#define HW_GET_VCHG()				((adc_get_voltage(ADC1_CHANNEL_0) * (220.0e3 + 4.7e3)) / 4.7e3)
+#define HW_GET_VOUT()				((adc_get_voltage(ADC_CHANNEL_1) * (220.0e3 + 4.7e3)) / 4.7e3)
+#define HW_GET_VCHG()				((adc_get_voltage(ADC_CHANNEL_0) * (220.0e3 + 4.7e3)) / 4.7e3)
 
 // Functions
 void hw_init(void);

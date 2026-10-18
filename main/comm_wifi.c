@@ -54,9 +54,9 @@
 #if CONFIG_IDF_TARGET_ESP32S3
 	#define UDP_MULTICAST_TASK_STACK_SIZE 2028
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
-	#define UDP_MULTICAST_TASK_STACK_SIZE 1024
+	#define UDP_MULTICAST_TASK_STACK_SIZE 1536
 #elif CONFIG_IDF_TARGET_ESP32P4
-	#define UDP_MULTICAST_TASK_STACK_SIZE 2028
+	#define UDP_MULTICAST_TASK_STACK_SIZE 3072
 #else
 	#error "Unsupported target"
 #endif
@@ -93,13 +93,13 @@ static const char *wifi_reason_to_str(wifi_err_reason_t reason) {
 			return "AUTH_EXPIRE";
 		case WIFI_REASON_AUTH_LEAVE:
 			return "AUTH_LEAVE";
-		case WIFI_REASON_ASSOC_EXPIRE:
+		case WIFI_REASON_DISASSOC_DUE_TO_INACTIVITY:
 			return "ASSOC_EXPIRE";
 		case WIFI_REASON_ASSOC_TOOMANY:
 			return "ASSOC_TOOMANY";
-		case WIFI_REASON_NOT_AUTHED:
+		case WIFI_REASON_CLASS2_FRAME_FROM_NONAUTH_STA:
 			return "NOT_AUTHED";
-		case WIFI_REASON_NOT_ASSOCED:
+		case WIFI_REASON_CLASS3_FRAME_FROM_NONASSOC_STA:
 			return "NOT_ASSOCED";
 		case WIFI_REASON_ASSOC_LEAVE:
 			return "ASSOC_LEAVE";
@@ -489,7 +489,8 @@ void comm_wifi_init(void) {
 
 	esp_wifi_set_storage(WIFI_STORAGE_RAM);
 
-	if (backup.config.ble_mode == BLE_MODE_DISABLED) {
+	if (backup.config.ble_mode == BLE_MODE_DISABLED &&
+			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED) {
 		esp_wifi_set_ps(WIFI_PS_NONE);
 	}
 

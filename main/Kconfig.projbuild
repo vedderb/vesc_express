@@ -1,2 +1,9 @@
 # put here your custom config value
 
+config ESP_WIFI_ENABLED
+    default n if "$(HW_NO_WIFI)" = "1"
+
+config ESP_WIFI_REMOTE_ENABLED
+    bool
+    default n if "$(HW_NO_WIFI)" = "1"
+

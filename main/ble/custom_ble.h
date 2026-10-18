@@ -25,7 +25,7 @@
 #include <stdbool.h>
 #include "sdkconfig.h"
 
-#if !CONFIG_BT_BLUEDROID_ENABLED
+#if !CONFIG_BT_NIMBLE_ENABLED
 
 typedef enum {
 	CUSTOM_BLE_DISABLED = 0,
@@ -36,9 +36,10 @@ bool custom_ble_started(void);
 
 #else
 
-#include "esp_bt_defs.h"
-#include "esp_gatt_defs.h"
-#include "esp_gap_ble_api.h"
+#include "host/ble_hs.h"
+#include "host/ble_uuid.h"
+
+int custom_ble_gap_event(struct ble_gap_event *event, void *arg);
 
 #define CUSTOM_BLE_MAX_NAME_LEN 30
 
@@ -78,8 +79,8 @@ typedef enum {
 } custom_ble_result_t;
 
 typedef struct {
-	esp_bt_uuid_t uuid;
-	esp_gatt_perm_t perm;
+	ble_uuid_any_t uuid;
+	uint16_t perm;
 
 	uint16_t value_max_len;
 	uint16_t value_len;
@@ -91,9 +92,9 @@ typedef struct {
 } ble_desc_definition_t;
 
 typedef struct {
-	esp_bt_uuid_t uuid;
-	esp_gatt_perm_t perm;
-	esp_gatt_char_prop_t property;
+	ble_uuid_any_t uuid;
+	uint16_t perm;
+	ble_gatt_chr_flags property;
 
 	uint16_t value_max_len;
 	uint16_t value_len;
@@ -110,13 +111,9 @@ typedef struct {
 	ble_desc_definition_t *descriptors;
 } ble_chr_definition_t;
 
-typedef void (*service_handles_cb_t)(
-	uint16_t count, const uint16_t handles[count]
-);
+typedef void (*service_handles_cb_t)(uint16_t count, const uint16_t handles[count]);
 
-typedef void (*attr_write_cb_t)(
-	uint16_t attr_handle, uint16_t len, uint8_t value[len]
-);
+typedef void (*attr_write_cb_t)(uint16_t attr_handle, uint16_t len, uint8_t value[len]);
 
 /**
  * Set the device name to use for the ble service.
@@ -135,8 +132,7 @@ custom_ble_result_t custom_ble_set_name(const char *name);
  * Configure if custom raw advertising and scan response packets should be used,
  * and which should be set if that is the case.
  * 
- * The change will go into effect shortly after calling this, as an
- * event listener has to be called before the packets are updated.
+ * When started, the update is performed on the BLE host task before returning.
  * If the BLE server has not been started yet the changes will take effect when
  * started.
  * 
@@ -157,13 +153,11 @@ custom_ble_result_t custom_ble_set_name(const char *name);
  * @return Returns CUSTOM_BLE_OK if successfull, otherwise
  * - CUSTOM_BLE_TOO_LONG:  adv_data_raw or scan_rsp_data_raw was longer than 31
  *   bytes.
- * - CUSTOM_BLE_ESP_ERROR: The internal call to esp_ble_gap_stop_advertising
+ * - CUSTOM_BLE_ESP_ERROR: The internal call to ble_gap_adv_stop
  *   failed.
 */
-custom_ble_result_t custom_ble_update_adv(
-	bool use_raw, size_t adv_len, const uint8_t adv_data_raw[adv_len],
-	size_t scan_rsp_len, const uint8_t scan_rsp_data_raw[scan_rsp_len]
-);
+custom_ble_result_t custom_ble_update_adv(bool use_raw, size_t adv_len, const uint8_t adv_data_raw[adv_len],
+	size_t scan_rsp_len, const uint8_t scan_rsp_data_raw[scan_rsp_len]);
 
 /**
  * Configure a function that will be called whenever the value of a
@@ -175,9 +169,6 @@ custom_ble_result_t custom_ble_update_adv(
  */
 void custom_ble_set_attr_write_handler(attr_write_cb_t callback);
 
-// TODO: If this fails, you're kinda screwed, since the internal attribute count
-// is Still incremented, with no way to decrement it from the outside. Yeah...
-// ._. Blocks until handles_cb has been called with the resulting handles.
 /**
  * Add a service with the specified list of characteristics and descriptors.
  *
@@ -188,7 +179,8 @@ void custom_ble_set_attr_write_handler(attr_write_cb_t callback);
  * Note: You should only call this function from a single thread.
  *
  *
- * @param service_uuid The uuid of the created service.
+ * @param service_uuid The uuid of the created service. Must be unique.
+ * GAP (0x1800) and GATT (0x1801) are reserved for the host.
  * @param chr_count The length of chr.
  * @param chr A list of characteristic definitions, that specifies the
  * characteristics and their descriptors that should be added. All sub pointers
@@ -211,10 +203,8 @@ void custom_ble_set_attr_write_handler(attr_write_cb_t callback);
  * - CUSTOM_BLE_TIMEOUT
  * - CUSTOM_BLE_INTERNAL_ERROR:         Something wen't wrong internally
  */
-custom_ble_result_t custom_ble_add_service(
-	esp_bt_uuid_t service_uuid, uint16_t chr_count,
-	const ble_chr_definition_t chr[chr_count], service_handles_cb_t handles_cb
-);
+custom_ble_result_t custom_ble_add_service(ble_uuid_any_t service_uuid, uint16_t chr_count,
+	const ble_chr_definition_t chr[chr_count], service_handles_cb_t handles_cb);
 
 /**
  * Remove a service created with custom_ble_add_service.
@@ -247,15 +237,14 @@ custom_ble_result_t custom_ble_remove_service(uint16_t service_handle);
 /**
  * Get the current value of a characteristic or descriptor.
  *
- * Note: unsure if this works with descriptors...
  *
  *
  * @param attr_handle The characteristic or descriptor handle. This should be a
  * handle acquired through the handles callback function given to
  * custom_ble_add_service.
  * @param length Will be set to the length in bytes of the current value.
- * @param value Will be set to a pointer to the current value. TODO: Unsure how
- * long this pointer will live...
+ * @param value Will be set to a pointer valid until the service is removed.
+ * Its contents can change when a client or script writes the attribute.
  * @return
  * - CUSTOM_BLE_OK:             The operation was successfull.
  * - CUSTOM_BLE_INVALID_HANDLE: The given characteristic or descriptor did not
@@ -263,9 +252,7 @@ custom_ble_result_t custom_ble_remove_service(uint16_t service_handle);
  * - CUSTOM_BLE_ESP_ERROR:      Some error was generated for an unknown reason
  *      by a call to the underlying ESP APIs.
  */
-custom_ble_result_t custom_ble_get_attr_value(
-	uint16_t attr_handle, uint16_t *length, const uint8_t **value
-);
+custom_ble_result_t custom_ble_get_attr_value(uint16_t attr_handle, uint16_t *length, const uint8_t **value);
 
 /**
  * Set the value of a characteristic or descriptor.
@@ -274,31 +261,28 @@ custom_ble_result_t custom_ble_get_attr_value(
  * Calling this function automatically sends notifications and/or
  * indications if required.
  *
- * Note: unsure if this works with descriptors...
  * Note: You should only call this function from a single thread.
  *
  * @param attr_handle The characteristic or descriptor handle. This should be a
  * handle acquired through the handles callback function given to
  * custom_ble_add_service.
  * @param length The length of the value.
- * @param value The value that will be set as the current value. Does not need
- * to live longer than this function call (I think).
- * @return Sorry, this one won't tell you if the handle wasn't valid... ._.
+ * @param value The value copied into the attribute before returning.
+ * CCCDs are owned by NimBLE and cannot be set through this function.
+ * @return
  * - CUSTOM_BLE_OK:             The operation was successfull.
  * - CUSTOM_BLE_INVALID_HANDLE: The provided handle didn't exist.
  * - CUSTOM_BLE_ESP_ERROR:      Some error was generated for an unknown reason
  *   sohent by a call to the underlying ESP APIs.
  */
-custom_ble_result_t custom_ble_set_attr_value(
-	uint16_t attr_handle, uint16_t length, const uint8_t value[length]
-);
+custom_ble_result_t custom_ble_set_attr_value(uint16_t attr_handle, uint16_t length, const uint8_t value[length]);
 
 /**
  * Get the amount of active services.
  *
  * If an error occurs, 0 is returned.
  */
-uint16_t custom_ble_service_count();
+uint16_t custom_ble_service_count(void);
 
 /**
  * Get a list of currently active services.
@@ -316,9 +300,7 @@ uint16_t custom_ble_service_count();
  * @param service_handles The list of handles.
  * @return The amount of handles written.
  */
-uint16_t custom_ble_get_services(
-	uint16_t capacity, uint16_t service_handles[capacity]
-);
+uint16_t custom_ble_get_services(uint16_t capacity, uint16_t service_handles[capacity]);
 
 /**
  * Get the amount of characteristic and descriptors for a given service.
@@ -350,9 +332,7 @@ int16_t custom_ble_attr_count(uint16_t service_handle);
  *
  */
 custom_ble_result_t custom_ble_get_attrs(
-	uint16_t service_handle, uint16_t capacity,
-	uint16_t service_handles[capacity], uint16_t *written_count
-);
+	uint16_t service_handle, uint16_t capacity, uint16_t service_handles[capacity], uint16_t *written_count);
 
 /**
  * Start the BLE server.
@@ -367,15 +347,88 @@ custom_ble_result_t custom_ble_get_attrs(
  * - CUSTOM_BLE_INIT_FAILED:     This is returned if custom_ble_init failed.
  *   This is typically due to memory allocation failing.
  */
-custom_ble_result_t custom_ble_start();
+custom_ble_result_t custom_ble_start(void);
 
-bool custom_ble_started();
+bool custom_ble_started(void);
 
-void custom_ble_init();
+void custom_ble_init(void);
 
-extern esp_ble_adv_params_t ble_adv_params;
+// Count dynamic server resources before the shared host is started.
+int custom_ble_reserve_resources(void);
 
+extern struct ble_gap_adv_params ble_adv_params;
 
+#define BLE_CLIENT_CONNECTIONS_MAX 4
+
+// Outgoing connections are independent of the VESC server connection.
+typedef enum {
+	BLE_CLIENT_SCAN = 0,
+	BLE_CLIENT_SCAN_DONE,
+	BLE_CLIENT_CONNECT,
+	BLE_CLIENT_DISCONNECT,
+	BLE_CLIENT_SERVICE,
+	BLE_CLIENT_CHR,
+	BLE_CLIENT_DSC,
+	BLE_CLIENT_READ,
+	BLE_CLIENT_WRITE,
+	BLE_CLIENT_NOTIFY,
+	BLE_CLIENT_DONE,
+	BLE_CLIENT_MTU,
+	BLE_CLIENT_SECURITY,
+	BLE_CLIENT_PASSKEY
+} ble_client_event_type_t;
+
+typedef enum {
+	BLE_CLIENT_OP_SCAN = 0,
+	BLE_CLIENT_OP_SCAN_STOP,
+	BLE_CLIENT_OP_CONNECT,
+	BLE_CLIENT_OP_DISCONNECT,
+	BLE_CLIENT_OP_SERVICES,
+	BLE_CLIENT_OP_CHRS,
+	BLE_CLIENT_OP_DSCS,
+	BLE_CLIENT_OP_READ,
+	BLE_CLIENT_OP_WRITE,
+	BLE_CLIENT_OP_WRITE_NR,
+	BLE_CLIENT_OP_MTU,
+	BLE_CLIENT_OP_LIMIT,
+	BLE_CLIENT_OP_SECURITY,
+	BLE_CLIENT_OP_PASSKEY,
+	BLE_CLIENT_OP_FORGET
+} ble_client_op_t;
+
+typedef struct {
+	ble_client_op_t op;
+	ble_addr_t address;
+	uint32_t duration_ms;
+	uint32_t passkey;
+	uint8_t action;
+	uint8_t io_cap;
+	bool security, bond;
+	uint16_t conn;
+	uint16_t start, end, len;
+	const uint8_t *data;
+} ble_client_request_t;
+
+#define BLE_CLIENT_VALUE_MAX 255
+typedef struct {
+	ble_client_event_type_t type;
+	int status;
+	uint32_t passkey;
+	uint16_t conn;
+	uint16_t handle, end, len;
+	uint8_t properties;
+	ble_uuid_any_t uuid;
+	ble_addr_t address;
+	int8_t rssi;
+	uint8_t data[BLE_CLIENT_VALUE_MAX];
+} ble_client_event_t;
+
+int custom_ble_client_request(ble_client_request_t *request);
+bool custom_ble_client_event(ble_client_event_t *event, bool consume);
+uint32_t custom_ble_client_dropped(void);
+uint16_t custom_ble_client_conn_handle(void);
+unsigned int custom_ble_client_connections(uint16_t *handles, unsigned int capacity);
+unsigned int custom_ble_client_limit(void);
 #endif
 
 #endif /* MAIN_BLE_CUSTOM_BLE_H_ */

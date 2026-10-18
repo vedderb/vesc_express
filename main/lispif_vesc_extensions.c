@@ -19,6 +19,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "hwi2c.h"
 #include "eval_cps.h"
 #include "extensions.h"
 #include "heap.h"
@@ -75,11 +76,11 @@
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #endif
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 #include "esp_now.h"
 #include "esp_crc.h"
 #endif
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -195,6 +196,7 @@ typedef struct {
 	lbm_uint tcp_hub_id;
 	lbm_uint tcp_hub_pass;
 	lbm_uint ble_mode;
+	lbm_uint ble_mode_lbm;
 	lbm_uint ble_name;
 	lbm_uint ble_pin;
 	lbm_uint ble_service_capacity;
@@ -360,6 +362,8 @@ static bool compare_symbol(lbm_uint sym, lbm_uint *comp) {
 			lbm_add_symbol_const("tcp-hub-pass", comp);
 		} else if (comp == &syms_vesc.ble_mode) {
 			lbm_add_symbol_const("ble-mode", comp);
+		} else if (comp == &syms_vesc.ble_mode_lbm) {
+			lbm_add_symbol_const("ble-mode-lbm", comp);
 		} else if (comp == &syms_vesc.ble_name) {
 			lbm_add_symbol_const("ble-name", comp);
 		} else if (comp == &syms_vesc.ble_pin) {
@@ -793,6 +797,10 @@ static lbm_value ext_conf_setget(bool set, lbm_value *args, lbm_uint argn) {
 		int v = conf->ble_mode;
 		res = get_or_set_i(set, &v, &set_arg);
 		conf->ble_mode = v;
+	} else if (compare_symbol(name, &syms_vesc.ble_mode_lbm)) {
+		int v = conf->ble_mode_lbm;
+		res = get_or_set_i(set, &v, &set_arg);
+		conf->ble_mode_lbm = v;
 	} else if (compare_symbol(name, &syms_vesc.ble_name)) {
 		res = get_or_set_string(set, conf->ble_name, &set_arg, sizeof(conf->ble_name));
 	} else if (compare_symbol(name, &syms_vesc.ble_pin)) {
@@ -2262,7 +2270,7 @@ static lbm_value ext_ioboard_set_pwm(lbm_value *args, lbm_uint argn) {
 
 // ESP NOW
 
-#if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 
 static bool esp_now_initialized = false;
 static volatile lbm_cid esp_now_send_cid = -1;
@@ -2339,11 +2347,7 @@ static void esp_rx_fun(void *arg) {
 	}
 }
 
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)
-static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
-#else
 static void espnow_send_cb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
-#endif
 	lbm_unblock_ctx_unboxed(esp_now_send_cid, status == ESP_NOW_SEND_SUCCESS ? ENC_SYM_TRUE : ENC_SYM_NIL);
 }
 
@@ -2383,7 +2387,8 @@ static lbm_value ext_esp_now_start(lbm_value *args, lbm_uint argn) {
 		esp_wifi_set_storage(WIFI_STORAGE_RAM);
 		esp_wifi_set_mode(WIFI_MODE_APSTA);
 
-		if (backup.config.ble_mode == BLE_MODE_DISABLED) {
+		if (backup.config.ble_mode == BLE_MODE_DISABLED &&
+			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED) {
 			esp_wifi_set_ps(WIFI_PS_NONE);
 		}
 
@@ -2469,7 +2474,7 @@ static lbm_value ext_esp_now_add_peer(lbm_value *args, lbm_uint argn) {
 	esp_now_peer_info_t peer;
 	memset(&peer, 0, sizeof(peer));
 	peer.channel = 0; // Must be the same as the wifi-channel when using wifi. 0 means current channel.
-	peer.ifidx = ESP_IF_WIFI_AP;
+	peer.ifidx = WIFI_IF_AP;
 	peer.encrypt = false;
 	memcpy(peer.peer_addr, addr, ESP_NOW_ETH_ALEN);
 
@@ -2600,9 +2605,9 @@ static lbm_value ext_wifi_set_bw(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	wifi_bandwidth_t bwt = WIFI_BW_HT20;
+	wifi_bandwidth_t bwt = WIFI_BW20;
 	if (bw == 40) {
-		bwt = WIFI_BW_HT40;
+		bwt = WIFI_BW40;
 	}
 
 	esp_err_t res = esp_wifi_set_bandwidth(WIFI_IF_AP, bwt);
@@ -2618,7 +2623,7 @@ static lbm_value ext_wifi_set_bw(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	wifi_bandwidth_t bwt = WIFI_BW_HT20;
+	wifi_bandwidth_t bwt = WIFI_BW20;
 	esp_err_t res = esp_wifi_get_bandwidth(WIFI_IF_AP, &bwt);
 
 	if (res == ESP_ERR_WIFI_NOT_INIT) {
@@ -2626,7 +2631,7 @@ static lbm_value ext_wifi_get_bw(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	return lbm_enc_i(bwt == WIFI_BW_HT20 ? 20 : 40);
+	return lbm_enc_i(bwt == WIFI_BW20 ? 20 : 40);
 }
 
 static lbm_value ext_wifi_start(lbm_value *args, lbm_uint argn) {
@@ -2728,14 +2733,9 @@ static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
-			.sda_io_num = 7,
-			.scl_io_num = 6,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = 200000,
-	};
+	int sda = 7;
+	int scl = 6;
+	uint32_t speed = 200000;
 
 	if (argn >= 1) {
 		if (!lbm_is_symbol(args[0])) {
@@ -2743,13 +2743,13 @@ static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 		}
 
 		if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_100k)) {
-			conf.master.clk_speed = 100000;
+			speed = 100000;
 		} else if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_200k)) {
-			conf.master.clk_speed = 200000;
+			speed = 200000;
 		} else if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_400k)) {
-			conf.master.clk_speed = 400000;
+			speed = 400000;
 		} else if (compare_symbol(lbm_dec_sym(args[0]), &syms_vesc.rate_700k)) {
-			conf.master.clk_speed = 700000;
+			speed = 700000;
 		} else {
 			return ENC_SYM_EERROR;
 		}
@@ -2760,7 +2760,7 @@ static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 
-		conf.sda_io_num = lbm_dec_as_i32(args[1]);
+		sda = lbm_dec_as_i32(args[1]);
 	}
 
 	if (argn >= 3) {
@@ -2768,11 +2768,12 @@ static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 
-		conf.scl_io_num = lbm_dec_as_i32(args[2]);
+		scl = lbm_dec_as_i32(args[2]);
 	}
 
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	if (hwi2c_init(0, sda, scl, speed, true) != ESP_OK) {
+		return ENC_SYM_EERROR;
+}
 	i2c_started = true;
 
 	return ENC_SYM_TRUE;
@@ -2787,16 +2788,7 @@ esp_err_t lispif_i2c_tx_rx(uint8_t addr,
 	}
 
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-	esp_err_t res;
-	if (read_size > 0 && read_buffer != NULL) {
-		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
-		} else {
-			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 2000);
-		}
-	} else {
-		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 2000);
-	}
+	esp_err_t res = hwi2c_tx_rx(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
 	xSemaphoreGive(i2c_mutex);
 
 	return res;
@@ -2882,12 +2874,7 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 
 	uint8_t address = lbm_dec_as_u32(args[0]);
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-	i2c_master_start(cmd);
-	i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
-	i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(0, cmd, 50 / portTICK_PERIOD_MS);
-	i2c_cmd_link_delete(cmd);
+	esp_err_t ret = hwi2c_tx_rx(0, address, NULL, 0, NULL, 0, 50);
 	xSemaphoreGive(i2c_mutex);
 
 	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -3662,7 +3649,10 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0);
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin,mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
+	if (esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(UINT64_C(1) << pin, mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW)
+		!= ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
 #else
 	#error "Unsupported target"
 #endif
@@ -6950,7 +6940,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("ioboard-set-pwm", ext_ioboard_set_pwm);
 
 		// ESP NOW
-		#if !CONFIG_IDF_TARGET_ESP32P4
+		#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 		lbm_add_extension("esp-now-start", ext_esp_now_start);
 		lbm_add_extension("esp-now-add-peer", ext_esp_now_add_peer);
 		lbm_add_extension("esp-now-del-peer", ext_esp_now_del_peer);
@@ -7000,12 +6990,6 @@ void lispif_load_vesc_extensions(bool main_found) {
 		#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
 		lispif_load_wifi_extensions();
 		#endif
-
-		if (backup.config.ble_mode == BLE_MODE_SCRIPTING) {
-			#if CONFIG_BT_BLUEDROID_ENABLED
-			lispif_load_ble_extensions();
-			#endif
-		}
 
 		// CAN-Messages
 		lbm_add_extension("canmsg-recv", ext_canmsg_recv);
@@ -7130,6 +7114,10 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_string_extensions_init();
 	}
 
+	#if CONFIG_BT_NIMBLE_ENABLED
+	lispif_load_ble_extensions(backup.config.ble_mode_lbm);
+	#endif
+
 	lbm_set_dynamic_load_callback(dynamic_loader);
 }
 
@@ -7165,7 +7153,7 @@ void lispif_disable_all_events(void) {
 
 	bms_register_cmd_handler(NULL);
 
-	#if !CONFIG_IDF_TARGET_ESP32P4
+	#if CONFIG_ESP_WIFI_ENABLED && !CONFIG_IDF_TARGET_ESP32P4
 	esp_now_recv_cid = -1;
 	#endif
 	can_recv_sid_cid = -1;

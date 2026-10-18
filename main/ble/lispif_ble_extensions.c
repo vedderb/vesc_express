@@ -21,8 +21,6 @@
 
 #include <string.h>
 
-#include "esp_bt_defs.h"
-
 #include "custom_ble.h"
 #include "lispif_events.h"
 #include "lbm_vesc_utils.h"
@@ -33,30 +31,72 @@
 #include "lbm_flat_value.h"
 #include "eval_cps.h"
 #include "extensions.h"
+#include "lbm_c_interop.h"
 #include "commands.h"
 
-/**
- * Error reasons
- */
-// These can't be const because the lbm api doesn't take constant strings >:(.
+// Types
+typedef struct {
+	const char *name;
+	extension_fptr function;
+} ble_extension_t;
+
+// Error reasons
+// The LispBM error API accepts mutable strings.
 static char *error_too_many_services = "Too many services.";
 static char *error_too_many_attrs = "Too many characteristics or descriptors.";
-static char *error_invalid_chr_list_structure =
-	"Invalid characteristic list structure.";
+static char *error_invalid_chr_list_structure = "Invalid characteristic list structure.";
 static char *error_internal_allocation_failed =
 	"Internal allocation failed, your service/chr capacity setting might be "
 	"too high.";
-static char *error_name_too_long       = "Name too long, max: 30 characters.";
-static char *error_invalid_handle      = "Handle did not exist.";
+static char *error_name_too_long = "Name too long, max: 30 characters.";
+static char *error_invalid_handle = "Handle did not exist.";
 static char *error_service_wrong_order = "Service not last.";
-static char *error_packet_too_long =
-	"Adv or scan rsp packet too long, max: 31 bytes.";
-static char *error_invalid_packet_def =
-	"Invalid packet definition structure/type.";
+static char *error_packet_too_long = "Adv or scan rsp packet too long, max: 31 bytes.";
+static char *error_invalid_packet_def = "Invalid packet definition structure/type.";
 static char *error_invalid_adv_channel = "Invalid advertising channel. Only 37, 38, "
-	"and 39 are valid.";
+										 "and 39 are valid.";
 static char *error_invalid_adv_interval = "Invalid advertising interval. Must be "
-	"between 20 and 10240 ms.";
+										  "between 20 and 10240 ms.";
+
+static lbm_uint symbol_uuid = 0;
+static lbm_uint symbol_prop = 0;
+static lbm_uint symbol_max_len = 0;
+static lbm_uint symbol_default_value = 0;
+static lbm_uint symbol_descr = 0;
+
+static lbm_uint symbol_prop_read = 0;
+static lbm_uint symbol_prop_write = 0;
+static lbm_uint symbol_prop_write_nr = 0;
+static lbm_uint symbol_prop_indicate = 0;
+static lbm_uint symbol_prop_notify = 0;
+
+static lbm_uint symbol_flags = 0;
+static lbm_uint symbol_incomplete_uuid_16 = 0;
+static lbm_uint symbol_complete_uuid_16 = 0;
+static lbm_uint symbol_incomplete_uuid_32 = 0;
+static lbm_uint symbol_complete_uuid_32 = 0;
+static lbm_uint symbol_incomplete_uuid_128 = 0;
+static lbm_uint symbol_complete_uuid_128 = 0;
+static lbm_uint symbol_name_short = 0;
+static lbm_uint symbol_name_complete = 0;
+static lbm_uint symbol_tx_power_level = 0;
+static lbm_uint symbol_device_id = 0;
+static lbm_uint symbol_conn_interval_range = 0;
+static lbm_uint symbol_service_data_16 = 0;
+static lbm_uint symbol_service_data_32 = 0;
+static lbm_uint symbol_service_data_128 = 0;
+static lbm_uint symbol_appearance = 0;
+static lbm_uint symbol_manufacturer_data = 0;
+
+static uint8_t default_zero;
+static lbm_value prepared_handles_list;
+
+static const char *client_event_names[] = { "ble-scan-result", "ble-scan-done", "ble-connect-result",
+	"ble-disconnected", "ble-service", "ble-characteristic", "ble-descriptor", "ble-read-result", "ble-write-result",
+	"ble-notification", "ble-procedure-done", "ble-mtu-result", "ble-security-result", "ble-passkey-action" };
+static lbm_uint client_event_symbols[sizeof(client_event_names) / sizeof(client_event_names[0])];
+static lbm_uint symbol_client_limit;
+static lbm_uint symbol_client_forget;
 
 /**
  * Reverse the elements of an array.
@@ -67,53 +107,20 @@ static char *error_invalid_adv_interval = "Invalid advertising interval. Must be
  * @param len How many elements are in the array.
  * @param item_size The size in bytes of each element.
  */
-static void array_reverse(
-	void *dest, const void *src, size_t len, size_t item_size
-) {
+static void array_reverse(void *dest, const void *src, size_t len, size_t item_size) {
 
 	memmove(dest, src, len * item_size);
 
 	// source: https://stackoverflow.com/a/47745217/15507414
-	void *temp[item_size];
+	uint8_t temp[item_size];
+	uint8_t *data = dest;
 	for (size_t i = 0; i < len / 2; i++) {
-		memcpy(temp, dest + i * item_size, item_size);
+		memcpy(temp, data + i * item_size, item_size);
 
-		memcpy(
-			dest + i * item_size, dest + (len - 1 - i) * item_size, item_size
-		);
-		memcpy(dest + (len - 1 - i) * item_size, temp, item_size);
+		memcpy(data + i * item_size, data + (len - 1 - i) * item_size, item_size);
+		memcpy(data + (len - 1 - i) * item_size, temp, item_size);
 	}
 }
-
-static lbm_uint symbol_uuid          = 0;
-static lbm_uint symbol_prop          = 0;
-static lbm_uint symbol_max_len       = 0;
-static lbm_uint symbol_default_value = 0;
-static lbm_uint symbol_descr         = 0;
-
-static lbm_uint symbol_prop_read     = 0;
-static lbm_uint symbol_prop_write    = 0;
-static lbm_uint symbol_prop_write_nr = 0;
-static lbm_uint symbol_prop_indicate = 0;
-static lbm_uint symbol_prop_notify   = 0;
-
-static lbm_uint symbol_flags               = 0;
-static lbm_uint symbol_incomplete_uuid_16  = 0;
-static lbm_uint symbol_complete_uuid_16    = 0;
-static lbm_uint symbol_incomplete_uuid_32  = 0;
-static lbm_uint symbol_complete_uuid_32    = 0;
-static lbm_uint symbol_incomplete_uuid_128 = 0;
-static lbm_uint symbol_complete_uuid_128   = 0;
-static lbm_uint symbol_name_short          = 0;
-static lbm_uint symbol_name_complete       = 0;
-static lbm_uint symbol_tx_power_level      = 0;
-static lbm_uint symbol_device_id           = 0;
-static lbm_uint symbol_conn_interval_range = 0;
-static lbm_uint symbol_service_data_16     = 0;
-static lbm_uint symbol_service_data_32     = 0;
-static lbm_uint symbol_service_data_128    = 0;
-static lbm_uint symbol_appearance          = 0;
-static lbm_uint symbol_manufacturer_data   = 0;
 
 static bool register_symbols(void) {
 	bool res = true;
@@ -154,11 +161,11 @@ static bool register_symbols(void) {
 }
 
 /**
- * Convert a lbm byte array into a esp uuid struct.
+ * Convert a lbm byte array into a NimBLE uuid struct.
  * The bytes in the array should be big endian. In other words, the bytes of the
  * uuid should be placed in the same order as when you write out a uuid in text.
  */
-static bool lbm_dec_uuid(lbm_value value, esp_bt_uuid_t *result) {
+static bool lbm_dec_uuid(lbm_value value, ble_uuid_any_t *result) {
 	if (!lbm_is_array_r(value)) {
 		return false;
 	}
@@ -166,33 +173,22 @@ static bool lbm_dec_uuid(lbm_value value, esp_bt_uuid_t *result) {
 	const uint8_t *data = lbm_heap_array_get_data_ro(value);
 
 	switch (lbm_heap_array_get_size(value)) {
-		case ESP_UUID_LEN_16: {
+		case 2: {
 			uint16_t uuid = (uint16_t)data[1] + ((uint16_t)data[0] << 8);
-			*result       = (esp_bt_uuid_t){
-					  .len  = ESP_UUID_LEN_16,
-					  .uuid = {.uuid16 = uuid},
-            };
+			result->u16 = (ble_uuid16_t)BLE_UUID16_INIT(uuid);
 
 			return true;
 		}
-		case ESP_UUID_LEN_32: {
-			uint32_t uuid = ((uint32_t)data[0] << 24)
-				+ ((uint32_t)data[1] << 16) + ((uint32_t)data[2] << 8)
+		case 4: {
+			uint32_t uuid = ((uint32_t)data[0] << 24) + ((uint32_t)data[1] << 16) + ((uint32_t)data[2] << 8)
 				+ (uint32_t)data[3];
-			*result = (esp_bt_uuid_t){
-				.len  = ESP_UUID_LEN_32,
-				.uuid = {.uuid32 = uuid},
-			};
+			result->u32 = (ble_uuid32_t)BLE_UUID32_INIT(uuid);
 
 			return true;
 		}
-		case ESP_UUID_LEN_128: {
-			*result = (esp_bt_uuid_t){
-				.len = ESP_UUID_LEN_128,
-			};
-			array_reverse(
-				&result->uuid.uuid128, data, ESP_UUID_LEN_128, sizeof(uint8_t)
-			);
+		case 16: {
+			result->u.type = BLE_UUID_TYPE_128;
+			array_reverse(result->u128.value, data, 16, sizeof(uint8_t));
 
 			return true;
 		}
@@ -201,9 +197,7 @@ static bool lbm_dec_uuid(lbm_value value, esp_bt_uuid_t *result) {
 	return false;
 }
 
-static bool lbm_dec_ble_prop_flags(
-	lbm_value value, esp_gatt_char_prop_t *dest
-) {
+static bool lbm_dec_ble_prop_flags(lbm_value value, ble_gatt_chr_flags *dest) {
 	if (!lbm_is_list(value)) {
 		return false;
 	}
@@ -213,7 +207,7 @@ static bool lbm_dec_ble_prop_flags(
 	lbm_value next = value;
 	while (lbm_is_cons(next)) {
 		lbm_value this = lbm_car(next);
-		next           = lbm_cdr(next);
+		next = lbm_cdr(next);
 
 		if (!lbm_is_symbol(this)) {
 			return false;
@@ -223,15 +217,15 @@ static bool lbm_dec_ble_prop_flags(
 
 		// TODO
 		if (sym == symbol_prop_read) {
-			*dest |= ESP_GATT_CHAR_PROP_BIT_READ;
+			*dest |= BLE_GATT_CHR_F_READ;
 		} else if (sym == symbol_prop_write_nr) {
-			*dest |= ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
+			*dest |= BLE_GATT_CHR_F_WRITE_NO_RSP;
 		} else if (sym == symbol_prop_write) {
-			*dest |= ESP_GATT_CHAR_PROP_BIT_WRITE;
+			*dest |= BLE_GATT_CHR_F_WRITE;
 		} else if (sym == symbol_prop_notify) {
-			*dest |= ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+			*dest |= BLE_GATT_CHR_F_NOTIFY;
 		} else if (sym == symbol_prop_indicate) {
-			*dest |= ESP_GATT_CHAR_PROP_BIT_INDICATE;
+			*dest |= BLE_GATT_CHR_F_INDICATE;
 		} else {
 			// invalid property flag
 			return false;
@@ -242,13 +236,13 @@ static bool lbm_dec_ble_prop_flags(
 }
 
 typedef enum {
-	PARSE_LBM_OK                  = 0,
+	PARSE_LBM_OK = 0,
 	PARSE_LBM_INCORRECT_STRUCTURE = 1,
-	PARSE_LBM_INVALID_TYPE        = 2,
+	PARSE_LBM_INVALID_TYPE = 2,
 	PARSE_LBM_TOO_MANY_ATTRIBUTES = 3,
-	PARSE_LBM_MEMORY_ERROR        = 4,
-	PARSE_LBM_INTERNAL_ERROR      = 5,
-	PARSE_LBM_TOO_LONG_RESULT     = 6,
+	PARSE_LBM_MEMORY_ERROR = 4,
+	PARSE_LBM_INTERNAL_ERROR = 5,
+	PARSE_LBM_TOO_LONG_RESULT = 6,
 } parse_lbm_result_t;
 
 typedef struct {
@@ -264,11 +258,8 @@ typedef struct {
 // A reference of this is passed to the ESP APIs when the user hasn't provided
 // any byte array as a default value. It's fine that it's shared, since the api
 // just copies the value either way.
-static uint8_t default_zero = 0;
 
-static void attr_write_handler(
-	uint16_t attr_handle, uint16_t len, uint8_t value[len]
-) {
+static void attr_write_handler(uint16_t attr_handle, uint16_t len, uint8_t value[len]) {
 	if (!event_ble_rx_en) {
 		return;
 	}
@@ -339,19 +330,17 @@ static uint8_t convert_sym_to_adv_type(lbm_uint sym) {
 	}
 }
 
-static parse_lbm_result_t parse_lbm_adv_packet(
-	lbm_value value, uint8_t dest_buffer[31], size_t *dest_len
-) {
+static parse_lbm_result_t parse_lbm_adv_packet(lbm_value value, uint8_t dest_buffer[31], size_t *dest_len) {
 	if (!lbm_is_list(value)) {
 		return PARSE_LBM_INCORRECT_STRUCTURE;
 	}
 
-	*dest_len      = 0;
+	*dest_len = 0;
 	lbm_value next = value;
 	while (lbm_is_cons(next)) {
 		// `this` expected structure: (type . array)
 		lbm_value this = lbm_car(next);
-		next           = lbm_cdr(next);
+		next = lbm_cdr(next);
 
 		if (!lbm_is_cons(this)) {
 			return PARSE_LBM_INCORRECT_STRUCTURE;
@@ -370,7 +359,7 @@ static parse_lbm_result_t parse_lbm_adv_packet(
 			return PARSE_LBM_INVALID_TYPE;
 		}
 
-		lbm_value data                 = lbm_cdr(this);
+		lbm_value data = lbm_cdr(this);
 		lbm_array_header_t *data_array = lbm_dec_array_header(data);
 		if (data_array == NULL) {
 			return PARSE_LBM_INVALID_TYPE;
@@ -380,11 +369,9 @@ static parse_lbm_result_t parse_lbm_adv_packet(
 			return PARSE_LBM_TOO_LONG_RESULT;
 		}
 
-		dest_buffer[(*dest_len)++] = 1 + data_array->size; // length
-		dest_buffer[(*dest_len)++] = number;               // type
-		memcpy(
-			dest_buffer + *dest_len, data_array->data, data_array->size
-		); // size
+		dest_buffer[(*dest_len)++] = 1 + data_array->size;                   // length
+		dest_buffer[(*dest_len)++] = number;                                 // type
+		memcpy(dest_buffer + *dest_len, data_array->data, data_array->size); // size
 		*dest_len += data_array->size;
 	}
 
@@ -392,8 +379,7 @@ static parse_lbm_result_t parse_lbm_adv_packet(
 }
 
 static parse_lbm_result_t parse_lbm_descr_def(
-	lbm_value descr_def, ble_desc_definition_t *dest, uint16_t *used_attr_index
-) {
+	lbm_value descr_def, ble_desc_definition_t *dest, uint16_t *used_attr_index) {
 	(void)used_attr_index;
 	// This function shares a lot of code with parse_lbm_chr_def. Maybe they
 	// can be merged somehow?
@@ -402,11 +388,11 @@ static parse_lbm_result_t parse_lbm_descr_def(
 		return PARSE_LBM_INVALID_TYPE;
 	}
 
-	bool has_uuid          = false;
-	bool has_max_len       = false;
+	bool has_uuid = false;
+	bool has_max_len = false;
 	bool has_default_value = false;
 
-	esp_bt_uuid_t uuid;
+	ble_uuid_any_t uuid;
 	uint16_t max_len = 0;
 	uint16_t value_len = 0;
 	uint8_t *default_value = &default_zero;
@@ -414,13 +400,13 @@ static parse_lbm_result_t parse_lbm_descr_def(
 	lbm_value next = descr_def;
 	while (lbm_is_cons(next)) {
 		lbm_value this = lbm_car(next);
-		next           = lbm_cdr(next);
+		next = lbm_cdr(next);
 
 		if (!lbm_is_cons(this) || !lbm_is_symbol(lbm_car(this))) {
 			continue;
 		}
 
-		lbm_uint key    = lbm_dec_sym(lbm_car(this));
+		lbm_uint key = lbm_dec_sym(lbm_car(this));
 		lbm_value value = lbm_cdr(this);
 		if (key == symbol_uuid) {
 			has_uuid = true;
@@ -452,7 +438,7 @@ static parse_lbm_result_t parse_lbm_descr_def(
 				return PARSE_LBM_INCORRECT_STRUCTURE;
 			}
 
-			default_value = (uint8_t*)lbm_heap_array_get_data_ro(value);
+			default_value = (uint8_t *)lbm_heap_array_get_data_ro(value);
 		}
 	}
 
@@ -460,15 +446,15 @@ static parse_lbm_result_t parse_lbm_descr_def(
 		return PARSE_LBM_INCORRECT_STRUCTURE;
 	}
 	if (!has_default_value) {
-		value_len     = 1;
+		value_len = 1;
 		default_value = &default_zero;
 	}
 
-	dest->uuid          = uuid;
-	dest->perm          = ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE;
+	dest->uuid = uuid;
+	dest->perm = BLE_ATT_F_READ | BLE_ATT_F_WRITE;
 	dest->value_max_len = max_len;
-	dest->value_len     = value_len;
-	dest->value         = default_value;
+	dest->value_len = value_len;
+	dest->value = default_value;
 
 	return PARSE_LBM_OK;
 }
@@ -489,23 +475,21 @@ static parse_lbm_result_t parse_lbm_descr_def(
  * - PARSE_LBM_MEMORY_ERROR: Allocating memory with malloc failed.
  */
 static parse_lbm_result_t parse_lbm_chr_def(
-	lbm_value chr_def, ble_chr_definition_t *dest,
-	index_span_t *used_attr_indices
-) {
+	lbm_value chr_def, ble_chr_definition_t *dest, index_span_t *used_attr_indices) {
 	(void)used_attr_indices;
 
 	if (!lbm_is_list(chr_def)) {
 		return PARSE_LBM_INVALID_TYPE;
 	}
 
-	bool has_uuid          = false;
-	bool has_prop          = false;
-	bool has_max_len       = false;
+	bool has_uuid = false;
+	bool has_prop = false;
+	bool has_max_len = false;
 	bool has_default_value = false;
-	bool has_descr         = false;
+	bool has_descr = false;
 
-	esp_bt_uuid_t uuid;
-	esp_gatt_char_prop_t prop = 0;
+	ble_uuid_any_t uuid;
+	ble_gatt_chr_flags prop = 0;
 	uint16_t max_len = 0;
 	uint16_t value_len = 0;
 	uint8_t *default_value = &default_zero;
@@ -515,13 +499,13 @@ static parse_lbm_result_t parse_lbm_chr_def(
 	lbm_value next = chr_def;
 	while (lbm_is_cons(next)) {
 		lbm_value this = lbm_car(next);
-		next           = lbm_cdr(next);
+		next = lbm_cdr(next);
 
 		if (!lbm_is_cons(this) || !lbm_is_symbol(lbm_car(this))) {
 			continue;
 		}
 
-		lbm_uint key    = lbm_dec_sym(lbm_car(this));
+		lbm_uint key = lbm_dec_sym(lbm_car(this));
 		lbm_value value = lbm_cdr(this);
 		if (key == symbol_uuid) {
 			has_uuid = true;
@@ -559,7 +543,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 				return PARSE_LBM_INCORRECT_STRUCTURE;
 			}
 
-			default_value = (uint8_t*)lbm_heap_array_get_data_ro(value);
+			default_value = (uint8_t *)lbm_heap_array_get_data_ro(value);
 		} else if (key == symbol_descr) {
 			has_descr = true;
 
@@ -571,7 +555,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 		return PARSE_LBM_INCORRECT_STRUCTURE;
 	}
 	if (!has_default_value) {
-		value_len     = 1;
+		value_len = 1;
 		default_value = &default_zero;
 	}
 
@@ -585,8 +569,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 		descr_count = lbm_list_length(descr_raw);
 	}
 
-	ble_desc_definition_t *descriptors =
-		lbm_malloc_reserve(MAX(descr_count * sizeof(ble_desc_definition_t), 1));
+	ble_desc_definition_t *descriptors = lbm_malloc_reserve(MAX(descr_count * sizeof(ble_desc_definition_t), 1));
 	if (descriptors == NULL) {
 		// lbm_free(chr_value);
 		// next_attr_index = used_attr_indices->start;
@@ -598,8 +581,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 
 		uint16_t i = 0;
 		while (lbm_is_cons(next) && i < descr_count) {
-			parse_lbm_result_t result =
-				parse_lbm_descr_def(lbm_car(next), &descriptors[i], NULL);
+			parse_lbm_result_t result = parse_lbm_descr_def(lbm_car(next), &descriptors[i], NULL);
 			if (result != PARSE_LBM_OK) {
 				lbm_free(descriptors);
 				return result;
@@ -610,13 +592,13 @@ static parse_lbm_result_t parse_lbm_chr_def(
 		}
 	}
 
-	dest->uuid     = uuid;
-	dest->perm     = ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE;
+	dest->uuid = uuid;
+	dest->perm = BLE_ATT_F_READ | BLE_ATT_F_WRITE;
 	dest->property = prop;
 
 	dest->value_max_len = max_len;
-	dest->value_len     = value_len;
-	dest->value         = default_value;
+	dest->value_len = value_len;
+	dest->value = default_value;
 
 	dest->descr_count = descr_count;
 	dest->descriptors = descriptors;
@@ -624,12 +606,10 @@ static parse_lbm_result_t parse_lbm_chr_def(
 	return PARSE_LBM_OK;
 }
 
-static lbm_value prepared_handles_list;
 static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
 	prepared_handles_list = ENC_SYM_NIL;
 	for (int i = count - 1; i >= 0; i--) {
-		prepared_handles_list =
-			lbm_cons(lbm_enc_u(handles[i]), prepared_handles_list);
+		prepared_handles_list = lbm_cons(lbm_enc_u(handles[i]), prepared_handles_list);
 		if (prepared_handles_list == ENC_SYM_MERROR) {
 			// TODO: deregister service.
 			STORED_LOGF("oh nose, memory error! BLE state is now invalid! :(");
@@ -645,7 +625,7 @@ static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
  * handles on success. Otherwise either an eval_error or type_error symbol is
  * returned.
  */
-static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
+static lbm_value add_service(ble_uuid_any_t service_uuid, lbm_value chr_def) {
 	if (!lbm_is_list(chr_def)) {
 		return ENC_SYM_TERROR;
 	}
@@ -665,8 +645,7 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 			goto error;
 		}
 		index_span_t span;
-		parse_lbm_result_t result =
-			parse_lbm_chr_def(lbm_car(next), &characteristics[i], &span);
+		parse_lbm_result_t result = parse_lbm_chr_def(lbm_car(next), &characteristics[i], &span);
 
 		if (result != PARSE_LBM_OK) {
 			for (size_t j = 0; j < i; j++) {
@@ -679,9 +658,7 @@ static lbm_value add_service(esp_bt_uuid_t service_uuid, lbm_value chr_def) {
 		next = lbm_cdr(next);
 	}
 
-	custom_ble_result_t result = custom_ble_add_service(
-		service_uuid, chr_count, characteristics, store_handle_list
-	);
+	custom_ble_result_t result = custom_ble_add_service(service_uuid, chr_count, characteristics, store_handle_list);
 	for (size_t i = 0; i < chr_count; i++) {
 		lbm_free(characteristics[i].descriptors);
 	}
@@ -748,6 +725,7 @@ error:
  * that. If the internal init function fails, this function throws an
  * eval_error.
  */
+// Server extensions
 static lbm_value ext_ble_start_app(lbm_value *args, lbm_uint argn) {
 	(void)args;
 	(void)argn;
@@ -853,17 +831,16 @@ static lbm_value ext_ble_conf_adv(lbm_value *args, lbm_uint argn) {
 
 	bool use_custom = lbm_dec_bool(args[0]);
 
-	size_t adv_data_len      = 0;
-	uint8_t *adv_data        = NULL;
+	size_t adv_data_len = 0;
+	uint8_t *adv_data = NULL;
 	size_t scan_rsp_data_len = 0;
-	uint8_t *scan_rsp_data   = NULL;
+	uint8_t *scan_rsp_data = NULL;
 	if (use_custom) {
 		LBM_CHECK_ARGN(3);
 
 		if (lbm_is_cons(args[1])) {
 			adv_data = adv_buffer;
-			parse_lbm_result_t result =
-				parse_lbm_adv_packet(args[1], adv_data, &adv_data_len);
+			parse_lbm_result_t result = parse_lbm_adv_packet(args[1], adv_data, &adv_data_len);
 			switch (result) {
 				case PARSE_LBM_OK: {
 					break;
@@ -887,18 +864,16 @@ static lbm_value ext_ble_conf_adv(lbm_value *args, lbm_uint argn) {
 			}
 		} else if (lbm_is_array_r(args[1])) {
 			lbm_array_header_t *array = lbm_dec_array_header(args[1]);
-			adv_data_len              = array->size;
-			adv_data                  = (uint8_t *)array->data;
+			adv_data_len = array->size;
+			adv_data = (uint8_t *)array->data;
 		} else if (!lbm_is_symbol_nil(args[1])) {
 			lbm_set_error_suspect(args[1]);
 			return ENC_SYM_TERROR;
 		}
 
 		if (lbm_is_cons(args[2])) {
-			scan_rsp_data             = scan_rsp_buffer;
-			parse_lbm_result_t result = parse_lbm_adv_packet(
-				args[2], scan_rsp_data, &scan_rsp_data_len
-			);
+			scan_rsp_data = scan_rsp_buffer;
+			parse_lbm_result_t result = parse_lbm_adv_packet(args[2], scan_rsp_data, &scan_rsp_data_len);
 			switch (result) {
 				case PARSE_LBM_OK: {
 					break;
@@ -922,8 +897,8 @@ static lbm_value ext_ble_conf_adv(lbm_value *args, lbm_uint argn) {
 			}
 		} else if (lbm_is_array_r(args[2])) {
 			lbm_array_header_t *array = lbm_dec_array_header(args[2]);
-			scan_rsp_data_len         = array->size;
-			scan_rsp_data             = (uint8_t *)array->data;
+			scan_rsp_data_len = array->size;
+			scan_rsp_data = (uint8_t *)array->data;
 		} else if (!lbm_is_symbol_nil(args[2])) {
 			lbm_set_error_suspect(args[2]);
 			return ENC_SYM_TERROR;
@@ -931,8 +906,7 @@ static lbm_value ext_ble_conf_adv(lbm_value *args, lbm_uint argn) {
 	}
 
 	custom_ble_result_t result = custom_ble_update_adv(
-		use_custom, adv_data_len, adv_data, scan_rsp_data_len, scan_rsp_data
-	);
+		use_custom, adv_data_len, adv_data, scan_rsp_data_len, scan_rsp_data);
 
 	switch (result) {
 		case CUSTOM_BLE_OK: {
@@ -971,7 +945,7 @@ static lbm_value ext_ble_conf_adv_set_channels(lbm_value *args, lbm_uint argn) {
 	lbm_value next = args[0];
 	while (lbm_is_cons(next)) {
 		lbm_value current = lbm_car(next);
-		next              = lbm_cdr(next);
+		next = lbm_cdr(next);
 
 		if (!lbm_is_number(current)) {
 			lbm_set_error_suspect(current);
@@ -992,20 +966,7 @@ static lbm_value ext_ble_conf_adv_set_channels(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (channels == 0b111) {
-		ble_adv_params.channel_map = ADV_CHNL_ALL;
-	} else {
-		ble_adv_params.channel_map = 0;
-		if (channels & 0b001) {
-			ble_adv_params.channel_map |= ADV_CHNL_37;
-		}
-		if (channels & 0b010) {
-			ble_adv_params.channel_map |= ADV_CHNL_38;
-		}
-		if (channels & 0b100) {
-			ble_adv_params.channel_map |= ADV_CHNL_39;
-		}
-	}
+	ble_adv_params.channel_map = channels;
 
 	return ENC_SYM_TRUE;
 }
@@ -1028,13 +989,13 @@ static lbm_value ext_ble_conf_adv_set_interval(lbm_value *args, lbm_uint argn) {
 	uint16_t min = (uint16_t)lbm_dec_as_u32(args[0]);
 	uint16_t max = (uint16_t)lbm_dec_as_u32(args[1]);
 
-	if (min < 0x0020 || min > 0x4000 || max < 0x0020 || max > 0x4000) {
+	if (min < 0x0020 || min > 0x4000 || max < 0x0020 || max > 0x4000 || min > max) {
 		lbm_set_error_reason(error_invalid_adv_interval);
 		return ENC_SYM_EERROR;
 	}
 
-	ble_adv_params.adv_int_min = min;
-	ble_adv_params.adv_int_max = max;
+	ble_adv_params.itvl_min = min;
+	ble_adv_params.itvl_max = max;
 
 	return ENC_SYM_TRUE;
 }
@@ -1067,7 +1028,7 @@ static lbm_value ext_ble_add_service(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_TERROR;
 	}
 
-	esp_bt_uuid_t uuid;
+	ble_uuid_any_t uuid;
 	if (!lbm_dec_uuid(args[0], &uuid)) {
 		lbm_set_error_suspect(args[0]);
 		return ENC_SYM_TERROR;
@@ -1080,7 +1041,7 @@ static lbm_value ext_ble_add_service(lbm_value *args, lbm_uint argn) {
  * signature: (ble-remove-service service-handle:number)
  */
 static lbm_value ext_ble_remove_service(lbm_value *args, lbm_uint argn) {
-	if (argn != 1 && !lbm_is_number(args[0])) {
+	if (argn != 1 || !lbm_is_number(args[0])) {
 		return ENC_SYM_TERROR;
 	}
 
@@ -1114,7 +1075,7 @@ static lbm_value ext_ble_remove_service(lbm_value *args, lbm_uint argn) {
  * signature: (ble-attr-get-value handle: number) -> byte-array
  */
 static lbm_value ext_ble_attr_get_value(lbm_value *args, lbm_uint argn) {
-	if (argn != 1 && !lbm_is_number(args[0])) {
+	if (argn != 1 || !lbm_is_number(args[0])) {
 		return ENC_SYM_TERROR;
 	}
 
@@ -1123,8 +1084,7 @@ static lbm_value ext_ble_attr_get_value(lbm_value *args, lbm_uint argn) {
 	uint16_t len;
 	const uint8_t *value;
 
-	custom_ble_result_t result =
-		custom_ble_get_attr_value(handle, &len, &value);
+	custom_ble_result_t result = custom_ble_get_attr_value(handle, &len, &value);
 	switch (result) {
 		case CUSTOM_BLE_OK: {
 			break;
@@ -1158,13 +1118,13 @@ static lbm_value ext_ble_attr_get_value(lbm_value *args, lbm_uint argn) {
  * signature: (ble-attr-set-value handle:number value:byte-array)
  */
 static lbm_value ext_ble_attr_set_value(lbm_value *args, lbm_uint argn) {
-	if (argn != 2 && !lbm_is_number(args[0]) && !lbm_is_array_r(args[1])) {
+	if (argn != 2 || !lbm_is_number(args[0]) || !lbm_is_array_r(args[1])) {
 		return ENC_SYM_TERROR;
 	}
 
 	uint16_t handle = (uint16_t)lbm_dec_as_u32(args[0]);
-	uint16_t len    = (uint16_t)lbm_heap_array_get_size(args[1]);
-	const uint8_t *value  = lbm_heap_array_get_data_ro(args[1]);
+	uint16_t len = (uint16_t)lbm_heap_array_get_size(args[1]);
+	const uint8_t *value = lbm_heap_array_get_data_ro(args[1]);
 	if (value == NULL) {
 		// Maybe return internal error here?
 		return ENC_SYM_EERROR;
@@ -1204,10 +1164,8 @@ static lbm_value ext_ble_get_services(lbm_value *args, lbm_uint argn) {
 
 	custom_ble_get_services(count, handles);
 
-	// array_reverse(handles, handles, count, sizeof(uint16_t));
-
 	lbm_value list = ENC_SYM_NIL;
-	for (uint16_t i = 0; i < count; i++) {
+	for (int i = count - 1; i >= 0; i--) {
 		list = lbm_cons(lbm_enc_u(handles[i]), list);
 		if (list == ENC_SYM_MERROR) {
 			return list;
@@ -1225,7 +1183,7 @@ static lbm_value ext_ble_get_services(lbm_value *args, lbm_uint argn) {
  * service. An eval_error is thrown if the handle isn't valid.
  */
 static lbm_value ext_ble_get_attrs(lbm_value *args, lbm_uint argn) {
-	if (argn != 1 && !lbm_is_number(args[0])) {
+	if (argn != 1 || !lbm_is_number(args[0])) {
 		return ENC_SYM_TERROR;
 	}
 
@@ -1240,8 +1198,7 @@ static lbm_value ext_ble_get_attrs(lbm_value *args, lbm_uint argn) {
 
 	uint16_t written_count;
 
-	switch (custom_ble_get_attrs(service_handle, count, handles, &written_count)
-	) {
+	switch (custom_ble_get_attrs(service_handle, count, handles, &written_count)) {
 		case CUSTOM_BLE_OK: {
 			break;
 		}
@@ -1256,7 +1213,7 @@ static lbm_value ext_ble_get_attrs(lbm_value *args, lbm_uint argn) {
 	}
 
 	lbm_value list = ENC_SYM_NIL;
-	for (uint16_t i = 0; i < count; i++) {
+	for (int i = count - 1; i >= 0; i--) {
 		list = lbm_cons(lbm_enc_u(handles[i]), list);
 		if (list == ENC_SYM_MERROR) {
 			return list;
@@ -1265,19 +1222,372 @@ static lbm_value ext_ble_get_attrs(lbm_value *args, lbm_uint argn) {
 	return list;
 }
 
-void lispif_load_ble_extensions(void) {
-	register_symbols();
+// Client extensions
+static lbm_value client_request(ble_client_request_t *request) {
+	int res = custom_ble_client_request(request);
+	return res == 0 ? ENC_SYM_TRUE : lbm_enc_i(res);
+}
 
-	lbm_add_extension("ble-start-app", ext_ble_start_app);
-	lbm_add_extension("ble-set-name", ext_ble_set_name);
-	lbm_add_extension("ble-conf-adv", ext_ble_conf_adv);
-	lbm_add_extension("ble-conf-adv-set-channels", ext_ble_conf_adv_set_channels);
-	lbm_add_extension("ble-conf-adv-set-interval", ext_ble_conf_adv_set_interval);
+static bool client_number(lbm_value value, uint32_t min, uint32_t max) {
+	return lbm_is_number(value) && lbm_dec_as_double(value) >= min && lbm_dec_as_double(value) <= max
+		&& lbm_dec_as_double(value) == lbm_dec_as_u32(value);
+}
 
-	lbm_add_extension("ble-add-service", ext_ble_add_service);
-	lbm_add_extension("ble-remove-service", ext_ble_remove_service);
-	lbm_add_extension("ble-attr-get-value", ext_ble_attr_get_value);
-	lbm_add_extension("ble-attr-set-value", ext_ble_attr_set_value);
-	lbm_add_extension("ble-get-services", ext_ble_get_services);
-	lbm_add_extension("ble-get-attrs", ext_ble_get_attrs);
+static uint16_t client_connection(lbm_value *args, lbm_uint argn, lbm_uint index) {
+	return argn > index ? lbm_dec_as_u32(args[index]) : BLE_HS_CONN_HANDLE_NONE;
+}
+
+// A zero duration cancels scanning without allocating a client event queue.
+static lbm_value ext_ble_client_scan(lbm_value *args, lbm_uint argn) {
+	if (argn != 1 || !client_number(args[0], 0, 60000)) {
+		return ENC_SYM_TERROR;
+	}
+
+	ble_client_request_t request = { .op = lbm_dec_as_u32(args[0]) == 0 ? BLE_CLIENT_OP_SCAN_STOP : BLE_CLIENT_OP_SCAN,
+		.duration_ms = lbm_dec_as_u32(args[0]) };
+	return client_request(&request);
+}
+
+// No arguments queries the connection; nil disconnects, an address connects.
+static lbm_value ext_ble_client_connect(lbm_value *args, lbm_uint argn) {
+	if (argn == 0) {
+		uint16_t conn = custom_ble_client_conn_handle();
+		return conn == BLE_HS_CONN_HANDLE_NONE ? ENC_SYM_NIL : lbm_enc_u(conn);
+	}
+
+	if (argn == 1 && args[0] == ENC_SYM_TRUE) {
+		uint16_t handles[BLE_CLIENT_CONNECTIONS_MAX];
+		unsigned int count = custom_ble_client_connections(handles, BLE_CLIENT_CONNECTIONS_MAX);
+		lbm_value list = ENC_SYM_NIL;
+		for (unsigned int i = count; i > 0; i--) {
+			list = lbm_cons(lbm_enc_u(handles[i - 1]), list);
+			if (list == ENC_SYM_MERROR) {
+				return list;
+			}
+		}
+		return list;
+	}
+
+	if ((argn == 1 || argn == 2) && args[0] == lbm_enc_sym(symbol_client_limit)) {
+		if (argn == 1) {
+			return lbm_enc_u(custom_ble_client_limit());
+		}
+		if (!client_number(args[1], 1, BLE_CLIENT_CONNECTIONS_MAX)) {
+			return ENC_SYM_TERROR;
+		}
+		ble_client_request_t request = { .op = BLE_CLIENT_OP_LIMIT, .duration_ms = lbm_dec_as_u32(args[1]) };
+		return client_request(&request);
+	}
+
+	if ((argn == 1 || argn == 2) && lbm_is_symbol_nil(args[0])) {
+		if (argn == 2 && !client_number(args[1], 0, BLE_HS_CONN_HANDLE_NONE - 1)) {
+			return ENC_SYM_TERROR;
+		}
+		ble_client_request_t request = { .op = BLE_CLIENT_OP_DISCONNECT, .conn = client_connection(args, argn, 1) };
+		return client_request(&request);
+	}
+
+	if (argn < 2 || argn > 5 || !lbm_is_array_r(args[0]) || lbm_heap_array_get_size(args[0]) != 6
+		|| !client_number(args[1], 0, 1) || (argn >= 3 && !client_number(args[2], 1, 60000))
+		|| (argn >= 4 && !client_number(args[3], 0, 4))
+		|| (argn == 5 && args[4] != ENC_SYM_TRUE && !lbm_is_symbol_nil(args[4]))) {
+		return ENC_SYM_TERROR;
+	}
+
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_CONNECT,
+		.duration_ms = argn >= 3 ? lbm_dec_as_u32(args[2]) : 10000,
+		.security = argn >= 4, .io_cap = argn >= 4 ? lbm_dec_as_u32(args[3]) : 4,
+		.bond = argn < 5 || args[4] == ENC_SYM_TRUE };
+	request.address.type = lbm_dec_as_u32(args[1]);
+	const uint8_t *address = lbm_heap_array_get_data_ro(args[0]);
+	for (int i = 0; i < 6; i++) {
+		request.address.val[i] = address[5 - i];
+	}
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_services(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && !client_number(args[0], 0, BLE_HS_CONN_HANDLE_NONE - 1))) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_SERVICES, .conn = client_connection(args, argn, 0) };
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_mtu(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && !client_number(args[0], 0, BLE_HS_CONN_HANDLE_NONE - 1))) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_MTU, .conn = client_connection(args, argn, 0) };
+	return client_request(&request);
+}
+
+static lbm_value client_discover(lbm_value *args, lbm_uint argn, ble_client_op_t op) {
+	if ((argn != 2 && argn != 3) || !client_number(args[0], 1, 65535)
+		|| !client_number(args[1], lbm_dec_as_u32(args[0]), 65535)
+		|| (argn == 3 && !client_number(args[2], 0, BLE_HS_CONN_HANDLE_NONE - 1))) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = { .op = op,
+		.conn = client_connection(args, argn, 2),
+		.start = lbm_dec_as_u32(args[0]),
+		.end = lbm_dec_as_u32(args[1]) };
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_chrs(lbm_value *args, lbm_uint argn) {
+	return client_discover(args, argn, BLE_CLIENT_OP_CHRS);
+}
+
+static lbm_value ext_ble_client_dscs(lbm_value *args, lbm_uint argn) {
+	return client_discover(args, argn, BLE_CLIENT_OP_DSCS);
+}
+
+static lbm_value ext_ble_client_read(lbm_value *args, lbm_uint argn) {
+	if ((argn != 1 && argn != 2) || !client_number(args[0], 1, 65535)
+		|| (argn == 2 && !client_number(args[1], 0, BLE_HS_CONN_HANDLE_NONE - 1))) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = {
+		.op = BLE_CLIENT_OP_READ, .conn = client_connection(args, argn, 1), .start = lbm_dec_as_u32(args[0])
+	};
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_write(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3 && argn != 4) || !client_number(args[0], 1, 65535) || !lbm_is_array_r(args[1])
+		|| lbm_heap_array_get_size(args[1]) > BLE_CLIENT_VALUE_MAX || (argn >= 3 && !client_number(args[2], 0, 1))
+		|| (argn == 4 && !client_number(args[3], 0, BLE_HS_CONN_HANDLE_NONE - 1))) {
+		return ENC_SYM_TERROR;
+	}
+	bool response = argn < 3 || lbm_dec_as_u32(args[2]) != 0;
+	ble_client_request_t request = { .op = response ? BLE_CLIENT_OP_WRITE : BLE_CLIENT_OP_WRITE_NR,
+		.conn = client_connection(args, argn, 3),
+		.start = lbm_dec_as_u32(args[0]),
+		.len = lbm_heap_array_get_size(args[1]),
+		.data = lbm_heap_array_get_data_ro(args[1]) };
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_subscribe(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3) || !client_number(args[0], 1, 65535) || !client_number(args[1], 0, 2)
+		|| (argn == 3 && !client_number(args[2], 0, BLE_HS_CONN_HANDLE_NONE - 1))) {
+		return ENC_SYM_TERROR;
+	}
+	uint8_t value[] = { lbm_dec_as_u32(args[1]), 0 };
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_WRITE,
+		.conn = client_connection(args, argn, 2),
+		.start = lbm_dec_as_u32(args[0]),
+		.len = 2,
+		.data = value };
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_security(lbm_value *args, lbm_uint argn) {
+	if (argn < 1 || argn > 3 || !client_number(args[0], 0, BLE_HS_CONN_HANDLE_NONE - 1)) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_SECURITY, .conn = lbm_dec_as_u32(args[0]),
+		.io_cap = BLE_HS_IO_KEYBOARD_DISPLAY, .bond = true };
+	if (argn == 2 && args[1] == lbm_enc_sym(symbol_client_forget)) {
+		request.op = BLE_CLIENT_OP_FORGET;
+	} else {
+		if ((argn >= 2 && !client_number(args[1], 0, 4)) ||
+				(argn == 3 && args[2] != ENC_SYM_TRUE && !lbm_is_symbol_nil(args[2]))) {
+			return ENC_SYM_TERROR;
+		}
+		if (argn >= 2) {
+			request.io_cap = lbm_dec_as_u32(args[1]);
+		}
+		if (argn == 3) {
+			request.bond = args[2] == ENC_SYM_TRUE;
+		}
+	}
+	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_passkey(lbm_value *args, lbm_uint argn) {
+	if (argn != 2 || !client_number(args[0], 0, BLE_HS_CONN_HANDLE_NONE - 1)) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_request_t request = { .op = BLE_CLIENT_OP_PASSKEY, .conn = lbm_dec_as_u32(args[0]) };
+	if (args[1] == ENC_SYM_TRUE || lbm_is_symbol_nil(args[1])) {
+		request.action = BLE_SM_IOACT_NUMCMP;
+		request.passkey = args[1] == ENC_SYM_TRUE;
+	} else if (client_number(args[1], 0, 999999)) {
+		request.action = BLE_SM_IOACT_INPUT;
+		request.passkey = lbm_dec_as_u32(args[1]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
+	return client_request(&request);
+}
+
+static lbm_value client_array(const uint8_t *data, unsigned int len) {
+	lbm_value value;
+	if (!lbm_create_array(&value, len)) {
+		return ENC_SYM_MERROR;
+	}
+	memcpy(lbm_dec_array_header(value)->data, data, len);
+	return value;
+}
+
+static lbm_value client_uuid(const ble_uuid_any_t *uuid) {
+	uint8_t data[16];
+	unsigned int len = uuid->u.type / 8;
+	if (uuid->u.type == BLE_UUID_TYPE_16) {
+		data[0] = uuid->u16.value >> 8;
+		data[1] = uuid->u16.value;
+	} else if (uuid->u.type == BLE_UUID_TYPE_32) {
+		for (int i = 0; i < 4; i++) {
+			data[i] = uuid->u32.value >> ((3 - i) * 8);
+		}
+	} else {
+		for (int i = 0; i < 16; i++) {
+			data[i] = uuid->u128.value[15 - i];
+		}
+	}
+	return client_array(data, len);
+}
+
+static lbm_value ext_ble_client_event(lbm_value *args, lbm_uint argn) {
+	if (argn > 1 || (argn == 1 && args[0] != ENC_SYM_TRUE && !lbm_is_symbol_nil(args[0]))) {
+		return ENC_SYM_TERROR;
+	}
+	ble_client_event_t event;
+	// Leave the event queued if Lisp memory allocation fails; the evaluator
+	// can collect garbage and retry the extension without losing the response.
+	if (!custom_ble_client_event(&event, false)) {
+		return ENC_SYM_NIL;
+	}
+	lbm_value values[7];
+	unsigned int count = 1;
+	values[0] = lbm_enc_sym(client_event_symbols[event.type]);
+	if (argn == 1 && args[0] == ENC_SYM_TRUE) {
+		values[count++] = lbm_enc_u(event.conn);
+	}
+	switch (event.type) {
+		case BLE_CLIENT_SCAN: {
+			uint8_t address[6];
+			for (int i = 0; i < 6; i++) {
+				address[i] = event.address.val[5 - i];
+			}
+			values[count++] = client_array(address, 6);
+			values[count++] = lbm_enc_u(event.address.type);
+			values[count++] = lbm_enc_i(event.rssi);
+			values[count++] = client_array(event.data, event.len);
+			break;
+		}
+		case BLE_CLIENT_SERVICE:
+		case BLE_CLIENT_CHR:
+		case BLE_CLIENT_DSC:
+			values[count++] = lbm_enc_u(event.handle);
+			if (event.type != BLE_CLIENT_DSC) {
+				values[count++] = lbm_enc_u(event.end);
+			}
+			if (event.type == BLE_CLIENT_CHR) {
+				values[count++] = lbm_enc_u(event.properties);
+			}
+			values[count++] = client_uuid(&event.uuid);
+			break;
+		case BLE_CLIENT_SCAN_DONE:
+			values[count++] = lbm_enc_i(event.status);
+			break;
+		case BLE_CLIENT_SECURITY:
+			values[count++] = lbm_enc_u(event.conn);
+			values[count++] = lbm_enc_i(event.status);
+			values[count++] = lbm_enc_u(event.properties & 1);
+			values[count++] = lbm_enc_u((event.properties >> 1) & 1);
+			values[count++] = lbm_enc_u((event.properties >> 2) & 1);
+			break;
+		case BLE_CLIENT_PASSKEY:
+			values[count++] = lbm_enc_u(event.conn);
+			values[count++] = lbm_enc_u(event.status);
+			values[count++] = lbm_enc_u(event.passkey);
+			break;
+		default:
+			values[count++] = lbm_enc_u(event.handle);
+			values[count++] = lbm_enc_i(event.status);
+			if (event.type == BLE_CLIENT_READ || event.type == BLE_CLIENT_NOTIFY) {
+				values[count++] = client_array(event.data, event.len);
+			}
+			if (event.type == BLE_CLIENT_NOTIFY) {
+				values[count++] = lbm_enc_u(event.properties);
+			}
+			break;
+	}
+	lbm_value list = ENC_SYM_NIL;
+	for (unsigned int i = count; i > 0; i--) {
+		if (values[i - 1] == ENC_SYM_MERROR) {
+			return ENC_SYM_MERROR;
+		}
+		list = lbm_cons(values[i - 1], list);
+		if (list == ENC_SYM_MERROR) {
+			return list;
+		}
+	}
+	custom_ble_client_event(&event, true);
+	return list;
+}
+
+static lbm_value ext_ble_client_dropped(lbm_value *args, lbm_uint argn) {
+	(void)args;
+	if (argn != 0) {
+		return ENC_SYM_TERROR;
+	}
+	return lbm_enc_u(custom_ble_client_dropped());
+}
+
+// Extension registration
+static void register_extensions(const ble_extension_t *extensions, unsigned int count, bool enabled) {
+	for (unsigned int i = 0; i < count; i++) {
+		lbm_add_extension(extensions[i].name, enabled ? extensions[i].function : lbm_extensions_default);
+	}
+}
+
+void lispif_load_ble_extensions(BLE_MODE_LBM mode) {
+	bool server = mode == BLE_MODE_LBM_CLIENT_SERVER || mode == BLE_MODE_LBM_SERVER;
+	bool client = mode == BLE_MODE_LBM_CLIENT_SERVER || mode == BLE_MODE_LBM_CLIENT;
+
+	if (server) {
+		register_symbols();
+	}
+	if (client) {
+		lbm_add_symbol_const("limit", &symbol_client_limit);
+		lbm_add_symbol_const("forget", &symbol_client_forget);
+		for (unsigned int i = 0; i < sizeof(client_event_symbols) / sizeof(client_event_symbols[0]); i++) {
+			lbm_add_symbol_const(client_event_names[i], &client_event_symbols[i]);
+		}
+	}
+
+	static const ble_extension_t server_extensions[] = {
+		{ "ble-start-app", ext_ble_start_app },
+		{ "ble-set-name", ext_ble_set_name },
+		{ "ble-conf-adv", ext_ble_conf_adv },
+		{ "ble-conf-adv-set-channels", ext_ble_conf_adv_set_channels },
+		{ "ble-conf-adv-set-interval", ext_ble_conf_adv_set_interval },
+		{ "ble-add-service", ext_ble_add_service },
+		{ "ble-remove-service", ext_ble_remove_service },
+		{ "ble-attr-get-value", ext_ble_attr_get_value },
+		{ "ble-attr-set-value", ext_ble_attr_set_value },
+		{ "ble-get-services", ext_ble_get_services },
+		{ "ble-get-attrs", ext_ble_get_attrs },
+	};
+	static const ble_extension_t client_extensions[] = {
+		{ "ble-client-scan", ext_ble_client_scan },
+		{ "ble-client-connect", ext_ble_client_connect },
+		{ "ble-client-discover-services", ext_ble_client_services },
+		{ "ble-client-discover-chars", ext_ble_client_chrs },
+		{ "ble-client-discover-descriptors", ext_ble_client_dscs },
+		{ "ble-client-exchange-mtu", ext_ble_client_mtu },
+		{ "ble-client-read", ext_ble_client_read },
+		{ "ble-client-write", ext_ble_client_write },
+		{ "ble-client-subscribe", ext_ble_client_subscribe },
+		{ "ble-client-security", ext_ble_client_security },
+		{ "ble-client-passkey", ext_ble_client_passkey },
+		{ "ble-client-event", ext_ble_client_event },
+		{ "ble-client-dropped", ext_ble_client_dropped },
+	};
+	register_extensions(server_extensions, sizeof(server_extensions) / sizeof(server_extensions[0]), server);
+	register_extensions(client_extensions, sizeof(client_extensions) / sizeof(client_extensions[0]), client);
 }

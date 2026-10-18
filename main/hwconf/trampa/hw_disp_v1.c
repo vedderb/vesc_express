@@ -17,20 +17,21 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "hwi2c.h"
 #include "hw_disp_v1.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
+#include "hw.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
 #include "driver/gpio.h"
 #include "lispif_disp_extensions.h"
 #include "extensions/display_extensions.h"
 #include "disp_st7789.h"
+#if CONFIG_ESP_WIFI_ENABLED
 #include "esp_wifi.h"
-#include "esp_bt.h"
-#include "esp_bt_main.h"
+#endif
 #include "esp_sleep.h"
 
 #include "lispif.h"
@@ -93,16 +94,7 @@ static SemaphoreHandle_t 	i2c_mutex;
 static void i2c_init(void) {
 	i2c_mutex = xSemaphoreCreateMutex();
 
-	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
-			.sda_io_num = I2C_SDA,
-			.scl_io_num = I2C_SCL,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = 100000,
-	};
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	hwi2c_init(0, I2C_SDA, I2C_SCL, 100000, true);
 }
 
 static esp_err_t i2c_tx_rx(uint8_t addr,
@@ -114,12 +106,12 @@ static esp_err_t i2c_tx_rx(uint8_t addr,
 	esp_err_t res;
 	if (read_size > 0 && read_buffer != NULL) {
 		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
+			res = hwi2c_tx_rx(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
 		} else {
-			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 2000);
+			res = hwi2c_tx_rx(0, addr, NULL, 0, read_buffer, read_size, 2000);
 		}
 	} else {
-		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 2000);
+		res = hwi2c_tx_rx(0, addr, write_buffer, write_size, NULL, 0, 2000);
 	}
 
 	xSemaphoreGive(i2c_mutex);
@@ -238,7 +230,9 @@ static lbm_value ext_hw_init(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
+#if CONFIG_ESP_WIFI_ENABLED
 	esp_wifi_stop();
+#endif
 
 #if DISP_HW_VERSION == DISP_V1_3
 	i2c_write_reg(I2C_ADDR_GPIO_EXP, GPIO_EXP_OUTPUT_REG, 0x10); // Port 4 (PWR SW) Output Enable
@@ -247,7 +241,7 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	}
 
 	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_HIGH);
+	esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_HIGH);
 #else
 	gpio_set_level(pin_bl, 0);
 	while (v_btn < 2.0) {
@@ -255,7 +249,7 @@ static lbm_value ext_hw_sleep(lbm_value *args, lbm_uint argn) {
 	}
 
 	gpio_set_direction(pin_btn, GPIO_MODE_INPUT);
-	esp_deep_sleep_enable_gpio_wakeup(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_LOW);
+	esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(1 << pin_btn, ESP_GPIO_WAKEUP_GPIO_LOW);
 #endif
 
 	esp_deep_sleep_start();

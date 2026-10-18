@@ -17,11 +17,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#include "hwi2c.h"
 #include "hw_vbms32.h"
 #include "bq769x2_defs.h"
 
 #include "main.h"
-#include "driver/i2c.h"
+#include "hw.h"
 #include "esp_sleep.h"
 #include "lispif.h"
 #include "lispbm.h"
@@ -60,17 +61,13 @@ static esp_err_t i2c_tx_rx(
 	esp_err_t res;
 	if (read_size > 0 && read_buffer != NULL) {
 		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(
-				0, addr, write_buffer, write_size, read_buffer, read_size, 500
-			);
+			res = hwi2c_tx_rx(0, addr, write_buffer, write_size, read_buffer, read_size, 500);
 		} else {
-			res = i2c_master_read_from_device(
-				0, addr, read_buffer, read_size, 500
-			);
+			res = hwi2c_tx_rx(0, addr, NULL, 0, read_buffer, read_size, 500);
 		}
 	} else {
 		res =
-			i2c_master_write_to_device(0, addr, write_buffer, write_size, 500);
+			hwi2c_tx_rx(0, addr, write_buffer, write_size, NULL, 0, 500);
 	}
 	xSemaphoreGive(i2c_mutex);
 
@@ -478,22 +475,9 @@ static lbm_value ext_bms_init(lbm_value *args, lbm_uint argn) {
 
 	// Restart i2c
 
-	i2c_driver_delete(0);
+	hwi2c_stop(0);
 
-	i2c_config_t conf = {
-		.mode             = I2C_MODE_MASTER,
-		.sda_io_num       = PIN_SDA,
-		.scl_io_num       = PIN_SCL,
-		.sda_pullup_en    = GPIO_PULLUP_ENABLE,
-		.scl_pullup_en    = GPIO_PULLUP_ENABLE,
-		.master.clk_speed = I2C_SPEED,
-	};
-
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
-
-	i2c_reset_tx_fifo(0);
-	i2c_reset_rx_fifo(0);
+	hwi2c_init(0, PIN_SDA, PIN_SCL, I2C_SPEED, true);
 
 	vTaskDelay(50);
 
@@ -773,19 +757,17 @@ static lbm_value ext_set_btn_wakeup_state(lbm_value *args, lbm_uint argn) {
 
 	switch (lbm_dec_as_i32(args[0])) {
 		case 0:
-			esp_deep_sleep_enable_gpio_wakeup(
-				1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_LOW
-			);
+			esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(
+				1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_LOW);
 			break;
 
 		case 1:
-			esp_deep_sleep_enable_gpio_wakeup(
-				1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_HIGH
-			);
+			esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(
+				1 << PIN_ENABLE, ESP_GPIO_WAKEUP_GPIO_HIGH);
 			break;
 
 		default:
-			gpio_deep_sleep_wakeup_disable(PIN_ENABLE);
+			gpio_wakeup_disable_on_hp_periph_powerdown_sleep(PIN_ENABLE);
 			break;
 	}
 
@@ -1291,12 +1273,7 @@ static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
 
 	uint8_t address = lbm_dec_as_u32(args[0]);
 	xSemaphoreTake(i2c_mutex, portMAX_DELAY);
-	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-	i2c_master_start(cmd);
-	i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
-	i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(0, cmd, 50 / portTICK_PERIOD_MS);
-	i2c_cmd_link_delete(cmd);
+	esp_err_t ret = hwi2c_tx_rx(0, address, NULL, 0, NULL, 0, 50);
 	xSemaphoreGive(i2c_mutex);
 
 	return ret == ESP_OK ? ENC_SYM_TRUE : ENC_SYM_NIL;
@@ -1407,17 +1384,7 @@ void hw_init(void) {
 	gpconf.pull_up_en   = GPIO_PULLUP_DISABLE;
 	gpio_config(&gpconf);
 
-	i2c_config_t conf = {
-		.mode             = I2C_MODE_MASTER,
-		.sda_io_num       = PIN_SDA,
-		.scl_io_num       = PIN_SCL,
-		.sda_pullup_en    = GPIO_PULLUP_ENABLE,
-		.scl_pullup_en    = GPIO_PULLUP_ENABLE,
-		.master.clk_speed = 100000,
-	};
-
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	hwi2c_init(0, PIN_SDA, PIN_SCL, 100000, true);
 
 	lispif_add_ext_load_callback(load_extensions);
 }

@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "hwi2c.h"
 #include "touch_cst836u.h"
 
 #include <string.h>
@@ -27,7 +28,7 @@
 #define TOUCH_CST836U_READ_REG 0x02
 #define TOUCH_CST836U_READ_LEN 5
 
-static i2c_port_t cst836u_i2c_port = I2C_NUM_0;
+static i2c_port_num_t cst836u_i2c_port = I2C_NUM_0;
 static uint16_t cst836u_width = 0;
 static uint16_t cst836u_height = 0;
 static uint16_t cst836u_raw_width = 0;
@@ -189,7 +190,7 @@ static void cst836u_apply_transforms(lispif_touch_point_data_t *point) {
 	point->y = y;
 }
 
-esp_err_t touch_cst836u_init(i2c_port_t port, uint16_t width, uint16_t height, lispif_touch_driver_t *driver) {
+esp_err_t touch_cst836u_init(i2c_port_num_t port, uint16_t width, uint16_t height, lispif_touch_driver_t *driver) {
 	if (!driver) {
 		return ESP_ERR_INVALID_ARG;
 	}
@@ -234,14 +235,7 @@ esp_err_t touch_cst836u_read_data(void) {
 	uint8_t reg = TOUCH_CST836U_READ_REG;
 	uint8_t raw[TOUCH_CST836U_READ_LEN] = {0};
 
-	esp_err_t res = i2c_master_write_read_device(
-			cst836u_i2c_port,
-			TOUCH_CST836U_I2C_ADDR,
-			&reg,
-			1,
-			raw,
-			sizeof(raw),
-			pdMS_TO_TICKS(20));
+	esp_err_t res = hwi2c_tx_rx(cst836u_i2c_port, TOUCH_CST836U_I2C_ADDR, &reg, 1, raw, sizeof(raw), 20);
 	if (res != ESP_OK) {
 		cst836u_has_point = false;
 		return res;
