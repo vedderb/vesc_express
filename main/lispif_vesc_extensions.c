@@ -3672,11 +3672,6 @@ static lbm_value ext_rtc_data(lbm_value *args, lbm_uint argn) {
 	return result;
 }
 
-static lbm_value ext_empty(lbm_value *args, lbm_uint argn) {
-	(void)args;(void)argn;
-	return ENC_SYM_TRUE;
-}
-
 // (import "path" 'sym): the path is only used by VESC Tool at upload time
 // to bundle the file into the (name, offset, len) table appended after the
 // program's own source in the CODE_IND_LISP flash region. Looks sym up in
