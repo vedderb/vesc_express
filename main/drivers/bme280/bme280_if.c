@@ -17,11 +17,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#include "hwi2c.h"
 #include "bme280.h"
 #include "bme280_if.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
 #include <string.h>
 
 // Private variables
@@ -42,17 +42,9 @@ void bme280_if_init(int pin_sda, int pin_scl) {
 		return;
 	}
 
-	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
-			.sda_io_num = pin_sda,
-			.scl_io_num = pin_scl,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = 100000,
-	};
-
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	if (hwi2c_init(0, pin_sda, pin_scl, 100000, true) != ESP_OK) {
+		return;
+}
 
 	init_done = true;
 	xTaskCreatePinnedToCore(bme_task, "BME280", 1536, NULL, 6, NULL, tskNO_AFFINITY);
@@ -107,7 +99,7 @@ static int8_t user_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, v
 		xSemaphoreTake(i2c_mutex, portMAX_DELAY);
 	}
 
-	esp_err_t res = i2c_master_write_read_device(0, BME280_I2C_ADDR_PRIM, txbuf, 1, reg_data, len, 1000 / portTICK_PERIOD_MS);
+	esp_err_t res = hwi2c_tx_rx(0, BME280_I2C_ADDR_PRIM, txbuf, 1, reg_data, len, 1000);
 
 	if (mutex_init) {
 		xSemaphoreGive(i2c_mutex);
@@ -127,7 +119,7 @@ static int8_t user_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t
 		xSemaphoreTake(i2c_mutex, portMAX_DELAY);
 	}
 
-	esp_err_t res = i2c_master_write_to_device(0, BME280_I2C_ADDR_PRIM, txbuf, len + 1, 1000 / portTICK_PERIOD_MS);
+	esp_err_t res = hwi2c_tx_rx(0, BME280_I2C_ADDR_PRIM, txbuf, len + 1, NULL, 0, 1000);
 
 	if (mutex_init) {
 		xSemaphoreGive(i2c_mutex);

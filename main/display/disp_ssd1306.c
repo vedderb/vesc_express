@@ -18,13 +18,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "hwi2c.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
 
 #include "disp_ssd1306.h"
-#include "driver/i2c.h"
 #include "lispif.h"
 #include "lispbm.h"
 
@@ -36,17 +35,7 @@
 
 void disp_ssd1306_init(int pin_sda, int pin_scl, uint32_t clk_speed) {
 
-	i2c_config_t conf = {
-			.mode = I2C_MODE_MASTER,
-			.sda_io_num = pin_sda,
-			.scl_io_num = pin_scl,
-			.sda_pullup_en = GPIO_PULLUP_ENABLE,
-			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = clk_speed,
-	};
-
-	i2c_param_config(0, &conf);
-	i2c_driver_install(0, conf.mode, 0, 0, 0);
+	hwi2c_init(0, pin_sda, pin_scl, clk_speed, true);
 }
 
 static const uint8_t disp_ssd1306_init_sequence[19][5] = {
@@ -79,15 +68,13 @@ void disp_ssd1306_clear(uint32_t color) {
 	buffer[0] = 0x40;
 
 	memset(&buffer[1], color ? 1 : 0 , 1024);
-	i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS, buffer, 1025, 2000);
+	hwi2c_tx_rx(0, DISPLAY_I2C_ADDRESS, buffer, 1025, NULL, 0, 2000);
 	free(buffer);
 }
 
 void disp_ssd1306_reset(void) {
 	for (int i = 0; i < 19; i ++ ) {
-		i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS,
-				&disp_ssd1306_init_sequence[i][1],
-				disp_ssd1306_init_sequence[i][0], 2000);
+		hwi2c_tx_rx(0, DISPLAY_I2C_ADDRESS, &disp_ssd1306_init_sequence[i][1], disp_ssd1306_init_sequence[i][0], NULL, 0, 2000);
 	}
 	disp_ssd1306_clear(0);
 }
@@ -126,7 +113,7 @@ bool disp_ssd1306_render_image(image_buffer_t *img, uint16_t x, uint16_t y, colo
 			}
 		}
 
-		i2c_master_write_to_device(0, DISPLAY_I2C_ADDRESS, buffer, 1025, 2000);
+		hwi2c_tx_rx(0, DISPLAY_I2C_ADDRESS, buffer, 1025, NULL, 0, 2000);
 		free(buffer);
 	}
 	break;

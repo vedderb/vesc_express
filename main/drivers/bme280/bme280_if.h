@@ -20,7 +20,8 @@
 #ifndef MAIN_DRIVERS_BME280_BME280_IF_H_
 #define MAIN_DRIVERS_BME280_BME280_IF_H_
 
-#include "driver/i2c.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 // Functions
 void bme280_if_init(int pin_sda, int pin_scl);

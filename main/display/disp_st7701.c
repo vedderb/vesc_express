@@ -30,7 +30,6 @@
 #include "esp_lcd_st7701.h"
 #include "esp_ldo_regulator.h"
 #include "esp_log.h"
-#include "esp_idf_version.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "soc/soc_caps.h"
@@ -412,11 +411,7 @@ static void disp_st7701_init_internal(void) {
         .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
         .dpi_clock_freq_mhz = 34,
         .virtual_channel = 0,
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
-        .pixel_format = LCD_COLOR_PIXEL_FORMAT_RGB565,
-#else
         .in_color_format = LCD_COLOR_FMT_RGB565,
-#endif
         .num_fbs = LCD_NUM_FBS,
         .video_timing = {
             .h_size = LCD_H_RES,
@@ -428,9 +423,6 @@ static void disp_st7701_init_internal(void) {
             .vsync_pulse_width = 2,
             .vsync_front_porch = 166,
         },
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
-        .flags.use_dma2d = true,
-#endif
     };
     dpi_cfg.video_timing.h_size = LCD_H_RES;
     dpi_cfg.video_timing.v_size = LCD_V_RES;
@@ -456,9 +448,7 @@ static void disp_st7701_init_internal(void) {
     ESP_ERROR_CHECK(esp_lcd_panel_reset(ctx->panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(ctx->panel));
 
-    #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
     ESP_ERROR_CHECK(esp_lcd_dpi_panel_enable_dma2d(ctx->panel));
-    #endif
 
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(ctx->panel, true));
 

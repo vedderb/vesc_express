@@ -22,7 +22,10 @@
 #include "freertos/semphr.h"
 #include "datatypes.h"
 #include "buffer.h"
-#include "driver/twai.h"
+#include "esp_twai.h"
+#include "esp_twai_onchip.h"
+#include "esp_attr.h"
+#include "freertos/queue.h"
 #include "comm_can.h"
 #include "datatypes.h"
 #include "conf_general.h"
@@ -35,19 +38,7 @@
 #include "lispif.h"
 #include "bms.h"
 #include "utils.h"
-#include "soc/gpio_sig_map.h"
 #include <string.h>
-
-#if CONFIG_IDF_TARGET_ESP32P4
-	#define VESC_TWAI_TX_IDX TWAI0_TX_PAD_OUT_IDX
-	#define VESC_TWAI_RX_IDX TWAI0_RX_PAD_IN_IDX
-#elif defined(TWAI0_TX_IDX)
-	#define VESC_TWAI_TX_IDX TWAI0_TX_IDX
-	#define VESC_TWAI_RX_IDX TWAI0_RX_IDX
-#else
-	#define VESC_TWAI_TX_IDX TWAI_TX_IDX
-	#define VESC_TWAI_RX_IDX TWAI_RX_IDX
-#endif
 
 // Status messages
 static can_status_msg stat_msgs[CAN_STATUS_MSGS_TO_STORE];
@@ -65,49 +56,62 @@ static psw_status psw_stat[CAN_STATUS_MSGS_TO_STORE];
 #define RX_BUFFER_SIZE				PACKET_MAX_PL_LEN
 #define RXBUF_LEN					50
 
-static twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
-static const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-static twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(0, 0, TWAI_MODE_NORMAL);
+#define TXBUF_LEN 21
+
+typedef struct {
+	uint32_t identifier;
+	uint8_t data_length_code;
+	bool extd;
+	uint8_t data[8];
+} can_message_t;
+
+typedef struct {
+	twai_frame_t frame;
+	uint8_t data[8];
+} can_tx_message_t;
+
+typedef struct {
+	twai_node_handle_t node;
+	QueueHandle_t rx_queue;
+	QueueHandle_t tx_free;
+	SemaphoreHandle_t send_mutex;
+	can_tx_message_t tx_buf[TXBUF_LEN];
+	int pin_tx;
+	int pin_rx;
+	volatile bool recover_pending;
+	volatile bool recovering;
+	volatile int recovery_cnt;
+} can_state_t;
+
+static DRAM_ATTR can_state_t can_state;
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+static DRAM_ATTR can_state_t can2_state;
+#endif
 
 static volatile bool init_done = false;
 static volatile bool sem_init_done = false;
 static volatile bool proc_started = false;
 static volatile bool stop_threads = false;
-static volatile bool stop_rx = false;
 static volatile bool status_running = false;
-static volatile bool rx_running = false;
 
 static SemaphoreHandle_t ping_sem;
 static SemaphoreHandle_t proc_sem;
 static SemaphoreHandle_t status_sem;
-static SemaphoreHandle_t send_mutex;
 static volatile HW_TYPE ping_hw_last = HW_TYPE_VESC;
 static uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
 static int rx_buffer_offset[RX_BUFFER_NUM];
 static volatile unsigned int rx_buffer_last_id;
 static volatile unsigned int rx_buffer_response_type = 1;
 
-static twai_message_t rx_buf[RXBUF_LEN];
-static volatile int rx_write = 0;
-static volatile int rx_read = 0;
 static volatile bool use_vesc_decoder = true;
 
 static bool (*sid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
 static bool (*eid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
 
 #ifdef CONFIG_IDF_TARGET_ESP32C6
-static volatile bool can2_use_vesc_dec   = true;
-
-static twai_message_t can2_rx_buf[RXBUF_LEN];
-static volatile int can2_rx_write = 0;
-static volatile int can2_rx_read = 0;
-static volatile int can2_recovery_cnt = 0;
+static volatile bool can2_use_vesc_dec = true;
+static volatile bool can2_init_done = false;
 #endif
-
-static volatile int rx_recovery_cnt = 0;
-
-// Private functions
-static void update_baud(CAN_BAUD baudrate);
 
 static void send_packet_wrapper(unsigned char *data, unsigned int len) {
 	comm_can_send_buffer(rx_buffer_last_id, data, len, rx_buffer_response_type);
@@ -577,60 +581,161 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 	}
 }
 
-static void rx_task(void *arg) {
-	twai_message_t rx_message;
-
-	while (!stop_threads && !stop_rx) {
-		esp_err_t res = twai_receive(&rx_message, 2);
-
-		if (res == ESP_OK) {
-			rx_buf[rx_write] = rx_message;
-			rx_write++;
-			if (rx_write >= RXBUF_LEN) {
-				rx_write = 0;
-			}
-
-			xSemaphoreGive(proc_sem);
-		}
-
-		twai_status_info_t status;
-		twai_get_status_info(&status);
-		if (status.state == TWAI_STATE_BUS_OFF || status.state == TWAI_STATE_RECOVERING) {
-			twai_initiate_recovery();
-
-			int timeout = 1500;
-			while (status.state == TWAI_STATE_BUS_OFF || status.state == TWAI_STATE_RECOVERING) {
-				vTaskDelay(1);
-				twai_get_status_info(&status);
-				timeout--;
-
-				if (stop_threads || stop_rx || timeout == 0) {
-					break;
-				}
-			}
-
-			if (!stop_threads && !stop_rx) {
-				twai_start();
-			}
-
-			rx_recovery_cnt++;
+static bool IRAM_ATTR can_rx_done(twai_node_handle_t node, const twai_rx_done_event_data_t *event, void *arg) {
+	can_state_t *state = arg;
+	can_message_t msg = {0};
+	twai_frame_t frame = {.buffer = msg.data, .buffer_len = sizeof(msg.data)};
+	BaseType_t wake = pdFALSE;
+	if (twai_node_receive_from_isr(node, &frame) == ESP_OK && !frame.header.rtr && !frame.header.fdf
+		&& frame.header.dlc <= 8) {
+		msg.identifier = frame.header.id;
+		msg.data_length_code = frame.header.dlc;
+		msg.extd = frame.header.ide;
+		if (xQueueSendFromISR(state->rx_queue, &msg, &wake) == pdTRUE) {
+			xSemaphoreGiveFromISR(proc_sem, &wake);
 		}
 	}
+	return wake == pdTRUE;
+}
 
-	rx_running = false;
-	vTaskDelete(NULL);
+static bool IRAM_ATTR can_tx_done(twai_node_handle_t node, const twai_tx_done_event_data_t *event, void *arg) {
+	can_state_t *state = arg;
+	can_tx_message_t *msg = (can_tx_message_t *)event->done_tx_frame;
+	BaseType_t wake = pdFALSE;
+	xQueueSendFromISR(state->tx_free, &msg, &wake);
+	return wake == pdTRUE;
+}
+
+static bool IRAM_ATTR can_state_change(
+	twai_node_handle_t node, const twai_state_change_event_data_t *event, void *arg) {
+	can_state_t *state = arg;
+	BaseType_t wake = pdFALSE;
+	if (event->new_sta == TWAI_ERROR_BUS_OFF) {
+		state->recover_pending = true;
+		xSemaphoreGiveFromISR(proc_sem, &wake);
+	} else if (state->recovering && event->new_sta == TWAI_ERROR_ACTIVE) {
+		state->recovering = false;
+		xSemaphoreGiveFromISR(proc_sem, &wake);
+	}
+	return wake == pdTRUE;
+}
+
+static void can_reset_tx(can_state_t *state) {
+	xQueueReset(state->tx_free);
+	for (int i = 0; i < TXBUF_LEN; i++) {
+		can_tx_message_t *msg = &state->tx_buf[i];
+		xQueueSend(state->tx_free, &msg, 0);
+	}
+}
+
+static void can_node_stop(can_state_t *state) {
+	if (state->node) {
+		twai_node_disable(state->node);
+		twai_node_delete(state->node);
+		state->node = NULL;
+	}
+	state->recover_pending = false;
+	state->recovering = false;
+}
+
+static bool can_node_start(can_state_t *state, int pin_tx, int pin_rx, uint32_t bitrate) {
+	if (!state->send_mutex) {
+		state->send_mutex = xSemaphoreCreateMutex();
+	}
+	if (!state->rx_queue) {
+		state->rx_queue = xQueueCreate(RXBUF_LEN, sizeof(can_message_t));
+	}
+	if (!state->tx_free) {
+		state->tx_free = xQueueCreate(TXBUF_LEN, sizeof(can_tx_message_t *));
+	}
+	if (!state->send_mutex || !state->rx_queue || !state->tx_free) {
+		return false;
+	}
+
+	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
+	can_node_stop(state);
+	xQueueReset(state->rx_queue);
+	can_reset_tx(state);
+
+	twai_onchip_node_config_t config = {
+		.io_cfg = {.tx = pin_tx, .rx = pin_rx, .quanta_clk_out = -1, .bus_off_indicator = -1},
+		.bit_timing = {.bitrate = bitrate},
+		.fail_retry_cnt = -1,
+		.tx_queue_depth = TXBUF_LEN - 1,
+		.flags.no_receive_rtr = true,
+	};
+	const twai_event_callbacks_t callbacks = {
+		.on_rx_done = can_rx_done,
+		.on_tx_done = can_tx_done,
+		.on_state_change = can_state_change,
+	};
+	esp_err_t res = twai_new_node_onchip(&config, &state->node);
+	if (res == ESP_OK) {
+		res = twai_node_register_event_callbacks(state->node, &callbacks, state);
+	}
+	if (res == ESP_OK) {
+		res = twai_node_enable(state->node);
+	}
+	if (res != ESP_OK) {
+		can_node_stop(state);
+	} else {
+		state->pin_tx = pin_tx;
+		state->pin_rx = pin_rx;
+	}
+	xSemaphoreGive(state->send_mutex);
+	return res == ESP_OK;
+}
+
+static void can_recover(can_state_t *state) {
+	if ((!state->recover_pending && !state->recovering) || !state->send_mutex) {
+		return;
+	}
+	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
+	if (state->node && state->recover_pending) {
+		state->recover_pending = false;
+		state->recovering = true;
+		if (twai_node_recover(state->node) == ESP_OK) {
+			state->recovery_cnt++;
+		} else {
+			state->recovering = false;
+		}
+	}
+	xSemaphoreGive(state->send_mutex);
+}
+
+static void can_transmit(can_state_t *state, uint32_t id, const uint8_t *data, uint8_t len, bool ext) {
+	if (!state->send_mutex) {
+		return;
+	}
+	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
+	can_tx_message_t *msg;
+	if (state->node && !state->recovering && xQueueReceive(state->tx_free, &msg, pdMS_TO_TICKS(5)) == pdTRUE) {
+		len = len > 8 ? 8 : len;
+		msg->frame = (twai_frame_t){
+			.header = {.id = id, .dlc = len, .ide = ext},
+			.buffer = msg->data,
+			.buffer_len = len,
+		};
+		memcpy(msg->data, data, len);
+		if (twai_node_transmit(state->node, &msg->frame, 0) != ESP_OK) {
+			xQueueSend(state->tx_free, &msg, 0);
+		}
+	}
+	xSemaphoreGive(state->send_mutex);
 }
 
 static void process_task(void *arg) {
 	for (;;) {
-		xSemaphoreTake(proc_sem, 10 / portTICK_PERIOD_MS);
+		xSemaphoreTake(proc_sem, portMAX_DELAY);
 
-		while (rx_read != rx_write) {
-			twai_message_t *msg = &rx_buf[rx_read];
-			rx_read++;
-			if (rx_read >= RXBUF_LEN) {
-				rx_read = 0;
-			}
+		can_recover(&can_state);
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+		can_recover(&can2_state);
+#endif
+
+		can_message_t rx_message;
+		while (can_state.rx_queue && xQueueReceive(can_state.rx_queue, &rx_message, 0) == pdTRUE) {
+			can_message_t *msg = &rx_message;
 
 			lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
 
@@ -657,12 +762,8 @@ static void process_task(void *arg) {
 		}
 
 #ifdef CONFIG_IDF_TARGET_ESP32C6
-		while (can2_rx_read != can2_rx_write) {
-			twai_message_t *m = &can2_rx_buf[can2_rx_read];
-			can2_rx_read++;
-			if (can2_rx_read >= RXBUF_LEN) {
-				can2_rx_read = 0;
-			}
+		while (can2_state.rx_queue && xQueueReceive(can2_state.rx_queue, &rx_message, 0) == pdTRUE) {
+			can_message_t *m = &rx_message;
 
 			lispif_process_can2(m->identifier, m->data, m->data_length_code, m->extd);
 
@@ -764,71 +865,24 @@ static void status_task(void *arg) {
 	vTaskDelete(NULL);
 }
 
-static void update_baud(CAN_BAUD baudrate) {
+static uint32_t baudrate_to_bitrate(CAN_BAUD baudrate) {
 	switch (baudrate) {
-	case CAN_BAUD_125K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_125KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_250K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_250KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_500K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_500KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_1M: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_1MBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_10K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_10KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_20K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_20KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_50K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_50KBITS();
-		t_config = t_config2;
-	} break;
-
-	case CAN_BAUD_75K: {
-		// Invalid
-	} break;
-
-	case CAN_BAUD_100K: {
-		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_100KBITS();
-		t_config = t_config2;
-	} break;
-
-	default:
-		break;
-	}
-}
-
-static void start_rx_thd(void) {
-	if (rx_running) {
-		return;
-	}
-
-	stop_rx = false;
-	rx_running = true;
-	xTaskCreatePinnedToCore(rx_task, "can_rx", 1024, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
-}
-
-static void stop_rx_thd(void) {
-	stop_rx = true;
-	while (rx_running) {
-		vTaskDelay(1);
+		case CAN_BAUD_125K:
+			return 125000;
+		case CAN_BAUD_250K:
+			return 250000;
+		case CAN_BAUD_1M:
+			return 1000000;
+		case CAN_BAUD_10K:
+			return 10000;
+		case CAN_BAUD_20K:
+			return 20000;
+		case CAN_BAUD_50K:
+			return 50000;
+		case CAN_BAUD_100K:
+			return 100000;
+		default:
+			return 500000;
 	}
 }
 
@@ -856,7 +910,6 @@ void comm_can_start(int pin_tx, int pin_rx) {
 	if (!sem_init_done) {
 		ping_sem = xSemaphoreCreateBinary();
 		status_sem = xSemaphoreCreateBinary();
-		send_mutex = xSemaphoreCreateMutex();
 		sem_init_done = true;
 	}
 
@@ -869,21 +922,14 @@ void comm_can_start(int pin_tx, int pin_rx) {
 		proc_started = true;
 	}
 
-	update_baud(backup.config.can_baud_rate);
-
-	g_config.tx_queue_len = 20;
-	g_config.rx_queue_len = 20;
-	g_config.tx_io        = pin_tx;
-	g_config.rx_io        = pin_rx;
-
-	twai_driver_install(&g_config, &t_config, &f_config);
-	twai_start();
+	if (!can_node_start(&can_state, pin_tx, pin_rx, baudrate_to_bitrate(backup.config.can_baud_rate))) {
+		return;
+	}
 
 	stop_threads = false;
 	status_running = true;
 
 	xTaskCreatePinnedToCore(status_task, "can_status", 1024, NULL, 7, NULL, tskNO_AFFINITY);
-	start_rx_thd();
 
 	init_done = true;
 }
@@ -893,22 +939,23 @@ void comm_can_stop(void) {
 		return;
 	}
 
-	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	xSemaphoreTake(can_state.send_mutex, portMAX_DELAY);
 	init_done = false;
-	xSemaphoreGive(send_mutex);
+	xSemaphoreGive(can_state.send_mutex);
 
 	stop_threads = true;
 	xSemaphoreGive(status_sem);
-	while (status_running || rx_running) {
+	while (status_running) {
 		vTaskDelay(2);
 	}
 
-	twai_stop();
-	twai_driver_uninstall();
+	xSemaphoreTake(can_state.send_mutex, portMAX_DELAY);
+	can_node_stop(&can_state);
+	xSemaphoreGive(can_state.send_mutex);
 }
 
 int comm_can_get_rx_recovery_cnt(void) {
-	return rx_recovery_cnt;
+	return can_state.recovery_cnt;
 }
 
 void comm_can_use_vesc_decoder(bool use_vesc_dec) {
@@ -936,117 +983,26 @@ void comm_can_update_baudrate(int delay_msec) {
 	if (!init_done) {
 		return;
 	}
-
-	xSemaphoreTake(send_mutex, portMAX_DELAY);
-	stop_rx_thd();
-
-	twai_stop();
-	twai_driver_uninstall();
-
 	if (delay_msec > 0) {
-		vTaskDelay(delay_msec / portTICK_PERIOD_MS);
+		vTaskDelay(pdMS_TO_TICKS(delay_msec));
 	}
-
-	update_baud(backup.config.can_baud_rate);
-	twai_driver_install(&g_config, &t_config, &f_config);
-	twai_start();
-
-	start_rx_thd();
-	xSemaphoreGive(send_mutex);
+	init_done = can_node_start(
+		&can_state, can_state.pin_tx, can_state.pin_rx, baudrate_to_bitrate(backup.config.can_baud_rate));
 }
 
 void comm_can_change_pins(int tx, int rx) {
-	if (!init_done) {
+	if (!init_done || (can_state.pin_tx == tx && can_state.pin_rx == rx)) {
 		return;
 	}
-
-	if (g_config.tx_io == tx && g_config.rx_io == rx) {
-		return;
-	}
-
-	xSemaphoreTake(send_mutex, portMAX_DELAY);
-	stop_rx_thd();
-
-	twai_stop();
-
-	esp_rom_gpio_connect_out_signal(g_config.tx_io, SIG_GPIO_OUT_IDX, false, false);
-	esp_rom_gpio_connect_out_signal(g_config.rx_io, SIG_GPIO_OUT_IDX, false, false);
-
-	gpio_reset_pin(g_config.tx_io);
-	gpio_reset_pin(g_config.rx_io);
-
-	g_config.tx_io = tx;
-	g_config.rx_io = rx;
-
-	gpio_set_pull_mode(tx, GPIO_FLOATING);
-	esp_rom_gpio_connect_out_signal(tx, VESC_TWAI_TX_IDX, false, false);
-	esp_rom_gpio_pad_select_gpio(tx);
-
-	gpio_set_pull_mode(rx, GPIO_FLOATING);
-	esp_rom_gpio_connect_in_signal(rx, VESC_TWAI_RX_IDX, false);
-	esp_rom_gpio_pad_select_gpio(rx);
-	gpio_set_direction(rx, GPIO_MODE_INPUT);
-
-	twai_start();
-
-	start_rx_thd();
-	xSemaphoreGive(send_mutex);
+	init_done = can_node_start(&can_state, tx, rx, baudrate_to_bitrate(backup.config.can_baud_rate));
 }
 
 void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
-	if (!init_done) {
-		return;
-	}
-
-	if (len > 8) {
-		len = 8;
-	}
-
-	twai_message_t tx_msg = {0};
-	tx_msg.extd = 1;
-	tx_msg.identifier = id;
-
-	memcpy(tx_msg.data, data, len);
-	tx_msg.data_length_code = len;
-
-	xSemaphoreTake(send_mutex, portMAX_DELAY);
-
-	if (!init_done) {
-		xSemaphoreGive(send_mutex);
-		return;
-	}
-
-	twai_transmit(&tx_msg, 5);
-
-	xSemaphoreGive(send_mutex);
+	can_transmit(&can_state, id, data, len, true);
 }
 
 void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
-	if (!init_done) {
-		return;
-	}
-
-	if (len > 8) {
-		len = 8;
-	}
-
-	twai_message_t tx_msg = {0};
-	tx_msg.extd = 0;
-	tx_msg.identifier = id;
-
-	memcpy(tx_msg.data, data, len);
-	tx_msg.data_length_code = len;
-
-	xSemaphoreTake(send_mutex, portMAX_DELAY);
-
-	if (!init_done) {
-		xSemaphoreGive(send_mutex);
-		return;
-	}
-
-	twai_transmit(&tx_msg, 5);
-
-	xSemaphoreGive(send_mutex);
+	can_transmit(&can_state, id, data, len, false);
 }
 
 // Set a callback for received standard-ID CAN frames. The callback returns
@@ -1511,147 +1467,24 @@ void comm_can_update_pid_pos_offset(int id, float angle_now, bool store) {
 
 #ifdef CONFIG_IDF_TARGET_ESP32C6
 
-static twai_handle_t can2_handle = NULL;
-static SemaphoreHandle_t can2_send_mutex;
-
-static volatile bool can2_init_done      = false;
-static volatile bool can2_sem_init_done  = false;
-static volatile bool can2_stop_threads   = false;
-static volatile bool can2_stop_rx        = false;
-static volatile bool can2_rx_running     = false;
-
-static twai_timing_config_t can2_t_config = TWAI_TIMING_CONFIG_500KBITS();
-
-static twai_timing_config_t can2_timing_from_kbits(int kbits) {
-	switch (kbits) {
-	case 125:  { twai_timing_config_t t = TWAI_TIMING_CONFIG_125KBITS(); return t; }
-	case 250:  { twai_timing_config_t t = TWAI_TIMING_CONFIG_250KBITS(); return t; }
-	case 1000: { twai_timing_config_t t = TWAI_TIMING_CONFIG_1MBITS();   return t; }
-	case 10:   { twai_timing_config_t t = TWAI_TIMING_CONFIG_10KBITS();  return t; }
-	case 20:   { twai_timing_config_t t = TWAI_TIMING_CONFIG_20KBITS();  return t; }
-	case 50:   { twai_timing_config_t t = TWAI_TIMING_CONFIG_50KBITS();  return t; }
-	case 100:  { twai_timing_config_t t = TWAI_TIMING_CONFIG_100KBITS(); return t; }
-	default:   { twai_timing_config_t t = TWAI_TIMING_CONFIG_500KBITS(); return t; }
-	}
-}
-
-static void can2_rx_task(void *arg) {
-	twai_message_t msg;
-
-	while (!can2_stop_threads && !can2_stop_rx) {
-		esp_err_t res = twai_receive_v2(can2_handle, &msg, pdMS_TO_TICKS(2));
-
-		if (res == ESP_OK) {
-			can2_rx_buf[can2_rx_write] = msg;
-			can2_rx_write++;
-			if (can2_rx_write >= RXBUF_LEN) {
-				can2_rx_write = 0;
-			}
-			xSemaphoreGive(proc_sem);
-		}
-
-		twai_status_info_t st;
-		twai_get_status_info_v2(can2_handle, &st);
-		if (st.state == TWAI_STATE_BUS_OFF || st.state == TWAI_STATE_RECOVERING) {
-			twai_initiate_recovery_v2(can2_handle);
-
-			int timeout = 1500;
-			while ((st.state == TWAI_STATE_BUS_OFF || st.state == TWAI_STATE_RECOVERING)
-				   && !can2_stop_threads && !can2_stop_rx && timeout > 0) {
-				vTaskDelay(1);
-				twai_get_status_info_v2(can2_handle, &st);
-				timeout--;
-			}
-			if (!can2_stop_threads && !can2_stop_rx) {
-				twai_start_v2(can2_handle);
-			}
-			can2_recovery_cnt++;
-		}
-	}
-
-	can2_rx_running = false;
-	vTaskDelete(NULL);
-}
-
-static void can2_start_rx_thd(void) {
-	if (can2_rx_running) return;
-	can2_stop_rx    = false;
-	can2_rx_running = true;
-	xTaskCreatePinnedToCore(can2_rx_task, "can2_rx", 1024, NULL, configMAX_PRIORITIES - 1, NULL, tskNO_AFFINITY);
-}
-
-static void can2_stop_rx_thd(void) {
-	can2_stop_rx = true;
-	while (can2_rx_running) {
-		vTaskDelay(1);
-	}
-}
-
 void comm_can2_start(int pin_tx, int pin_rx, int baud_kbits) {
-	if (can2_init_done) {
-		xSemaphoreTake(can2_send_mutex, portMAX_DELAY);
-		can2_init_done = false;
-		xSemaphoreGive(can2_send_mutex);
-
-		can2_stop_threads = true;
-		can2_stop_rx_thd();
-
-		twai_stop_v2(can2_handle);
-		twai_driver_uninstall_v2(can2_handle);
-		can2_handle       = NULL;
-		can2_stop_threads = false;
-	}
-
-	if (!can2_sem_init_done) {
-		can2_send_mutex    = xSemaphoreCreateMutex();
-		can2_sem_init_done = true;
-	}
-
 	if (!proc_started) {
 		proc_sem = xSemaphoreCreateBinary();
-
-		// The process-task is left running after the first init in case comm_can_stop
-		// is called from it.
 		xTaskCreatePinnedToCore(process_task, "can_proc", 3072, NULL, 8, NULL, tskNO_AFFINITY);
 		proc_started = true;
 	}
-
-	can2_t_config = can2_timing_from_kbits(baud_kbits);
-
-	const twai_filter_config_t  f_cfg = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-	twai_general_config_t       g_cfg = TWAI_GENERAL_CONFIG_DEFAULT_V2(1, pin_tx, pin_rx, TWAI_MODE_NORMAL);
-	g_cfg.tx_queue_len = 20;
-	g_cfg.rx_queue_len = 20;
-
-	if (twai_driver_install_v2(&g_cfg, &can2_t_config, &f_cfg, &can2_handle) != ESP_OK) {
-		return;
-	}
-
-	if (twai_start_v2(can2_handle) != ESP_OK) {
-		twai_driver_uninstall_v2(can2_handle);
-		can2_handle = NULL;
-		return;
-	}
-
-	can2_stop_threads = false;
-	can2_init_done = true;
-	can2_start_rx_thd();
+	can2_init_done = can_node_start(
+		&can2_state, pin_tx, pin_rx, baudrate_to_bitrate(comm_can_kbits_to_baud(baud_kbits)));
 }
 
 void comm_can2_stop(void) {
-	if (!can2_init_done) return;
-
-	xSemaphoreTake(can2_send_mutex, portMAX_DELAY);
+	if (!can2_init_done) {
+		return;
+	}
+	xSemaphoreTake(can2_state.send_mutex, portMAX_DELAY);
 	can2_init_done = false;
-	xSemaphoreGive(can2_send_mutex);
-
-	can2_stop_threads = true;
-	can2_stop_rx_thd();
-
-	twai_stop_v2(can2_handle);
-	twai_driver_uninstall_v2(can2_handle);
-	can2_handle       = NULL;
-	can2_stop_threads = false;
+	can_node_stop(&can2_state);
+	xSemaphoreGive(can2_state.send_mutex);
 }
 
 void comm_can2_use_vesc_decoder(bool use) {
@@ -1663,61 +1496,15 @@ bool comm_can2_is_running(void) {
 }
 
 int comm_can2_get_rx_recovery_cnt(void) {
-	return can2_recovery_cnt;
+	return can2_state.recovery_cnt;
 }
 
 void comm_can2_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
-	if (!can2_init_done) {
-		return;
-	}
-
-	if (len > 8) {
-		len = 8;
-	}
-
-	twai_message_t tx = {0};
-	tx.extd = 1;
-	tx.identifier = id;
-	tx.data_length_code = len;
-	memcpy(tx.data, data, len);
-
-	xSemaphoreTake(can2_send_mutex, portMAX_DELAY);
-
-	if (!can2_init_done) {
-		xSemaphoreGive(can2_send_mutex);
-		return;
-	}
-
-	twai_transmit_v2(can2_handle, &tx, pdMS_TO_TICKS(5));
-
-	xSemaphoreGive(can2_send_mutex);
+	can_transmit(&can2_state, id, data, len, true);
 }
 
 void comm_can2_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
-	if (!can2_init_done) {
-		return;
-	}
-
-	if (len > 8) {
-		len = 8;
-	}
-
-	twai_message_t tx = {0};
-	tx.extd = 0;
-	tx.identifier = id;
-	tx.data_length_code = len;
-	memcpy(tx.data, data, len);
-
-	xSemaphoreTake(can2_send_mutex, portMAX_DELAY);
-
-	if (!can2_init_done) {
-		xSemaphoreGive(can2_send_mutex);
-		return;
-	}
-
-	twai_transmit_v2(can2_handle, &tx, pdMS_TO_TICKS(5));
-
-	xSemaphoreGive(can2_send_mutex);
+	can_transmit(&can2_state, id, data, len, false);
 }
 
 void comm_can2_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len, uint8_t send_type) {

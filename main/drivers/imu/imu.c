@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#include "hwi2c.h"
 #include "imu.h"
 #include "ahrs.h"
 #include "commands.h"
@@ -106,12 +107,12 @@ bool imu_i2c_tx_rx(uint8_t addr,
 	esp_err_t res;
 	if (read_size > 0 && read_buffer != NULL) {
 		if (write_size > 0 && write_buffer != NULL) {
-			res = i2c_master_write_read_device(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
+			res = hwi2c_tx_rx(0, addr, write_buffer, write_size, read_buffer, read_size, 2000);
 		} else {
-			res = i2c_master_read_from_device(0, addr, read_buffer, read_size, 2000);
+			res = hwi2c_tx_rx(0, addr, NULL, 0, read_buffer, read_size, 2000);
 		}
 	} else {
-		res = i2c_master_write_to_device(0, addr, write_buffer, write_size, 2000);
+		res = hwi2c_tx_rx(0, addr, write_buffer, write_size, NULL, 0, 2000);
 	}
 
 	if (m_i2c_mutex != 0) {

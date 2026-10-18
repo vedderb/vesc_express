@@ -20,7 +20,8 @@
 #ifndef IMU_IMU_H_
 #define IMU_IMU_H_
 
-#include "driver/i2c.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 typedef enum {
 	IMU_TYPE_OFF = 0,

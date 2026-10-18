@@ -32,6 +32,7 @@ int32_t vbms16_confparser_serialize_main_config_t(uint8_t *buffer, const main_co
 	strcpy((char*)buffer + ind, conf->tcp_hub_pass);
 	ind += strlen(conf->tcp_hub_pass) + 1;
 	buffer[ind++] = conf->ble_mode;
+	buffer[ind++] = conf->ble_mode_lbm;
 	strcpy((char*)buffer + ind, conf->ble_name);
 	ind += strlen(conf->ble_name) + 1;
 	buffer_append_uint32(buffer, conf->ble_pin, &ind);
@@ -105,6 +106,7 @@ bool vbms16_confparser_deserialize_main_config_t(const uint8_t *buffer, main_con
 	strcpy(conf->tcp_hub_pass, (char*)buffer + ind);
 	ind += strlen(conf->tcp_hub_pass) + 1;
 	conf->ble_mode = buffer[ind++];
+	conf->ble_mode_lbm = buffer[ind++];
 	strcpy(conf->ble_name, (char*)buffer + ind);
 	ind += strlen(conf->ble_name) + 1;
 	conf->ble_pin = buffer_get_uint32(buffer, &ind);
@@ -164,6 +166,7 @@ void vbms16_confparser_set_defaults_main_config_t(main_config_t *conf) {
 	strcpy(conf->tcp_hub_id, CONF_TCP_HUB_ID);
 	strcpy(conf->tcp_hub_pass, CONF_TCP_HUB_PASS);
 	conf->ble_mode = CONF_BLE_MODE;
+	conf->ble_mode_lbm = CONF_BLE_MODE_LBM;
 	strcpy(conf->ble_name, CONF_BLE_NAME);
 	conf->ble_pin = CONF_BLE_PIN;
 	conf->ble_service_capacity = CONF_BLE_SERVICE_CAPACITY;

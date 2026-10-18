@@ -103,7 +103,6 @@ void app_main(void) {
 			backup.can_baud_rate = CONF_CAN_BAUD_RATE;
 			backup.can_baud_rate_init_flag = VAR_INIT_CODE;
 		}
-
 		if (backup.config_init_flag != MAIN_CONFIG_T_SIGNATURE) {
 #ifdef OVR_CONF_SET_DEFAULTS
 			OVR_CONF_SET_DEFAULTS((main_config_t*)(&backup.config));
@@ -117,6 +116,14 @@ void app_main(void) {
 
 		nvs_close(my_handle);
 	}
+
+#if !(CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED)
+	backup.config.wifi_mode = WIFI_MODE_DISABLED;
+#endif
+#if !CONFIG_BT_NIMBLE_ENABLED
+	backup.config.ble_mode = BLE_MODE_DISABLED;
+	backup.config.ble_mode_lbm = BLE_MODE_LBM_DISABLED;
+#endif
 
 	adc_init();
 
@@ -136,20 +143,11 @@ void app_main(void) {
 
 	vTaskDelay(1);
 
-	#if CONFIG_BT_BLUEDROID_ENABLED
-	switch (backup.config.ble_mode) {
-		case BLE_MODE_DISABLED: {
-			break;
-		}
-		case BLE_MODE_OPEN:
-		case BLE_MODE_ENCRYPTED: {
-			comm_ble_init();
-			break;
-		}
-		case BLE_MODE_SCRIPTING: {
-			custom_ble_init();
-			break;
-		}
+	#if CONFIG_BT_NIMBLE_ENABLED
+	if (backup.config.ble_mode != BLE_MODE_DISABLED ||
+		backup.config.ble_mode_lbm != BLE_MODE_LBM_DISABLED) {
+		custom_ble_init();
+		comm_ble_init();
 	}
 	#endif
 

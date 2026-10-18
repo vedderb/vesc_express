@@ -135,10 +135,12 @@ static inline uint16_t fetch_rgb565(image_buffer_t *img, uint32_t idx, color_t *
 
 static inline int get_render_chunk_lines(void) {
     if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
-            backup.config.ble_mode == BLE_MODE_DISABLED) {
+            (backup.config.ble_mode == BLE_MODE_DISABLED &&
+             backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED)) {
         return CHUNK_LINES_HIGH;
     } else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
-            backup.config.ble_mode == BLE_MODE_DISABLED) {
+            (backup.config.ble_mode == BLE_MODE_DISABLED &&
+             backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED)) {
         return CHUNK_LINES_HIGH;
     }
 

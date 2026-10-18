@@ -142,8 +142,8 @@ def get_hw_configs():
     configs.sort(key=lambda x: (x['target'], x['name']))
     return configs
 
-def build_target(config, output_dir, prev_target=None, idx=0, total=0):
-    build_dir = "build"
+def build_target(config, output_dir, idx=0, total=0):
+    build_dir = os.path.join("build", config['target'], re.sub(r'[^A-Za-z0-9_-]', '_', config['name']))
     shell = True if os.name == 'nt' else False
 
     print_status(f"\n========================================")
@@ -152,25 +152,14 @@ def build_target(config, output_dir, prev_target=None, idx=0, total=0):
     print_status(f"Dir: {build_dir}")
     print_status(f"========================================")
 
-    cmake_cache = os.path.join(build_dir, "CMakeCache.txt")
-    is_fresh = not os.path.exists(cmake_cache)
+    cmd_base = [
+        "idf.py", "-B", build_dir,
+        f"-DIDF_TARGET={config['target'].split('_')[0]}",
+        f"-DHW_NAME={config['name']}",
+        f"-DSDKCONFIG={os.path.abspath(os.path.join(build_dir, 'sdkconfig'))}"
+    ]
 
-    # 1. Handle target configuration
-    # - Fresh build: pass IDF_TARGET as cmake var (avoids set-target's internal fullclean on empty dir)
-    # - Existing build, target changed: use set-target (which handles fullclean properly)
-    # - Existing build, same target: skip, go straight to build
-    if is_fresh:
-        cmd_base = ["idf.py", "-B", build_dir, f"-DIDF_TARGET={config['target'][0:7]}", f"-DHW_NAME={config['name']}"]
-    else:
-        cmd_base = ["idf.py", "-B", build_dir, f"-DHW_NAME={config['name']}"]
-        if prev_target != config['target']:
-            set_status(f"{idx}/{total} | {config['name']} ({config['target']}) | Setting target")
-            print_status(f"--> Chip target changed ({prev_target} -> {config['target']}), setting target...")
-            res = run_streamed(cmd_base + ["set-target", config['target'][0:7]], shell=shell)
-            if res.returncode != 0:
-                return False
-
-    # 2. Build
+    # Build
     set_status(f"{idx}/{total} | {config['name']} ({config['target']}) | Building")
     print_status("--> Building...")
     res = run_streamed(cmd_base + ["build"], shell=shell)
@@ -245,14 +234,13 @@ REPLACEABLE_STRING
 
     success_count = 0
     failed_configs = []
-    prev_target = None
 
     init_status()
 
     try:
         for idx, config in enumerate(configs, start=1):
             set_status(f"{idx}/{total} | {config['name']} ({config['target']}) | Starting")
-            if build_target(config, output_dir, prev_target, idx, total):
+            if build_target(config, output_dir, idx, total):
                 success_count += 1
 
                 target_res_string = res_firmwares_string.replace("TARGET_DESTINATION_DIRECTORY",
@@ -267,7 +255,6 @@ REPLACEABLE_STRING
             else:
                 failed_configs.append(config['name'])
 
-            prev_target = config['target']
     except KeyboardInterrupt:
         clear_status()
         print_status("\nBuild interrupted by user.", Colors.WARNING)

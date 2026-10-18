@@ -21,13 +21,10 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
+#include "hw.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
 #include "driver/gpio.h"
-#include "esp_wifi.h"
-#include "esp_bt.h"
-#include "esp_bt_main.h"
 #include "esp_sleep.h"
 
 #include "lispif.h"

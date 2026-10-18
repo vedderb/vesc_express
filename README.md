@@ -7,17 +7,17 @@ The is the codebase for the VESC Express, which is a WiFi and Bluetooth-enabled 
 Instructions for how to set up the toolchain can be found here:
 [https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/linux-macos-setup.html)
 
-### Get Release 5.5.4
+### Get Release 6.1.0
 
 The instructions linked above will install the master branch of ESP-IDF. To install the stable release you can navigate to the installation directory and use the following commands:
 
 ```bash
-git clone -b v5.5.4 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.5.4
-cd esp-idf-v5.5.4/
-./install.sh esp32c3 esp32c6 esp32s3
+git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git esp-idf-v6.1
+cd esp-idf-v6.1/
+./install.sh esp32c3 esp32c6 esp32s3 esp32p4
 ```
 
-At the moment development is done using the stable 5.5.4-release. Note that different IDF-versions are very likely to cause compatibility issues, so it is strongly recommended to use version 5.5.4.
+Development uses ESP-IDF 6.1.0. Note that different IDF-versions are very likely to cause compatibility issues, so it is strongly recommended to use version 6.1.0.
 
 ## Building
 
@@ -26,11 +26,13 @@ Set the target chip/architecture with
 idf.py set-target <target> 
 ```
 
-where target is esp32c3, esp32c6 or esp32s3. You will need to run a fullclean or remove the build directory when changing targets.
+where target is esp32c3, esp32c6, esp32s3 or esp32p4. You will need to run a fullclean or remove the build directory when changing targets.
 
-Each normal build target uses its own shared 4 MB base file `sdkconfig.defaults.<target>`.
+Each hardware target uses its matching `sdkconfig.defaults.<hw_target>` profile.
 
-Boards that need non-default flash or PSRAM settings should instead provide their own full `sdkconfig.defaults.<hw_file>` file next to the shared target configs in the repository root.
+Boards that need non-default flash or PSRAM settings should instead provide their own minimal `sdkconfig.defaults.<hw_target>` file next to the shared target configs in the repository root.
+
+The defaults contain only settings exported by `idf.py save-defconfig`. After configuring the selected hardware, run this command and copy the generated `sdkconfig.defaults` to its `sdkconfig.defaults.<hw_target>` profile.
 
 Once the toolchain is set up in the current path, the project can be built with
 
@@ -46,7 +48,7 @@ All targets can be built with
 python build_all.py
 ```
 
-That will create all required firmware files under the build_output directory, with hardware names as child directories. All target switching is handled automatically with the build_all command.
+That will create all required firmware files under the build_output directory, with hardware names as child directories. Each hardware configuration uses a separate build directory and sdkconfig.
 
 ### Custom Hardware Targets
 

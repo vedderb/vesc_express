@@ -18,676 +18,236 @@
 	*/
 
 #include "comm_ble.h"
-
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
-#include "freertos/task.h"
-
-#if CONFIG_BT_BLUEDROID_ENABLED
-#include "esp_bt_defs.h"
-#include "esp_bt_device.h"
-#include "esp_bt_main.h"
-#include "esp_gap_ble_api.h"
-#include "esp_gatts_api.h"
-#include "esp_log.h"
-#include "esp_mac.h"
-#include "esp_system.h"
-#if CONFIG_IDF_TARGET_ESP32P4
-#include "eh_host_feat_bt_mcu.h"
-#include "esp_bluedroid_hci.h"
-#include "esp_hosted.h"
-#else
-#include "esp_bt.h"
-#endif
-#endif
-
 #include "packet.h"
 #include "commands.h"
 #include "conf_general.h"
 #include "main.h"
 
-#if CONFIG_BT_BLUEDROID_ENABLED
+#if CONFIG_BT_NIMBLE_ENABLED
+#include "host/ble_hs_mbuf.h"
+#include "ble/custom_ble.h"
+#include "freertos/semphr.h"
+#include "freertos/queue.h"
 
-
-#define GATTS_CHAR_VAL_LEN_MAX 255
-#define DEFAULT_BLE_MTU 20 // 23 for default mtu and 3 bytes for ATT headers
-#define BLE_CHAR_COUNT 2
-#define BLE_SERVICE_HANDLE_NUM (1 + (3 * BLE_CHAR_COUNT))
-#define ADV_CFG_FLAG (1 << 0)
-#define SCAN_RSP_CFG_FLAG (1 << 1)
-#define ESP_PWR_LVL ESP_PWR_LVL_P18
-
-static bool is_connected = false;
-static uint16_t ble_current_mtu = DEFAULT_BLE_MTU;
-
-static uint16_t notify_conn_id = 0;
-static esp_gatt_if_t notify_gatts_if = ESP_GATT_IF_NONE;
-
-static uint8_t adv_config_done = 0;
-
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "services/gap/ble_svc_gap.h"
+#include "services/gatt/ble_svc_gatt.h"
+#include "host/util/util.h"
+#include "store/config/ble_store_config.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #if CONFIG_IDF_TARGET_ESP32P4
-static esp_bluedroid_hci_driver_callbacks_t hosted_hci_callbacks;
-static eh_host_bt_mcu_hci_tx_fn_t hosted_hci_tx;
-
-static void hosted_hci_rx(const uint8_t *data, uint16_t len, void *arg) {
-	(void)arg;
-	if (hosted_hci_callbacks.notify_host_recv) {
-		hosted_hci_callbacks.notify_host_recv((uint8_t *)data, len);
-	}
-}
-
-static void hosted_hci_send(uint8_t *data, uint16_t len) {
-	if (data && len && hosted_hci_tx) {
-		hosted_hci_tx(data, len);
-	}
-}
-
-static bool hosted_hci_can_send(void) {
-	return true;
-}
-
-static esp_err_t hosted_hci_register(
-		const esp_bluedroid_hci_driver_callbacks_t *callbacks) {
-	if (!callbacks) {
-		memset(&hosted_hci_callbacks, 0, sizeof(hosted_hci_callbacks));
-		eh_host_bt_mcu_hci_unregister();
-		hosted_hci_tx = NULL;
-		return ESP_OK;
-	}
-	hosted_hci_callbacks = *callbacks;
-	hosted_hci_tx = eh_host_bt_mcu_hci_register(hosted_hci_rx, NULL);
-	return hosted_hci_tx ? ESP_OK : ESP_FAIL;
-}
-
-static esp_err_t hosted_ble_init(void) {
-	esp_err_t res = esp_hosted_connect_to_slave();
-	if (res != ESP_OK) {
-		return res;
-	}
-	res = esp_hosted_bt_controller_init();
-	if (res != ESP_OK) {
-		return res;
-	}
-	res = esp_hosted_bt_controller_enable();
-	if (res != ESP_OK) {
-		return res;
-	}
-
-	static const esp_bluedroid_hci_driver_operations_t hosted_hci = {
-		.send = hosted_hci_send,
-		.check_send_available = hosted_hci_can_send,
-		.register_host_callback = hosted_hci_register,
-	};
-	return esp_bluedroid_attach_hci_driver(&hosted_hci);
-}
+#include "esp_hosted.h"
+#include "esp_hosted_bt_host_stack.h"
+#endif
+#if !CONFIG_IDF_TARGET_ESP32P4
+#include "esp_bt.h"
 #endif
 
-static uint8_t char1_str[GATTS_CHAR_VAL_LEN_MAX] = {0};
-static uint8_t char2_str[GATTS_CHAR_VAL_LEN_MAX] = {0};
-
-static esp_attr_value_t gatts_char1_val = {
-	.attr_max_len = GATTS_CHAR_VAL_LEN_MAX,
-	.attr_len = sizeof(char1_str),
-	.attr_value = char1_str,
-};
-
-static esp_attr_value_t gatts_char2_val = {
-	.attr_max_len = GATTS_CHAR_VAL_LEN_MAX,
-	.attr_len = sizeof(char2_str),
-	.attr_value = char2_str,
-};
+#define GATTS_CHAR_VAL_LEN_MAX 255
+#define DEFAULT_BLE_MTU        20
 
 typedef struct {
-	uint16_t app_id;
-	uint16_t conn_id;
-	uint16_t gatts_if;
-	esp_gatt_perm_t perm;
+	unsigned int len;
+	unsigned int pos;
+	uint8_t data[];
+} ble_tx_packet_t;
 
-	uint16_t char_handle;
-	esp_gatt_char_prop_t property;
-	esp_bt_uuid_t char_uuid;
-
-	uint16_t desc_handle;
-	esp_bt_uuid_t desc_uuid;
-
-	uint16_t service_handle;
-	esp_gatt_srvc_id_t service_id;
-} gatts_profile_instance_t;
-
-typedef struct {
-	uint16_t char_handle;
-	esp_bt_uuid_t char_uuid;
-	esp_gatt_perm_t char_perm;
-	esp_gatt_char_prop_t char_property;
-	esp_attr_value_t *char_val;
-	esp_attr_control_t *char_control;
-	esp_gatts_cb_t char_read_callback;
-	esp_gatts_cb_t char_write_callback;
-
-	uint16_t desc_handle;
-	esp_bt_uuid_t desc_uuid;
-	esp_gatt_perm_t desc_perm;
-	esp_attr_value_t *desc_val;
-	esp_attr_control_t *desc_control;
-	esp_gatts_cb_t desc_read_callback;
-	esp_gatts_cb_t desc_write_callback;
-} gatts_characteristic_instance_t;
-
-static uint8_t ble_service_uuid128[ESP_UUID_LEN_128] = {
-	0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
-	0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E,
-};
-
-static uint32_t ble_add_char_position;
-
-static esp_ble_adv_data_t ble_adv_data = {
-	.set_scan_rsp = false,
-	.include_name = true,
-	.include_txpower = false,
-	.min_interval = 0x06,
-	.max_interval = 0x30,
-	.appearance = 0x00,
-	.manufacturer_len = 0,
-	.p_manufacturer_data = NULL,
-	.service_data_len = 0,
-	.p_service_data = NULL,
-	.service_uuid_len = ESP_UUID_LEN_128,
-	.p_service_uuid = ble_service_uuid128,
-	.flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
-};
-
-static esp_ble_adv_data_t ble_rsp_data = {
-	.set_scan_rsp = true,
-	.include_name = true,
-	.include_txpower = true,
-	.min_interval = 0x06,
-	.max_interval = 0x30,
-	.appearance = 0x00,
-	.manufacturer_len = 0,
-	.p_manufacturer_data = NULL,
-	.service_data_len = 0,
-	.p_service_data = NULL,
-	.service_uuid_len = ESP_UUID_LEN_128,
-	.p_service_uuid = ble_service_uuid128,
-	.flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
-};
-
-static esp_ble_adv_params_t ble_adv_params = {
-	.adv_int_min = 0x20,
-	.adv_int_max = 0x40,
-	.adv_type = ADV_TYPE_IND,
-	.own_addr_type = BLE_ADDR_TYPE_PUBLIC,
-	.channel_map = ADV_CHNL_ALL,
-	.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
-};
-
-static gatts_profile_instance_t gatts_profile = {
-	.gatts_if = ESP_GATT_IF_NONE,
-};
-
+static QueueHandle_t send_queue;
+static struct ble_npl_callout send_callout;
+static ble_tx_packet_t *send_current;
+static SemaphoreHandle_t send_mutex;
+static bool is_connected;
+static bool notify_enabled;
+static uint16_t ble_current_mtu = DEFAULT_BLE_MTU;
+static uint16_t notify_conn_id = BLE_HS_CONN_HANDLE_NONE;
+static uint16_t char2_handle;
 static PACKET_STATE_t *packet_state;
+static uint8_t *char1_str;
+static uint8_t *char2_str;
+static uint16_t char2_len = GATTS_CHAR_VAL_LEN_MAX;
 
-static void char1_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
-static void char1_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
-static void descr1_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
-static void descr1_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
+static const ble_uuid128_t ble_service_uuid128 = BLE_UUID128_INIT(
+	0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E);
+static const ble_uuid128_t char1_uuid = BLE_UUID128_INIT(
+	0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E);
+static const ble_uuid128_t char2_uuid = BLE_UUID128_INIT(
+	0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E);
 
-static void char2_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
-static void char2_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
-static void descr2_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
-static void descr2_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-);
+// NimBLE's store initialization is exported without a public declaration.
+void ble_store_config_init(void);
 
-static gatts_characteristic_instance_t ble_chars[BLE_CHAR_COUNT] = {
-	{
-		.char_uuid.len = ESP_UUID_LEN_128, // RX
-		.char_uuid.uuid.uuid128 =
-			{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3,
-			 0xB5, 0x02, 0x00, 0x40, 0x6E},
-		.char_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE),
-		.char_property =
-			ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_WRITE_NR,
-		.char_val = &gatts_char1_val,
-		.char_control = NULL,
-		.char_handle = 0,
-		.char_read_callback = char1_read_handler,
-		.char_write_callback = char1_write_handler,
+static volatile bool has_synced;
+static uint8_t own_addr_type;
+static ble_event_cb_t event_cb;
+static TaskHandle_t host_task;
 
-		.desc_uuid.len = ESP_UUID_LEN_16,
-		.desc_uuid.uuid.uuid16 = ESP_GATT_UUID_CHAR_CLIENT_CONFIG,
-		.desc_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE),
-		.desc_val = NULL,
-		.desc_control = NULL,
-		.desc_handle = 0,
-		.desc_read_callback = descr1_read_handler,
-		.desc_write_callback = descr1_write_handler,
-	},
-	{
-		.char_uuid.len = ESP_UUID_LEN_128, // TX
-		.char_uuid.uuid.uuid128 =
-			{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3,
-			 0xB5, 0x03, 0x00, 0x40, 0x6E},
-		.char_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE),
-		.char_property =
-			ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY,
-		.char_val = &gatts_char2_val,
-		.char_control = NULL,
-		.char_handle = 0,
-		.char_read_callback = char2_read_handler,
-		.char_write_callback = char2_write_handler,
+typedef struct {
+	struct ble_npl_event event;
+	SemaphoreHandle_t done;
+	int (*callback)(void *arg);
+	void *arg;
+	int result;
+} ble_call_t;
 
-		.desc_uuid.len = ESP_UUID_LEN_16,
-		.desc_uuid.uuid.uuid16 = ESP_GATT_UUID_CHAR_CLIENT_CONFIG,
-		.desc_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE),
-		.desc_val = NULL,
-		.desc_control = NULL,
-		.desc_handle = 0,
-		.desc_read_callback = descr2_read_handler,
-		.desc_write_callback = descr2_write_handler,
+static int char1_write_handler(uint16_t conn_id, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+	(void)conn_id;
+	(void)attr_handle;
+	(void)arg;
+	uint16_t len;
+	if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+		return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
 	}
-};
+	if (ble_hs_mbuf_to_flat(ctxt->om, char1_str, GATTS_CHAR_VAL_LEN_MAX, &len) != 0) {
+		return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+	}
+	for (int i = 0; i < len; i++) {
+		packet_process_byte(char1_str[i], packet_state);
+	}
+	return 0;
+}
 
-static esp_gatt_rsp_t create_rsp(
-	esp_attr_value_t *attr, esp_ble_gatts_cb_param_t *param
-) {
-	esp_gatt_rsp_t rsp;
-	memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
-	rsp.attr_value.handle = param->read.handle;
-	if (attr != NULL) {
-		rsp.attr_value.len = attr->attr_len;
-		for (uint32_t i = 0; i < attr->attr_len && i < attr->attr_max_len;
-			 i++) {
-			rsp.attr_value.value[i] = attr->attr_value[i];
+static int char2_read_handler(uint16_t conn_id, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+	(void)conn_id;
+	(void)attr_handle;
+	(void)arg;
+	return os_mbuf_append(ctxt->om, char2_str, char2_len) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+}
+
+static void start_advertising(void) {
+	if (backup.config.ble_mode == BLE_MODE_DISABLED || is_connected || custom_ble_started()) {
+		return;
+	}
+	uint8_t adv_data[21] = { 2, BLE_HS_ADV_TYPE_FLAGS, BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP, 17,
+		BLE_HS_ADV_TYPE_COMP_UUIDS128 };
+	memcpy(adv_data + 5, ble_service_uuid128.value, 16);
+	uint8_t scan_rsp_data[31];
+	size_t len = strnlen((char *)backup.config.ble_name, sizeof(backup.config.ble_name));
+	scan_rsp_data[0] = len + 1;
+	scan_rsp_data[1] = BLE_HS_ADV_TYPE_COMP_NAME;
+	memcpy(scan_rsp_data + 2, (const char *)backup.config.ble_name, len);
+	struct ble_gap_adv_params ble_adv_params = {
+		.conn_mode = BLE_GAP_CONN_MODE_UND,
+		.disc_mode = BLE_GAP_DISC_MODE_GEN,
+		.itvl_min = 0x20,
+		.itvl_max = 0x40,
+	};
+	int res = comm_ble_host_advertise(&ble_adv_params, adv_data, sizeof(adv_data), scan_rsp_data, len + 2);
+	if (res != 0) {
+		commands_printf("BLE advertising failed: %d", res);
+	}
+}
+
+static void send_queued_packets(struct ble_npl_event *event) {
+	(void)event;
+	if (!is_connected || !notify_enabled || char2_handle == 0) {
+		free(send_current);
+		send_current = NULL;
+		ble_tx_packet_t *packet;
+		while (xQueueReceive(send_queue, &packet, 0) == pdTRUE) {
+			free(packet);
 		}
+		return;
 	}
-
-	return rsp;
-}
-
-static void char1_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	esp_gatt_rsp_t rsp = create_rsp(ble_chars[0].char_val, param);
-	esp_ble_gatts_send_response(
-		gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp
-	);
-}
-
-static void char2_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	esp_gatt_rsp_t rsp = create_rsp(ble_chars[1].char_val, param);
-	esp_ble_gatts_send_response(
-		gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp
-	);
-}
-
-static void descr1_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	esp_gatt_rsp_t rsp = create_rsp(ble_chars[0].desc_val, param);
-	esp_ble_gatts_send_response(
-		gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp
-	);
-}
-
-static void descr2_read_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	esp_gatt_rsp_t rsp = create_rsp(ble_chars[1].desc_val, param);
-	esp_ble_gatts_send_response(
-		gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp
-	);
-}
-
-static void write_attr(
-	esp_attr_value_t *attr, esp_ble_gatts_cb_param_t *param
-) {
-	if (attr != NULL) {
-		attr->attr_len = param->write.len;
-		for (uint32_t i = 0; i < param->write.len; i++) {
-			attr->attr_value[i] = param->write.value[i];
-		}
-	}
-}
-
-static void char1_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	write_attr(ble_chars[0].char_val, param);
-
-	if (ble_chars[0].char_val != NULL) {
-		for (int i = 0; i < param->write.len; ++i) {
-			packet_process_byte(param->write.value[i], packet_state);
-		}
-	}
-
-	notify_gatts_if = gatts_if;
-	notify_conn_id = param->write.conn_id;
-
-	if (param->write.need_rsp) {
-		esp_ble_gatts_send_response(
-			gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK,
-			NULL
-		);
-	}
-}
-
-static void char2_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	write_attr(ble_chars[1].char_val, param);
-	esp_ble_gatts_send_response(
-		gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL
-	);
-}
-
-static void descr1_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	write_attr(ble_chars[0].desc_val, param);
-	esp_ble_gatts_send_response(
-		gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL
-	);
-}
-
-static void descr2_write_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	write_attr(ble_chars[1].desc_val, param);
-	esp_ble_gatts_send_response(
-		gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL
-	);
-}
-
-static void gatts_check_callback(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	uint16_t handle = 0;
-	bool read = true;
-
-	switch (event) {
-		case ESP_GATTS_READ_EVT: {
-			read = true;
-			handle = param->read.handle;
-			break;
-		}
-
-		case ESP_GATTS_WRITE_EVT: {
-			read = false;
-			handle = param->write.handle;
-			break;
-		}
-
-		default:
-			break;
-	}
-
-	for (uint32_t i = 0; i < BLE_CHAR_COUNT; i++) {
-		if (ble_chars[i].char_handle == handle) {
-			if (read) {
-				if (ble_chars[i].char_read_callback != NULL) {
-					ble_chars[i].char_read_callback(event, gatts_if, param);
-				}
-			} else {
-				if (ble_chars[i].char_write_callback != NULL) {
-					ble_chars[i].char_write_callback(event, gatts_if, param);
-				}
-			}
-			break;
-		}
-
-		if (ble_chars[i].desc_handle == handle) {
-			if (read) {
-				if (ble_chars[i].desc_read_callback != NULL) {
-					ble_chars[i].desc_read_callback(event, gatts_if, param);
-				}
-			} else {
-				if (ble_chars[i].desc_write_callback != NULL) {
-					ble_chars[i].desc_write_callback(event, gatts_if, param);
-				}
-			}
-			break;
-		}
-	}
-}
-
-static void gap_event_handler(
-	esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param
-) {
-	switch (event) {
-		case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-			adv_config_done &= (~ADV_CFG_FLAG);
-			if (adv_config_done == 0) {
-				esp_ble_gap_start_advertising(&ble_adv_params);
-			}
-			break;
-
-		case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
-			adv_config_done &= (~SCAN_RSP_CFG_FLAG);
-			if (adv_config_done == 0) {
-				esp_ble_gap_start_advertising(&ble_adv_params);
-			}
-			break;
-
-		case ESP_GAP_BLE_SEC_REQ_EVT:
-			esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
-			break;
-
-		default:
-			break;
-	}
-}
-
-static void gatts_add_char() {
-	for (uint32_t i = 0; i < BLE_CHAR_COUNT; i++) {
-		if (ble_chars[i].char_handle == 0) {
-			ble_add_char_position = i;
-
-			esp_ble_gatts_add_char(
-				gatts_profile.service_handle, &ble_chars[i].char_uuid,
-				ble_chars[i].char_perm, ble_chars[i].char_property,
-				ble_chars[i].char_val, ble_chars[i].char_control
-			);
-			break;
-		}
-	}
-}
-
-static void gatts_event_handler(
-	esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
-	esp_ble_gatts_cb_param_t *param
-) {
-	if (event == ESP_GATTS_REG_EVT) {
-		if (param->reg.status == ESP_GATT_OK) {
-			gatts_profile.gatts_if = gatts_if;
-		} else {
+	if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
+		struct ble_gap_conn_desc desc;
+		if (ble_gap_conn_find(notify_conn_id, &desc) != 0 || !desc.sec_state.encrypted || !desc.sec_state.authenticated) {
+			ble_npl_callout_reset(&send_callout, 1);
 			return;
 		}
 	}
+	if (!send_current && xQueueReceive(send_queue, &send_current, 0) != pdTRUE) {
+		return;
+	}
+	uint16_t mtu = ble_att_mtu(notify_conn_id);
+	ble_current_mtu = mtu > 3 ? mtu - 3 : DEFAULT_BLE_MTU;
+	if (ble_current_mtu > GATTS_CHAR_VAL_LEN_MAX) {
+		ble_current_mtu = GATTS_CHAR_VAL_LEN_MAX;
+	}
+	unsigned int remaining = send_current->len - send_current->pos;
+	uint16_t length = remaining > ble_current_mtu ? ble_current_mtu : remaining;
+	uint8_t *data = send_current->data + send_current->pos;
+	struct os_mbuf *om = ble_hs_mbuf_from_flat(data, length);
+	if (om && ble_gatts_notify_custom(notify_conn_id, char2_handle, om) == 0) {
+		memcpy(char2_str, data, length);
+		char2_len = length;
+		send_current->pos += length;
+		if (send_current->pos == send_current->len) {
+			free(send_current);
+			send_current = NULL;
+		}
+	}
+	// Yield to the host between fragments. Retry when transport buffers are full.
+	ble_npl_callout_reset(&send_callout, 1);
+}
 
-	switch (event) {
-		case ESP_GATTS_REG_EVT:
-			gatts_profile.service_id.is_primary = true;
-			gatts_profile.service_id.id.inst_id = 0x00;
-			gatts_profile.service_id.id.uuid.len = ESP_UUID_LEN_128;
-
-			for (uint8_t i = 0; i < ESP_UUID_LEN_128; i++) {
-				gatts_profile.service_id.id.uuid.uuid.uuid128[i] =
-					ble_service_uuid128[i];
+static int gap_event_handler(struct ble_gap_event *event, void *arg) {
+	(void)arg;
+	switch (event->type) {
+		case BLE_GAP_EVENT_CONNECT:
+			if (event->connect.status != 0) {
+				start_advertising();
+				break;
 			}
-
-			esp_ble_gap_set_device_name((char *)backup.config.ble_name);
-
-			esp_ble_gap_config_adv_data(&ble_adv_data);
-			adv_config_done |= ADV_CFG_FLAG;
-
-			esp_ble_gap_config_adv_data(&ble_rsp_data);
-			adv_config_done |= SCAN_RSP_CFG_FLAG;
-
-			esp_ble_gatts_create_service(
-				gatts_if, &gatts_profile.service_id, BLE_SERVICE_HANDLE_NUM
-			);
-			break;
-
-		case ESP_GATTS_READ_EVT:
-			gatts_check_callback(event, gatts_if, param);
-			break;
-
-		case ESP_GATTS_WRITE_EVT:
-			gatts_check_callback(event, gatts_if, param);
-			break;
-
-		case ESP_GATTS_EXEC_WRITE_EVT:
-		case ESP_GATTS_MTU_EVT:
-			if (param->mtu.mtu == 0) {
-				ble_current_mtu = 20;
-			} else if (param->mtu.mtu > GATTS_CHAR_VAL_LEN_MAX) {
-				ble_current_mtu = GATTS_CHAR_VAL_LEN_MAX;
-			} else {
-				ble_current_mtu = param->mtu.mtu;
+			if (is_connected) {
+				ble_gap_terminate(event->connect.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+				return 0;
 			}
-			break;
-
-		case ESP_GATTS_CONF_EVT:
-		case ESP_GATTS_UNREG_EVT:
-
-			break;
-
-		case ESP_GATTS_CREATE_EVT:
-			gatts_profile.service_handle = param->create.service_handle;
-			gatts_profile.char_uuid.len = ble_chars[0].char_uuid.len;
-			gatts_profile.char_uuid.uuid.uuid16 =
-				ble_chars[0].char_uuid.uuid.uuid16;
-
-			esp_ble_gatts_start_service(gatts_profile.service_handle);
-			gatts_add_char();
-			break;
-
-		case ESP_GATTS_ADD_INCL_SRVC_EVT:
-			break;
-
-		case ESP_GATTS_ADD_CHAR_EVT:
-			gatts_profile.char_handle = param->add_char.attr_handle;
-
-			if (param->add_char.status == ESP_GATT_OK) {
-				if (param->add_char.attr_handle != 0) {
-					ble_chars[ble_add_char_position].char_handle =
-						param->add_char.attr_handle;
-
-					if (ble_chars[ble_add_char_position].desc_uuid.len != 0
-						&& ble_chars[ble_add_char_position].desc_handle == 0) {
-						esp_ble_gatts_add_char_descr(
-							gatts_profile.service_handle,
-							&ble_chars[ble_add_char_position].desc_uuid,
-							ble_chars[ble_add_char_position].desc_perm,
-							ble_chars[ble_add_char_position].desc_val,
-							ble_chars[ble_add_char_position].desc_control
-						);
-					} else {
-						gatts_add_char();
-					}
-				}
-			}
-			break;
-
-		case ESP_GATTS_ADD_CHAR_DESCR_EVT:
-			if (param->add_char_descr.status == ESP_GATT_OK) {
-				if (param->add_char.attr_handle != 0) {
-					ble_chars[ble_add_char_position].desc_handle =
-						param->add_char.attr_handle;
-				}
-
-				gatts_add_char();
-			}
-			break;
-
-		case ESP_GATTS_DELETE_EVT:
-			break;
-
-		case ESP_GATTS_START_EVT:
-			break;
-
-		case ESP_GATTS_STOP_EVT:
-			break;
-
-		case ESP_GATTS_CONNECT_EVT:
-			if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
-				esp_ble_set_encryption(
-					param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM
-				);
-			}
-
-			gatts_profile.conn_id = param->connect.conn_id;
-			notify_gatts_if = gatts_if;
-			notify_conn_id = param->connect.conn_id;
-			ble_current_mtu = DEFAULT_BLE_MTU; 
+			notify_conn_id = event->connect.conn_handle;
+			ble_current_mtu = DEFAULT_BLE_MTU;
 			is_connected = true;
 			LED_BLUE_ON();
-
-#if !CONFIG_IDF_TARGET_ESP32P4
-			esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL);
-			esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL1, ESP_PWR_LVL);
-			esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL2, ESP_PWR_LVL);
-			esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL);
-			esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL);
-			esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL);
-#endif
+			if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
+				ble_gap_security_initiate(notify_conn_id);
+			}
 			break;
-
-		case ESP_GATTS_DISCONNECT_EVT:
+		case BLE_GAP_EVENT_DISCONNECT:
+			if (event->disconnect.conn.conn_handle != notify_conn_id) {
+				return 0;
+			}
 			is_connected = false;
-			notify_gatts_if = ESP_GATT_IF_NONE;
-			notify_conn_id = 0;
+			notify_enabled = false;
+			notify_conn_id = BLE_HS_CONN_HANDLE_NONE;
+			ble_current_mtu = DEFAULT_BLE_MTU;
+			if (packet_state) {
+				packet_reset(packet_state);
+				send_queued_packets(NULL);
+			}
 			LED_BLUE_OFF();
-			esp_ble_gap_start_advertising(&ble_adv_params);
+			start_advertising();
 			break;
-
-		case ESP_GATTS_OPEN_EVT:
-		case ESP_GATTS_CANCEL_OPEN_EVT:
-		case ESP_GATTS_CLOSE_EVT:
-		case ESP_GATTS_LISTEN_EVT:
-		case ESP_GATTS_CONGEST_EVT:
-
+		case BLE_GAP_EVENT_MTU:
+			if (event->mtu.channel_id == BLE_L2CAP_CID_ATT) {
+				uint16_t mtu = event->mtu.value > 3 ? event->mtu.value - 3 : DEFAULT_BLE_MTU;
+				ble_current_mtu = mtu > GATTS_CHAR_VAL_LEN_MAX ? GATTS_CHAR_VAL_LEN_MAX : mtu;
+			}
+			break;
+		case BLE_GAP_EVENT_SUBSCRIBE:
+			if (event->subscribe.attr_handle == char2_handle) {
+				notify_enabled = event->subscribe.cur_notify;
+			}
+			break;
+		case BLE_GAP_EVENT_ADV_COMPLETE:
+			start_advertising();
+			break;
 		default:
 			break;
 	}
+	if (custom_ble_started()) {
+		return custom_ble_gap_event(event, arg);
+	}
+	return 0;
+}
+
+uint16_t comm_ble_conn_handle(void) {
+	return notify_conn_id;
+}
+
+bool comm_ble_service_uuid_reserved(const ble_uuid_t *uuid) {
+	return ble_uuid_cmp(uuid, &ble_service_uuid128.u) == 0;
 }
 
 static void process_packet(unsigned char *data, unsigned int len) {
@@ -695,122 +255,107 @@ static void process_packet(unsigned char *data, unsigned int len) {
 }
 
 static void send_packet_raw(unsigned char *buffer, unsigned int len) {
-	if (!is_connected || notify_gatts_if == ESP_GATT_IF_NONE ||
-			ble_chars[1].char_handle == 0) {
+	if (!is_connected || !notify_enabled) {
 		return;
 	}
+	ble_tx_packet_t *packet = malloc(sizeof(*packet) + len);
+	if (!packet) {
+		return;
+	}
+	packet->len = len;
+	packet->pos = 0;
+	memcpy(packet->data, buffer, len);
+	if (xQueueSend(send_queue, &packet, 0) != pdTRUE) {
+		free(packet);
+		return;
+	}
+	ble_npl_callout_reset(&send_callout, 1);
+}
 
-	uint16_t bytes_sent = 0;
+static struct ble_gatt_chr_def ble_chars[] = {
+	{
+		.uuid = &char1_uuid.u,
+		.access_cb = char1_write_handler,
+		.flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+	},
+	{
+		.uuid = &char2_uuid.u,
+		.access_cb = char2_read_handler,
+		.flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+		.val_handle = &char2_handle,
+	},
+	{ 0 },
+};
 
-	while (bytes_sent < len) {
-		uint8_t length = 0;
-		if (len - bytes_sent > ble_current_mtu) {
-			length = ble_current_mtu;
-		} else {
-			length = len - bytes_sent;
-		}
+static const struct ble_gatt_svc_def ble_services[] = {
+	{
+		.type = BLE_GATT_SVC_TYPE_PRIMARY,
+		.uuid = &ble_service_uuid128.u,
+		.characteristics = ble_chars,
+	},
+	{ 0 },
+};
 
-		esp_ble_gatts_send_indicate(
-			notify_gatts_if, notify_conn_id, ble_chars[1].char_handle, length,
-			buffer + bytes_sent, false
-		);
-
-		bytes_sent += length;
+static void free_packet_resources(void) {
+	free(packet_state);
+	packet_state = NULL;
+	free(char1_str);
+	char1_str = NULL;
+	char2_str = NULL;
+	if (send_queue) {
+		vQueueDelete(send_queue);
+		send_queue = NULL;
+	}
+	if (send_mutex) {
+		vSemaphoreDelete(send_mutex);
+		send_mutex = NULL;
 	}
 }
 
 void comm_ble_init(void) {
-	packet_state = calloc(1, sizeof(PACKET_STATE_t));
-	packet_init(send_packet_raw, process_packet, packet_state);
+	bool vesc_enabled = backup.config.ble_mode != BLE_MODE_DISABLED;
+	if (vesc_enabled) {
+		send_mutex = xSemaphoreCreateMutex();
+		// A Lisp error report can enqueue several packets before the host drains it.
+		send_queue = xQueueCreate(32, sizeof(ble_tx_packet_t *));
 
-	if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
-		ble_chars[0].char_perm =
-			(ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED);
-		ble_chars[0].desc_perm =
-			(ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED);
-		ble_chars[1].char_perm =
-			(ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED);
-		ble_chars[1].desc_perm =
-			(ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED);
-	} else {
-		ble_chars[0].char_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
-		ble_chars[0].desc_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
-		ble_chars[1].char_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
-		ble_chars[1].desc_perm = (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
+		packet_state = calloc(1, sizeof(PACKET_STATE_t));
+		char1_str = calloc(2, GATTS_CHAR_VAL_LEN_MAX);
+		if (!packet_state || !char1_str || !send_mutex || !send_queue) {
+			free_packet_resources();
+			return;
+		}
+		char2_str = char1_str + GATTS_CHAR_VAL_LEN_MAX;
+		packet_init(send_packet_raw, process_packet, packet_state);
 	}
-
-
-#if CONFIG_IDF_TARGET_ESP32P4
-	if (hosted_ble_init() != ESP_OK) {
+	bool encrypted = backup.config.ble_mode == BLE_MODE_ENCRYPTED;
+	if (encrypted) {
+		ble_chars[0].flags |= BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_WRITE_AUTHEN;
+		ble_chars[1].flags |= BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN |
+			BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC;
+	}
+	bool server_enabled = vesc_enabled || backup.config.ble_mode_lbm == BLE_MODE_LBM_SERVER ||
+		backup.config.ble_mode_lbm == BLE_MODE_LBM_CLIENT_SERVER;
+	int res = comm_ble_host_init((char *)backup.config.ble_name, encrypted, server_enabled ? gap_event_handler : NULL);
+	if (res == 0 && vesc_enabled) {
+		ble_npl_callout_init(&send_callout, nimble_port_get_dflt_eventq(), send_queued_packets, NULL);
+		res = ble_gatts_count_cfg(ble_services);
+	}
+	if (res == 0 && vesc_enabled) {
+		res = ble_gatts_add_svcs(ble_services);
+	}
+	if (res == 0) {
+		res = custom_ble_reserve_resources();
+	}
+	if (res != 0) {
+		commands_printf("BLE initialization failed: %d", res);
+		free_packet_resources();
 		return;
 	}
-#else
-	esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-	esp_bt_controller_init(&bt_cfg);
-	esp_bt_controller_enable(ESP_BT_MODE_BLE);
-#endif
-
-	esp_bluedroid_init();
-	esp_bluedroid_enable();
-
-#if !CONFIG_IDF_TARGET_ESP32P4
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL1, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL2, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL);
-	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL);
-#endif
-
-	esp_bt_dev_set_device_name((char *)backup.config.ble_name);
-
-	esp_ble_gatts_register_callback(gatts_event_handler);
-	esp_ble_gap_register_callback(gap_event_handler);
-	esp_ble_gatts_app_register(0);
-
-	if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
-		uint32_t passkey = backup.config.ble_pin;
-		esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
-		esp_ble_io_cap_t iocap = ESP_IO_CAP_OUT;
-		uint8_t key_size = 16;
-		uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-		uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-		uint8_t auth_option = ESP_BLE_ONLY_ACCEPT_SPECIFIED_AUTH_DISABLE;
-		uint8_t oob_support = ESP_BLE_OOB_DISABLE;
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(uint32_t)
-		);
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t)
-		);
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t)
-		);
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t)
-		);
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_ONLY_ACCEPT_SPECIFIED_SEC_AUTH, &auth_option,
-			sizeof(uint8_t)
-		);
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_OOB_SUPPORT, &oob_support, sizeof(uint8_t)
-		);
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t)
-		);
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t)
-		);
-	} else {
-		esp_ble_auth_req_t auth_req = ESP_LE_AUTH_NO_BOND;
-		esp_ble_gap_set_security_param(
-			ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t)
-		);
-	}
+	comm_ble_host_start();
 }
 
-bool comm_ble_is_connected() {
+bool comm_ble_is_connected(void) {
 	return is_connected;
 }
 
@@ -819,24 +364,158 @@ int comm_ble_mtu_now(void) {
 }
 
 void comm_ble_send_packet(unsigned char *data, unsigned int len) {
-	packet_send_packet(data, len, packet_state);
+	if (packet_state) {
+		xSemaphoreTake(send_mutex, portMAX_DELAY);
+		packet_send_packet(data, len, packet_state);
+		xSemaphoreGive(send_mutex);
+	}
 }
 
+static void ble_call_handler(struct ble_npl_event *event) {
+	ble_call_t *call = ble_npl_event_get_arg(event);
+	call->result = call->callback(call->arg);
+	xSemaphoreGive(call->done);
+}
+
+int comm_ble_host_call(int (*callback)(void *arg), void *arg) {
+	if (xTaskGetCurrentTaskHandle() == host_task) {
+		return callback(arg);
+	}
+	ble_call_t call = { .callback = callback, .arg = arg };
+	call.done = xSemaphoreCreateBinary();
+	if (!call.done) {
+		return BLE_HS_ENOMEM;
+	}
+	ble_npl_event_init(&call.event, ble_call_handler, &call);
+	ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &call.event);
+	// The event owns the stack arguments until it completes.
+	xSemaphoreTake(call.done, portMAX_DELAY);
+	ble_npl_event_deinit(&call.event);
+	vSemaphoreDelete(call.done);
+	return call.result;
+}
+
+static void ble_on_sync(void) {
+	if (ble_hs_util_ensure_addr(0) == 0 && ble_hs_id_infer_auto(0, &own_addr_type) == 0) {
+		has_synced = true;
+		if (event_cb) {
+			struct ble_gap_event event = { .type = BLE_GAP_EVENT_ADV_COMPLETE };
+			event_cb(&event, NULL);
+		}
+	}
+}
+
+static void ble_on_reset(int reason) {
+	(void)reason;
+	has_synced = false;
+}
+
+int comm_ble_host_init(const char *name, bool encrypted, ble_event_cb_t callback) {
+#if CONFIG_IDF_TARGET_ESP32P4
+	int res = esp_hosted_connect_to_slave();
+	if (res != 0) {
+		return res;
+	}
+	esp_hosted_bt_host_stack_cfg_t bt_cfg = ESP_HOSTED_BT_HOST_STACK_CONFIG_DEFAULT();
+	res = esp_hosted_bt_host_stack_setup(&bt_cfg);
+	if (res != 0) {
+		return res;
+	}
+	res = nimble_port_init();
 #else
+	int res = nimble_port_init();
+#endif
+	if (res != 0) {
+		return res;
+	}
+	event_cb = callback;
+	ble_hs_cfg.sync_cb = ble_on_sync;
+	ble_hs_cfg.reset_cb = ble_on_reset;
+	ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+	ble_hs_cfg.sm_io_cap = encrypted ? BLE_HS_IO_DISPLAY_ONLY : BLE_HS_IO_NO_INPUT_OUTPUT;
+	ble_hs_cfg.sm_bonding = encrypted;
+	ble_hs_cfg.sm_mitm = encrypted;
+	ble_hs_cfg.sm_sc = 1;
+	ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+	ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+	ble_store_config_init();
+	if (callback) {
+		ble_svc_gap_init();
+		ble_svc_gatt_init();
+		res = ble_svc_gap_device_name_set(name);
+	}
+	if (res == 0) {
+		res = ble_att_set_preferred_mtu(256);
+	}
+#if !CONFIG_IDF_TARGET_ESP32P4
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P18);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P18);
+#endif
+	if (res != 0) {
+		nimble_port_deinit();
+	}
+	return res;
+}
 
-void comm_ble_init(void) {}
+static void ble_host_task(void *arg) {
+	(void)arg;
+	host_task = xTaskGetCurrentTaskHandle();
+	nimble_port_run();
+	nimble_port_freertos_deinit();
+}
 
+void comm_ble_host_start(void) {
+	nimble_port_freertos_init(ble_host_task);
+}
+
+bool comm_ble_host_ready(void) {
+	return has_synced;
+}
+
+static int ble_host_gap_event_handler(struct ble_gap_event *event, void *arg) {
+	if (event->type == BLE_GAP_EVENT_REPEAT_PAIRING) {
+		struct ble_gap_conn_desc desc;
+		if (ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc) != 0 ||
+				ble_store_util_delete_peer(&desc.peer_id_addr) != 0) {
+			return BLE_GAP_REPEAT_PAIRING_IGNORE;
+		}
+		return BLE_GAP_REPEAT_PAIRING_RETRY;
+	}
+	if (event->type == BLE_GAP_EVENT_PASSKEY_ACTION && event->passkey.params.action == BLE_SM_IOACT_DISP) {
+		struct ble_sm_io io = {
+			.action = BLE_SM_IOACT_DISP,
+			.passkey = backup.config.ble_pin,
+		};
+		return ble_sm_inject_io(event->passkey.conn_handle, &io);
+	}
+	return event_cb ? event_cb(event, arg) : 0;
+}
+
+int comm_ble_host_advertise(struct ble_gap_adv_params *params, const uint8_t *adv_data, size_t adv_len,
+	const uint8_t *scan_rsp_data, size_t scan_rsp_len) {
+	if (!has_synced) {
+		return BLE_HS_ENOTSYNCED;
+	}
+	int res = ble_gap_adv_set_data(adv_data, adv_len);
+	if (res == 0) {
+		res = ble_gap_adv_rsp_set_data(scan_rsp_data, scan_rsp_len);
+	}
+	if (res == 0) {
+		res = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, params, ble_host_gap_event_handler, NULL);
+	}
+	return res;
+}
+#else
+void comm_ble_init(void) {
+}
 bool comm_ble_is_connected(void) {
 	return false;
 }
-
 int comm_ble_mtu_now(void) {
 	return 0;
 }
-
 void comm_ble_send_packet(unsigned char *data, unsigned int len) {
 	(void)data;
 	(void)len;
 }
-
 #endif
