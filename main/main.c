@@ -57,6 +57,8 @@
 #include "ble/custom_ble.h"
 
 #include <string.h>
+#include <stddef.h>
+#include <stdlib.h>
 #include <sys/time.h>
 
 // Global variables
@@ -83,15 +85,22 @@ void app_main(void) {
 	}
 
 	{
-		nvs_handle_t my_handle;
-		nvs_open("vesc", NVS_READONLY, &my_handle);
-		size_t required_size = 0;
-		nvs_get_blob(my_handle, "backup", NULL, &required_size);
-
 		memset((void*)&backup, 0, sizeof(backup));
-
-		if (required_size == sizeof(backup_data)) {
-			nvs_get_blob(my_handle, "backup", (void*)&backup, &required_size);
+		nvs_handle_t my_handle;
+		if (nvs_open("vesc", NVS_READONLY, &my_handle) == ESP_OK) {
+			size_t size = 0;
+			size_t can_size = offsetof(backup_data, config_init_flag);
+			uint8_t *data = NULL;
+			if (nvs_get_blob(my_handle, "backup", NULL, &size) == ESP_OK && size >= can_size) {
+				data = malloc(size);
+			}
+			if (data) {
+				if (nvs_get_blob(my_handle, "backup", data, &size) == ESP_OK) {
+					memcpy((void*)&backup, data, size == sizeof(backup_data) ? size : can_size);
+				}
+				free(data);
+			}
+			nvs_close(my_handle);
 		}
 
 		if (backup.controller_id_init_flag != VAR_INIT_CODE) {
@@ -114,7 +123,6 @@ void app_main(void) {
 			backup.config.can_baud_rate = backup.can_baud_rate;
 		}
 
-		nvs_close(my_handle);
 	}
 
 #if !(CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED)
