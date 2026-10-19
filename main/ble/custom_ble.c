@@ -26,6 +26,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "comm_ble.h"
+#include "comm_wifi.h"
 
 #if CONFIG_BT_NIMBLE_ENABLED
 #include "freertos/queue.h"
@@ -1027,6 +1028,11 @@ static int client_request_on_host(void *arg) {
 	}
 	if (r->op == BLE_CLIENT_OP_SCAN) {
 		struct ble_gap_disc_params params = { .passive = 0, .filter_duplicates = 1, .itvl = 160, .window = 80 };
+#if CONFIG_IDF_TARGET_ESP32P4
+		if (comm_wifi_get_mode() == WIFI_MODE_ACCESS_POINT) {
+			params.window = 16;
+		}
+#endif
 		return ble_gap_disc(client_addr_type, r->duration_ms, &params, client_gap_event, NULL);
 	}
 	if (r->op == BLE_CLIENT_OP_CONNECT) {
