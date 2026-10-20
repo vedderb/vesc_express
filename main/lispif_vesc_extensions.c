@@ -5336,7 +5336,31 @@ static lbm_value ext_get_imu_gyro_derot(lbm_value *args, lbm_uint argn) {
 // UART
 static SemaphoreHandle_t m_uart_mutex;
 static bool uart_mutex_init_done = false;
-static volatile int m_uart_number = -1;
+static volatile bool m_uart_started[UART_NUM_MAX] = {false};
+static volatile int m_uart_selected = -1;
+
+// (uart-select uart-num)
+static lbm_value ext_uart_select(lbm_value *args, lbm_uint argn) {
+	LBM_CHECK_ARGN_NUMBER(1);
+
+	int uart_num = lbm_dec_as_i32(args[0]);
+
+	if (uart_num >= UART_NUM_MAX) {
+		lbm_set_error_reason("Invalid UART port");
+		return ENC_SYM_EERROR;
+	}
+
+	if (m_uart_started[uart_num]) {
+		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
+		m_uart_selected = uart_num;
+		xSemaphoreGive(m_uart_mutex);
+		return ENC_SYM_TRUE;
+	} else {
+		lbm_set_error_reason("Selected uart not started from LBM");
+		lbm_set_error_suspect(args[0]);
+		return ENC_SYM_EERROR;
+	}
+}
 
 // (uart-start uart-num rx-pin tx-pin baud)
 static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
@@ -5361,7 +5385,7 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	m_uart_number = -1;
+	m_uart_started[uart_num] = false;
 
 	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	ublox_stop(uart_num);
@@ -5394,25 +5418,28 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_NIL;
 	}
 
-	m_uart_number = uart_num;
+	m_uart_started[uart_num] = true;
+	m_uart_selected = uart_num;
+
 	return ENC_SYM_TRUE;
 }
 
 static lbm_value ext_uart_stop(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
-	if (m_uart_number >= 0) {
-		ublox_stop(m_uart_number);
-		comm_uart_stop(m_uart_number);
+	if (m_uart_selected >= 0) {
+		ublox_stop(m_uart_selected);
+		comm_uart_stop(m_uart_selected);
 
 		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
-		if (uart_is_driver_installed(m_uart_number)) {
-			uart_driver_delete(m_uart_number);
+		if (uart_is_driver_installed(m_uart_selected)) {
+			uart_driver_delete(m_uart_selected);
 		}
 		xSemaphoreGive(m_uart_mutex);
 	}
 
-	m_uart_number = -1;
+	m_uart_started[m_uart_selected] = false;
+	m_uart_selected = -1;
 
 	return ENC_SYM_TRUE;
 }
@@ -5422,7 +5449,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (m_uart_number < 0) {
+	if (m_uart_selected < 0) {
 		return ENC_SYM_NIL;
 	}
 
@@ -5454,7 +5481,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		}
 	}
 	// This may take a while for large buffer, while lbm is blocked.
-	uart_write_bytes(m_uart_number,to_send_ptr, ind);
+	uart_write_bytes(m_uart_selected,to_send_ptr, ind);
 	return ENC_SYM_TRUE;
 }
 
@@ -5476,14 +5503,14 @@ static void uart_rx_task(void *arg) {
 	xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
 	unsigned int count = 0;
 	uint8_t c;
-	int res = uart_read_bytes(m_uart_number, &c, 1, a->timeout);
+	int res = uart_read_bytes(m_uart_selected, &c, 1, a->timeout);
 	while (res == 1) {
 		a->data[a->offset + count] = c;
 		count++;
 		if (c == a->stop_at || count >= a->num) {
 			break;
 		}
-		res = uart_read_bytes(m_uart_number, &c, 1, a->timeout);
+		res = uart_read_bytes(m_uart_selected, &c, 1, a->timeout);
 	}
 	xSemaphoreGive(m_uart_mutex);
 
@@ -5509,7 +5536,7 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (num == 0 || (m_uart_number < 0)) {
+	if (num == 0 || (m_uart_selected < 0)) {
 		return lbm_enc_i(0);
 	}
 
@@ -5588,9 +5615,10 @@ static lbm_value ext_uartcomm_start(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (m_uart_number == uart_num) {
+	if (m_uart_selected == uart_num) {
 		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
-		m_uart_number = -1;
+		m_uart_selected = -1;
+		m_uart_started[uart_num] = false;
 		xSemaphoreGive(m_uart_mutex);
 	}
 
@@ -5611,9 +5639,10 @@ static lbm_value ext_uartcomm_stop(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (m_uart_number == uart_num) {
+	if (m_uart_selected == uart_num) {
 		xSemaphoreTake(m_uart_mutex, portMAX_DELAY);
-		m_uart_number = -1;
+		m_uart_selected = -1;
+		m_uart_started[uart_num] = false;
 		xSemaphoreGive(m_uart_mutex);
 	}
 
@@ -7187,6 +7216,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("get-imu-gyro-derot", ext_get_imu_gyro_derot);
 
 		// UART
+		lbm_add_extension("uart-select", ext_uart_select);
 		lbm_add_extension("uart-start", ext_uart_start);
 		lbm_add_extension("uart-stop", ext_uart_stop);
 		lbm_add_extension("uart-write", ext_uart_write)	;
