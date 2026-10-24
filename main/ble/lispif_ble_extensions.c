@@ -90,6 +90,7 @@ static lbm_uint symbol_manufacturer_data = 0;
 
 static uint8_t default_zero;
 static lbm_value prepared_handles_list;
+static uint16_t prepared_service_handle;
 
 static const char *client_event_names[] = { "ble-scan-result", "ble-scan-done", "ble-connect-result",
 	"ble-disconnected", "ble-service", "ble-characteristic", "ble-descriptor", "ble-read-result", "ble-write-result",
@@ -607,6 +608,7 @@ static parse_lbm_result_t parse_lbm_chr_def(
 }
 
 static void store_handle_list(uint16_t count, const uint16_t handles[count]) {
+	prepared_service_handle = handles[0];
 	prepared_handles_list = ENC_SYM_NIL;
 	for (int i = count - 1; i >= 0; i--) {
 		prepared_handles_list = lbm_cons(lbm_enc_u(handles[i]), prepared_handles_list);
@@ -1237,6 +1239,53 @@ static uint16_t client_connection(lbm_value *args, lbm_uint argn, lbm_uint index
 	return argn > index ? lbm_dec_as_u32(args[index]) : BLE_HS_CONN_HANDLE_NONE;
 }
 
+// (ble-hid-add-service report-map '((id type size) ...) [appearance])
+static lbm_value ext_ble_hid_add_service(lbm_value *args, lbm_uint argn) {
+	if ((argn != 2 && argn != 3) || !lbm_is_array_r(args[0])
+		|| lbm_heap_array_get_size(args[0]) == 0 || lbm_heap_array_get_size(args[0]) > 512
+		|| !lbm_is_list(args[1])
+		|| (argn == 3 && !client_number(args[2], 0, 65535))) {
+		return ENC_SYM_TERROR;
+	}
+	ble_hid_report_t reports[BLE_HID_REPORTS_MAX];
+	unsigned int count = 0;
+	lbm_value next = args[1];
+	while (lbm_is_cons(next) && count < BLE_HID_REPORTS_MAX) {
+		lbm_value report = lbm_car(next);
+		lbm_value fields[3];
+		for (int i = 0; i < 3; i++) {
+			if (!lbm_is_cons(report)) {
+				return ENC_SYM_TERROR;
+			}
+			fields[i] = lbm_car(report);
+			report = lbm_cdr(report);
+		}
+		if (!lbm_is_symbol_nil(report) || !client_number(fields[0], 0, 255)
+			|| !client_number(fields[1], 1, 3) || !client_number(fields[2], 1, 512)) {
+			return ENC_SYM_TERROR;
+		}
+		reports[count++] = (ble_hid_report_t){
+			.id = lbm_dec_as_u32(fields[0]),
+			.type = lbm_dec_as_u32(fields[1]),
+			.size = lbm_dec_as_u32(fields[2])
+		};
+		next = lbm_cdr(next);
+	}
+	if (count == 0 || !lbm_is_symbol_nil(next)) {
+		return ENC_SYM_TERROR;
+	}
+	custom_ble_result_t res = custom_ble_add_hid_service(lbm_heap_array_get_data_ro(args[0]),
+		lbm_heap_array_get_size(args[0]), reports, count,
+		argn == 3 ? lbm_dec_as_u32(args[2]) : 0x03c0, store_handle_list);
+	if (res != CUSTOM_BLE_OK) {
+		return ENC_SYM_EERROR;
+	}
+	if (prepared_handles_list == ENC_SYM_MERROR) {
+		custom_ble_remove_service(prepared_service_handle);
+	}
+	return prepared_handles_list;
+}
+
 // A zero duration cancels scanning without allocating a client event queue.
 static lbm_value ext_ble_client_scan(lbm_value *args, lbm_uint argn) {
 	if (argn != 1 || !client_number(args[0], 0, 60000)) {
@@ -1343,15 +1392,23 @@ static lbm_value ext_ble_client_dscs(lbm_value *args, lbm_uint argn) {
 	return client_discover(args, argn, BLE_CLIENT_OP_DSCS);
 }
 
-static lbm_value ext_ble_client_read(lbm_value *args, lbm_uint argn) {
+static lbm_value client_read(lbm_value *args, lbm_uint argn, ble_client_op_t op) {
 	if ((argn != 1 && argn != 2) || !client_number(args[0], 1, 65535)
 		|| (argn == 2 && !client_number(args[1], 0, BLE_HS_CONN_HANDLE_NONE - 1))) {
 		return ENC_SYM_TERROR;
 	}
 	ble_client_request_t request = {
-		.op = BLE_CLIENT_OP_READ, .conn = client_connection(args, argn, 1), .start = lbm_dec_as_u32(args[0])
+		.op = op, .conn = client_connection(args, argn, 1), .start = lbm_dec_as_u32(args[0])
 	};
 	return client_request(&request);
+}
+
+static lbm_value ext_ble_client_read(lbm_value *args, lbm_uint argn) {
+	return client_read(args, argn, BLE_CLIENT_OP_READ);
+}
+
+static lbm_value ext_ble_client_read_long(lbm_value *args, lbm_uint argn) {
+	return client_read(args, argn, BLE_CLIENT_OP_READ_LONG);
 }
 
 static lbm_value ext_ble_client_write(lbm_value *args, lbm_uint argn) {
@@ -1567,6 +1624,7 @@ void lispif_load_ble_extensions(BLE_MODE_LBM mode) {
 		{ "ble-conf-adv-set-channels", ext_ble_conf_adv_set_channels },
 		{ "ble-conf-adv-set-interval", ext_ble_conf_adv_set_interval },
 		{ "ble-add-service", ext_ble_add_service },
+		{ "ble-hid-add-service", ext_ble_hid_add_service },
 		{ "ble-remove-service", ext_ble_remove_service },
 		{ "ble-attr-get-value", ext_ble_attr_get_value },
 		{ "ble-attr-set-value", ext_ble_attr_set_value },
@@ -1581,6 +1639,7 @@ void lispif_load_ble_extensions(BLE_MODE_LBM mode) {
 		{ "ble-client-discover-descriptors", ext_ble_client_dscs },
 		{ "ble-client-exchange-mtu", ext_ble_client_mtu },
 		{ "ble-client-read", ext_ble_client_read },
+		{ "ble-client-read-long", ext_ble_client_read_long },
 		{ "ble-client-write", ext_ble_client_write },
 		{ "ble-client-subscribe", ext_ble_client_subscribe },
 		{ "ble-client-security", ext_ble_client_security },

@@ -206,6 +206,18 @@ void custom_ble_set_attr_write_handler(attr_write_cb_t callback);
 custom_ble_result_t custom_ble_add_service(ble_uuid_any_t service_uuid, uint16_t chr_count,
 	const ble_chr_definition_t chr[chr_count], service_handles_cb_t handles_cb);
 
+#define BLE_HID_REPORTS_MAX 16
+
+typedef struct {
+	uint8_t id;
+	uint8_t type; // 1: input, 2: output, 3: feature
+	uint16_t size; // Payload size, excluding the report ID.
+} ble_hid_report_t;
+
+// Handles: service, information, map, control point, (report, reference) pairs.
+custom_ble_result_t custom_ble_add_hid_service(const uint8_t *map, uint16_t map_len,
+	const ble_hid_report_t *reports, uint16_t count, uint16_t appearance, service_handles_cb_t handles_cb);
+
 /**
  * Remove a service created with custom_ble_add_service.
  *
@@ -393,7 +405,8 @@ typedef enum {
 	BLE_CLIENT_OP_LIMIT,
 	BLE_CLIENT_OP_SECURITY,
 	BLE_CLIENT_OP_PASSKEY,
-	BLE_CLIENT_OP_FORGET
+	BLE_CLIENT_OP_FORGET,
+	BLE_CLIENT_OP_READ_LONG
 } ble_client_op_t;
 
 typedef struct {
@@ -410,6 +423,7 @@ typedef struct {
 } ble_client_request_t;
 
 #define BLE_CLIENT_VALUE_MAX 255
+#define BLE_CLIENT_ATTR_MAX 512
 typedef struct {
 	ble_client_event_type_t type;
 	int status;
@@ -420,7 +434,7 @@ typedef struct {
 	ble_uuid_any_t uuid;
 	ble_addr_t address;
 	int8_t rssi;
-	uint8_t data[BLE_CLIENT_VALUE_MAX];
+	uint8_t data[BLE_CLIENT_ATTR_MAX];
 } ble_client_event_t;
 
 int custom_ble_client_request(ble_client_request_t *request);
