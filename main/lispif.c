@@ -316,6 +316,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		// Result. Currently unused.
 		send_buffer_global[ind++] = '\0';
 
+		bool was_paused = lbm_get_eval_state() == EVAL_CPS_STATE_PAUSED;
 		if (pause_eval(0, 2000)) {
 			lbm_value *glob_env = lbm_get_global_env();
 			for (int i = 0; i < GLOBAL_ENV_ROOTS; i ++) {
@@ -347,7 +348,9 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 			}
 		}
 
-		lbm_continue_eval();
+		if (!was_paused) {
+			lbm_continue_eval();
+		}
 
 		reply_func(send_buffer_global, ind);
 		mempools_free_packet_buffer(send_buffer_global);

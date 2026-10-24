@@ -42,6 +42,7 @@ typedef struct {
 	bool notify_enabled;
 	bool indicate_enabled;
 	bool is_cccd;
+	bool hid;
 	struct ble_gatt_chr_def *chr;
 } attr_instance_t;
 
@@ -51,6 +52,7 @@ typedef struct {
 	uint16_t attr_count;
 	attr_instance_t *attr;
 	struct ble_gatt_svc_def *definition;
+	bool hid;
 } service_instance_t;
 
 typedef struct {
@@ -95,6 +97,9 @@ typedef struct {
 	bool securing;
 	bool require_auth;
 	uint8_t passkey_action;
+	uint8_t *read_value;
+	uint16_t read_len;
+	uint16_t read_handle;
 } client_connection_t;
 
 static client_connection_t client_connections[BLE_CLIENT_CONNECTIONS_MAX];
@@ -134,6 +139,15 @@ static void start_advertising(void) {
 		BLE_HS_ADV_TYPE_COMP_UUIDS128, 0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01,
 		0x00, 0x40, 0x6E };
 	size_t adv_len = backup.config.ble_mode == BLE_MODE_DISABLED ? 3 : 21;
+	for (int i = 0; i < custom_service_len; i++) {
+		if (custom_services[i].hid) {
+			uint16_t appearance = ble_svc_gap_device_appearance();
+			uint8_t hid[] = { 3, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x12, 0x18, 3, BLE_HS_ADV_TYPE_APPEARANCE, appearance, appearance >> 8 };
+			memcpy(adv_data + adv_len, hid, sizeof(hid));
+			adv_len += sizeof(hid);
+			break;
+		}
+	}
 	size_t len = strlen(device_name);
 	// A 30-byte name fits in a scan response only when shortened to 29 bytes.
 	if (len > 29) {
@@ -172,6 +186,9 @@ int custom_ble_gap_event(struct ble_gap_event *event, void *arg) {
 					attr->indicate_enabled = false;
 					if (attr->is_cccd) {
 						memset(attr->value, 0, 2);
+					}
+					if (attr->hid && ble_uuid_u16(&attr->uuid.u) == 0x2a4c) {
+						attr->value[0] = 1;
 					}
 				}
 			}
@@ -218,7 +235,7 @@ static int attr_access_handler(uint16_t connection, uint16_t handle, struct ble_
 	xSemaphoreTake(attr_mutex, portMAX_DELAY);
 	if (write) {
 		len = OS_MBUF_PKTLEN(ctxt->om);
-		if (len > attr->value_max_len) {
+		if (len > attr->value_max_len || (attr->hid && len != attr->value_max_len)) {
 			res = BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
 		} else {
 			value = malloc(len ? len : 1);
@@ -227,8 +244,12 @@ static int attr_access_handler(uint16_t connection, uint16_t handle, struct ble_
 			} else if (ble_hs_mbuf_to_flat(ctxt->om, value, len, &len) != 0) {
 				res = BLE_ATT_ERR_UNLIKELY;
 			} else {
-				memcpy(attr->value, value, len);
-				attr->value_len = len;
+				if (attr->hid && ble_uuid_u16(&attr->uuid.u) == 0x2a4c && value[0] > 1) {
+					res = BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+				} else {
+					memcpy(attr->value, value, len);
+					attr->value_len = len;
+				}
 			}
 		}
 	} else if (os_mbuf_append(ctxt->om, attr->value, attr->value_len) != 0) {
@@ -319,6 +340,7 @@ static int register_service(void *arg) {
 
 static int remove_service(void *arg) {
 	service_instance_t *service = arg;
+	bool hid = service->hid;
 	int res = ble_gatts_delete_svc(&service->uuid.u);
 	if (res == 0) {
 		xSemaphoreTake(attr_mutex, portMAX_DELAY);
@@ -326,6 +348,10 @@ static int remove_service(void *arg) {
 		custom_service_len--;
 		free_service(service);
 		xSemaphoreGive(attr_mutex);
+		if (hid && ble_gap_adv_active()) {
+			ble_gap_adv_stop();
+			start_advertising();
+		}
 	}
 	return res;
 }
@@ -541,6 +567,126 @@ fail:
 	return CUSTOM_BLE_ERROR;
 }
 
+static int configure_hid(void *arg) {
+	uint16_t appearance = *(uint16_t *)arg;
+	int res = ble_svc_gap_device_appearance_set(appearance);
+	if (res != 0) {
+		return res;
+	}
+	service_instance_t *service = &custom_services[custom_service_len - 1];
+	xSemaphoreTake(attr_mutex, portMAX_DELAY);
+	service->hid = true;
+	for (int i = 0; i < service->attr_count; i++) {
+		service->attr[i].hid = true;
+		if (ble_uuid_u16(&service->attr[i].uuid.u) == 0x2a4d) {
+			service->attr[i].value_len = service->attr[i].value_max_len;
+		}
+	}
+	xSemaphoreGive(attr_mutex);
+	ble_hs_cfg.sm_bonding = 1;
+	if (ble_gap_adv_active()) {
+		ble_gap_adv_stop();
+		start_advertising();
+	}
+	return 0;
+}
+
+custom_ble_result_t custom_ble_add_hid_service(const uint8_t *map, uint16_t map_len,
+	const ble_hid_report_t *reports, uint16_t count, uint16_t appearance, service_handles_cb_t handles_cb) {
+	if (!map || map_len == 0 || map_len > 512 || !reports || count == 0 || count > BLE_HID_REPORTS_MAX) {
+		return CUSTOM_BLE_ERROR;
+	}
+	for (int i = 0; i < count; i++) {
+		if (reports[i].type < 1 || reports[i].type > 3 || reports[i].size == 0 || reports[i].size > 512) {
+			return CUSTOM_BLE_ERROR;
+		}
+		for (int j = 0; j < i; j++) {
+			if ((reports[i].id == reports[j].id && reports[i].type == reports[j].type)
+				|| ((reports[i].id == 0) != (reports[j].id == 0))) {
+				return CUSTOM_BLE_ERROR;
+			}
+		}
+	}
+	ble_chr_definition_t *chars = calloc(count + 3, sizeof(*chars));
+	ble_desc_definition_t *descs = calloc(count, sizeof(*descs));
+	if (!chars || !descs) {
+		free(chars);
+		free(descs);
+		return CUSTOM_BLE_ERROR;
+	}
+	uint8_t info[] = {0x11, 0x01, 0, 0x02}; // HID 1.11, normally connectable.
+	uint8_t control = 1;
+	uint8_t refs[BLE_HID_REPORTS_MAX][2];
+	chars[0] = (ble_chr_definition_t){
+		.uuid.u16      = BLE_UUID16_INIT(0x2a4a),
+		.property = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC,
+		.value_max_len = sizeof(info),
+		.value_len = sizeof(info),
+		.value = info
+	};
+	chars[1] = (ble_chr_definition_t){
+		.uuid.u16      = BLE_UUID16_INIT(0x2a4b),
+		.property = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC,
+		.value_max_len = map_len,
+		.value_len = map_len,
+		.value = (uint8_t *)map
+	};
+	chars[2] = (ble_chr_definition_t){
+		.uuid.u16      = BLE_UUID16_INIT(0x2a4c),
+		.property = BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_WRITE_ENC,
+		.value_max_len = 1,
+		.value_len = 1,
+		.value = &control
+	};
+	for (int i = 0; i < count; i++) {
+		refs[i][0] = reports[i].id;
+		refs[i][1] = reports[i].type;
+		descs[i] = (ble_desc_definition_t){
+			.uuid.u16      = BLE_UUID16_INIT(0x2908),
+			.perm = BLE_ATT_F_READ | BLE_ATT_F_READ_ENC,
+			.value_max_len = 2,
+			.value_len = 2,
+			.value = refs[i]
+		};
+		chars[i + 3] = (ble_chr_definition_t){
+			.uuid.u16      = BLE_UUID16_INIT(0x2a4d),
+			.property = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC,
+			.value_max_len = reports[i].size,
+			.descr_count = 1,
+			.descriptors = &descs[i]
+		};
+		if (reports[i].type == 1) {
+			chars[i + 3].property |= BLE_GATT_CHR_F_NOTIFY;
+		} else {
+			chars[i + 3].property |= BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC;
+			if (reports[i].type == 2) {
+				chars[i + 3].property |= BLE_GATT_CHR_F_WRITE_NO_RSP;
+			}
+		}
+	}
+	ble_uuid_any_t uuid = {.u16 = BLE_UUID16_INIT(0x1812)};
+	custom_ble_result_t res = custom_ble_add_service(uuid, count + 3, chars, NULL);
+	free(descs);
+	free(chars);
+	if (res != CUSTOM_BLE_OK) {
+		return res;
+	}
+	service_instance_t *service = &custom_services[custom_service_len - 1];
+	if (comm_ble_host_call(configure_hid, &appearance) != 0) {
+		custom_ble_remove_service(service->service_handle);
+		return CUSTOM_BLE_ESP_ERROR;
+	}
+	uint16_t handles[4 + 2 * BLE_HID_REPORTS_MAX];
+	handles[0] = service->service_handle;
+	for (int i = 0; i < service->attr_count; i++) {
+		handles[i + 1] = service->attr[i].attr_handle;
+	}
+	if (handles_cb) {
+		handles_cb(service->attr_count + 1, handles);
+	}
+	return CUSTOM_BLE_OK;
+}
+
 custom_ble_result_t custom_ble_remove_service(uint16_t service_handle) {
 	if (!has_started) {
 		return CUSTOM_BLE_NOT_STARTED;
@@ -579,12 +725,31 @@ custom_ble_result_t custom_ble_set_attr_value(uint16_t attr_handle, uint16_t len
 		xSemaphoreGive(attr_mutex);
 		return !attr ? CUSTOM_BLE_INVALID_HANDLE : CUSTOM_BLE_ERROR;
 	}
+	bool hid_report = attr->hid && ble_uuid_u16(&attr->uuid.u) == 0x2a4d;
+	if (hid_report && length != attr->value_max_len) {
+		xSemaphoreGive(attr_mutex);
+		return CUSTOM_BLE_ERROR;
+	}
 	memcpy(attr->value, value, length);
 	attr->value_len = length;
 	bool notify = attr->notify_enabled;
 	bool indicate = attr->indicate_enabled;
+	if (hid_report) {
+		for (int i = 0; i < custom_service_len; i++) {
+			if (custom_services[i].hid && custom_services[i].attr[2].value[0] == 0) {
+				notify = false;
+			}
+		}
+	}
 	xSemaphoreGive(attr_mutex);
 	int res = 0;
+	if (hid_report && conn_id != BLE_HS_CONN_HANDLE_NONE && notify) {
+		struct ble_gap_conn_desc desc;
+		if (ble_gap_conn_find(conn_id, &desc) != 0 || !desc.sec_state.encrypted
+				|| length > ble_att_mtu(conn_id) - 3) {
+			return CUSTOM_BLE_ESP_ERROR;
+		}
+	}
 	if (conn_id != BLE_HS_CONN_HANDLE_NONE && notify) {
 		struct os_mbuf *om = ble_hs_mbuf_from_flat(value, length);
 		res = om ? ble_gatts_notify_custom(conn_id, attr_handle, om) : BLE_HS_ENOMEM;
@@ -823,6 +988,8 @@ static int client_gap_event(struct ble_gap_event *event, void *arg) {
 			result.conn = result.handle;
 			client_connection_t *client = client_find(result.conn);
 			if (client) {
+				free(client->read_value);
+				client->read_value = NULL;
 				client->busy = false;
 				client->securing = false;
 				client->passkey_action = BLE_SM_IOACT_NONE;
@@ -957,6 +1124,43 @@ static int client_value(uint16_t conn, const struct ble_gatt_error *error, struc
 	client_idle(conn);
 	client_push(&event);
 	return 0;
+}
+
+static int client_read_long(uint16_t conn, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg) {
+	conn = client_callback_conn(conn, arg);
+	client_connection_t *client = client_find(conn);
+	if (!client || !client->read_value) {
+		return BLE_HS_ENOTCONN;
+	}
+	int status = error->status;
+	if (status == 0 && attr) {
+		uint16_t len = 0;
+		if (attr->offset != client->read_len) {
+			status = BLE_HS_EBADDATA;
+		} else {
+			status = ble_hs_mbuf_to_flat(attr->om, client->read_value + client->read_len,
+				BLE_CLIENT_ATTR_MAX - client->read_len, &len);
+			client->read_len += len;
+		}
+		if (status == 0) {
+			return 0;
+		}
+	}
+	ble_client_event_t event = {
+		.type = BLE_CLIENT_READ,
+		.conn = conn,
+		.handle = client->read_handle,
+		.status = status == BLE_HS_EDONE ? 0 : status
+	};
+	if (event.status == 0) {
+		event.len = client->read_len;
+		memcpy(event.data, client->read_value, event.len);
+	}
+	free(client->read_value);
+	client->read_value = NULL;
+	client_idle(conn);
+	client_push(&event);
+	return status == BLE_HS_EDONE ? 0 : status;
 }
 
 static int client_mtu(uint16_t conn, const struct ble_gatt_error *error, uint16_t mtu, void *arg) {
@@ -1097,6 +1301,20 @@ static int client_request_on_host(void *arg) {
 			break;
 		case BLE_CLIENT_OP_READ:
 			res = ble_gattc_read(conn, r->start, client_value, callback_arg);
+			break;
+		case BLE_CLIENT_OP_READ_LONG:
+			client->read_value = malloc(BLE_CLIENT_ATTR_MAX);
+			client->read_len = 0;
+			client->read_handle = r->start;
+			if (!client->read_value) {
+				res = BLE_HS_ENOMEM;
+			} else {
+				res = ble_gattc_read_long(conn, r->start, 0, client_read_long, callback_arg);
+				if (res != 0) {
+					free(client->read_value);
+					client->read_value = NULL;
+				}
+			}
 			break;
 		case BLE_CLIENT_OP_WRITE:
 		case BLE_CLIENT_OP_WRITE_NR:
