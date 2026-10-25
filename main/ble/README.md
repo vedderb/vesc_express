@@ -598,6 +598,7 @@ The same function provides connection management:
 | --- | --- |
 | `(ble-client-connect)` | First active outgoing connection handle, or `nil` |
 | `(ble-client-connect t)` | List of all active outgoing connection handles |
+| `(ble-client-connect connection)` | Current RSSI in dBm for that outgoing connection, or `nil` on failure |
 | `(ble-client-connect nil)` | Request disconnection of all outgoing peers and cancellation of a pending connection attempt |
 | `(ble-client-connect nil connection)` | Request disconnection of that outgoing peer |
 | `(ble-client-connect 'limit)` | Current logical outgoing connection limit |

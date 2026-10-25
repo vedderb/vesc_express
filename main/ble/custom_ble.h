@@ -406,11 +406,13 @@ typedef enum {
 	BLE_CLIENT_OP_SECURITY,
 	BLE_CLIENT_OP_PASSKEY,
 	BLE_CLIENT_OP_FORGET,
-	BLE_CLIENT_OP_READ_LONG
+	BLE_CLIENT_OP_READ_LONG,
+	BLE_CLIENT_OP_RSSI
 } ble_client_op_t;
 
 typedef struct {
 	ble_client_op_t op;
+	int8_t rssi;
 	ble_addr_t address;
 	uint32_t duration_ms;
 	uint32_t passkey;

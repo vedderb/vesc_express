@@ -1297,7 +1297,7 @@ static lbm_value ext_ble_client_scan(lbm_value *args, lbm_uint argn) {
 	return client_request(&request);
 }
 
-// No arguments queries the connection; nil disconnects, an address connects.
+// No arguments queries the connection; a handle reads RSSI, nil disconnects, an address connects.
 static lbm_value ext_ble_client_connect(lbm_value *args, lbm_uint argn) {
 	if (argn == 0) {
 		uint16_t conn = custom_ble_client_conn_handle();
@@ -1315,6 +1315,14 @@ static lbm_value ext_ble_client_connect(lbm_value *args, lbm_uint argn) {
 			}
 		}
 		return list;
+	}
+
+	if (argn == 1 && lbm_is_number(args[0])) {
+		if (!client_number(args[0], 0, BLE_HS_CONN_HANDLE_NONE - 1)) {
+			return ENC_SYM_TERROR;
+		}
+		ble_client_request_t request = { .op = BLE_CLIENT_OP_RSSI, .conn = lbm_dec_as_u32(args[0]) };
+		return custom_ble_client_request(&request) == 0 ? lbm_enc_i(request.rssi) : ENC_SYM_NIL;
 	}
 
 	if ((argn == 1 || argn == 2) && args[0] == lbm_enc_sym(symbol_client_limit)) {
