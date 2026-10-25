@@ -1210,6 +1210,9 @@ static int client_request_on_host(void *arg) {
 	if (r->op != BLE_CLIENT_OP_SCAN && r->op != BLE_CLIENT_OP_CONNECT && !client) {
 		return BLE_HS_ENOTCONN;
 	}
+	if (r->op == BLE_CLIENT_OP_RSSI) {
+		return ble_gap_conn_rssi(conn, &r->rssi);
+	}
 	if (r->op == BLE_CLIENT_OP_CONNECT) {
 		if (client_connecting) {
 			return BLE_HS_EBUSY;

@@ -7,6 +7,7 @@ sdkconfig.old
 sdkconfig
 sdkconfig.board
 .vscode
+.clangd
 .DS_Store
 build_output/
 main/hwconf/**/*/qmlui_hw.c
