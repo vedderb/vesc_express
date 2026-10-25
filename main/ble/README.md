@@ -2,77 +2,199 @@
 
 ## Introduction
 
-The BLE interface controls the device from LispBM scripts as a BLE server and
-client simultaneously. Outgoing connections support script-controlled pairing and
-passkey entry.
-Server operations include:
+The LispBM BLE interface lets VESC Express expose custom services, communicate
+with BLE peripherals, or perform both roles at the same time. The built-in VESC
+Tool service can remain available alongside scripted services and outgoing
+connections.
 
-1. Defining services with UUIDs and a list of characteristics with their own UUIDs.
-2. Defining the access permissions of said charactersistics, including read, write,
-   write no response, notify, and indicate.
-3. Defining a list of charactersistic descriptors to assign to a characteristic.
-4. Reading and writing the values of the characteristics and their descriptors.
-5. Customizing the advertisement and scan response packets sent.
-6. Scanning, connecting as a GATT client, discovering attributes, reading,
-   writing and subscribing while the normal VESC BLE server stays connected.
+Use the **server** API to expose values to a phone or computer, or to make the
+board act as a HID device. Use the **client** API to scan for peripherals,
+connect, discover their services, exchange data, and handle pairing.
 
-The BLE host uses NimBLE. One incoming
-server connection and multiple outgoing client connections are supported. NimBLE owns
-the standard GAP and GATT services. Client behavior is implemented in `custom_ble`;
-`comm_ble` provides the optional VESC packet transport and the shared host lifecycle.
-Before starting the host, `custom_ble` reserves CCCD resources for the configured
-script attribute capacity across the compiled connection limit and NimBLE's server cache.
-This allows adding notify/indicate services after startup while retaining space
-for outgoing client connections.
+## Contents
 
-## Configuring BLE Scripting
+- [Configuration](#configuration)
+- [Quick start: custom server](#quick-start-custom-server)
+- [Data formats and limits](#data-formats-and-limits)
+- [Server API](#server-api)
+- [Server write events](#server-write-events)
+- [Advertising](#advertising)
+- [Client API](#client-api)
+- [Client events](#client-events)
+- [Pairing outgoing connections](#pairing-outgoing-connections)
+- [Multiple peripherals](#multiple-peripherals)
+- [HID](#hid)
+- [Troubleshooting](#troubleshooting)
+- [Implementation and references](#implementation-and-references)
 
-In VESC Tool, open **VESC Express** > **Bluetooth**. The two modes are
-independent; write the configuration and reboot after changing them.
+## Configuration
 
-| `ble-mode` | VESC Tool service |
+In VESC Tool, open **VESC Express > Bluetooth**. Configure the VESC service and
+LispBM roles independently, write the configuration, and reboot. Changes to
+these settings take effect after reboot.
+
+| `ble-mode` | Built-in VESC Tool service |
 | --- | --- |
 | 0 | Disabled |
-| 1 | Enabled |
-| 2 | Enabled and Encrypted (PIN) |
+| 1 | Enabled without mandatory encryption |
+| 2 | Enabled with encryption and authenticated PIN pairing |
 
-| `ble-mode-lbm` | LispBM roles | Script server | Script client |
+| `ble-mode-lbm` | LispBM role | Server API | Client API |
 | --- | --- | --- | --- |
 | 0 | Disabled | No | No |
 | 1 | Server | Yes | No |
 | 2 | Client | No | Yes |
-| 3 | Client & Server | Yes | Yes |
+| 3 | Client and server | Yes | Yes |
 
-Bluetooth is stopped only when both modes are disabled. The name and PIN
-remain shared settings. Script service and attribute capacities apply when the
-LispBM server is enabled. Only extensions for the selected LispBM roles are
-enabled. Use `(conf-get 'ble-mode-lbm)` to check those roles.
+Only the extensions for the selected roles are enabled. Check the saved role
+with `(conf-get 'ble-mode-lbm)`. BLE is disabled when both modes are 0.
 
-The VESC service can run alongside either scripting role. One incoming connection
-is supported, shared by VESC and script services, with the same encryption state.
-Encrypted VESC mode requires authenticated pairing to access the VESC service.
-Encryption without authentication does not grant access. Outgoing pairing is
-controlled independently through `ble-client-security` and
-`ble-client-passkey`.
+The firmware supports one incoming connection shared by the VESC and scripted
+services, plus up to four outgoing client connections. The services on an
+incoming connection share its encryption state. Encrypted VESC mode requires
+both encryption and authentication to access the VESC transport. Generic
+scripted characteristics do not automatically inherit those access requirements.
+Outgoing pairing has its own policy, configured through the client API.
 
-With VESC disabled and LispBM set to Client, no advertising or server services
-are registered. This combination also skips VESC packet buffers, transmit queue,
-transport mutex, custom service arrays, attribute mutex and additional CCCD
-reservation. Use USB or CAN to configure the device. The client event queue is
-allocated lazily when scanning or connecting. Shared NimBLE host/controller pools
-and compiled connection slots remain allocated according to the build configuration.
+GATT organizes data into services, characteristic values, and descriptors. A
+characteristic holds application data, while its descriptors provide metadata
+or control features such as notification subscriptions.
 
-For server scripting, configure the amount of services, characteristics and
-descriptors you plan to define. Internal arrays that contain these are allocated
-at startup, so you need to define the sizes of these. This is done through the
-**BLE Service Capacity** and **BLE Characteristic and Descriptor Capacity**
-settings. The characteristic and descriptor capacity setting counts the sum of
-the number characteristics and descriptors.
+For the server role, set these capacities before rebooting:
 
-**Note**: These settings only take effect after a reboot, which can be achieved
-by selecting **Terminal** > **Reboot**.
+| Setting | What it counts |
+| --- | --- |
+| **BLE Service Capacity** | Maximum number of scripted services, including a scripted HID service |
+| **BLE Characteristic and Descriptor Capacity** | Total number of explicitly defined characteristic values and descriptors across those services |
 
-## The Library
+A characteristic counts as one entry. Each explicit descriptor counts as another.
+Automatic CCCDs are managed by NimBLE and do not consume an explicit descriptor
+entry unless the script includes one in its definition. The built-in GAP, GATT,
+and VESC services do not consume these scripted capacities.
+
+For example, one service containing two characteristics and one explicit
+descriptor needs a service capacity of 1 and an attribute capacity of 3.
+
+With `ble-mode = 0` and `ble-mode-lbm = 2`, the board acts only as a client. It
+does not advertise or register local server services. Use USB or CAN for
+configuration. This mode avoids the VESC transport buffers and scripted server
+allocations, but the shared BLE host and controller still use memory.
+
+## Quick start: custom server
+
+Additional standalone scripts are available in
+[lbm_examples/ble_scripting](../../lbm_examples/ble_scripting/), including
+scanning, connection and discovery, raw advertising packets, explicit CCCDs,
+and incoming write events.
+
+Enable the server role, set service capacity to at least 1 and attribute capacity
+to at least 1, then save and reboot. This example exposes one readable,
+writable characteristic with notifications:
+
+```clj
+(ble-set-name "device-name")
+(ble-start-app)
+
+; Remove services left by a previous run of this script.
+(map ble-remove-service (reverse (ble-get-services)))
+
+(def service-uuid [
+    0xad 0x2d 0x03 0xdb 0x53 0x35 0x43 0xaf
+    0x9a 0x70 0xea 0x54 0x63 0xad 0x38 0x13
+])
+(def value-uuid [
+    0xae 0x2d 0x03 0xdb 0x53 0x35 0x43 0xaf
+    0x9a 0x70 0xea 0x54 0x63 0xad 0x38 0x13
+])
+
+(def handles (ble-add-service service-uuid `(
+    (
+        (uuid . ,value-uuid)
+        (prop . (prop-read prop-write prop-notify))
+        (max-len . 20)
+        (default-value . [42])
+    )
+)))
+(def value-handle (ix handles 1))
+
+(ble-attr-set-value value-handle [43])
+(ble-attr-get-value value-handle)
+```
+
+Connect with a BLE client, discover the service, and read or write the
+characteristic. To receive subsequent updates, enable notifications on the
+client before calling `ble-attr-set-value` again. The firmware creates the
+required Client Characteristic Configuration Descriptor (CCCD) automatically.
+
+The UUIDs above are example custom UUIDs. The service is available through GATT
+discovery even though default advertising does not list its UUID. To advertise
+it explicitly, use the [custom advertising example](#custom-advertising-example).
+
+The cleanup line removes **all** scripted services. Omit it if another script
+owns services that must remain registered. Reloading Lisp does not reset the BLE
+server. On later runs, `ble-start-app` returns `nil`, and `ble-set-name` cannot
+change the name until reboot.
+
+## Data formats and limits
+
+### UUIDs and handles
+
+Server definitions and client discovery events use UUID byte arrays in display
+order, also called big endian. For example, UUID `0x1812` is `[0x18 0x12]`.
+Accepted UUID lengths are 2, 4, or 16 bytes for 16-, 32-, or 128-bit UUIDs.
+A 32-bit UUID discovered over ATT appears in its expanded 128-bit Bluetooth Base
+UUID form.
+
+Advertising arrays contain raw wire bytes. Multi-byte fields such as service
+UUIDs and appearance values use the byte order specified by Bluetooth, typically
+little endian. For example, the HID service is `[0x12 0x18]` in advertising.
+
+A **service handle** identifies a service. An **attribute handle** identifies a
+characteristic value or descriptor. Do not pass a service handle to
+`ble-attr-get-value` or `ble-attr-set-value`. Always use returned or discovered
+handles instead of hard-coding numeric values. Remote handles belong to a
+particular peer and connection session.
+
+### Byte arrays and strings
+
+Attribute values and advertising field payloads are byte arrays. LispBM strings
+include a terminating zero byte, which is also transmitted if you use a string
+as data. To send `hello` without that byte:
+
+```clj
+(ble-attr-set-value value-handle (buf-resize "hello" -1 'copy))
+```
+
+Use an ordinary null-terminated string for `ble-set-name`.
+
+### Payload sizes
+
+`MTU` below means the negotiated ATT MTU for the connection. The firmware sets
+its preferred MTU to 256, but the negotiated value also depends on the peer.
+At MTU 23, one ordinary read carries at most 22 value bytes, and one write or
+notification carries at most 20. At MTU 256, those limits are 255 and 253 bytes.
+
+| Operation | Limit in the current implementation |
+| --- | --- |
+| Advertising or scan response | 31 bytes per packet, including field headers |
+| Scripted device name | 30 bytes, excluding the terminating zero |
+| Default advertised name | Up to 29 name bytes in the scan response |
+| Ordinary client read | One ATT response, at most `MTU - 1` value bytes, within the 512-byte event buffer |
+| Long client read | Up to 512 bytes, assembled from multiple ATT responses |
+| Client write | At most `min(255, MTU - 3)` bytes, without long-write support |
+| Received client notification or indication | One packet, at most `MTU - 3` value bytes, within the 512-byte event buffer |
+| HID report map | 1 to 512 bytes |
+| HID report payload | 1 to 512 declared bytes, with input notifications also limited to `MTU - 3` |
+
+The 255-byte client write limit is an API restriction. The 512-byte limit is the
+maximum BLE attribute value size and the size of the current client event data
+buffer. A larger buffer does not increase the negotiated packet size.
+
+## Server API
+
+Server functions require `ble-mode-lbm` 1 or 3. Invalid argument types generally
+raise `type_error`. Invalid state, handles, capacity, or stack failures generally
+raise `eval_error`. Allocation failures can raise `out_of_memory`.
 
 ### `ble-start-app`
 
@@ -80,142 +202,31 @@ by selecting **Terminal** > **Reboot**.
 (ble-start-app)
 ```
 
-This enables script services on the already running VESC BLE server. The VESC
-packet service and its connection remain available.
-This should be called once at the start of the program. It has no effect on
-subsequent calls (currently, the only way to stop the BLE server is to power
-cycle the VESC). It returns `true` the first time it is called and `nil` on
-subsequent calls.
+Enable scripted services on the shared BLE host. Call this before adding
+services. It returns `t` on the first successful call and `nil` if scripted
+services have already started. Initialization or host startup failures raise
+`eval_error`.
 
-This function may throw an `eval_error` if some previous internal mechanism
-has failed.
+The existing VESC service and incoming connection remain available. There is no
+script API to stop the shared BLE host. Reboot to reset its state.
 
 ### `ble-set-name`
 
 ```clj
-(ble-set-name name)
+(ble-set-name "device-name")
 ```
 
-Configure the name that the BLE server advertises as the device's name. So
-essentially, the devices name in the BLE system.
+Set the runtime GAP Device Name and the name used by default scripted
+advertising. Call this **before the first `ble-start-app`**. It returns `t` when
+accepted and `nil` after scripted services have started. A name longer than 30
+bytes raises `eval_error`.
 
-The name must not be longer than 30 characters. Providing a longer name will
-throw an `eval_error`. The default scan response includes up to 29 name bytes;
-a 30-byte name is advertised as a shortened name. The complete name remains
-available through the GAP Device Name characteristic.
+Default scan responses contain at most 29 name bytes. A 30-byte name is marked
+as shortened, while the full name remains available through the GAP Device Name
+characteristic. Custom advertising uses the name bytes supplied by the script.
 
-This should be called *before* the BLE server has started (so before
-[`ble-start-app`](#ble-start-app) is called). Then `true` is returned. Calling it afterwards has no effect
-and returns `nil`.
-
-### `ble-conf-adv-set-channels`
-
-```clj
-(ble-conf-adv-set-channels channels)
-```
-
-Configure channels to use for advertising. Channels is a list and must contain a combination of 37, 38 and 39. By default all channels are used. Example:
-
-```clj
-; Use all channels for advertising
-(ble-conf-adv-set-channels '(37 38 39))
-```
-
-### `ble-conf-adv-set-interval`
-
-```clj
-(ble-conf-adv-set-interval min max)
-```
-
-Configure minimum and maximum advertising interval in units of 0.625 ms. Both intervals (min and max) must be within 0x0020 and 0x4000 (20 ms to 10.24 s). Example:
-
-```clj
-(ble-conf-adv-set-interval 0x400 0x800)
-```
-
-### `ble-conf-adv`
-
-```clj
-(ble-conf-adv false)
-(ble-conf-adv use-custom adv-data scan-rsp-data)
-```
-
-Configure if custom advertising data should be used, and which packets to
-send in that case. `use-custom` is a bool which if true specifies that the
-custom advertising and scan response packets should be used. If false,
-`adv-data` and `scan-rsp-data` are ignored and do not need to be provided, since
-a standard packet is used instead (see the example below to see its contents).
-
-`adv-data` and `scan-rsp-data` are used to specify the packets that are used
-with advertising and scan responses. They can either be an array which specifies
-the raw bytes to be sent as the packet, or a list with cons cells of the form
-`(name-symbol-or-number . array)` (Must be an integer from 1 to 255 inclusive if
-a number, see [BLE Advertising](#ble-advertising) for valid symbols and other
-details). If the resulting packet is longer than 31
-bytes an `eval_error` is thrown. You can pass `nil` to either to specify that
-it should not be updated and that the previously configured packet should remain
-in effect (both custom packets are initialized to be an empty array before
-configuring them with `ble-conf-adv`).
-
-This extension returns `nil` in the case of an unknown error occuring
-related to the internal BLE APIs. Otherwise `true` is returned.
-
-This extension can be called before or after the BLE server has been started
-with [`ble-start-app`](#ble-start-app), so at any time. Calling it after the BLE
-server has been started will cause advertising to restart automatically.
-
-This function takes raw or almost completely raw packets, so you should read the section
-about [BLE Advertising](#ble-advertising) if you're unsure about BLE internals.
-
-Example that disables custom advertising and scan response packets:
-```clj
-(ble-conf-adv false)
-```
-
-Example that sets an advertising packet configuring the name `"test"` and some
-flags. It also configures an empty scan-response by leaving it unchanged.
-```clj
-(def adv-data `(
-    (flags . [0x06])
-    (name-complete . ,(buf-resize "my-device" -1)) ; We shrink it to not include the terminating null byte.
-))
-
-(ble-conf-adv true adv-data nil)
-> t
-```
-
-The following example configures packets that are identical to the ones sent by
-default (assuming that you'd configured the device name to be "test").
-```clj
-(def adv-data `(
-    (flags . [0x06])
-    (name-complete . [0x74 0x65 0x73 0x74]) ; "test" in ascii
-    (conn-interval-range . [0x06 0x00 0x03 0x00])
-))
-(def scan-rsp-data `(
-    (flags . [0x06])
-    (tx-power-level . [0x12])
-    (conn-interval-range . [0x06 0x00 0x03 0x00])
-))
-
-(ble-conf-adv true adv-data scan-rsp-data)
-```
-
-Example that configures the same default packets using raw byte-arrays instead:
-```clj
-(def adv-data [
-    0x02 0x01 0x06                ; flags
-    0x05 0x09 0x74 0x65 0x73 0x74 ; name-complete
-    0x05 0x12 0x06 0x00 0x30 0x00 ; conn-interval-range
-])
-(def scan-rsp-data [
-    0x02 0x01 0x06                ; flags
-    0x02 0x0A 0x12                ; tx-power-level
-    0x05 0x12 0x06 0x00 0x30 0x00 ; conn-interval-range
-])
-
-(ble-conf-adv true adv-data scan-rsp-data)
-```
+This runtime name does not update the saved `ble-name` setting, whose storage
+holds eight name bytes and a terminating zero.
 
 ### `ble-add-service`
 
@@ -223,89 +234,66 @@ Example that configures the same default packets using raw byte-arrays instead:
 (ble-add-service service-uuid characteristics)
 ```
 
-Add a service with the given list of characteristics.
+Add a primary service after `ble-start-app`. `characteristics` is a list of
+association lists, each describing one characteristic:
 
-This function needs to be called after [`ble-start-app`](#ble-start-app) has been
-called. Calling it before will throw an `eval_error`.
+| Key | Required | Value |
+| --- | --- | --- |
+| `uuid` | Yes | UUID byte array of length 2, 4, or 16 |
+| `prop` | Yes | List of characteristic property symbols |
+| `max-len` | Yes | Positive maximum value length in bytes |
+| `default-value` | No | Nonempty byte array no longer than `max-len`, default `[0]` |
+| `descr` | No | List of descriptor association lists |
 
-The service-uuid is given as a byte array representing either a 16-, 32-, or
-128-bit UUID, so it should be 2, 4, or 16 bytes long. The order of the bytes is
-big endian, which means that you write the bytes in the same order as you would
-write it in text (so the UUID 4be24176-71ae-11ee-b962-0242ac120002 would be represented
-by the lbm value `[0x4b 0xe2 0x41 0x76 0x71 ... 0x12 0x00 0x02]`).
+Available characteristic properties:
 
-Service UUIDs must be unique among scripted services. UUIDs `0x1800` (GAP)
-and `0x1801` (GATT) are reserved. Attempts to use these or duplicate service
-UUIDs return an `eval_error`.
+| Symbol | Client operation |
+| --- | --- |
+| `prop-read` | Read the value |
+| `prop-write` | Write with an ATT response |
+| `prop-write-nr` | Write without an ATT response |
+| `prop-notify` | Subscribe to notifications |
+| `prop-indicate` | Subscribe to indications |
 
-This function returns a list of service, characteristic, and descriptor handles
-in the order they were defined, with the service handle being first (See the
-example below). This function can also return a `type_error` or `eval_error`.
+Descriptor definitions accept `uuid`, `max-len`, and optional `default-value`.
+Generic descriptors are readable and writable. The generic API does not expose
+per-attribute encryption or authentication flags. Use maximum lengths within
+the BLE attribute limit of 512 bytes.
 
-#### `characteristics` Format
+Service UUIDs must be unique. GAP (`0x1800`), GATT (`0x1801`), and the built-in
+VESC transport UUID are reserved, even if the VESC transport is disabled.
 
-The characteristics list is defined by a list of associative lists, where each
-assoc list defines a single characteristic. Assoc lists are lists with cons
-cells as items. Where the car fields hold the lists keys, while the cdr fields
-hold the keys respective values.
+The return value is a list containing the service handle, then each
+characteristic value handle followed by its explicitly defined descriptor
+handles, in definition order. For example:
 
-The valid entries are as follows:
-- `'uuid`: The characteristic's UUID, same format as the service UUID.
-- `'prop`: A list of any combination of the symbols `'prop-read`, `'prop-write`,
-  `'prop-write-nr`, `'prop-indicate`, `'prop-notify`, which correspond to the
-  access flags for this characteristic.
-- `'max-len`: The maximum value length (in bytes) that can be written to this
-  characteristic.
-- `'default-value` \[optional\]: A byte array which will be set as the
-  characteristics initial value. The length of this should not be longer than
-  `max-len`.
-- `'descr` \[optional\]: A list of descriptors to assign to this characteristic
-  (see below).
-
-The descriptor list follows a very similar format to the characteristic list,
-except only the `'uuid`, `'max-len`, and `'default-value` entries are valid.
-
-**Note**: NimBLE automatically adds a client characteristic configuration
-(CCCD) descriptor for `prop-notify` or `prop-indicate`. Existing scripts may keep
-an explicit descriptor with UUID `[0x29 0x02]`, max length 2, and initial value
-`[0 0]`: its returned handle maps to the CCCD created by NimBLE. If omitted,
-this automatic descriptor is not included in the script's returned handle list.
-Clients control subscriptions; `ble-attr-set-value` cannot write a CCCD.
-Notifications and indications are sent only to subscribed clients.
-
-#### Example
-
-```clj
-(ble-add-service [0xbe 0xb5 0x48 0x3e] '(
-    (
-        (uuid . [0xbe 0xb5 0x48 0x4e])
-        (prop . (prop-read prop-write prop-notify))
-        (max-len . 100)
-        (descr . (
-            (
-                (uuid . [0x29 0x02]) ; the ccc-uuid
-                (max-len . 2)
-                (default-value . [0 0])
-            )
-        ))
-    )
-))
-> (40u 42u 43u)
+```text
+(service characteristic-1 descriptor-1 characteristic-2 ...)
 ```
 
-This creates a service with the 32-bit UUID [0xbe 0xb5 0x48 0x3e] with a single
-characteristic that has the 32-bit UUID [0xbe 0xb5 0x48 0x4e] (these UUIDs are
-complete nonsense). Client devices are allowed to read, write the value of this
-characteristic, which can at most be 100 bytes long.
+#### Notification subscriptions and CCCDs
 
-Clients are also allowed to subscribe to notifications of changes to the value,
-which is why we need to add the CCC descriptor to the characteristic. The value
-of and behavior of this descriptor is handled automatically by the BLE server.
-Note that we also could have defined any other characteristics if we wanted to.
+For `prop-notify` or `prop-indicate`, NimBLE automatically creates a CCCD with
+UUID `0x2902`. The client writes this descriptor to enable updates. A CCCD
+created automatically is omitted from the returned script handle list.
 
-This function then returns a list of handles. The service handle 40 comes first,
-followed by the characteristic and descriptor handles 42 and 43 respectively.
-These can be used with the other library functions.
+For compatibility, a script may explicitly include this descriptor:
+
+```clj
+(descr . (
+    (
+        (uuid . [0x29 0x02])
+        (max-len . 2)
+        (default-value . [0 0])
+    )
+))
+```
+
+Its returned handle refers to NimBLE's CCCD, rather than a second descriptor.
+The explicit entry counts toward scripted attribute capacity. The script can
+read its cached subscription value but cannot write it with
+`ble-attr-set-value`. Subscriptions are cleared when the incoming peer
+disconnects.
 
 ### `ble-remove-service`
 
@@ -313,81 +301,44 @@ These can be used with the other library functions.
 (ble-remove-service service-handle)
 ```
 
-Remove the given service, along with the associated characteristics and
-descriptors, freeing the resources in the process. `service-handle` should be a
-number which was the first number in the list of handles returned by
-[`ble-add-service`](#ble-add-service).
+Remove a scripted service and its characteristics and descriptors. Returns `t`
+on success. Services must be removed in reverse creation order. Removing an
+unknown service or a service that is not the most recently added raises
+`eval_error`.
 
-Due to technical limitations (that should probably be possible to remove),
-services need to be removed in the reverse order they were created in. Say you
-created two services, **Service A** and then **Service B**, in that order. To
-remove them, you would have to first remove **Service B**, followed by
-**Service A**. This is because the services are stored on a stack internally, so
-you need to pop them in the order you usually would with a stack.
-
-Example which remove the service with the handle 40, which was the service which was
-created last:
+To remove all scripted services:
 
 ```clj
-(ble-remove-service 40)
-> t
+(map ble-remove-service (reverse (ble-get-services)))
 ```
 
 ### `ble-attr-get-value`
 
 ```clj
-(ble-attr-get-value attr-handle)
+(ble-attr-get-value attribute-handle)
 ```
 
-Get the current value of a characteristic or descriptor (referred to generally as
-an attribute) as a byte array. `attr-handle` should be a number
-returned by [`ble-add-service`](#ble-add-service).
-
-Providing an invalid handle will throw an `eval_error`.
-
-Example where the value of the attribute with the handle 42 is set to the
-byte-array `"hello"`, and then queried:
-
-```clj
-(ble-attr-set-value 40 "hello")
-(ble-attr-get-value 40)
-> "hello"
-```
+Return the current local characteristic or descriptor value as a byte array.
+An unknown attribute handle raises `eval_error`.
 
 ### `ble-attr-set-value`
 
 ```clj
-(ble-attr-set-value attr-handle value)
+(ble-attr-set-value attribute-handle data)
 ```
 
-Set the value of the attribute to the provided value. `attr-handle` should be a
-number that was returned by [`ble-add-service`](#ble-add-service) and `value` a byte
-array. **Note** that the raw byte without modification will be stored, and since strings are null
-terminated in LBM, setting the value to a string literal will include the
-terminating null byte. You will have to create a copy of the byte array without
-the final byte to avoid this behavior. Here is an example function that does
-this using
-[`bufcpy`](https://github.com/vedderb/bldc/blob/master/lispBM/README.md#bufcpy):
-```clj
-(defun trim-null-byte (str) {
-    (var len (str-len str))
-    (var cpy (bufcreate len))
-    (bufcpy cpy 0 str 0 len)
-    cpy
-})
-```
+Copy `data` into a local characteristic or descriptor and return `t` on success.
+The value must fit its declared maximum length. HID report values must also
+have exactly their declared length. Unknown handles, writes to CCCDs, invalid
+lengths, or notification failures raise `eval_error`.
 
-Providing an invalid handle will throw an `eval_error`.
+For a characteristic with an active subscription, setting the value also
+attempts to send a notification or indication. Without a subscription, only
+the local value is updated. The value is stored before transmission is
+attempted, so a transmission error does not undo the local update.
 
-Setting the value of a characteristic automatically sends notifications or
-indications to subscribing clients if those flags were set when the
-characteristic was defined.
-
-Example that sets the value of the attribute with the handle 40 to "hello":
-```clj
-(ble-attr-set-value 40 "hello")
-; it now contains the bytes [0x68 0x65 0x6c 0x6c 0x6f 0x0]
-```
+This function does not split large values across notifications. Keep transmitted
+values within `MTU - 3` bytes.
 
 ### `ble-get-services`
 
@@ -395,19 +346,8 @@ Example that sets the value of the attribute with the handle 40 to "hello":
 (ble-get-services)
 ```
 
-Get the list of the handles of the currently active services, excluding any
-services that have already been removed. The handles are returned in the order
-they were created in. If you want to remove them, you would need to reverse the
-list first!
-
-Example that gets the currently active service handles:
-
-```clj
-(ble-get-services)
-> (40u)
-```
-
-In this case, only a single service had been created.
+Return active scripted service handles in creation order. Returns `nil` if none
+exist, including before `ble-start-app`. Built-in services are excluded.
 
 ### `ble-get-attrs`
 
@@ -415,263 +355,401 @@ In this case, only a single service had been created.
 (ble-get-attrs service-handle)
 ```
 
-Get the list of characteristic and descriptor handles assigned to the given service
-when it was created. `service-handle` should be a number that was returned by
-[`ble-add-service`](#ble-add-service). Providing an invalid handle throws an
-`eval_error`.
+Return the characteristic and explicit descriptor handles for a scripted service
+in definition order. This is the list returned by `ble-add-service`, without
+the first service-handle element. An invalid service handle raises `eval_error`.
 
-This function essentially returns the same list returned when `ble-add-service` was
-first called, just without the first item (since that item would correspond to the service's
-handle).
+## Server write events
 
-Example where the attribute handles of the service 40 are queried:
+Enable `event-ble-rx` to receive writes made by the incoming client. These use
+the normal LispBM event mechanism, independently of the polled client queue.
+Each event has this layout:
 
 ```clj
-(ble-get-attrs 40)
-> (42u 43u)
+(event-ble-rx attribute-handle data-array)
 ```
 
-In this case, the service was defined with a single characteristic with a
-descriptor that had the handles 42 and 43 respectively.
+The value has already been updated when the event is delivered. An explicit
+CCCD also produces this event when the client changes its subscription. Local
+calls to `ble-attr-set-value` do not generate a remote-write event.
 
-## Events
-Too know when a client has written to a characteristic or descriptor, an LBM
-event is fired. The semantics work the same as with
-[normal events](https://github.com/vedderb/bldc/blob/master/lispBM/README.md#events).
-The event message consists of a list of the form
-`('event-ble-rx handle data)`, where the `handle` is the handle number of the
-attribute's that was written to, and the `data` is the byte-array that was
-written by the client.
-
-Here is an example of a setup that catches and logs these events, printing the
-values as strings:
 ```clj
-(defun proc-ble-data (handle data) {
-    (print (str-merge
-        "Value "
-        (to-str data)
-        " written to attribute handle "
-        (str-from-n handle)
-    ))
-})
-
-(defun event-handler ()
+(defun ble-event-handler ()
     (loopwhile t
         (recv
-            ((event-ble-rx (? handle) (? data)) (proc-ble-data handle data))
-            (_ nil) ; Ignore other events
+            ((event-ble-rx (? handle) (? data))
+                (print (list 'ble-write handle data)))
+            (_ nil)
         )
     )
 )
 
-(event-register-handler (spawn event-handler))
+(event-register-handler (spawn ble-event-handler))
 (event-enable 'event-ble-rx)
 ```
 
-## BLE Advertising
+An application with an existing event handler should add the BLE pattern to that
+handler instead of registering a second one.
 
-> Back to [`ble-conf-adv`](#ble-conf-adv)
+## Advertising
 
-These APIs require you to configure advertising and scan response packets by
-giving the raw bytes. This is to allow you as much as control as possible,
-something which is very important because the packets can only be up to 31 bytes
-long each, so optimizing their size is crucial. If this sounds intimidating
-fret not, as it's not that complicated as this guide should hopefully make
-clear!
+These functions belong to the server role. Default advertising is usually
+sufficient. Use custom packets when a client must find a particular service UUID
+or needs additional discovery data.
 
-To make it slightly nicer to specify these packets than to just having to give a
-single long byte-array, there is a alternative syntax where you give a list of
-the fields present in the packet. You can also just give raw arrays if that is
-more convenient. Each field is a cons cell of the form
-`(type-symbol-or-number . array)`. The car field corresponds to the type of the
-field, and should normally be one of the symbols defined in the list below. But
-since there are a large number of types, and memory is limited, only a handful
-of types are given dedicated symbols. You can therefore also specify the type
-with the integer as defined in the specification. The cdr field on the other
-hand corresponds to the raw data associated with the field type and should
-therefore be a byte-array.
+### Default packets
 
-Here is a list of all defined type symbols and their meanings. These are
-taken from the [**Bluetooth Assigned Numbers, Section 2.3**](#references)
-document.
+After `ble-start-app`, default advertising contains:
 
-| Type | Number | Description | Reference |
-| -- | -- | -- | -- |
-|`'flags`| `0x01` | General config flags. It is a bit field containing low level information about capabilities, see example for a reasonable default, or the reference for the individual bit fields. | [**Bluetooth Core Specification Supplement, Part A, Section 1.3**](#references) |
-|`'incomplete-uuid-16`| `0x02` | Incomplete list of 16-bit service uuids, meaning that there are more 16-bit services available. | [**Bluetooth Core Specification Supplement, Part A, Section 1.1**](#references) |
-|`'complete-uuid-16`| `0x03` | Complete list of 16-bit service uuids, meaning that every 16-bit service is listed. | [**Bluetooth Core Specification Supplement, Part A, Section 1.1**](#references) |
-|`'incomplete-uuid-32`| `0x04` | Incomplete list of 32-bit service uuids, meaning that there are more 32-bit services available. | [**Bluetooth Core Specification Supplement, Part A, Section 1.1**](#references) |
-|`'complete-uuid-32`| `0x05` | Complete list of 32-bit service uuids, meaning that every 16-bit service is listed. | [**Bluetooth Core Specification Supplement, Part A, Section 1.1**](#references) |
-|`'incomplete-uuid-128`| `0x06` | Incomplete list of 128-bit service uuids, meaning that there are more 128-bit services available. | [**Bluetooth Core Specification Supplement, Part A, Section 1.1**](#references) |
-|`'complete-uuid-128`| `0x07` | Complete list of 128-bit service uuids, meaning that every 16-bit service is listed. | [**Bluetooth Core Specification Supplement, Part A, Section 1.1**](#references) |
-|`'name-short`| `0x08` | A shortened version of the complete name. This signifies that a client could query the complete name by reading the device name characteristic after connecting. Must consist of a contiguous series of characters from the start of the full name. | [**Bluetooth Core Specification Supplement, Part A, Section 1.2**](#references) |
-|`'name-complete`| `0x09` | The complete device name. This is normally the one which you would use. | [**Bluetooth Core Specification Supplement, Part A, Section 1.2**](#references) |
-|`'tx-power-level`| `0x0A` | Named "Tx Power Level": the transmitted power level, see the reference for details. | [**Bluetooth Core Specification Supplement, Part A, Section 1.5**](#references) |
-|`'device-id`| `0x10` | Not sure what this does, the specification just references "Device ID Profile". | :/ |
-|`'conn-interval-range`| `0x12` | Named "Peripheral Connection Interval Range", see the reference for details.  | [**Bluetooth Core Specification Supplement, Part A, Section 1.9**](#references) |
-|`'service-data-16`| `0x16` | Named "Service Data - 16-bit UUID", consists of a single 16-bit UUID followed by arbitrary length service data. Can be given multiple times to give service data for multiple services. | [**Bluetooth Core Specification Supplement, Part A, Section 1.11**](#references) |
-|`'service-data-32`| `0x20` | Named "Service Data - 32-bit UUID", consists of a single 32-bit UUID followed by arbitrary length service data. Can be given multiple times to give service data for multiple services. | [**Bluetooth Core Specification Supplement, Part A, Section 1.11**](#references) |
-|`'service-data-128`| `0x21` | Named "Service Data - 128-bit UUID", consists of a single 128-bit UUID followed by arbitrary length service data. Can be given multiple times to give service data for multiple services. | [**Bluetooth Core Specification Supplement, Part A, Section 1.11**](#references) |
-|`'appearance`| `0x19` | A apperance ID which specifies the general type of device such as "Phone" or "Thermometer". The values are specified in [**Bluetooth Assigned Numbers, Section 2.6**](#references) document. See the reference for a more general description. | [**Bluetooth Core Specification Supplement, Part A, Section 1.12**](#references) |
-|`'manufacturer-data`| `0xFF` | Named "Manufacturer Specific Data", the first two bytes are a company ID as specified by [**Bluetooth Assigned Numbers, Section 7**](#references), followed by a blob of arbitrary data. See the reference for more details. | [**Bluetooth Core Specification Supplement, Part A, Section 1.4**](#references) |
+- Flags `0x06`, indicating general discoverability and no BR/EDR support.
+- The VESC transport service UUID when `ble-mode` is nonzero.
+- The HID service UUID and current appearance when a scripted HID service exists.
 
-In BLE advertising and scan response packets fields are formatted as
-a single byte specifying the length in bytes of the field type + data, followed
-by another single byte specifying the type of the field (one of the numbers in
-the table above), finished by length - 1 bytes containing the field data. So to
-calculate the size of a packet you can simply sum up the results of
-`2 + data-length` for each field (where `data-length` is the length of the
-byte-array given for the field).
+The default scan response contains the device name. Other scripted service
+UUIDs are not added automatically. Advertising stops while the incoming peer is
+connected and resumes after it disconnects.
 
-The advertising and scan response packets can not be larger than 31 bytes each.
-
-In general, you can use the scan response packet to specify additional data that
-didn't fit in 31 bytes of the advertising packet. The advertising packet is sent out
-passively, while the scan response packet must be actively requested by the
-client. It's not entirely clear to me when you need to duplicate fields across
-the two packets, it seems like it's not well defined how clients react. If you
-notice me doing something stupid (like if specifying the connection interval
-range twice is unnecessary) please just ignore it (a PR/email would be greatly
-appreciated though 
-\<[rasmus.soderhielm@gmail.com](mailto:rasmus.soderhielm@gmail.com)\>). There is
-a [Stack Overflow answer](https://stackoverflow.com/a/31518806) which gives some
-nice insights about the roles of the advertising and scan response packets.
-
-All this is to say that you should not be afraid to play around and to try
-removing the more unclear fields like `flags` or `conn-interval-range` to see
-what works and doesn't. :)
-
-### Example
-
-Let's finally go through an example of a server with a single characteristic
-with the constant value `42`.
-
-Note that the UUID `ad2d03db-5335-43af-9a70-ea5463ad3813` was picked at random
-and has no special meaning.
+### `ble-conf-adv`
 
 ```clj
-(def service-uuid [0xad 0x2d 0x03 0xdb 0x53 0x35 0x43 0xaf 0x9a 0x70 0xea 0x54 0x63 0xad 0x38 0x13])
-(def chr-uuid [0xae 0x2d 0x03 0xdb 0x53 0x35 0x43 0xaf 0x9a 0x70 0xea 0x54 0x63 0xad 0x38 0x13]) ; notice the first byte
-(def name "device-name")
-(def name-bytes (buf-resize name -1 'copy)) ; Remove the terminating null byte.
-
-; Resulting packet size: 27
-(def adv-data `(
-    (flags . [0x06])
-    (conn-interval-range . [0x06 0x00 0x03 0x00])
-    (complete-uuid-128 . ,chr-uuid)
-))
-; Resulting packet size: 25
-(def scan-rsp-data `(
-    (flags . [0x06])
-    (conn-interval-range . [0x06 0x00 0x03 0x00])
-    (tx-power-level . [0x12])
-    (name-complete . ,name-bytes)
-))
-
-; Remove any existing services (services are not automatically removed when
-; reloading a script!)
-(map ble-remove-service (reverse (ble-get-services)))
-
-(ble-conf-adv true adv-data scan-rsp-data)
-(ble-set-name name)
-
-(ble-start-app)
-
-(ble-add-service service-uuid `(
-    (
-        (uuid . ,chr-uuid)
-        (prop . (prop-read))
-        (max-len . 1)
-        (default-value . [42])
-    )
-))
+(ble-conf-adv nil)
+(ble-conf-adv t advertising-data scan-response-data)
 ```
 
-We configure the `'complete-uuid-128` field to inform any clients scanning for
-our service that we have it. Also notice that we still configure the device name
-using [`ble-set-name`](#ble-set-name) even though we already configured it in
-the scan response packet. This is because the device name given through
-`ble-set-name` is still used in the auto generated **Generic Access** service.
+Select default packets with `nil`, or custom packets with `t`. Each custom
+packet argument accepts a raw byte array, a nonempty list of advertising fields,
+or `nil` to retain the previous custom packet. Custom packets initially contain
+no data. Pass `[]` to explicitly clear a packet.
 
-We're going to use the
-[nRF Connect app (android)](https://play.google.com/store/apps/details?id=no.nordicsemi.android.mcp&pcampaignid=web_share)
-to connect to our BLE server.
-([It is also available for IOS](https://apps.apple.com/se/app/nrf-connect-for-mobile/id1054362403),
-but the UI is different and has less
-details.)
+Returns `t` on success or `nil` for an internal BLE update failure. Invalid packet
+types raise `type_error`. Packets longer than 31 bytes raise `eval_error`.
 
-If we run this code and open nRF Connect, we can find our device "device-name"
-in the scanner list.
+Call this before or after `ble-start-app`. After startup, it restarts advertising
+when no incoming peer is connected. Custom packets replace the defaults
+entirely, so include any required VESC or HID discovery fields yourself.
 
-<img src="../../doc/img/ble-example-adv.png" alt='A screenshot of the scanner
-view in nRF Connect app showing the device with the name "device-name"'
-width=500>
+A field list uses `(type . payload-array)` entries. For example:
 
-When connecting we see our characteristic
-`ae2d03db-5335-43af-9a70-ea5463ad3813` with the value 42 (or `0x2A` in hex).
+```clj
+(def advertising-data '((flags . [0x06])))
+(def scan-response-data '((name-complete . [0x74 0x65 0x73 0x74])))
+(ble-conf-adv t advertising-data scan-response-data)
+```
 
-<img src="../../doc/img/ble-example-connected.png" alt='A screenshot of the nRF
-Connect app connected with "device-name". You can see a characteristic with the
-value 0x2A in hexadecimal.' width=500>
+Equivalent raw packets:
 
-### References
+```clj
+(ble-conf-adv t [0x02 0x01 0x06] [0x05 0x09 0x74 0x65 0x73 0x74])
+```
 
-I've referenced the official Bluetooth specifications a lot in this section, but
-since most of the Bluetooth documents don't have any bookmarks, linking directly
-to the relevant sections is difficult. So you'll unfortunately have to go to the
-mentioned sections yourself.
+Both advertise the name `test`. Set the GAP name separately with `ble-set-name`
+if it should match.
 
-But here is a table of links to the specifications mentioned:
+### Advertising fields
 
-|Document|Link|Direct Link to PDF (May or May Not be dead)|
-|--|--|--|
-| **Bluetooth Assigned Numbers** | https://www.bluetooth.com/specifications/assigned-numbers/ | https://www.bluetooth.com/wp-content/uploads/Files/Specification/Assigned_Numbers.pdf?id=2289 |
-| **Bluetooth Core Specification Supplement** | https://www.bluetooth.com/specifications/specs/core-specification-supplement-11/ | https://www.bluetooth.org/DocMan/handlers/DownloadDoc.ashx?doc_id=556598 (will download the PDF) |
+Each field contains a length byte, a type byte, and its payload. The length
+byte counts the type and payload, but not itself. Each field therefore uses
+`2 + payload-length` bytes. The advertising and scan response packets each have
+their own 31-byte limit. Scan response data is available to active scanners.
 
-In case any of the links have died since writing this you can try to search for
-the document name without the **Bluetooth** part here:
-https://www.bluetooth.com/specifications/specs/?types=specs-docs
+| Symbol | Type | Payload |
+| --- | --- | --- |
+| `flags` | `0x01` | Discovery and transport flags |
+| `incomplete-uuid-16` | `0x02` | Incomplete list of 16-bit service UUIDs |
+| `complete-uuid-16` | `0x03` | Complete list of 16-bit service UUIDs |
+| `incomplete-uuid-32` | `0x04` | Incomplete list of 32-bit service UUIDs |
+| `complete-uuid-32` | `0x05` | Complete list of 32-bit service UUIDs |
+| `incomplete-uuid-128` | `0x06` | Incomplete list of 128-bit service UUIDs |
+| `complete-uuid-128` | `0x07` | Complete list of 128-bit service UUIDs |
+| `name-short` | `0x08` | Shortened device name |
+| `name-complete` | `0x09` | Complete device name |
+| `tx-power-level` | `0x0a` | Transmit power in dBm, as a signed byte |
+| `device-id` | `0x10` | Device ID profile data |
+| `conn-interval-range` | `0x12` | Minimum and maximum peripheral connection intervals |
+| `service-data-16` | `0x16` | 16-bit service UUID followed by service data |
+| `appearance` | `0x19` | 16-bit appearance value |
+| `service-data-32` | `0x20` | 32-bit service UUID followed by service data |
+| `service-data-128` | `0x21` | 128-bit service UUID followed by service data |
+| `manufacturer-data` | `0xff` | Company identifier followed by manufacturer data |
 
-## BLE client (NimBLE)
+Use an integer type from 1 to 255 for fields without a named symbol. Payload
+arrays are copied as supplied. The field-list API adds the length and type bytes
+but does not convert payload byte order or remove string terminators.
 
-BLE client scripting modes (`ble-mode-lbm = 2` or `3`, stored and rebooted) support multiple outgoing
-client connections. Incoming connections are available when the VESC service or
-LispBM server is enabled.
-Client operations do not require `ble-start-app` or custom service capacity.
-Setting `ble-mode-lbm` to 0 and rebooting disables both client and custom server
-scripting operations without changing the VESC service mode.
+### `ble-conf-adv-set-channels`
 
-Operations start asynchronously: `t` means accepted, a nonzero integer is the
-NimBLE host error code (for example not connected, busy or packet too long).
-Invalid arguments raise `type_error`. Compare against `t`, not truthiness.
-Poll `(ble-client-event)` from **one** Lisp context; it returns `nil` when empty.
-Yield with `(sleep 0.01)` between polls so the GUI can run. Only one GATT
-procedure per connection can be outstanding; different peers can have procedures
-in progress simultaneously. Connection establishment is sequential: wait for a
-connection result before starting another attempt.
+```clj
+(ble-conf-adv-set-channels '(37 38 39))
+```
 
-| Function | Arguments / behavior |
+Select a nonempty list of advertising channels from 37, 38, and 39. All three are
+selected by default. Returns `t`. Invalid types raise `type_error`, and an empty
+list or invalid channel raises `eval_error`.
+
+### `ble-conf-adv-set-interval`
+
+```clj
+(ble-conf-adv-set-interval minimum maximum)
+```
+
+Set advertising intervals in units of 0.625 ms. Both values must be between
+`0x0020` and `0x4000` inclusive, corresponding to 20 ms through 10.24 s, and
+`minimum` must not exceed `maximum`. Returns `t` or raises `eval_error` for an
+invalid interval. Invalid types raise `type_error`.
+
+The default scripted intervals are `0x20` to `0x40`, or 20 to 40 ms. For example,
+`(ble-conf-adv-set-interval 0x400 0x800)` selects 640 to 1280 ms.
+
+Channel and interval setters update the parameters for the **next advertising
+start**. They do not restart active advertising. Configure them before
+`ble-start-app`, or reapply `ble-conf-adv` afterward to restart advertising with
+the new parameters when disconnected.
+
+### Custom advertising example
+
+This example advertises the service from the quick start. Configure it after
+defining the service, or before `ble-start-app` if preparing all settings first.
+The service UUID bytes are reversed relative to the server definition:
+
+```clj
+(def advertising-data '(
+    (flags . [0x06])
+    (incomplete-uuid-128 . [
+        0x13 0x38 0xad 0x63 0x54 0xea 0x70 0x9a
+        0xaf 0x43 0x35 0x53 0xdb 0x03 0x2d 0xad
+    ])
+))
+(def scan-response-data `(
+    (name-complete . ,(buf-resize "device-name" -1 'copy))
+))
+(ble-conf-adv t advertising-data scan-response-data)
+```
+
+The advertising packet uses 21 bytes and the scan response uses 13. This is a
+custom discovery configuration and does not reproduce the default packets.
+The incomplete UUID list allows other 128-bit services, such as the VESC
+transport, to remain available without listing them in this packet.
+
+## Client API
+
+Client functions require `ble-mode-lbm` 2 or 3. They do not require
+`ble-start-app` or scripted server capacity.
+
+### Requests and completion
+
+Client requests return `t` when accepted, or a nonzero integer NimBLE error code
+when rejected. Invalid arguments raise `type_error`. **Compare the result with
+`t` explicitly**, because a nonzero error code is also truthy in LispBM.
+
+Acceptance does not mean the remote operation has completed. Consume events to
+obtain its result. Only one GATT procedure or requested security procedure can
+run on a connection at a time. Wait for its completion before starting the next
+one. Different connections can have procedures in progress simultaneously.
+
+A typical client sequence is:
+
+1. Scan and select the address and address type from `ble-scan-result`.
+2. Connect and wait for a successful `ble-connect-result`.
+3. If required, pair and wait for `ble-security-result`.
+4. Exchange MTU and wait for `ble-mtu-result`.
+5. Discover services, characteristics, and descriptors, waiting for each
+   `ble-procedure-done` before starting the next discovery procedure.
+6. Read, write, or subscribe using the discovered handles.
+7. Process notifications and connection events in one event dispatcher.
+
+Connection establishment is sequential. Wait for one connection attempt to
+finish before starting another.
+
+### `ble-client-scan`
+
+```clj
+(ble-client-scan duration-ms)
+```
+
+Start an active scan with duplicate filtering. Duration must be an integer from
+1 to 60000 milliseconds. `(ble-client-scan 0)` requests cancellation. A normal
+scan completion produces `ble-scan-done`. The cancellation path does not
+synthesize a completion event, so do not wait for one to acknowledge cancellation.
+
+Scan results contain an address, address type, RSSI, and raw advertising payload.
+The payload must be decoded by the script. Starting a connection cancels an
+active scan.
+
+### `ble-client-connect`
+
+```clj
+(ble-client-connect address address-type)
+(ble-client-connect address address-type timeout-ms)
+(ble-client-connect address address-type timeout-ms io-cap)
+(ble-client-connect address address-type timeout-ms io-cap bond)
+```
+
+Connect to a six-byte address in displayed MAC order. For example,
+`AA:BB:CC:DD:EE:FF` is `[0xaa 0xbb 0xcc 0xdd 0xee 0xff]`. Use address type 0 for
+public or 1 for random, preserving the type reported by the scan.
+
+The default timeout is 10000 ms. Explicit timeouts must be integers from 1 to
+60000 ms. Supplying `io-cap` also requests pairing immediately after connection.
+`bond` defaults to `t`. See [pairing](#pairing-outgoing-connections) for I/O modes.
+
+The same function provides connection management:
+
+| Call | Result or action |
 | --- | --- |
-| `ble-client-scan` | Duration in milliseconds, 1?60000; active scan with duplicate filtering. Use `(ble-client-scan 0)` to cancel. Cancellation does not emit a scan completion event. |
-| `ble-client-connect` | Six-byte address array in displayed MAC order, address type (0 public / 1 random), optional timeout in milliseconds (default 10000, range 1?60000). Optional fourth argument selects security I/O capability (0-4); optional fifth argument selects bonding (`t` default / `nil`). With security selected, pairing starts as soon as the connection is established. Stops an active scan. Use `(ble-client-connect nil)` to disconnect all outgoing peers or cancel a pending connection; the phone remains connected. Add a connection handle after `nil` to disconnect just that peer. With no arguments, returns the outgoing connection handle or `nil`. Handle **0 is valid**. |
-| `ble-client-exchange-mtu` | No arguments; negotiate preferred MTU 256. Wait for the result before other GATT operations. |
-| `ble-client-discover-services` | No arguments; discover all primary services. |
-| `ble-client-discover-chars` | Start and end service handles, inclusive. |
-| `ble-client-discover-descriptors` | Characteristic value handle and last handle before the next characteristic declaration (or service end). |
-| `ble-client-read` | Attribute handle; one ordinary ATT read, up to MTU−1 bytes. No long-read assembly. |
-| `ble-client-write` | Attribute handle, byte array, optional response flag (1 default / 0 without response). Up to min(255, MTU−3) bytes; no long write. Without-response success means queued, not acknowledged by the peer. |
-| `ble-client-subscribe` | Discovered CCCD handle, mode: 0 disable, 1 notify, 2 indicate. Uses an acknowledged CCCD write. |
-| `ble-client-security` | Connection handle, optional I/O capability (0-4, default 4) and bond flag (`t` default / `nil`). Start pairing or restore encryption from a stored bond. `(ble-client-security conn 'forget)` deletes that peer's bond and disconnects it. |
-| `ble-client-passkey` | Connection handle and response (required): integer 0-999999 for passkey input/display, or `t`/`nil` to accept/reject numeric comparison. Only valid in response to `ble-passkey-action`. |
-| `ble-client-event` | Return and consume one event; optional `t` adds its connection handle immediately after the event symbol. Allocation failure leaves it queued for a GC retry. |
-| `ble-client-dropped` | Number of events lost since boot because the bounded queue filled. |
+| `(ble-client-connect)` | First active outgoing connection handle, or `nil` |
+| `(ble-client-connect t)` | List of all active outgoing connection handles |
+| `(ble-client-connect nil)` | Request disconnection of all outgoing peers and cancellation of a pending connection attempt |
+| `(ble-client-connect nil connection)` | Request disconnection of that outgoing peer |
+| `(ble-client-connect 'limit)` | Current logical outgoing connection limit |
+| `(ble-client-connect 'limit count)` | Set that limit, subject to compiled capacity and active connections |
 
-Events use these list layouts (UUID arrays are big endian, as in the server API).
-Discovery returns the UUID width transmitted over ATT: a 32-bit UUID is expanded
-to its 128-bit Bluetooth Base UUID form on the wire.
+Connection handle **0 is valid**. The value 65535 denotes no connection. Client
+disconnect requests do not disconnect the incoming VESC or scripted server peer.
+Wait for connection or disconnection events before assuming the state changed.
 
-```lisp
+### Selecting a connection
+
+GATT operations accept an optional connection handle as their last argument.
+Omitting it selects the first active outgoing connection. Specify it explicitly
+when more than one peer may be connected.
+
+Square brackets in the following signatures indicate optional arguments. They
+are documentation notation, not LispBM array syntax.
+
+### `ble-client-exchange-mtu`
+
+```text
+(ble-client-exchange-mtu [connection])
+```
+
+Request ATT MTU exchange using the local preferred MTU of 256. The result is
+reported by `ble-mtu-result`. Use the negotiated value to calculate packet
+limits. An exchange does not guarantee an MTU of 256.
+
+### Discovery
+
+```text
+(ble-client-discover-services [connection])
+(ble-client-discover-chars start-handle end-handle [connection])
+(ble-client-discover-descriptors value-handle end-handle [connection])
+```
+
+Service discovery returns all primary services. Characteristic discovery uses
+an inclusive range, normally the start and end handles reported for a service.
+Descriptor discovery starts after the characteristic value handle. Its end must
+be the handle before the next characteristic declaration, or the service end
+for the last characteristic.
+
+Each procedure emits zero or more discovery records followed by
+`ble-procedure-done`. Its operation code is 4 for services, 5 for characteristics,
+and 6 for descriptors. Completion status 0 means discovery succeeded.
+
+Characteristic records contain both the value handle and declaration handle.
+Use the **value handle** for reading and writing. Discover the CCCD for
+subscriptions instead of assuming a numeric offset.
+
+### `ble-client-read` and `ble-client-read-long`
+
+```text
+(ble-client-read attribute-handle [connection])
+(ble-client-read-long attribute-handle [connection])
+```
+
+`ble-client-read` performs one ordinary ATT read and returns at most `MTU - 1`
+value bytes. It does not automatically read the remainder of a longer value.
+
+`ble-client-read-long` reads from offset zero and assembles up to 512 bytes
+through the ATT long-read procedure. Use it for values such as HID report maps.
+It emits one final `ble-read-result`, containing the complete assembled value on
+success or an empty array on error.
+
+Both operations report completion through `ble-read-result`. Check its status
+before using the value.
+
+### `ble-client-write`
+
+```text
+(ble-client-write attribute-handle data [response [connection]])
+```
+
+Write a byte array. `response` is 1 by default for an acknowledged ATT write,
+or 0 for a write without response. To select a connection explicitly, supply
+the response argument as well:
+
+```clj
+(ble-client-write value-handle [1 2 3] 1 connection)
+```
+
+The payload must fit `min(255, MTU - 3)` bytes. Larger arrays are rejected by
+argument validation or the host. Long writes using prepare/execute are not
+implemented.
+
+An acknowledged write completes with `ble-write-result`. A write without
+response returns after queuing and does **not** produce `ble-write-result`.
+Its acceptance does not confirm receipt by the peer.
+
+### `ble-client-subscribe`
+
+```text
+(ble-client-subscribe cccd-handle mode [connection])
+```
+
+Write a discovered CCCD using an acknowledged ATT write. Mode 0 disables
+updates, 1 enables notifications, and 2 enables indications. Completion uses
+`ble-write-result`. Incoming updates use `ble-notification`.
+
+Pass the descriptor handle with UUID `0x2902`, not the characteristic value
+handle. The remote characteristic must support the selected update type.
+
+### `ble-client-event`
+
+```clj
+(ble-client-event)
+(ble-client-event t)
+```
+
+Return and consume one queued client event, or `nil` when the queue is empty.
+The `t` form inserts a connection field after the event symbol, allowing one
+dispatcher to route events from multiple peers. If Lisp memory allocation fails,
+the event remains queued for a later retry.
+
+Exactly one Lisp context should consume this queue. Include a sleep between
+polls so other Lisp work and the GUI can run. This diagnostic loop prints all
+events and is itself the queue consumer:
+
+```clj
+(loopwhile t {
+    (var event (ble-client-event t))
+    (if event (print event))
+    (sleep 0.01)
+})
+```
+
+Stop this loop before starting an application dispatcher. Polling client events
+does not require `event-enable`.
+
+### `ble-client-dropped`
+
+```clj
+(ble-client-dropped)
+```
+
+Return the cumulative number of client events lost since boot because the queue
+could not accept them. Treat an increase as a loss of application state. Stop
+scanning or disconnect the affected peers, drain queued events, and repeat
+connection setup and discovery before trusting results.
+
+The queue is allocated on the first scan or connection request. It is bounded
+and reserves space for completion and connection events, but that reservation
+does not guarantee delivery if the consumer stops keeping up. The queue and
+connections survive a Lisp reload. Stop old consumers and discard stale events
+before beginning a new session. Reboot resets client state and the drop counter.
+
+## Client events
+
+The default `(ble-client-event)` layouts are:
+
+```text
 (ble-scan-result address-array address-type rssi advertising-array)
 (ble-scan-done reason)
 (ble-connect-result connection-handle status)
@@ -679,144 +757,400 @@ to its 128-bit Bluetooth Base UUID form on the wire.
 (ble-service start-handle end-handle uuid-array)
 (ble-characteristic value-handle declaration-handle properties uuid-array)
 (ble-descriptor handle uuid-array)
-(ble-procedure-done operation status) ; operation: 4 services, 5 chars, 6 descriptors
+(ble-procedure-done operation status)
 (ble-read-result handle status value-array)
 (ble-write-result handle status)
-(ble-notification handle status value-array indication) ; indication = 0 or 1
+(ble-notification handle status value-array indication)
 (ble-mtu-result negotiated-mtu status)
 (ble-passkey-action connection-handle action number)
 (ble-security-result connection-handle status encrypted authenticated bonded)
 ```
 
-Completion status 0 means success. A failed connection reports handle 65535.
-Characteristic properties are the standard GATT bitmask: `0x02` read,
-`0x04` write without response, `0x08` write, `0x10` notify, `0x20` indicate.
-Disconnect and scan completion reasons are native NimBLE codes. Failed reads or
-oversized notifications must not be treated as valid data. Values are bounded
-to 255 bytes. The event queue scales with the compiled connection capacity and
-reserves capacity plus one slots for completion and connection events. It is
-allocated lazily on the first scan or connection request; callbacks copy their
-data and do not allocate Lisp memory. If the
-drop counter increases, stop the scan/disconnect, drain events and repeat
-discovery before trusting handles or values. Discard old events before
-reconnecting; handles belong to the current peer/session only. The queue and
-connection survive a Lisp reload; stop existing consumers before starting a
-new one. Reboot clears all client state.
+For results with a `status`, 0 means success. Disconnect and scan completion
+reasons are native NimBLE codes, not ordinary success flags. A failed connection
+reports connection handle 65535. Do not use data from failed read or notification
+events.
 
-### Pairing an outgoing connection
+`properties` is the standard characteristic bitmask:
 
-`(ble-client-security conn [io-cap [bond]])` starts pairing or restores
-encryption from stored keys. `io-cap` describes the input and display available
-to the script; the peer's capabilities determine the pairing method.
-
-| I/O capability | Available interaction | Authentication |
-| --- | --- | --- |
-| 0 | Display only | Show a PIN for entry on the peer |
-| 1 | Display with confirmation | Compare numbers or show a PIN |
-| 2 | Keyboard only | Enter the peer's PIN |
-| 3 | No input or output | Encrypted pairing without MITM authentication |
-| 4 (default) | Keyboard and display | PIN entry, PIN display or numeric comparison |
-
-`bond` defaults to `t`. Use `nil` to pair without requesting storage of new keys.
-This flag does not delete an existing bond. PINs require Legacy Pairing or
-Secure Connections; numeric comparison requires Secure Connections.
-
-For a peer that requests security immediately, select the policy when connecting:
-
-```lisp
-(ble-client-connect address address-type 10000 2 t) ; PIN input with bonding
-```
-
-Otherwise, wait for `ble-connect-result` and call `(ble-client-security conn)`.
-Wait for `ble-security-result` before starting GATT operations. Passkey responses
-are accepted while pairing is in progress. I/O capabilities apply to the outgoing
-pairing request; the incoming VESC connection uses its configured PIN policy.
-
-Respond to `(ble-passkey-action conn action number)` from a single event consumer:
-
-| Action | Response |
+| Bit | Meaning |
 | --- | --- |
-| 2 (input) | Read the six-digit PIN from the peer, then call `(ble-client-passkey conn pin)`. |
-| 3 (display) | Choose a six-digit PIN, show it to the operator for entry on the peer, and submit that same PIN with `(ble-client-passkey conn pin)`. |
-| 4 (numeric comparison) | Show `number` with leading zeros. After the operator compares both devices, call `(ble-client-passkey conn t)` to accept or `(ble-client-passkey conn nil)` to reject. |
+| `0x02` | Read |
+| `0x04` | Write without response |
+| `0x08` | Write with response |
+| `0x10` | Notify |
+| `0x20` | Indicate |
 
-PINs are integers; `123` represents `000123`. They can be supplied later by a
-GUI or through the REPL, rather than embedded in a script. The pending action is
-tracked per connection. Wrong response types, out-of-range PINs and replies with
-no matching pending action are rejected. To cancel passkey entry, disconnect
-that peer with `(ble-client-connect nil conn)`. Unsupported OOB actions are not
-handled by this API; disconnect rather than accepting them.
+`indication` is 0 for a notification or 1 for an indication. The security fields
+`encrypted`, `authenticated`, and `bonded` are also numeric 0/1 flags.
 
-For example, after an input request for connection 0:
+With `(ble-client-event t)`, **every** event has an extra connection field
+immediately after its symbol. For example:
 
-```lisp
-(ble-client-passkey 0 123456)
-```
-
-`ble-security-result` reports the status and three 0/1 flags: encrypted,
-authenticated and bonded. Status 0 requires encryption and, for I/O modes other
-than 3, MITM authentication. If the negotiated connection or stored keys do not
-meet the required authentication level, the operation reports an authentication
-error. The API does not automatically retry with a weaker security policy.
-
-The supplied profiles enable NimBLE NVS persistence. Reconnect and call
-`ble-client-security` to restore encryption from a bond. Unsolicited repeat
-pairing does not erase an outgoing peer's bond. If a peer loses its keys, discard
-its bond explicitly before pairing again:
-
-```lisp
-(ble-client-security conn 'forget)
-```
-
-This deletes keys for that peer identity and disconnects the outgoing connection.
-Wait for `ble-disconnected`, then reconnect to pair again. Bond removal is
-rejected while GATT or pairing is in progress. Keys belong to the peer, not to
-an individual service. PIN entry does not store the PIN as an application setting.
-Numeric comparison requires an operator's decision; do not accept it automatically.
-
-### Multiple peripherals
-
-Scripting supports at most 4 outgoing client connections when `ble-mode-lbm`
-is 2 or 3. An incoming connection slot is reserved when the VESC service or
-LispBM server is enabled. The supplied build profiles set `CONFIG_BT_NIMBLE_MAX_CONNECTIONS=5`;
-C3/S3 controller profiles set `CONFIG_BT_CTRL_BLE_MAX_ACT=7` to leave room for
-scanning and advertising alongside the connections. These are build-time
-allocations; lowering them before building saves RAM.
-
-`(ble-client-connect 'limit)` returns the outgoing limit, which defaults to 4.
-Set a smaller logical limit with `(ble-client-connect 'limit 2)`. Values above
-4 are rejected. This setting resets on reboot and does not release the shared
-host/controller pools. Apply it in your startup script. Lowering it below the
-number of connected/pending peers fails with a busy error.
-`(ble-client-connect t)` returns all active handles. The argument-free call
-still returns the first handle or `nil`.
-
-Client GATT operations accept an optional connection handle as their last
-argument. Omitting it selects the first outgoing connection for compatibility:
-
-```lisp
-(ble-client-exchange-mtu connection)
-(ble-client-discover-services connection)
-(ble-client-discover-chars start end connection)
-(ble-client-discover-descriptors value-handle end connection)
-(ble-client-read value-handle connection)
-(ble-client-write value-handle data response connection)
-(ble-client-subscribe cccd-handle mode connection)
-(ble-client-connect nil connection)
-```
-
-Use `(ble-client-event t)` in a single dispatcher to distinguish peers. It
-inserts the connection handle immediately after the event symbol. Scan events
-carry 65535 because they are not connection-specific. Connect and disconnect
-events contain the connection handle twice:
-
-```lisp
-(ble-connect-result connection connection-handle status)
-(ble-read-result connection attribute-handle status data)
-(ble-notification connection attribute-handle status data indication)
+```text
+(ble-read-result connection attribute-handle status value-array)
+(ble-notification connection attribute-handle status value-array indication)
 (ble-procedure-done connection operation status)
+(ble-connect-result connection connection-handle status)
 (ble-disconnected connection connection-handle reason)
+(ble-passkey-action connection connection-handle action number)
+(ble-security-result connection connection-handle status encrypted authenticated bonded)
 ```
 
-Without the `t` argument, events use the layouts listed in the events table.
-Handles and discovered attributes belong to a single peer; discard them on disconnect.
+The existing connection-handle fields are retained, so some events contain the
+handle twice. Scan events use 65535 in the added connection field because they
+are not connection-specific.
+
+## Pairing outgoing connections
+
+### `ble-client-security`
+
+```text
+(ble-client-security connection [io-cap [bond]])
+(ble-client-security connection 'forget)
+```
+
+Start pairing or restore encryption using a stored bond. The connection argument
+is required. The default I/O capability is 4, and bonding defaults to `t`.
+
+| I/O capability | Script interaction | Requested protection |
+| --- | --- | --- |
+| 0 | Display a PIN for entry on the peer | Encryption with MITM authentication |
+| 1 | Display a PIN or confirm matching numbers | Encryption with MITM authentication |
+| 2 | Enter the PIN shown by the peer | Encryption with MITM authentication |
+| 3 | No input or display | Encryption without mandatory MITM authentication |
+| 4 | Keyboard and display, including numeric confirmation | Encryption with MITM authentication |
+
+The peer's capabilities and pairing mode determine the actual interaction.
+Numeric comparison requires Secure Connections. Passkeys can also be used with
+Legacy Pairing.
+
+`bond = nil` avoids requesting storage of new keys. It does not delete an
+existing bond. The supplied BLE build profiles enable NimBLE NVS persistence,
+so stored bonds can survive reboot. Reconnect and request security to restore
+encryption from the bond.
+
+Wait for `ble-security-result` before starting GATT work. For a requested
+security procedure, status 0 requires encryption and, for I/O modes other than
+3, authentication. Unsuitable existing keys cause an error instead of an
+automatic retry with weaker protection.
+
+If a peer requests security immediately on connection, select the policy in the
+connect call. For example, this requests PIN input and bonding:
+
+```clj
+(ble-client-connect address address-type 10000 2 t)
+```
+
+Otherwise, wait for `ble-connect-result`, then call `ble-client-security`.
+Outgoing security settings do not replace the incoming server's configured PIN
+policy.
+
+### `ble-client-passkey`
+
+```clj
+(ble-client-passkey connection response)
+```
+
+Respond to a pending `ble-passkey-action`. The response depends on the action:
+
+| Action | Required response |
+| --- | --- |
+| 2: input | Read the six-digit PIN from the peer and submit it as an integer |
+| 3: display | Choose a six-digit PIN, show it to the operator, and submit the same integer for entry on the peer |
+| 4: numeric comparison | Show the event's `number` with leading zeros, then submit `t` to accept or `nil` to reject after comparison |
+
+For example:
+
+```clj
+(ble-client-passkey connection 123456)
+```
+
+PIN values range from 0 to 999999. The integer `123` represents `000123`.
+Only numeric comparison uses the `number` carried by the event as the displayed
+comparison value. A PIN response can arrive later from a GUI or REPL.
+
+The pending action is tracked per connection. Wrong response types, invalid
+PINs, and responses without a matching pending action are rejected. Disconnect
+the peer to cancel PIN entry. Out-of-band pairing actions are not implemented.
+Numeric comparison requires an operator's decision and must not be accepted
+automatically.
+
+### Removing a bond
+
+```clj
+(ble-client-security connection 'forget)
+```
+
+Delete the connected peer's stored keys and disconnect it. Wait for
+`ble-disconnected`, then reconnect and pair again. This is useful when a peer
+has lost its own keys. The operation is rejected while a GATT or security
+procedure is active.
+
+Unsolicited repeat pairing does not automatically erase an outgoing peer's
+bond. Keys belong to the peer identity, not to a particular service. Entering a
+PIN does not save that PIN as an application configuration setting.
+
+## Multiple peripherals
+
+The current API supports at most four outgoing peers. The initial logical limit
+is the smaller of four and the compiled connection capacity remaining after
+reserving one incoming slot when either the VESC or scripted server is enabled.
+The supplied BLE profiles configure five NimBLE connection slots.
+
+```clj
+(ble-client-connect 'limit)
+(ble-client-connect 'limit 2)
+(ble-client-connect t)
+```
+
+The logical limit must be at least 1 and cannot exceed the available compiled
+capacity. Lowering it below the number of active plus pending connections fails
+with a busy error. It resets on reboot, so set it in the startup script if
+needed. Lowering it does not release host or controller memory.
+
+Use explicit connection arguments and `(ble-client-event t)` for all peers.
+One dispatcher must own the shared client event queue. Store discovered handles,
+MTU, security state, and pending operations separately for each connection.
+Discard a peer's discovered handles when it disconnects.
+
+For firmware builds, C3/S3 profiles also configure
+`CONFIG_BT_CTRL_BLE_MAX_ACT=7` to allow connections, scanning, and advertising.
+Changing these compiled pools can reduce RAM use. The logical Lisp connection
+limit alone does not resize them.
+
+## HID
+
+HID has two distinct uses:
+
+- **Board as a HID device:** enable the server role and expose a keyboard, mouse,
+  gamepad, or other HID interface to a computer or phone.
+- **Board as a HID host:** enable the client role and connect to an external BLE
+  keyboard, mouse, or controller.
+
+### `ble-hid-add-service`
+
+```text
+(ble-hid-add-service report-map reports [appearance])
+```
+
+Call `ble-start-app` first. `report-map` is a byte array containing a HID Report
+Descriptor, with a length of 1 to 512 bytes. `reports` is a list of 1 to 16
+`(id type size)` entries:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Report ID from 0 to 255. Use 0 when the descriptor has no Report ID items |
+| `type` | 1 for input, 2 for output, or 3 for feature |
+| `size` | Fixed report payload length from 1 to 512 bytes, excluding the report ID |
+
+IDs, types, and sizes must match the report map. The firmware checks the entry
+ranges and uniqueness but does not parse the descriptor to verify that match.
+Each `(id, type)` pair must be unique. Do not mix unnumbered reports with
+numbered reports in one service.
+
+The optional 16-bit appearance defaults to `0x03c0`, generic HID. Common values
+are `0x03c1` for a keyboard, `0x03c2` for a mouse, and `0x03c4` for a gamepad.
+
+One scripted HID service is allowed. It consumes one service slot and
+`3 + 2 * report-count` entries from the characteristic and descriptor capacity.
+For one report, set the attribute capacity to at least 5. Automatic input CCCDs
+do not add entries to this count.
+
+The returned handle list is:
+
+```text
+(service information report-map control-point report-1 reference-1 ...)
+```
+
+Each report contributes one Report characteristic and one Report Reference
+descriptor. Input reports support read and notify. Output reports support read,
+write, and write without response. Feature reports support read and acknowledged
+write. Report values start as zero-filled arrays of their declared size.
+
+Invalid argument structures or ranges raise `type_error`. Registration failures,
+duplicate reports, mixed numbered and unnumbered reports, or insufficient
+capacity raise `eval_error`.
+
+### What is a report map?
+
+The report map describes the **layout and meaning of report bytes**. For example,
+a mouse map can define three button bits and two signed movement bytes. The
+host reads that description to interpret later input reports.
+
+The descriptor format and usage identifiers are standardized. There is no single
+map for every keyboard, mouse, or gamepad, because devices can have different
+buttons, axes, and report layouts. The format is the HID Report Descriptor used
+by USB HID as well as Bluetooth HID.
+[USB-IF HID specifications and tools](https://usb.org/hid) define the descriptor
+format and usages. A complete BLE mouse reference is available in the
+[Zephyr HID peripheral sample](https://docs.zephyrproject.org/latest/samples/bluetooth/peripheral_hids/README.html).
+
+Use a known descriptor that matches the data your script sends, or create one
+for your device. Copying a descriptor without also matching its payload format
+will produce incorrect input on the host.
+
+### Example: three-button mouse
+
+Enable the server role, configure one service and at least five attributes, then
+save and reboot. This example defines an unnumbered three-byte input report:
+button bits, signed X movement, and signed Y movement.
+
+```clj
+(ble-set-name "VESC Mouse")
+(ble-start-app)
+
+; Remove all scripted services from a previous run.
+(map ble-remove-service (reverse (ble-get-services)))
+
+(def mouse-map [
+    0x05 0x01       ; Usage Page: Generic Desktop
+    0x09 0x02       ; Usage: Mouse
+    0xa1 0x01       ; Application collection
+    0x09 0x01       ; Usage: Pointer
+    0xa1 0x00       ; Physical collection
+    0x05 0x09       ; Usage Page: Button
+    0x19 0x01       ; First button: 1
+    0x29 0x03       ; Last button: 3
+    0x15 0x00       ; Logical minimum: 0
+    0x25 0x01       ; Logical maximum: 1
+    0x75 0x01       ; One bit per button
+    0x95 0x03       ; Three buttons
+    0x81 0x02       ; Input: data, variable, absolute
+    0x75 0x05       ; Five padding bits
+    0x95 0x01       ; One padding field
+    0x81 0x03       ; Input: constant padding
+    0x05 0x01       ; Usage Page: Generic Desktop
+    0x09 0x30       ; Usage: X
+    0x09 0x31       ; Usage: Y
+    0x15 0x81       ; Logical minimum: -127
+    0x25 0x7f       ; Logical maximum: 127
+    0x75 0x08       ; Eight bits per axis
+    0x95 0x02       ; Two axes
+    0x81 0x06       ; Input: data, variable, relative
+    0xc0            ; End physical collection
+    0xc0            ; End application collection
+])
+
+(ble-conf-adv nil)
+(def hid-handles (ble-hid-add-service mouse-map '((0 1 3)) 0x03c2))
+(def mouse-input (ix hid-handles 4))
+```
+
+Pair from the computer or phone after registering the service. Once the host
+has established encryption and subscribed, send reports from the REPL or your
+application:
+
+```clj
+(ble-attr-set-value mouse-input [0 10 0])  ; Move right by 10
+(ble-attr-set-value mouse-input [1 0 0])   ; Press the left button
+(ble-attr-set-value mouse-input [0 0 0])   ; Release all buttons
+```
+
+A negative displacement uses its signed-byte encoding, for example `0xf6` for
+-10. Do not prepend a report ID. In BLE Report characteristics, the Report
+Reference descriptor identifies the report.
+
+### Sending and receiving reports
+
+Send input with `ble-attr-set-value` on its report handle. The array length must
+exactly match the declared report size. To transmit a notification, the host
+must be connected, encrypted, and subscribed, and the payload must fit
+`MTU - 3` bytes. Without a subscription, the call only updates the cached value.
+A report declared larger than that packet limit cannot be sent as a single
+input notification.
+
+Read output and feature values with `ble-attr-get-value`, or enable
+`event-ble-rx` to process writes from the host. Remote report writes must also
+match the declared length exactly.
+
+The HID Control Point accepts one byte: 0 suspends input notifications and 1
+resumes them. Resuming does not automatically retransmit cached data. After
+reconnection, the host must subscribe again, and the script must write a new
+report to trigger transmission.
+
+### Pairing, advertising, and protocol support
+
+The helper requires encryption for HID characteristic reads and remote writes,
+and enables bonding. It preserves the incoming server's configured PIN and
+MITM policy. Encrypted VESC mode uses the configured server PIN. Other server
+modes retain their existing policy rather than acquiring a new PIN requirement.
+
+Default advertising includes the HID service UUID and appearance after the
+service is registered. Custom advertising must include the required discovery
+fields itself. Register all services before pairing. After changing the report
+map or service layout, remove the old pairing on the host and pair again so it
+discovers the new layout.
+
+The helper implements **Report Protocol**: the host interprets reports using
+the report map. It does not create Protocol Mode or Boot Keyboard/Mouse
+characteristics, so **Boot Protocol is not supported**. Adding a keyboard report
+map alone does not provide Boot Protocol support.
+
+Battery and Device Information services are not added automatically. Add them
+separately when required by the device profile.
+
+### Connecting to an external HID device
+
+The client API supplies GATT transport and pairing, but does not decode HID
+reports into key, mouse, or controller events. The script must interpret them.
+
+1. Connect and complete any required pairing. Handle `ble-passkey-action` if the
+   peripheral requires PIN entry or numeric comparison.
+2. Discover HID service `0x1812` and its characteristics.
+3. Read Report Map characteristic `0x2a4b` with `ble-client-read-long`.
+4. Discover Report characteristics `0x2a4d` and their descriptors.
+5. Read Report Reference descriptors `0x2908` to identify report IDs and types.
+6. Subscribe to input reports using their discovered CCCDs, UUID `0x2902`.
+7. Decode `ble-notification` payloads according to the peer's report map.
+
+Wait for each procedure's completion before starting the next. Keep one client
+event consumer and monitor `ble-client-dropped` throughout discovery and use.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| A BLE extension is unavailable | Enable its server or client role, write the configuration, and reboot |
+| Adding a service raises `eval_error` | Call `ble-start-app` first, check both capacities, and check for reserved or duplicate service UUIDs |
+| A script fails when run a second time | Services and client connections survive Lisp reloads. Remove old services in reverse order and stop old queue consumers |
+| The name does not change | Call `ble-set-name` before the first `ble-start-app`. Check custom advertising for a separately supplied name |
+| A client request appears to succeed but nothing happens | Compare its return value with `t`, then check the completion event and status |
+| A request returns a busy error | Wait for the connection's active GATT or security procedure, or for the pending connection attempt |
+| No notifications arrive | Check the characteristic properties, discovered CCCD, successful subscription write, connection, and payload size |
+| A long value is truncated | Use `ble-client-read-long` instead of an ordinary read |
+| Data appears stale after an error | Local server writes update the cache before notification is attempted. Check the return value and peer state |
+| Discovery results are missing | Monitor the drop counter, poll more frequently, and repeat discovery after recovering from event loss |
+| A bonded peer cannot pair again | Remove its bond with `ble-client-security connection 'forget`, then reconnect |
+| A computer rejects a changed HID device | Remove the computer's old pairing, register the final service layout, and pair again |
+| A HID input write fails or has no effect | Check exact report length, report-map layout, encryption, subscription, Control Point state, and `MTU - 3` |
+
+## Implementation and references
+
+The behavior documented here is implemented in:
+
+- [lispif_ble_extensions.c](lispif_ble_extensions.c): Lisp argument validation,
+  extension availability, return values, and event layouts.
+- [custom_ble.c](custom_ble.c) and [custom_ble.h](custom_ble.h): dynamic services,
+  HID helper, client procedures, connection limits, and event buffering.
+- [comm_ble.c](../comm_ble.c): shared NimBLE host, built-in VESC transport,
+  incoming pairing policy, and preferred MTU.
+- [Board build profiles](../../): compiled connection pools and bond persistence.
+
+The server reserves CCCD resources before starting the shared host so
+notification-capable services can be registered later. Client callbacks copy
+data into a bounded FreeRTOS queue and leave Lisp allocation to the consumer.
+These allocations depend on the configured server capacity and compiled BLE
+connection pools.
+
+Protocol references:
+
+- [Bluetooth Assigned Numbers](https://www.bluetooth.com/specifications/assigned-numbers/)
+  lists advertising types, service and characteristic UUIDs, appearance values,
+  and company identifiers.
+- [Bluetooth Attribute Protocol](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-62/out/en/host/attribute-protocol--att-.html)
+  defines attribute sizes, ATT reads, writes, notifications, and indications.
+- [USB-IF HID specifications and tools](https://usb.org/hid) define report
+  descriptors and HID usages.
+- [LispBM language reference](../lispBM/doc/lbmref.md) describes the language,
+  byte arrays, and event handling used in the examples.

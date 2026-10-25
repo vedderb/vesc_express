@@ -96,7 +96,7 @@ Event format:
 
 ## How the CST816S Example Works
 
-The example in `lbm_examples/touch_cst816s.lisp` does three things:
+The example in `lbm_examples/tinygfx/cst816s_touch_events.lisp` does three things:
 
 1. Loads the driver with board pins and panel size.
 2. Applies coordinate transforms.
