@@ -1,6 +1,6 @@
 # VESC Express
 
-The is the codebase for the VESC Express, which is a WiFi and Bluetooth-enabled logger and IO-board. At the moment it is tested and runs on the ESP32C3, ESP32C6 and ESP32S3 but other ESP32 devices can be added.
+The is the codebase for the VESC Express, which is a WiFi and Bluetooth-enabled logger and IO-board. At the moment it is tested and runs on the ESP32, ESP32C3, ESP32C6, ESP32S3 and ESP32P4.
 
 ## Toolchain
 
@@ -14,7 +14,7 @@ The instructions linked above will install the master branch of ESP-IDF. To inst
 ```bash
 git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git esp-idf-v6.1
 cd esp-idf-v6.1/
-./install.sh esp32c3 esp32c6 esp32s3 esp32p4
+./install.sh esp32 esp32c3 esp32c6 esp32s3 esp32p4
 ```
 
 Development uses ESP-IDF 6.1.0. Note that different IDF-versions are very likely to cause compatibility issues, so it is strongly recommended to use version 6.1.0.
@@ -26,7 +26,7 @@ Set the target chip/architecture with
 idf.py set-target <target> 
 ```
 
-where target is esp32c3, esp32c6, esp32s3 or esp32p4. You will need to run a fullclean or remove the build directory when changing targets.
+where target is esp32, esp32c3, esp32c6, esp32s3 or esp32p4. You will need to run a fullclean or remove the build directory when changing targets.
 
 Each hardware target uses its matching `sdkconfig.defaults.<hw_target>` profile.
 

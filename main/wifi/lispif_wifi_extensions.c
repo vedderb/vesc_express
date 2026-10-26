@@ -20,6 +20,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -93,6 +95,7 @@ static bool register_symbols(void) {
 	res = res && lbm_add_symbol_const("connecting", &symbol_connecting);
 	res = res && lbm_add_symbol_const("disconnected", &symbol_disconnected);
 	res = res && lbm_add_symbol_const("socket-error", &symbol_socket_error);
+	res = res && lbm_add_symbol_const("connect-error", &symbol_connect_error);
 	res = res && lbm_add_symbol_const("wait", &symbol_wait);
 	res = res && lbm_add_symbol_const("no-wait", &symbol_no_wait);
 
@@ -234,7 +237,17 @@ static void event_listener(
 						}
 					}
 
-					wifi_ap_record_t records[len];
+					if (len == 0) {
+						esp_wifi_clear_ap_list();
+						return_unboxed(ENC_SYM_NIL);
+						return;
+					}
+					wifi_ap_record_t *records = malloc(sizeof(*records) * len);
+					if (!records) {
+						esp_wifi_clear_ap_list();
+						return_unboxed(ENC_SYM_MERROR);
+						return;
+					}
 					{
 						esp_err_t result =
 							esp_wifi_scan_get_ap_records(&len, records);
@@ -243,6 +256,7 @@ static void event_listener(
 								break;
 							}
 							case ESP_ERR_NO_MEM: {
+								free(records);
 								lbm_set_error_reason(error_esp_no_memory);
 								// TODO: Is this necessary?
 								esp_wifi_clear_ap_list();
@@ -251,6 +265,7 @@ static void event_listener(
 							}
 							default: {
 								// TODO: Is this necessary?
+								free(records);
 								esp_wifi_clear_ap_list();
 								return_unboxed(ENC_SYM_EERROR);
 								return;
@@ -267,6 +282,7 @@ static void event_listener(
 						}
 
 						if (!lbm_start_flatten(&value, size)) {
+							free(records);
 							return_unboxed(ENC_SYM_EERROR);
 							return;
 						}
@@ -313,6 +329,7 @@ static void event_listener(
 					}
 					f_sym(&value, SYM_NIL); // +9
 
+					free(records);
 					return_flat(&value);
 				}
 				break;
@@ -413,6 +430,12 @@ static void event_listener(
 static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 	if (!wifi_precheck(PRECHECK_NOT_WAITING | PRECHECK_MODE_STATION_ONLY)) {
 		return ENC_SYM_EERROR;
+	}
+	if (argn > 3 || (argn >= 1 && !lbm_is_number(args[0])) || (argn >= 2 && (!lbm_is_number(args[1]) || lbm_dec_as_u32(args[1]) > 14)) || (argn >= 3 && !lbm_is_bool(args[2]))) {
+		return ENC_SYM_TERROR;
+	}
+	if (argn >= 1 && (!isfinite(lbm_dec_as_float(args[0])) || lbm_dec_as_float(args[0]) < 0.0f || lbm_dec_as_float(args[0]) > 1.5f)) {
+		return ENC_SYM_TERROR;
 	}
 	
 	uint32_t scan_time = 120;
@@ -837,7 +860,7 @@ static bool custom_socket_valid(int socket) {
 		return false;
 	}
 
-	for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
+	for (int i = 0;i < custom_socket_now;i++) {
 		if (custom_sockets[i] == socket) {
 			return true;
 		}
@@ -903,9 +926,10 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 	if (sock < 0) {
 		char *errstr        = strerror(errno);
 		lbm_value errstrval = ENC_SYM_NIL;
-		if (lbm_lift_array(&errstrval, errstr, strlen(errstr) + 1) == 0) {
-			return errstrval;
+		if (!lbm_create_array(&errstrval, strlen(errstr) + 1)) {
+			return ENC_SYM_MERROR;
 		}
+		memcpy(lbm_dec_array_data(errstrval), errstr, strlen(errstr) + 1);
 
 		lbm_value errval = ENC_SYM_NIL;
 		errval           = lbm_cons(errstrval, errval);
@@ -919,12 +943,12 @@ static lbm_value ext_tcp_connect(lbm_value *args, lbm_uint argn) {
 
 			char *errstr        = strerror(errno);
 			lbm_value errstrval = ENC_SYM_NIL;
-			if (lbm_lift_array(&errstrval, errstr, strlen(errstr) + 1) == 0) {
-				return errstrval;
-			}
-
 			shutdown(sock, 0);
 			close(sock);
+			if (!lbm_create_array(&errstrval, strlen(errstr) + 1)) {
+				return ENC_SYM_MERROR;
+			}
+			memcpy(lbm_dec_array_data(errstrval), errstr, strlen(errstr) + 1);
 			lbm_value errval = ENC_SYM_NIL;
 			errval           = lbm_cons(errstrval, errval);
 			errval           = lbm_cons(ENC_SYM(symbol_connect_error), errval);
@@ -981,7 +1005,7 @@ static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
 
 	bool socket_found = false;
 	int socket_ind = 0;
-	for (int i = 0;i < CUSTOM_SOCKET_COUNT;i++) {
+	for (int i = 0;i < custom_socket_now;i++) {
 		if (sock == custom_sockets[i]) {
 			socket_found = true;
 			socket_ind = i;
@@ -993,11 +1017,12 @@ static lbm_value ext_tcp_close(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_NIL;
 	}
 
-	for (int i = socket_ind;i < custom_socket_now;i++) {
+	for (int i = socket_ind;i + 1 < custom_socket_now;i++) {
 		custom_sockets[i] = custom_sockets[i + 1];
 	}
 
 	custom_socket_now--;
+	custom_sockets[custom_socket_now] = -1;
 
 	shutdown(sock, 0);
 	close(sock);
@@ -1156,7 +1181,7 @@ static void recv_task(void *arg) {
 			switch (errno) {
 			case EWOULDBLOCK: {
 				vTaskDelay(1);
-				continue;
+				break;
 			}
 			case ECONNRESET:
 			case ECONNABORTED:
@@ -1187,7 +1212,7 @@ static void recv_task(void *arg) {
 		}
 
 		if (UTILS_AGE_S(start) > s->timeout) {
-			STORED_LOGF("timed out after %d seconds", (double)UTILS_AGE_S(start));
+			STORED_LOGF("timed out after %f seconds", (double)UTILS_AGE_S(start));
 			lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_no_data));
 			break;
 		}
@@ -1225,7 +1250,7 @@ static void recv_to_char_task(void *arg) {
 			switch (errno) {
 				case EWOULDBLOCK: {
 					vTaskDelay(1);
-					continue;
+					break;
 				}
 				case ECONNRESET:
 				case ECONNABORTED:
@@ -1262,7 +1287,7 @@ static void recv_to_char_task(void *arg) {
 
 		if (UTILS_AGE_S(start) > s->timeout) {
 			STORED_LOGF(
-				"timed out after %d seconds", (double)UTILS_AGE_S(start)
+				"timed out after %f seconds", (double)UTILS_AGE_S(start)
 			);
 			if (total_len == 0) {
 				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM(symbol_no_data));
@@ -1330,6 +1355,9 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 
 	int sock       = lbm_dec_as_i32(args[0]);
 	size_t max_len = lbm_dec_as_u32(args[1]);
+	if (max_len == 0 || max_len == SIZE_MAX) {
+		return ENC_SYM_TERROR;
+	}
 
 	bool should_wait   = true;
 	float timeout_secs = 1.0;
@@ -1340,6 +1368,9 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 		should_wait = !lbm_is_symbol_nil(args[2]);
 		if (should_wait) {
 			timeout_secs = lbm_dec_as_float(args[2]);
+			if (!isfinite(timeout_secs) || timeout_secs < 0.0f) {
+				return ENC_SYM_TERROR;
+			}
 		}
 	}
 
@@ -1373,9 +1404,10 @@ static lbm_value ext_tcp_recv(lbm_value *args, lbm_uint argn) {
 			s->socket = sock;
 			s->as_str = as_str;
 
-			xTaskCreatePinnedToCore(
-				recv_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
-			);
+			if (xTaskCreatePinnedToCore(recv_task, "lbm_sockets", 2048, s, 3, NULL, tskNO_AFFINITY) != pdPASS) {
+				lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_MERROR);
+				lbm_free(s);
+			}
 
 			return result;
 		} else {
@@ -1472,6 +1504,9 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 	
 	int sock       = lbm_dec_as_i32(args[0]);
 	size_t max_len = lbm_dec_as_u32(args[1]);
+	if (max_len == 0 || max_len == SIZE_MAX) {
+		return ENC_SYM_TERROR;
+	}
 	char terminator = lbm_dec_as_char(args[2]);
 
 	float timeout_secs = 1.0;
@@ -1480,6 +1515,9 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_TERROR;
 		}
 		timeout_secs = lbm_dec_as_float(args[3]);
+		if (!isfinite(timeout_secs) || timeout_secs < 0.0f) {
+			return ENC_SYM_TERROR;
+		}
 	}
 	
 	bool as_str = true;
@@ -1520,9 +1558,10 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 		s->return_on_disconnect = return_on_disconnect;
 		s->terminator = terminator;
 
-		xTaskCreatePinnedToCore(
-			recv_to_char_task, "lbm_sockets", 1024, s, 3, NULL, tskNO_AFFINITY
-		);
+		if (xTaskCreatePinnedToCore(recv_to_char_task, "lbm_sockets", 2048, s, 3, NULL, tskNO_AFFINITY) != pdPASS) {
+			lbm_unblock_ctx_unboxed(s->return_cid, ENC_SYM_MERROR);
+			lbm_free(s);
+		}
 
 		return result;
 	} else {

@@ -36,7 +36,7 @@ static int display_height = 128;
 static int m_pin_reset = -1;
 static int m_pin_dc    = -1;
 
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	#define DISP_REG_SET		GPIO.out_w1ts
 	#define DISP_REG_CLR		GPIO.out_w1tc
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4

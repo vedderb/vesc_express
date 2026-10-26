@@ -37,7 +37,7 @@ static int display_height = 240;
 static int m_pin_reset = -1;
 static int m_pin_dc    = -1;
 
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	#define DISP_REG_SET		GPIO.out_w1ts
 	#define DISP_REG_CLR		GPIO.out_w1tc
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
@@ -277,12 +277,15 @@ void disp_ili9341_clear(uint32_t color) {
 
 static lbm_value ext_disp_cmd(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
+	if (argn > 17) {
+		return ENC_SYM_EERROR;
+	}
 
 	lbm_value res = ENC_SYM_TERROR;
 
 	if (argn > 1) {
 		uint8_t cmd = (uint8_t)lbm_dec_as_u32(args[0]);
-		uint8_t paras[12];
+		uint8_t paras[16];
 		for (int i = 0; i < argn - 1; i ++) {
 			paras[i] = (uint8_t)lbm_dec_as_u32(args[i + 1]);
 		}
@@ -343,7 +346,7 @@ void disp_ili9341_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int 
 	m_pin_dc    = pin_dc;
 
 	gpio_config_t gpconf = {0};
-	gpconf.pin_bit_mask = BIT(m_pin_reset) | BIT(m_pin_dc);
+	gpconf.pin_bit_mask = BIT64(m_pin_reset) | BIT64(m_pin_dc);
 	gpconf.mode = GPIO_MODE_OUTPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
 	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;

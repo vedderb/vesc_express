@@ -114,6 +114,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "."
 "config"
 "hwconf"
+"hwconf/devkits"
 "hwconf/trampa"
 "hwconf/trampa/bms_rb"
 "hwconf/vesc"
@@ -152,6 +153,12 @@ set(COMPONENT_ADD_INCLUDEDIRS
 idf_component_register(SRCS ${COMPONENT_SRCS}
     INCLUDE_DIRS ${COMPONENT_ADD_INCLUDEDIRS}
 )
+
+if(CONFIG_BT_NIMBLE_ENABLED)
+    idf_component_get_property(bt_dir bt COMPONENT_DIR)
+    target_include_directories(${COMPONENT_LIB} PRIVATE
+        "${bt_dir}/host/nimble/nimble/nimble/host/src")
+endif()
 
 if(NOT DEFINED ENV{HW_SRC} AND NOT DEFINED ENV{HW_HEADER})
     idf_build_get_property(hw_file VESC_HW_FILE)

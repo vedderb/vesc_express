@@ -29,7 +29,7 @@
 #include "soc/gpio_reg.h"
 #include "conf_general.h"
 
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	#define SET_CS() 		(GPIO.out_w1ts = 1 << m_pin_cs)
 	#define CLEAR_CS()		(GPIO.out_w1tc = 1 << m_pin_cs)
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
@@ -81,7 +81,7 @@ void hwspi_init(int clk_mhz, int mode,
 	m_devcfg.clock_speed_hz = clk_mhz * 1000 * 1000;
 	m_devcfg.mode = mode;
 	m_devcfg.spics_io_num = -1; // We handle CS manually
-	m_devcfg.flags = 0;
+	m_devcfg.flags = pin_miso < 0 ? SPI_DEVICE_HALFDUPLEX : 0;
 	m_devcfg.queue_size = 1; // Must be 1, otherwise multiple buffers will be queued at the same time
 	m_devcfg.pre_cb = NULL;
 

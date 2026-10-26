@@ -38,6 +38,7 @@
 #include "conf_general.h"
 #include "extensions.h"
 #include "lbm_flat_value.h"
+#include "lbm_image.h"
 #include "lispif.h"
 #include "lispif_rgbled_extensions.h"
 #include "lispbm.h"
@@ -80,6 +81,7 @@ static void *lib_ram_alloc[LIB_NUM_MAX] = {0};
 // Second allocation backing a RAM-loaded lib's data region (S3), NULL
 // otherwise.
 static void *lib_ram_data[LIB_NUM_MAX] = {0};
+static size_t lib_code_size[LIB_NUM_MAX] = {0};
 
 __attribute__((section(".libif"))) static volatile union {
 	vesc_c_if cif;
@@ -120,6 +122,7 @@ static float lib_ts_to_age_s(TickType_t ts) {
 
 static void lib_thd(void *arg) {
 	lib_thd_info *t = (lib_thd_info*)arg;
+	ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
 	// Set thread-local storage for should_terminate check
 	vTaskSetThreadLocalStoragePointer(NULL, 0, t);
@@ -127,6 +130,7 @@ static void lib_thd(void *arg) {
 	t->func(t->arg);
 
 	// Task finished, remove from global tracking
+	LIB_THR_LOCK();
 	for (size_t i = 0; i < lib_thread_infos_cnt; i++) {
 		if (lib_thread_infos[i] == t) {
 			// Shift down remaining entries
@@ -138,6 +142,7 @@ static void lib_thd(void *arg) {
 		}
 	}
 
+	LIB_THR_UNLOCK();
 	lbm_free(t);
 	vTaskDelete(NULL);  // clean self-termination
 }
@@ -187,7 +192,16 @@ lib_thread lispif_spawn(void (*func)(void*), size_t stack_size, const char *name
 	if (result == pdPASS && thd != NULL) {
 		info->handle = thd;
 		info->base_prio = uxTaskPriorityGet(thd);
+		LIB_THR_LOCK();
+		if (lib_thread_infos_cnt >= LIB_MAX_THREADS) {
+			LIB_THR_UNLOCK();
+			vTaskDelete(thd);
+			lbm_free(info);
+			return NULL;
+		}
 		lib_thread_infos[lib_thread_infos_cnt++] = info;
+		LIB_THR_UNLOCK();
+		xTaskNotifyGive(thd);
 		return (lib_thread)thd;
 	} else {
 		commands_printf_lisp("Thread creation failed");
@@ -199,30 +213,25 @@ lib_thread lispif_spawn(void (*func)(void*), size_t stack_size, const char *name
 
 static void lib_request_terminate(lib_thread thd) {
 	TaskHandle_t handle = (TaskHandle_t)thd;
-
-	for (size_t i = 0; i < lib_thread_infos_cnt; i++) {
-		if (lib_thread_infos[i]->handle == handle) {
-			lib_thread_infos[i]->should_terminate = true;
-
-			// Wait for task to self-terminate
-			int timeout = 2000;
-			while (eTaskGetState(handle) != eDeleted && timeout-- > 0) {
-				vTaskDelay(pdMS_TO_TICKS(1));
+	for (int timeout = 2000; timeout > 0; timeout--) {
+		bool found = false;
+		LIB_THR_LOCK();
+		for (size_t i = 0; i < lib_thread_infos_cnt; i++) {
+			if (lib_thread_infos[i]->handle == handle) {
+				lib_thread_infos[i]->should_terminate = true;
+				found = true;
+				break;
 			}
-
-			if (timeout <= 0) {
-				commands_printf_lisp("Thread did not exit. Crashing...");
-				vTaskDelay(pdMS_TO_TICKS(20));
-				abort();
-			}
-
+		}
+		LIB_THR_UNLOCK();
+		if (!found) {
 			return;
 		}
+		vTaskDelay(pdMS_TO_TICKS(1));
 	}
-
-	commands_printf_lisp("Thread handle not found");
+	commands_printf_lisp("Native thread did not stop");
+	abort();
 }
-
 
 static inline UBaseType_t clamp_prio(int p) {
 	// ESP-IDF sets FREERTOS_MAX_PRIORITIES via sdkconfig; typical is 25.
@@ -277,12 +286,17 @@ static bool lib_eval_is_paused(void) {
 	return lbm_get_eval_state() == EVAL_CPS_STATE_PAUSED;
 }
 
+typedef struct {
+	SemaphoreHandle_t handle;
+	StaticSemaphore_t storage;
+} lib_sync;
+
 static lib_mutex lib_mutex_create(void) {
-	SemaphoreHandle_t *m = lbm_malloc_reserve(sizeof(SemaphoreHandle_t));
+	lib_sync *m = lbm_malloc_reserve(sizeof(lib_sync));
 	if (!m)
 		return NULL;
-	*m = xSemaphoreCreateMutex();
-	if (!*m) {
+	m->handle = xSemaphoreCreateMutexStatic(&m->storage);
+	if (!m->handle) {
 		lbm_free(m);
 		return NULL;
 	}
@@ -298,11 +312,11 @@ static void lib_mutex_unlock(lib_mutex m) {
 }
 
 static lib_semaphore lib_sem_create(void) {
-	SemaphoreHandle_t *s = lbm_malloc_reserve(sizeof(SemaphoreHandle_t));
+	lib_sync *s = lbm_malloc_reserve(sizeof(lib_sync));
 	if (!s)
 		return NULL;
-	*s = xSemaphoreCreateCounting(0xFFFF, 0);
-	if (!*s) {
+	s->handle = xSemaphoreCreateCountingStatic(0xFFFF, 0, &s->storage);
+	if (!s->handle) {
 		lbm_free(s);
 		return NULL;
 	}
@@ -328,13 +342,29 @@ static void lib_sem_reset(lib_semaphore s) {
 }
 
 static bool lib_add_extension(char *sym_str, extension_fptr ext) {
-	if (sym_str[0] != 'e' || sym_str[1] != 'x' || sym_str[2] != 't'
-		|| sym_str[3] != '-') {
+	if (!sym_str || strncmp(sym_str, "ext-", 4) != 0) {
 		lbm_set_error_reason("Error: Extensions must start with ext-");
 		return false;
 	}
 
-	return lbm_add_extension(sym_str, ext);
+	lbm_uint symbol;
+	if (!lbm_get_symbol_by_name(sym_str, &symbol)) {
+		sym_str = lbm_image_add_symbol_name(sym_str, strlen(sym_str));
+		if (!sym_str) {
+			return false;
+		}
+	}
+	return lbm_add_extension(sym_str, ext ? ext : lbm_extensions_default);
+}
+
+static void lib_disable_extensions(int slot) {
+	uintptr_t start = lib_ram_alloc[slot] ? (uintptr_t)lib_ram_alloc[slot] : lib_flash_addr[slot];
+	for (lbm_uint i = 0; i < lbm_get_num_extensions(); i++) {
+		uintptr_t function = (uintptr_t)extension_table[i].fptr;
+		if (function >= start && function - start < lib_code_size[slot]) {
+			extension_table[i].fptr = lbm_extensions_default;
+		}
+	}
 }
 
 static int lib_lbm_set_error_reason(char *str) {
@@ -371,6 +401,8 @@ void lispif_stop_lib(void) {
 			if (lib_is_func_valid(loaded_libs[i].stop_fun)) {
 				loaded_libs[i].stop_fun(loaded_libs[i].arg);
 			}
+			lib_disable_extensions(i);
+			lib_code_size[i] = 0;
 			loaded_libs[i].stop_fun  = NULL;
 			loaded_libs[i].base_addr = 0;
 			loaded_libs[i].arg       = NULL;
@@ -520,6 +552,12 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		lbm_set_error_reason("Invalid address");
 		return res;
 	}
+	#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
+	if (!is_reloc) {
+		lbm_set_error_reason("Xtensa native libraries require relocation");
+		return res;
+	}
+	#endif
 
 	// The linker script and VESC_IF must agree on where the interface table
 	// lives, otherwise libs would read garbage function pointers.
@@ -700,6 +738,7 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 	uint32_t entry_addr;
 	void *ram_alloc = NULL;
 	void *ram_data = NULL;
+	size_t code_bytes = array->size;
 
 	if (is_reloc) {
 #if CONFIG_IDF_TARGET_ESP32S3 && CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
@@ -710,7 +749,7 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 			"CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=y - native libs on the "
 			"ESP32-S3 need a build with it disabled");
 		return res;
-#elif CONFIG_IDF_TARGET_ESP32S3
+#elif CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 		// Xtensa cannot run position-independent code in place, so the
 		// container carries region-relative relocations and the image is
 		// copied to RAM in two parts: the code region goes to executable
@@ -723,6 +762,10 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		// LE u32), relocs[], code[], data[].
 		uint32_t version, code_size, data_size, entry_offset, reloc_count;
 		const uint8_t *container_drom = (const uint8_t *)array->data;
+		if (array->size < 24) {
+			lbm_set_error_reason("Truncated native lib header");
+			return res;
+		}
 		memcpy(&version, container_drom + 4, 4);
 		memcpy(&code_size, container_drom + 8, 4);
 		memcpy(&data_size, container_drom + 12, 4);
@@ -740,6 +783,10 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 			|| entry_offset >= code_size || (entry_offset & 3)
 			|| reloc_count > (code_size + data_size) / 4) {
 			lbm_set_error_reason("Invalid native lib container");
+			return res;
+		}
+		if (24ULL + reloc_count * 4ULL + code_size + data_size > array->size) {
+			lbm_set_error_reason("Truncated native lib container");
 			return res;
 		}
 
@@ -794,10 +841,18 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 				}
 				uint32_t word;
 				memcpy(&word, data_ram + off, 4);
+				if (word > ((e & 0x80000000) ? code_size : data_size)) {
+					patch_ok = false;
+					break;
+				}
 				word += add;
 				memcpy(data_ram + off, &word, 4);
 			} else {
 				if ((off & 3) || off + 4 > code_size) {
+					patch_ok = false;
+					break;
+				}
+				if (code_ram[off / 4] > ((e & 0x80000000) ? code_size : data_size)) {
 					patch_ok = false;
 					break;
 				}
@@ -821,9 +876,10 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		entry_addr = (uint32_t)code_ram + entry_offset;
 		ram_alloc  = code_ram;
 		ram_data   = data_ram;
+		code_bytes = code_size;
 #else
 		lbm_set_error_reason(
-			"Relocatable libs are only supported on the ESP32-S3");
+			"Relocatable libs require an ESP32 or ESP32-S3");
 		return res;
 #endif
 	} else {
@@ -837,6 +893,7 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 	lib_flash_addr[slot]        = irom_base;
 	lib_ram_alloc[slot]         = ram_alloc;
 	lib_ram_data[slot]          = ram_data;
+	lib_code_size[slot]         = code_bytes;
 
 	bool ok = ((bool (*)(lib_info *))entry_addr)(&loaded_libs[slot]);
 
@@ -854,6 +911,11 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 	}
 
 	// Rollback
+	if (lib_is_func_valid(loaded_libs[slot].stop_fun)) {
+		loaded_libs[slot].stop_fun(loaded_libs[slot].arg);
+	}
+	lib_disable_extensions(slot);
+	lib_code_size[slot] = 0;
 	loaded_libs[slot].stop_fun  = NULL;
 	loaded_libs[slot].base_addr = 0;
 	loaded_libs[slot].arg       = NULL;
@@ -873,11 +935,19 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 lbm_value ext_unload_native_lib(lbm_value *args, lbm_uint argn) {
 	lbm_value res = lbm_enc_sym(SYM_EERROR);
 
-	if (argn != 1 || !lbm_is_number(args[0])) {
+	if (argn != 1) {
 		return res;
 	}
 
-	uint32_t irom_base = lbm_dec_as_u32(args[0]);
+	uint32_t irom_base;
+	if (lbm_is_array_r(args[0]) && !lbm_is_array_rw(args[0])) {
+		lbm_array_header_t *array = lbm_dec_array_r(args[0]);
+		irom_base = (uint32_t)utils_drom_to_irom(array->data);
+	} else if (lbm_is_number(args[0])) {
+		irom_base = lbm_dec_as_u32(args[0]);
+	} else {
+		return ENC_SYM_TERROR;
+	}
 
 	for (int i = 0; i < LIB_NUM_MAX; i++) {
 		if (loaded_libs[i].stop_fun != NULL
@@ -887,6 +957,8 @@ lbm_value ext_unload_native_lib(lbm_value *args, lbm_uint argn) {
 			if (lib_is_func_valid(loaded_libs[i].stop_fun)) {
 				loaded_libs[i].stop_fun(loaded_libs[i].arg);
 			}
+			lib_disable_extensions(i);
+			lib_code_size[i] = 0;
 			loaded_libs[i].stop_fun  = NULL;
 			loaded_libs[i].base_addr = 0;
 			loaded_libs[i].arg       = NULL;

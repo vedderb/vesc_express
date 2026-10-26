@@ -22,6 +22,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "driver/uart.h"
+#include "soc/soc_caps.h"
 
 #include "conf_general.h"
 #include "comm_ble.h"
@@ -147,7 +148,9 @@ void app_main(void) {
 #ifdef CAN_TX_GPIO_NUM
 	comm_can_start(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
 #endif
+	#if SOC_USB_SERIAL_JTAG_SUPPORTED
 	comm_usb_init();
+	#endif
 
 	vTaskDelay(1);
 
