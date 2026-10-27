@@ -460,6 +460,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 				commands_printf_lisp("Image      : %d\n", image_size * 4);
 				commands_printf_lisp("Free       : %d\n", (lbm_image_get_size() - lbm_const_heap_state->next - image_size) * 4);
 				commands_printf_lisp("ImageVer   : %s\n", lbm_image_get_version());
+				commands_printf_lisp("Map base   : 0x%08X\n", (unsigned int)(uint32_t)flash_helper_code_data_raw(CODE_IND_LISP));
 				flast_stats stats = flash_helper_stats();
 				commands_printf_lisp("Erase Cnt Tot: %d\n", stats.erase_cnt_tot);
 				commands_printf_lisp("Erase Cnt Max Sector: %d\n", stats.erase_cnt_max);
@@ -892,10 +893,14 @@ bool lispif_restart(bool print, bool load_code) {
 			const esp_partition_t *running = esp_ota_get_running_partition();
 			esp_app_desc_t running_app_info;
 			esp_ota_get_partition_description(running, &running_app_info);
-			char ver_str[20];
-			sprintf(ver_str, "%02X%02X%02X%02X%02X%02X%02X%02X",
+			// The image stores absolute pointers into the mapped partition, so it is only valid
+			// at the address it was created at. Including the mapping base in the version makes
+			// a mismatch recreate the image instead of booting with dangling pointers.
+			char ver_str[32];
+			sprintf(ver_str, "%02X%02X%02X%02X%02X%02X%02X%02X-%08X",
 				running_app_info.app_elf_sha256[0], running_app_info.app_elf_sha256[1], running_app_info.app_elf_sha256[2], running_app_info.app_elf_sha256[3],
-				running_app_info.app_elf_sha256[4], running_app_info.app_elf_sha256[5], running_app_info.app_elf_sha256[6], running_app_info.app_elf_sha256[7]);
+				running_app_info.app_elf_sha256[4], running_app_info.app_elf_sha256[5], running_app_info.app_elf_sha256[6], running_app_info.app_elf_sha256[7],
+				(unsigned int)(uint32_t)flash_helper_code_data_raw(CODE_IND_LISP));
 
 			if (!lbm_image_exists() || strcmp(lbm_image_get_version(), ver_str) != 0) {
 				commands_printf_lisp("Preparing new image...");
