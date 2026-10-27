@@ -34,6 +34,7 @@ typedef struct {
 	unsigned int erase_cnt_max; // Largest erase counter for a given sector
 } flast_stats;
 
+void flash_helper_init(void);
 bool flash_helper_erase_code(int ind, int size);
 bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t len, uint32_t save_after);
 bool flash_helper_code_data(int ind, uint32_t offset, uint8_t *data, uint32_t len);
