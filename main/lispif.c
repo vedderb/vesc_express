@@ -838,6 +838,10 @@ bool lispif_restart(bool print, bool load_code) {
 			code_data = (char*)flash_helper_code_data_raw(CODE_IND_LISP);
 		}
 
+		if (!code_data) {
+			return false;
+		}
+
 		bool new_image_created = false;
 		image_max_ind = 0;
 		image_ptr = (lbm_uint*)(code_data + code_len + 32);

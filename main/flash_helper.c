@@ -22,9 +22,15 @@
 #include "crc.h"
 #include "buffer.h"
 #include "nvs_flash.h"
+#include "esp_mmu_map.h"
+#include "commands.h"
+#include "soc/soc.h"
+#include "soc/ext_mem_defs.h"
 
 #include <string.h>
 #include <stdio.h>
+
+#define LISP_MMAP_SIZE (512U * 1024U)
 
 typedef struct {
 	bool check_done;
@@ -57,8 +63,30 @@ static bool perform_mmap(int ind) {
 		return false;
 	}
 
-	esp_err_t res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA,
-			&m_code_checks[ind].addr, &m_code_checks[ind].handle);
+	esp_err_t res;
+	if (ind == CODE_IND_LISP) {
+		uint32_t window_size = SOC_DROM_HIGH - SOC_DROM_LOW;
+		if (window_size > SOC_MMU_LINEAR_ADDR_MASK + 1) {
+			window_size = SOC_MMU_LINEAR_ADDR_MASK + 1;
+		}
+
+		const esp_vaddr_t base = SOC_DROM_LOW + window_size - LISP_MMAP_SIZE;
+		if (part->size > LISP_MMAP_SIZE || part->address % CONFIG_MMU_PAGE_SIZE != 0) {
+			commands_printf_lisp("Invalid Lisp partition size or alignment");
+			return false;
+		}
+
+		void *mapped = NULL;
+		res = esp_mmu_map_virt(base, part->address, part->size, MMU_TARGET_FLASH0, MMU_MEM_CAP_READ | MMU_MEM_CAP_8BIT, 0, &mapped);
+		if (res != ESP_OK) {
+			commands_printf_lisp("Fixed Lisp mapping at 0x%08lx failed: %s", (unsigned long)base, esp_err_to_name(res));
+			return false;
+		}
+
+		m_code_checks[ind].addr = mapped;
+	} else {
+		res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &m_code_checks[ind].addr, &m_code_checks[ind].handle);
+	}
 
 	m_code_checks[ind].mmap_done = res == ESP_OK;
 	return m_code_checks[ind].mmap_done;
@@ -154,6 +182,10 @@ bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t l
 	}
 
 	uint8_t *data_old = flash_helper_code_data_raw(ind);
+	if (!data_old) {
+		return false;
+	}
+
 	bool erased = true;
 	for (int i = 0;i < len;i++) {
 		if (data_old[offset + i] != 0xff && data_old[offset + i] != data[i]) {
