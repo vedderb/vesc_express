@@ -23,7 +23,7 @@
 #include "buffer.h"
 #include "nvs_flash.h"
 #include "esp_mmu_map.h"
-#include "commands.h"
+#include "esp_log.h"
 #include "soc/soc.h"
 #include "soc/ext_mem_defs.h"
 
@@ -71,25 +71,28 @@ static bool perform_mmap(int ind) {
 		}
 
 		const esp_vaddr_t base = SOC_DROM_LOW + window_size - LISP_MMAP_SIZE;
-		if (part->size > LISP_MMAP_SIZE || part->address % CONFIG_MMU_PAGE_SIZE != 0) {
-			commands_printf_lisp("Invalid Lisp partition size or alignment");
-			return false;
-		}
-
 		void *mapped = NULL;
-		res = esp_mmu_map_virt(base, part->address, part->size, MMU_TARGET_FLASH0, MMU_MEM_CAP_READ | MMU_MEM_CAP_8BIT, 0, &mapped);
-		if (res != ESP_OK) {
-			commands_printf_lisp("Fixed Lisp mapping at 0x%08lx failed: %s", (unsigned long)base, esp_err_to_name(res));
-			return false;
+		res = ESP_ERR_INVALID_ARG;
+		if (part->size <= LISP_MMAP_SIZE && part->address % CONFIG_MMU_PAGE_SIZE == 0) {
+			res = esp_mmu_map_virt(base, part->address, part->size, MMU_TARGET_FLASH0, MMU_MEM_CAP_READ | MMU_MEM_CAP_8BIT, 0, &mapped);
 		}
-
-		m_code_checks[ind].addr = mapped;
+		if (res != ESP_OK) {
+			ESP_LOGW("flash_helper", "Fixed Lisp mapping at 0x%08lx failed: %s; using dynamic mapping", (unsigned long)base, esp_err_to_name(res));
+			res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &m_code_checks[ind].addr, &m_code_checks[ind].handle);
+		} else {
+			m_code_checks[ind].addr = mapped;
+		}
 	} else {
 		res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &m_code_checks[ind].addr, &m_code_checks[ind].handle);
 	}
 
 	m_code_checks[ind].mmap_done = res == ESP_OK;
 	return m_code_checks[ind].mmap_done;
+}
+
+void flash_helper_init(void) {
+	perform_mmap(CODE_IND_LISP);
+	perform_mmap(CODE_IND_QML);
 }
 
 static void code_check(int ind) {

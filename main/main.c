@@ -73,6 +73,8 @@ static void terminal_nmea(int argc, const char **argv);
 static void terminal_ublox_reinit(int argc, const char **argv);
 
 void app_main(void) {
+	flash_helper_init();
+
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	tv.tv_sec = 0;
