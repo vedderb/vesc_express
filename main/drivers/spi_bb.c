@@ -25,7 +25,7 @@
 
 // Software SPI
 
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	#define SET_PIN(pin) 			(GPIO.out_w1ts = 1 << (pin))
 	#define CLEAR_PIN(pin) 			(GPIO.out_w1tc = 1 << (pin))
 	#define READ_PIN(pin)			((GPIO.in >> (pin)) & 0x1)

@@ -298,7 +298,9 @@ typedef struct {
 #endif
 #endif
 
-#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#if defined(CONFIG_IDF_TARGET_ESP32)
+#define VESC_IF		((vesc_c_if*)(0x3FFFF800))
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
 #define VESC_IF		((vesc_c_if*)(0x3FCDBE00))
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
 #define VESC_IF		((vesc_c_if*)(0x3FCE8800))
@@ -307,7 +309,7 @@ typedef struct {
 #elif defined(CONFIG_IDF_TARGET_ESP32P4)
 #define VESC_IF		((vesc_c_if*)(0x4FF3A000))
 #else
-#error "Unknown ESP target. Define CONFIG_IDF_TARGET_ESP32C3, -S3, -C6 or -P4 when building a native library."
+#error "Unknown ESP target. Define CONFIG_IDF_TARGET_ESP32, -C3, -S3, -C6 or -P4 when building a native library."
 #endif
 
 // Put this at the beginning of your source file

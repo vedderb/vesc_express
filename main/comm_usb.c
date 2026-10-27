@@ -20,6 +20,9 @@
 #include "commands.h"
 #include "comm_usb.h"
 #include "packet.h"
+#include "soc/soc_caps.h"
+
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
 
 #include <string.h>
 #include <stdbool.h>
@@ -88,3 +91,4 @@ void comm_usb_init(void) {
 void comm_usb_send_packet(unsigned char *data, unsigned int len) {
 	packet_send_packet(data, len, &packet_state);
 }
+#endif

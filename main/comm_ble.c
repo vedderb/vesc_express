@@ -27,6 +27,7 @@
 
 #if CONFIG_BT_NIMBLE_ENABLED
 #include "host/ble_hs_mbuf.h"
+#include "ble_hs_priv.h"
 #include "ble/custom_ble.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
@@ -201,7 +202,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 			is_connected = true;
 			LED_BLUE_ON();
 			if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
-				ble_gap_security_initiate(notify_conn_id);
+				comm_ble_host_secure(notify_conn_id);
 			}
 			break;
 		case BLE_GAP_EVENT_DISCONNECT:
@@ -410,6 +411,13 @@ static void ble_on_reset(int reason) {
 	has_synced = false;
 }
 
+int comm_ble_host_secure(uint16_t connection) {
+	ble_hs_lock();
+	bool pending = ble_sm_proc_find(connection, BLE_SM_PROC_STATE_NONE, -1, NULL) != NULL;
+	ble_hs_unlock();
+	return pending ? 0 : ble_gap_security_initiate(connection);
+}
+
 int comm_ble_host_init(const char *name, bool encrypted, ble_event_cb_t callback) {
 #if CONFIG_IDF_TARGET_ESP32P4
 	int res = esp_hosted_connect_to_slave();
@@ -448,8 +456,13 @@ int comm_ble_host_init(const char *name, bool encrypted, ble_event_cb_t callback
 		res = ble_att_set_preferred_mtu(256);
 	}
 #if !CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_IDF_TARGET_ESP32
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
+	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
+#else
 	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P18);
 	esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P18);
+#endif
 #endif
 	if (res != 0) {
 		nimble_port_deinit();

@@ -115,7 +115,7 @@ void lispif_init(void) {
 	heap_size = (4096 + 512);
 	mem_size = LBM_MEMORY_SIZE_KB(48);
 	bitmap_size = LBM_BITMAP_SIZE_KB(48);
-#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+#elif CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 	heap_size = (2048 + 512);
 	mem_size = LBM_MEMORY_SIZE_KB(32);
 	bitmap_size = LBM_BITMAP_SIZE_KB(32);
@@ -126,19 +126,32 @@ void lispif_init(void) {
 #else
 	#error "Unsupported target"
 #endif
+
 	if (backup.config.wifi_mode == WIFI_MODE_DISABLED &&
 			backup.config.ble_mode == BLE_MODE_DISABLED &&
 			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED) {
 		heap_size *= 2;
+	#ifdef CONFIG_IDF_TARGET_ESP32
+		mem_size = LBM_MEMORY_SIZE_KB(64);
+		bitmap_size = LBM_BITMAP_SIZE_KB(64);
+	#else
 		mem_size = LBM_MEMORY_SIZE_KB(86);
 		bitmap_size = LBM_BITMAP_SIZE_KB(86);
+	#endif
 	} else if (backup.config.wifi_mode == WIFI_MODE_DISABLED ||
 			(backup.config.ble_mode == BLE_MODE_DISABLED &&
-			 backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED)) {
+			backup.config.ble_mode_lbm == BLE_MODE_LBM_DISABLED)) {
+	#ifdef CONFIG_IDF_TARGET_ESP32
+		heap_size = backup.config.wifi_mode == WIFI_MODE_DISABLED ? 5120 : 3840;
+		mem_size = LBM_MEMORY_SIZE_KB(52);
+		bitmap_size = LBM_BITMAP_SIZE_KB(52);
+	#else
 		heap_size *= 2;
 		mem_size = LBM_MEMORY_SIZE_KB(64);
 		bitmap_size = LBM_BITMAP_SIZE_KB(64);
+	#endif
 	}
+
 #endif
 
 #ifdef CONFIG_SPIRAM
@@ -149,9 +162,9 @@ void lispif_init(void) {
 	memory_array = heap_caps_malloc(mem_size * sizeof(uint32_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 	bitmap_array = heap_caps_malloc(bitmap_size * sizeof(uint32_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
-	heap = memalign(8, heap_size * sizeof(lbm_cons_t));
 	memory_array = heap_caps_malloc(mem_size * sizeof(uint32_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 	bitmap_array = heap_caps_malloc(bitmap_size * sizeof(uint32_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+	heap = memalign(8, heap_size * sizeof(lbm_cons_t));
 #endif
 
 	if (!heap || !memory_array || !bitmap_array) {
@@ -802,6 +815,12 @@ void lispif_stop(void) {
 		lisp_thd_running = false;
 		commands_printf_lisp("Killed eval task as it didn't stop when asked to");
 	}
+	if (repl_buffer) {
+		lbm_free(repl_buffer);
+		repl_buffer = 0;
+	}
+	repl_cid = -1;
+	repl_cid_for_buffer = -1;
 
 	lispif_unlock_lbm();
 }
@@ -958,11 +977,6 @@ bool lispif_restart(bool print, bool load_code) {
 		lbm_continue_eval();
 
 		res = true;
-	}
-
-	if (repl_buffer) {
-		lbm_free(repl_buffer);
-		repl_buffer = 0;
 	}
 
 	return res;

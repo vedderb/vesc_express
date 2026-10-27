@@ -31,6 +31,7 @@
 #if CONFIG_BT_NIMBLE_ENABLED
 #include "freertos/queue.h"
 #include "host/ble_hs_mbuf.h"
+#include "nimble/nimble_port.h"
 #include "services/gap/ble_svc_gap.h"
 
 typedef struct {
@@ -105,9 +106,14 @@ typedef struct {
 static client_connection_t client_connections[BLE_CLIENT_CONNECTIONS_MAX];
 static unsigned int client_limit;
 static bool client_connecting;
+static struct ble_npl_callout client_connect_timeout;
 static bool client_pair_on_connect;
 static uint8_t client_pair_io;
 static bool client_pair_bond;
+static bool client_pair_policy_pending;
+static uint8_t client_saved_io;
+static bool client_saved_bond;
+static bool client_saved_mitm;
 static uint32_t client_dropped;
 
 static service_instance_t *get_service(uint16_t handle) {
@@ -909,6 +915,23 @@ static void client_push(ble_client_event_t *event) {
 	}
 }
 
+static void client_connect_expired(struct ble_npl_event *event) {
+	(void)event;
+	if (client_connecting) {
+		commands_printf("BLE connection timeout: restarting Bluetooth");
+		ble_hs_sched_reset(BLE_HS_ETIMEOUT);
+	}
+}
+
+static void client_restore_pair_policy(void) {
+	if (client_pair_policy_pending) {
+		ble_hs_cfg.sm_io_cap = client_saved_io;
+		ble_hs_cfg.sm_bonding = client_saved_bond;
+		ble_hs_cfg.sm_mitm = client_saved_mitm;
+		client_pair_policy_pending = false;
+	}
+}
+
 static int client_secure(client_connection_t *client, uint8_t io, bool bond) {
 	if (io > BLE_HS_IO_KEYBOARD_DISPLAY) {
 		return BLE_HS_EINVAL;
@@ -921,7 +944,7 @@ static int client_secure(client_connection_t *client, uint8_t io, bool bond) {
 	ble_hs_cfg.sm_mitm = io != BLE_HS_IO_NO_INPUT_OUTPUT;
 	client->require_auth = ble_hs_cfg.sm_mitm;
 	client->securing = true;
-	int res = ble_gap_security_initiate(client->conn);
+	int res = comm_ble_host_secure(client->conn);
 	ble_hs_cfg.sm_io_cap = io_cap;
 	ble_hs_cfg.sm_bonding = bonding;
 	ble_hs_cfg.sm_mitm = mitm;
@@ -951,6 +974,7 @@ static int client_gap_event(struct ble_gap_event *event, void *arg) {
 			break;
 		case BLE_GAP_EVENT_CONNECT:
 			client_connecting = false;
+			ble_npl_callout_stop(&client_connect_timeout);
 			result.type = BLE_CLIENT_CONNECT;
 			result.status = event->connect.status;
 			result.handle = BLE_HS_CONN_HANDLE_NONE;
@@ -973,6 +997,7 @@ static int client_gap_event(struct ble_gap_event *event, void *arg) {
 				} else if (client_pair_on_connect) {
 					client_push(&result);
 					int res = client_secure(client_find(result.conn), client_pair_io, client_pair_bond);
+					client_restore_pair_policy();
 					if (res == 0) {
 						return 0;
 					}
@@ -980,6 +1005,7 @@ static int client_gap_event(struct ble_gap_event *event, void *arg) {
 					result.status = res;
 				}
 			}
+			client_restore_pair_policy();
 			break;
 		case BLE_GAP_EVENT_DISCONNECT: {
 			result.type = BLE_CLIENT_DISCONNECT;
@@ -1217,6 +1243,10 @@ static int client_request_on_host(void *arg) {
 		if (client_connecting) {
 			return BLE_HS_EBUSY;
 		}
+		struct ble_gap_conn_desc existing;
+		if (ble_gap_conn_find_by_addr(&r->address, &existing) == 0) {
+			return BLE_HS_EDONE;
+		}
 		if (custom_ble_client_connections(NULL, 0) >= client_limit) {
 			return BLE_HS_ENOMEM;
 		}
@@ -1232,6 +1262,7 @@ static int client_request_on_host(void *arg) {
 		if (!client_events) {
 			return BLE_HS_ENOMEM;
 		}
+		ble_npl_callout_init(&client_connect_timeout, nimble_port_get_dflt_eventq(), client_connect_expired, NULL);
 	}
 	if (r->op == BLE_CLIENT_OP_SCAN) {
 		struct ble_gap_disc_params params = { .passive = 0, .filter_duplicates = 1, .itvl = 160, .window = 80 };
@@ -1249,8 +1280,36 @@ static int client_request_on_host(void *arg) {
 		client_pair_on_connect = r->security;
 		client_pair_io = r->io_cap;
 		client_pair_bond = r->bond;
-		int res = ble_gap_connect(client_addr_type, &r->address, r->duration_ms, NULL, client_gap_event, NULL);
+		if (r->security) {
+			client_saved_io = ble_hs_cfg.sm_io_cap;
+			client_saved_bond = ble_hs_cfg.sm_bonding;
+			client_saved_mitm = ble_hs_cfg.sm_mitm;
+			client_pair_policy_pending = true;
+			ble_hs_cfg.sm_io_cap = r->io_cap;
+			ble_hs_cfg.sm_bonding = r->bond;
+			ble_hs_cfg.sm_mitm = r->io_cap != BLE_HS_IO_NO_INPUT_OUTPUT;
+		}
+		const struct ble_gap_conn_params *params = NULL;
+#if CONFIG_IDF_TARGET_ESP32
+		const struct ble_gap_conn_params esp32_params = {
+			.scan_itvl = 160, .scan_window = 80,
+			.itvl_min = BLE_GAP_INITIAL_CONN_ITVL_MIN,
+			.itvl_max = BLE_GAP_INITIAL_CONN_ITVL_MAX,
+			.latency = BLE_GAP_INITIAL_CONN_LATENCY,
+			.supervision_timeout = BLE_GAP_INITIAL_SUPERVISION_TIMEOUT,
+			.min_ce_len = BLE_GAP_INITIAL_CONN_MIN_CE_LEN,
+			.max_ce_len = BLE_GAP_INITIAL_CONN_MAX_CE_LEN,
+		};
+		params = &esp32_params;
+#endif
+		int res = ble_gap_connect(client_addr_type, &r->address, r->duration_ms, params, client_gap_event, NULL);
 		client_connecting = res == 0;
+		if (res == 0 && ble_npl_callout_reset(&client_connect_timeout, ble_npl_time_ms_to_ticks32(r->duration_ms + 1500)) != 0) {
+			ble_hs_sched_reset(BLE_HS_ENOMEM);
+		}
+		if (res != 0) {
+			client_restore_pair_policy();
+		}
 		return res;
 	}
 	if (r->op == BLE_CLIENT_OP_PASSKEY) {

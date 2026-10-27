@@ -103,7 +103,7 @@
 #include <stdarg.h>
 #include <string.h>
 
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	#define LBM_EVENTS_TASK_STACK_SIZE 1280
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	#define LBM_EVENTS_TASK_STACK_SIZE 640
@@ -888,7 +888,9 @@ static void send_app_data(unsigned char *data, unsigned int len, int interface, 
 		break;
 
 	case 1:
+		#if SOC_USB_SERIAL_JTAG_SUPPORTED
 		comm_usb_send_packet(send_buffer_global, index);
+		#endif
 		break;
 
 	case 2:
@@ -2897,7 +2899,7 @@ static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 
 	gpio_config_t gpconf = {0};
 
-	gpconf.pin_bit_mask = BIT(pin);
+	gpconf.pin_bit_mask = BIT64(pin);
 	gpconf.intr_type =  GPIO_FLOATING;
 
 	if (compare_symbol(name, &syms_vesc.pin_mode_out)) {
@@ -3645,7 +3647,7 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 	}
 
 	gpio_set_direction(pin, GPIO_MODE_INPUT);
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0);
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
@@ -6229,7 +6231,11 @@ static lbm_value ext_connected_ble(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_connected_usb(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
+	#if SOC_USB_SERIAL_JTAG_SUPPORTED
 	return usb_serial_jtag_is_connected() ? ENC_SYM_TRUE : ENC_SYM_NIL;
+	#else
+	return ENC_SYM_NIL;
+	#endif
 }
 
 // Crypto

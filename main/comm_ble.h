@@ -41,6 +41,7 @@ bool comm_ble_host_ready(void);
 uint16_t comm_ble_conn_handle(void);
 bool comm_ble_service_uuid_reserved(const ble_uuid_t *uuid);
 int comm_ble_host_call(int (*callback)(void *arg), void *arg);
+int comm_ble_host_secure(uint16_t connection);
 int comm_ble_host_advertise(struct ble_gap_adv_params *params, const uint8_t *adv_data, size_t adv_len,
 	const uint8_t *scan_rsp_data, size_t scan_rsp_len);
 
