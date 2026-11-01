@@ -251,6 +251,26 @@ endif()
 target_link_libraries(${PROJECT_NAME}.elf PRIVATE "-T${LIBIF_LD}")
 set_property(TARGET ${PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS ${LIBIF_LD})
 
+# Fail the build if the built-in lispBM extensions exceed EXTENSION_STORAGE_SIZE.
+idf_build_get_property(lbm_ext_python PYTHON)
+idf_component_get_property(lbm_ext_main_lib main COMPONENT_LIB)
+set(lbm_ext_stamp "${CMAKE_BINARY_DIR}/lbm_ext_check.stamp")
+add_custom_command(
+    OUTPUT "${lbm_ext_stamp}"
+    COMMAND "${lbm_ext_python}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_lbm_extensions.py"
+        --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json"
+        --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/main"
+        --stamp "${lbm_ext_stamp}"
+        --cache "${CMAKE_BINARY_DIR}/lbm_ext_check.cache.json"
+    DEPENDS "$<TARGET_FILE:${lbm_ext_main_lib}>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_lbm_extensions.py"
+        "${CMAKE_BINARY_DIR}/compile_commands.json"
+    COMMENT "Checking lispBM extension table capacity"
+    VERBATIM)
+add_custom_target(lbm_ext_check DEPENDS "${lbm_ext_stamp}")
+add_dependencies(lbm_ext_check ${lbm_ext_main_lib})
+add_dependencies(${PROJECT_NAME}.elf lbm_ext_check)
+
 include(cmake/git_rev_parse.cmake)
 
 git_describe(GIT_COMMIT_HASH ".")
