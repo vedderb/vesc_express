@@ -808,7 +808,12 @@ bool custom_ble_started(void) {
 }
 
 static unsigned int client_capacity(void) {
-	unsigned int capacity = CONFIG_BT_NIMBLE_MAX_CONNECTIONS - (backup.config.ble_mode != BLE_MODE_DISABLED || server_enabled);
+	// Incoming links: the VESC clients, or one for the LBM server on its own.
+	unsigned int server = comm_ble_max_connections();
+	if (server == 0 && server_enabled) {
+		server = 1;
+	}
+	unsigned int capacity = CONFIG_BT_NIMBLE_MAX_CONNECTIONS > server ? CONFIG_BT_NIMBLE_MAX_CONNECTIONS - server : 0;
 	return capacity < BLE_CLIENT_CONNECTIONS_MAX ? capacity : BLE_CLIENT_CONNECTIONS_MAX;
 }
 

@@ -36,6 +36,7 @@ int32_t confparser_serialize_main_config_t(uint8_t *buffer, const main_config_t 
 	strcpy((char*)buffer + ind, conf->ble_name);
 	ind += strlen(conf->ble_name) + 1;
 	buffer_append_uint32(buffer, conf->ble_pin, &ind);
+	buffer[ind++] = (uint8_t)conf->ble_max_conn;
 	buffer_append_uint32(buffer, conf->ble_service_capacity, &ind);
 	buffer_append_uint32(buffer, conf->ble_chr_descr_capacity, &ind);
 
@@ -76,6 +77,7 @@ bool confparser_deserialize_main_config_t(const uint8_t *buffer, main_config_t *
 	strcpy(conf->ble_name, (char*)buffer + ind);
 	ind += strlen(conf->ble_name) + 1;
 	conf->ble_pin = buffer_get_uint32(buffer, &ind);
+	conf->ble_max_conn = buffer[ind++];
 	conf->ble_service_capacity = buffer_get_uint32(buffer, &ind);
 	conf->ble_chr_descr_capacity = buffer_get_uint32(buffer, &ind);
 
@@ -101,6 +103,7 @@ void confparser_set_defaults_main_config_t(main_config_t *conf) {
 	conf->ble_mode_lbm = CONF_BLE_MODE_LBM;
 	strcpy(conf->ble_name, CONF_BLE_NAME);
 	conf->ble_pin = CONF_BLE_PIN;
+	conf->ble_max_conn = CONF_BLE_MAX_CONN;
 	conf->ble_service_capacity = CONF_BLE_SERVICE_CAPACITY;
 	conf->ble_chr_descr_capacity = CONF_BLE_CHR_DESCR_CAPACITY;
 }

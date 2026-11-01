@@ -26,6 +26,7 @@
 
 #define HW_NAME						"VBMS-INF-SAT"
 #define HW_TARGET                   "esp32c3"
+#define HW_BLE_MAX_CONN				1 // Like the other VBMS targets, which keep their own config
 
 #define HW_EARLY_LBM_INIT
 #define HW_NO_UART

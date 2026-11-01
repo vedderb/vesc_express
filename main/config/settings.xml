@@ -341,6 +341,30 @@ p, li { white-space: pre-wrap; }
             <suffix></suffix>
             <vTx>5</vTx>
         </ble_pin>
+        <ble_max_conn>
+            <longName>Bluetooth Max Connections</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; ; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Maximum number of simultaneous VESC Tool connections over Bluetooth, e.g. two phones. With more than 1 the device keeps advertising while connected until the limit is reached. Replies, including those from devices on CAN, go back to the connection that sent the request. Firmware, LispBM and file uploads are limited to one connection at a time.&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NOTE:&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;While a LispBM BLE server is running only one connection is accepted. The limit is also capped by the hardware (3 on ESP32, 4 on other targets).&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Bluetooth settings will be applied after a reboot.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</description>
+            <cDefine>CONF_BLE_MAX_CONN</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>4</maxInt>
+            <minInt>1</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>1</valInt>
+            <suffix></suffix>
+            <vTx>1</vTx>
+        </ble_max_conn>
         <ble_service_capacity>
             <longName>BLE Service Capacity</longName>
             <type>2</type>
@@ -411,6 +435,7 @@ p, li { white-space: pre-wrap; }
         <ser>ble_mode_lbm</ser>
         <ser>ble_name</ser>
         <ser>ble_pin</ser>
+        <ser>ble_max_conn</ser>
         <ser>ble_service_capacity</ser>
         <ser>ble_chr_descr_capacity</ser>
     </SerOrder>
@@ -453,6 +478,7 @@ p, li { white-space: pre-wrap; }
                     <param>::sep::VESC</param>
                     <param>ble_mode</param>
                     <param>ble_pin</param>
+                    <param>ble_max_conn</param>
                     <param>::sep::LispBM</param>
                     <param>ble_mode_lbm</param>
                     <param>ble_service_capacity</param>

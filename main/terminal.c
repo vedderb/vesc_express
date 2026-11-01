@@ -191,6 +191,7 @@ void terminal_process_string(char *str) {
 
 		commands_printf("BLE MTU           : %d", comm_ble_mtu_now());
 		commands_printf("BLE Connected     : %d", comm_ble_is_connected());
+		commands_printf("BLE Connections   : %d / %d", comm_ble_connection_count(), comm_ble_max_connections());
 		commands_printf("Custom BLE Started: %d", custom_ble_started());
 		commands_printf("CAN RX Recoveries : %d", comm_can_get_rx_recovery_cnt());
 

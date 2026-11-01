@@ -93,6 +93,22 @@ static send_func_t send_func_can_fwd = 0;
 static send_func_t send_func_blocking = 0;
 static void(* volatile appdata_func)(unsigned char *data, unsigned int len) = 0;
 
+// Several clients can be connected at once (USB, WiFi, several BLE links). Each has its
+// own reply function, which is used as the client identity below.
+static SemaphoreHandle_t route_mutex;
+
+// Replies from CAN devices carry no request id and go to send_func_can_fwd, so a forward
+// from another client waits until the previous forward got a reply or timed out.
+#define CAN_FWD_REPLY_TIMEOUT_MS	20
+static volatile bool can_fwd_reply_pending = false;
+static volatile TickType_t can_fwd_time = 0;
+
+// Uploads keep state between packets (OTA handle, code offsets, open file), so only one
+// client may upload at a time. Others are refused until the owner has been idle.
+#define UPLOAD_LOCK_IDLE_MS			5000
+static send_func_t upload_owner = 0;
+static TickType_t upload_time = 0;
+
 // Blocking thread
 static SemaphoreHandle_t block_sem;
 static uint8_t blocking_thread_cmd_buffer[PACKET_MAX_PL_LEN];
@@ -202,7 +218,97 @@ static void block_task(void *arg) {
 	vTaskDelete(NULL);
 }
 
+static void can_fwd_claim(send_func_t func) {
+	if (!route_mutex) {
+		send_func_can_fwd = func;
+		return;
+	}
+	for (;;) {
+		xSemaphoreTake(route_mutex, portMAX_DELAY);
+		bool available = !can_fwd_reply_pending || send_func_can_fwd == func ||
+			(xTaskGetTickCount() - can_fwd_time) >= pdMS_TO_TICKS(CAN_FWD_REPLY_TIMEOUT_MS);
+		if (available) {
+			send_func_can_fwd = func;
+			can_fwd_reply_pending = true;
+			can_fwd_time = xTaskGetTickCount();
+		}
+		xSemaphoreGive(route_mutex);
+		if (available) {
+			return;
+		}
+		vTaskDelay(1);
+	}
+}
+
+static bool is_upload_packet(COMM_PACKET_ID id) {
+	switch (id) {
+	case COMM_ERASE_NEW_APP:
+	case COMM_WRITE_NEW_APP_DATA:
+	case COMM_JUMP_TO_BOOTLOADER:
+	case COMM_LISP_ERASE_CODE:
+	case COMM_LISP_WRITE_CODE:
+	case COMM_LISP_STREAM_CODE:
+	case COMM_QMLUI_ERASE:
+	case COMM_QMLUI_WRITE:
+	case COMM_FILE_WRITE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool upload_claim(send_func_t func) {
+	if (!route_mutex) {
+		return true;
+	}
+	xSemaphoreTake(route_mutex, portMAX_DELAY);
+	TickType_t now = xTaskGetTickCount();
+	bool ok = !upload_owner || upload_owner == func || (now - upload_time) >= pdMS_TO_TICKS(UPLOAD_LOCK_IDLE_MS);
+	if (ok) {
+		upload_owner = func;
+		upload_time = now;
+	}
+	xSemaphoreGive(route_mutex);
+	return ok;
+}
+
+// Failure reply in each command's own format, so the client sees a normal failed write.
+static void upload_reject(COMM_PACKET_ID id, unsigned char *data, unsigned int len, send_func_t reply_func) {
+	int32_t ind = 0;
+	int32_t rind = 0;
+	uint8_t buf[16];
+	buf[rind++] = id;
+	switch (id) {
+	case COMM_JUMP_TO_BOOTLOADER:
+		return;
+	case COMM_WRITE_NEW_APP_DATA: {
+		uint32_t offset = len >= 4 ? buffer_get_uint32(data, &ind) : 0;
+		buf[rind++] = 0;
+		buffer_append_uint32(buf, offset < 6 ? 0 : offset - 6, &rind);
+	} break;
+	case COMM_LISP_WRITE_CODE:
+	case COMM_QMLUI_WRITE:
+		buf[rind++] = 0;
+		buffer_append_uint32(buf, len >= 4 ? buffer_get_uint32(data, &ind) : 0, &rind);
+		break;
+	case COMM_LISP_STREAM_CODE:
+		buffer_append_int32(buf, len >= 4 ? buffer_get_int32(data, &ind) : 0, &rind);
+		buffer_append_int16(buf, -1, &rind);
+		break;
+	case COMM_FILE_WRITE: {
+		ind = strnlen((char*)data, len) + 1;
+		buffer_append_int32(buf, (unsigned int)ind + 4 <= len ? buffer_get_int32(data, &ind) : 0, &rind);
+		buf[rind++] = 0;
+	} break;
+	default: // Erase commands
+		buf[rind++] = 0;
+		break;
+	}
+	reply_func(buf, rind);
+}
+
 void commands_init(void) {
+	route_mutex = xSemaphoreCreateMutex();
 	print_mutex = xSemaphoreCreateMutex();
 	block_sem = xSemaphoreCreateBinary();
 	#if CONFIG_IDF_TARGET_ESP32P4
@@ -236,6 +342,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	// Avoid calling invalid function pointer if it is null.
 	if (!reply_func && packet_id != COMM_LISP_REPL_CMD) {
 		reply_func = send_func_dummy;
+	}
+
+	if (is_upload_packet(packet_id) && !upload_claim(reply_func)) {
+		upload_reject(packet_id, data, len, reply_func);
+		return;
 	}
 
 	switch (packet_id) {
@@ -377,7 +488,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_FORWARD_CAN:
-		send_func_can_fwd = reply_func;
+		can_fwd_claim(reply_func);
 		comm_can_send_buffer(data[0], data + 1, len - 1, 0);
 		break;
 
@@ -1132,6 +1243,7 @@ void commands_send_packet_can_last(unsigned char *data, unsigned int len) {
 	if (send_func_can_fwd) {
 		send_func_can_fwd(data, len);
 	}
+	can_fwd_reply_pending = false;
 }
 
 void commands_send_packet(unsigned char *data, unsigned int len) {
