@@ -80,6 +80,7 @@ typedef struct {
 	int pin_rx;
 	volatile bool recover_pending;
 	volatile bool recovering;
+	volatile bool tx_reclaim;
 	volatile int recovery_cnt;
 } can_state_t;
 
@@ -611,6 +612,7 @@ static bool IRAM_ATTR can_state_change(
 	can_state_t *state = arg;
 	BaseType_t wake = pdFALSE;
 	if (event->new_sta == TWAI_ERROR_BUS_OFF) {
+		state->tx_reclaim = true;
 		state->recover_pending = true;
 		xSemaphoreGiveFromISR(proc_sem, &wake);
 	} else if (state->recovering && event->new_sta == TWAI_ERROR_ACTIVE) {
@@ -636,6 +638,7 @@ static void can_node_stop(can_state_t *state) {
 	}
 	state->recover_pending = false;
 	state->recovering = false;
+	state->tx_reclaim = false;
 }
 
 static bool can_node_start(can_state_t *state, int pin_tx, int pin_rx, uint32_t bitrate) {
@@ -687,7 +690,7 @@ static bool can_node_start(can_state_t *state, int pin_tx, int pin_rx, uint32_t 
 }
 
 static void can_recover(can_state_t *state) {
-	if ((!state->recover_pending && !state->recovering) || !state->send_mutex) {
+	if ((!state->recover_pending && !state->recovering && !state->tx_reclaim) || !state->send_mutex) {
 		return;
 	}
 	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
@@ -700,6 +703,13 @@ static void can_recover(can_state_t *state) {
 			state->recovering = false;
 		}
 	}
+
+	if (state->node && state->tx_reclaim && !state->recover_pending && !state->recovering &&
+			twai_node_transmit_wait_all_done(state->node, 0) == ESP_OK) {
+		can_reset_tx(state);
+		state->tx_reclaim = false;
+	}
+
 	xSemaphoreGive(state->send_mutex);
 }
 
@@ -709,7 +719,7 @@ static void can_transmit(can_state_t *state, uint32_t id, const uint8_t *data, u
 	}
 	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
 	can_tx_message_t *msg;
-	if (state->node && !state->recovering && xQueueReceive(state->tx_free, &msg, pdMS_TO_TICKS(5)) == pdTRUE) {
+	if (state->node && !state->recovering && !state->tx_reclaim && xQueueReceive(state->tx_free, &msg, pdMS_TO_TICKS(5)) == pdTRUE) {
 		len = len > 8 ? 8 : len;
 		msg->frame = (twai_frame_t){
 			.header = {.id = id, .dlc = len, .ide = ext},
@@ -726,7 +736,13 @@ static void can_transmit(can_state_t *state, uint32_t id, const uint8_t *data, u
 
 static void process_task(void *arg) {
 	for (;;) {
-		xSemaphoreTake(proc_sem, portMAX_DELAY);
+		bool reclaim = can_state.tx_reclaim;
+
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+		reclaim = reclaim || can2_state.tx_reclaim;
+#endif
+
+		xSemaphoreTake(proc_sem, reclaim ? pdMS_TO_TICKS(10) : portMAX_DELAY);
 
 		can_recover(&can_state);
 #ifdef CONFIG_IDF_TARGET_ESP32C6
