@@ -193,6 +193,9 @@ void terminal_process_string(char *str) {
 		commands_printf("BLE Connected     : %d", comm_ble_is_connected());
 		commands_printf("Custom BLE Started: %d", custom_ble_started());
 		commands_printf("CAN RX Recoveries : %d", comm_can_get_rx_recovery_cnt());
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+		commands_printf("CAN2 RX Recoveries: %d", comm_can2_get_rx_recovery_cnt());
+#endif
 
 		esp_ip4_addr_t ip = comm_wifi_get_ip();
 		esp_ip4_addr_t ip_client = comm_wifi_get_ip_client();
