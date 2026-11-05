@@ -18,7 +18,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 
 # Files that register extensions with runtime names (package ext- placeholders,
-# native libs). These use the USER_EXTENSION_STORAGE_SIZE reserve.
+# native libs). These use the package/user extension reserves.
 DYNAMIC_CALL_FILES = {"eval_cps.c", "lispif_c_lib.c", "extensions.c"}
 
 CALL_RE = re.compile(r"\blbm_add_extension\s*\(")
@@ -170,7 +170,7 @@ def scan_file(entry):
 def read_limits(entry):
     defs = run_preprocessor(entry, ["-dM"])
     vals = {}
-    for key in ("EXTENSION_STORAGE_SIZE", "USER_EXTENSION_STORAGE_SIZE"):
+    for key in ("EXTENSION_STORAGE_SIZE", "PACKAGE_EXTENSION_STORAGE_SIZE", "USER_EXTENSION_STORAGE_SIZE"):
         m = re.search(r"^#define\s+" + key + r"\s+(.+)$", defs, re.M)
         if not m:
             raise RuntimeError("%s not found in %s" % (key, entry["file"]))
@@ -280,7 +280,8 @@ def main():
 
     count = len(origin)
     cap = limits["EXTENSION_STORAGE_SIZE"]
-    reserve = limits["USER_EXTENSION_STORAGE_SIZE"]
+    package = limits["PACKAGE_EXTENSION_STORAGE_SIZE"]
+    user = limits["USER_EXTENSION_STORAGE_SIZE"]
 
     if count > cap:
         print("check_lbm_extensions: ERROR: %d built-in lispBM extensions, but EXTENSION_STORAGE_SIZE is %d."
@@ -288,8 +289,8 @@ def main():
         print("  Raise EXTENSION_STORAGE_SIZE in main/lispif.c to at least %d." % count, file=sys.stderr)
         return 1
 
-    print("check_lbm_extensions: %d built-in extensions, capacity %d (%d free), +%d reserved for packages/native libs"
-          % (count, cap, cap - count, reserve))
+    print("check_lbm_extensions: %d built-in extensions, capacity %d (%d free), +%d package slots, +%d hardware slots"
+          % (count, cap, cap - count, package, user))
 
     if a.stamp:
         with open(a.stamp, "w", encoding="utf-8") as f:
