@@ -170,7 +170,7 @@ def build_target(config, output_dir, idx=0, total=0):
         # 3. Copy artifacts
         set_status(f"{idx}/{total} | {config['name']} ({config['target']}) | Copying artifacts")
         try:
-            target_output_dir = os.path.join(output_dir, config['target'][0:7], config['name'])
+            target_output_dir = os.path.join(output_dir, config['target'].split('_')[0], config['name'])
             os.makedirs(target_output_dir, exist_ok=True)
 
             # Source paths
@@ -244,13 +244,13 @@ REPLACEABLE_STRING
                 success_count += 1
 
                 target_res_string = res_firmwares_string.replace("TARGET_DESTINATION_DIRECTORY",
-                    config['target'][0:7]).replace("TARGET_DESTINATION_FILENAME", config['name'] + "/bootloader.bin")
+                    config['target'].split('_')[0]).replace("TARGET_DESTINATION_FILENAME", config['name'] + "/bootloader.bin")
                 res_string = res_string + target_res_string
                 target_res_string = res_firmwares_string.replace("TARGET_DESTINATION_DIRECTORY",
-                    config['target'][0:7]).replace("TARGET_DESTINATION_FILENAME", config['name'] + "/partition-table.bin")
+                    config['target'].split('_')[0]).replace("TARGET_DESTINATION_FILENAME", config['name'] + "/partition-table.bin")
                 res_string = res_string + target_res_string
                 target_res_string = res_firmwares_string.replace("TARGET_DESTINATION_DIRECTORY",
-                    config['target'][0:7]).replace("TARGET_DESTINATION_FILENAME", config['name'] + "/vesc_express.bin")
+                    config['target'].split('_')[0]).replace("TARGET_DESTINATION_FILENAME", config['name'] + "/vesc_express.bin")
                 res_string = res_string + target_res_string
             else:
                 failed_configs.append(config['name'])
