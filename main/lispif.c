@@ -329,9 +329,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 		// Result. Currently unused.
 		send_buffer_global[ind++] = '\0';
 
-		// A previous stats request may have resumed evaluation before the eval
-		// task has acknowledged it. Preserve that requested state, not the old
-		// observed PAUSED state, or queued polls can leave Lisp stopped.
+		// Preserve pending resumes between queued statistics requests.
 		bool was_paused = lbm_get_eval_state_requested() == EVAL_CPS_STATE_PAUSED;
 		if (pause_eval(0, 2000)) {
 			lbm_value *glob_env = lbm_get_global_env();
