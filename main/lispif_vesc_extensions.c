@@ -930,6 +930,7 @@ void lispif_invalidate_app_data_source(send_func_t reply) {
 static bool app_data_bind_reply(lbm_cid cid, uint32_t token) {
 	bool valid = token == 0;
 	int slot = -1;
+	int free_slot = -1;
 	portENTER_CRITICAL(&app_data_mux);
 	for (int i = 0; i < APP_DATA_SOURCE_SLOTS; i++) {
 		if (token && app_data_sources[i].token == token) {
@@ -937,15 +938,12 @@ static bool app_data_bind_reply(lbm_cid cid, uint32_t token) {
 		}
 		if (app_data_bindings[i].token && app_data_bindings[i].cid == cid) {
 			slot = i;
+		} else if (!app_data_bindings[i].token && free_slot < 0) {
+			free_slot = i;
 		}
 	}
-	if (slot < 0 && token) {
-		for (int i = 0; i < APP_DATA_SOURCE_SLOTS; i++) {
-			if (!app_data_bindings[i].token) {
-				slot = i;
-				break;
-			}
-		}
+	if (slot < 0) {
+		slot = free_slot;
 	}
 	if (valid && slot >= 0) {
 		app_data_bindings[slot] = (app_data_binding_t){ cid, token };
@@ -955,16 +953,15 @@ static bool app_data_bind_reply(lbm_cid cid, uint32_t token) {
 }
 
 // A stale explicit route drops the reply; it must never fall back to another client.
-static bool app_data_reply_for_context(lbm_cid cid, send_func_t *reply) {
-	bool bound = false;
-	*reply = NULL;
+static send_func_t app_data_reply_for_context(lbm_cid cid) {
+	send_func_t reply = commands_send_packet;
 	portENTER_CRITICAL(&app_data_mux);
 	for (int i = 0; i < APP_DATA_SOURCE_SLOTS; i++) {
 		if (app_data_bindings[i].token && app_data_bindings[i].cid == cid) {
-			bound = true;
+			reply = NULL;
 			for (int j = 0; j < APP_DATA_SOURCE_SLOTS; j++) {
 				if (app_data_sources[j].token == app_data_bindings[i].token) {
-					*reply = app_data_sources[j].reply;
+					reply = app_data_sources[j].reply;
 					break;
 				}
 			}
@@ -972,7 +969,7 @@ static bool app_data_reply_for_context(lbm_cid cid, send_func_t *reply) {
 		}
 	}
 	portEXIT_CRITICAL(&app_data_mux);
-	return bound;
+	return reply;
 }
 
 void lispif_clear_app_data_reply(lbm_cid cid) {
@@ -994,13 +991,9 @@ static void send_app_data(unsigned char *data, unsigned int len, int interface, 
 
 	switch (interface) {
 	case 0: {
-		send_func_t reply;
-		if (app_data_reply_for_context(lbm_get_current_cid(), &reply)) {
-			if (reply) {
-				reply(send_buffer_global, index);
-			}
-		} else {
-			commands_send_packet(send_buffer_global, index);
+		send_func_t reply = app_data_reply_for_context(lbm_get_current_cid());
+		if (reply) {
+			reply(send_buffer_global, index);
 		}
 	} break;
 
