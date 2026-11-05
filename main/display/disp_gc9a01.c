@@ -43,8 +43,12 @@ static int m_pin_dc = -1;
 #endif
 
 #if CONFIG_IDF_TARGET_ESP32S31
-#define COMMAND() gpio_set_level(m_pin_dc, 0)
-#define DATA() gpio_set_level(m_pin_dc, 1)
+#define COMMAND() (m_pin_dc < 32 ? \
+    (DISP_REG_CLR = 1U << m_pin_dc) : \
+    (GPIO.out1_w1tc.val = 1U << (m_pin_dc - 32)))
+#define DATA() (m_pin_dc < 32 ? \
+    (DISP_REG_SET = 1U << m_pin_dc) : \
+    (GPIO.out1_w1ts.val = 1U << (m_pin_dc - 32)))
 #else
 #define COMMAND() 	    (DISP_REG_CLR = 1 << m_pin_dc)
 #define DATA() 	        (DISP_REG_SET = 1 << m_pin_dc)
@@ -335,9 +339,9 @@ void disp_gc9a01_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int p
 	m_pin_dc = pin_dc;
 
 	gpio_config_t gpconf = {0};
-	gpconf.pin_bit_mask = BIT(m_pin_dc);
+	gpconf.pin_bit_mask = BIT64(m_pin_dc);
 	if (m_pin_reset >= 0) {
-		gpconf.pin_bit_mask |= BIT(m_pin_reset);
+		gpconf.pin_bit_mask |= BIT64(m_pin_reset);
 	}
 	gpconf.mode = GPIO_MODE_OUTPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;

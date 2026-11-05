@@ -48,8 +48,12 @@ static int m_pin_dc    = -1;
 #endif
 
 #if CONFIG_IDF_TARGET_ESP32S31
-#define COMMAND() gpio_set_level(m_pin_dc, 0)
-#define DATA() gpio_set_level(m_pin_dc, 1)
+#define COMMAND() (m_pin_dc < 32 ? \
+    (DISP_REG_CLR = 1U << m_pin_dc) : \
+    (GPIO.out1_w1tc.val = 1U << (m_pin_dc - 32)))
+#define DATA() (m_pin_dc < 32 ? \
+    (DISP_REG_SET = 1U << m_pin_dc) : \
+    (GPIO.out1_w1ts.val = 1U << (m_pin_dc - 32)))
 #else
 #define COMMAND() 	    (DISP_REG_CLR = 1 << m_pin_dc)
 #define DATA() 	        (DISP_REG_SET = 1 << m_pin_dc)

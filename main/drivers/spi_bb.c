@@ -38,8 +38,12 @@
 	#define CLEAR_PIN(pin) 			(GPIO.out_w1tc.val = 1 << (pin))
 	#define READ_PIN(pin)			gpio_get_level(pin)
 #elif CONFIG_IDF_TARGET_ESP32S31
-	#define SET_PIN(pin) gpio_set_level(pin, 1)
-	#define CLEAR_PIN(pin) gpio_set_level(pin, 0)
+	#define SET_PIN(pin) ((pin) < 32 ? \
+		(GPIO.out_w1ts.val = 1U << (pin)) : \
+		(GPIO.out1_w1ts.val = 1U << ((pin) - 32)))
+	#define CLEAR_PIN(pin) ((pin) < 32 ? \
+		(GPIO.out_w1tc.val = 1U << (pin)) : \
+		(GPIO.out1_w1tc.val = 1U << ((pin) - 32)))
 	#define READ_PIN(pin) gpio_get_level(pin)
 #else
 	#error "Unsupported target"
