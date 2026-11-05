@@ -78,9 +78,9 @@ typedef struct {
 	can_tx_message_t tx_buf[TXBUF_LEN];
 	int pin_tx;
 	int pin_rx;
+	uint32_t bitrate;
+	volatile TickType_t recover_tick;
 	volatile bool recover_pending;
-	volatile bool recovering;
-	volatile bool tx_reclaim;
 	volatile int recovery_cnt;
 } can_state_t;
 
@@ -612,11 +612,8 @@ static bool IRAM_ATTR can_state_change(
 	can_state_t *state = arg;
 	BaseType_t wake = pdFALSE;
 	if (event->new_sta == TWAI_ERROR_BUS_OFF) {
-		state->tx_reclaim = true;
+		state->recover_tick = xTaskGetTickCountFromISR();
 		state->recover_pending = true;
-		xSemaphoreGiveFromISR(proc_sem, &wake);
-	} else if (state->recovering && event->new_sta == TWAI_ERROR_ACTIVE) {
-		state->recovering = false;
 		xSemaphoreGiveFromISR(proc_sem, &wake);
 	}
 	return wake == pdTRUE;
@@ -637,9 +634,9 @@ static void can_node_stop(can_state_t *state) {
 		state->node = NULL;
 	}
 	state->recover_pending = false;
-	state->recovering = false;
-	state->tx_reclaim = false;
 }
+
+static bool can_node_start_locked(can_state_t *state, int pin_tx, int pin_rx, uint32_t bitrate, bool reset_rx);
 
 static bool can_node_start(can_state_t *state, int pin_tx, int pin_rx, uint32_t bitrate) {
 	if (!state->send_mutex) {
@@ -656,8 +653,16 @@ static bool can_node_start(can_state_t *state, int pin_tx, int pin_rx, uint32_t 
 	}
 
 	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
+	bool res = can_node_start_locked(state, pin_tx, pin_rx, bitrate, true);
+	xSemaphoreGive(state->send_mutex);
+	return res;
+}
+
+static bool can_node_start_locked(can_state_t *state, int pin_tx, int pin_rx, uint32_t bitrate, bool reset_rx) {
 	can_node_stop(state);
-	xQueueReset(state->rx_queue);
+	if (reset_rx) {
+		xQueueReset(state->rx_queue);
+	}
 	can_reset_tx(state);
 
 	twai_onchip_node_config_t config = {
@@ -684,32 +689,24 @@ static bool can_node_start(can_state_t *state, int pin_tx, int pin_rx, uint32_t 
 	} else {
 		state->pin_tx = pin_tx;
 		state->pin_rx = pin_rx;
+		state->bitrate = bitrate;
 	}
-	xSemaphoreGive(state->send_mutex);
 	return res == ESP_OK;
 }
 
 static void can_recover(can_state_t *state) {
-	if ((!state->recover_pending && !state->recovering && !state->tx_reclaim) || !state->send_mutex) {
+	if (!state->recover_pending || !state->send_mutex || xSemaphoreTake(state->send_mutex, 0) != pdTRUE) {
 		return;
 	}
-	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
-	if (state->node && state->recover_pending) {
-		state->recover_pending = false;
-		state->recovering = true;
-		if (twai_node_recover(state->node) == ESP_OK) {
+	if (state->recover_pending &&
+			(TickType_t)(xTaskGetTickCount() - state->recover_tick) >= pdMS_TO_TICKS(100)) {
+		if (can_node_start_locked(state, state->pin_tx, state->pin_rx, state->bitrate, false)) {
 			state->recovery_cnt++;
 		} else {
-			state->recovering = false;
+			state->recover_tick = xTaskGetTickCount();
+			state->recover_pending = true;
 		}
 	}
-
-	if (state->node && state->tx_reclaim && !state->recover_pending && !state->recovering &&
-			twai_node_transmit_wait_all_done(state->node, 0) == ESP_OK) {
-		can_reset_tx(state);
-		state->tx_reclaim = false;
-	}
-
 	xSemaphoreGive(state->send_mutex);
 }
 
@@ -719,7 +716,7 @@ static void can_transmit(can_state_t *state, uint32_t id, const uint8_t *data, u
 	}
 	xSemaphoreTake(state->send_mutex, portMAX_DELAY);
 	can_tx_message_t *msg;
-	if (state->node && !state->recovering && !state->tx_reclaim && xQueueReceive(state->tx_free, &msg, pdMS_TO_TICKS(5)) == pdTRUE) {
+	if (state->node && !state->recover_pending && xQueueReceive(state->tx_free, &msg, pdMS_TO_TICKS(5)) == pdTRUE) {
 		len = len > 8 ? 8 : len;
 		msg->frame = (twai_frame_t){
 			.header = {.id = id, .dlc = len, .ide = ext},
@@ -736,10 +733,10 @@ static void can_transmit(can_state_t *state, uint32_t id, const uint8_t *data, u
 
 static void process_task(void *arg) {
 	for (;;) {
-		bool reclaim = can_state.tx_reclaim;
+		bool reclaim = can_state.recover_pending;
 
 #ifdef CONFIG_IDF_TARGET_ESP32C6
-		reclaim = reclaim || can2_state.tx_reclaim;
+		reclaim = reclaim || can2_state.recover_pending;
 #endif
 
 		xSemaphoreTake(proc_sem, reclaim ? pdMS_TO_TICKS(10) : portMAX_DELAY);
@@ -895,6 +892,16 @@ static uint32_t baudrate_to_bitrate(CAN_BAUD baudrate) {
 			return 20000;
 		case CAN_BAUD_50K:
 			return 50000;
+		case CAN_BAUD_75K:
+			// The ESP-IDF 6.1 timing calculator does not find a valid even
+			// prescaler when asked for exactly 75000 bit/s with a 40 or 80 MHz
+			// TWAI clock. Requesting 75188 instead gives 19 time quanta per bit
+			// with a prescaler of 28 at 40 MHz, or 56 at 80 MHz. Both produce
+			// about 75187.97 bit/s, which is 0.25% above the nominal 75 kbit/s.
+			// This was tested on C6. The same timing fits the other supported
+			// ESP targets with 40/80 MHz TWAI clocks. A different source clock
+			// or a change to the IDF timing calculator needs to be checked again.
+			return 75188;
 		case CAN_BAUD_100K:
 			return 100000;
 		default:
