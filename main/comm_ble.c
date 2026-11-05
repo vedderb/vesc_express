@@ -22,6 +22,7 @@
 #include <string.h>
 #include "packet.h"
 #include "commands.h"
+#include "lispif.h"
 #include "conf_general.h"
 #include "main.h"
 
@@ -92,6 +93,8 @@ SLOT_FUNCS(1)
 SLOT_FUNCS(2)
 SLOT_FUNCS(3)
 
+static void (*const slot_reply[BLE_CONN_SLOTS])(unsigned char *, unsigned int) =
+	{ slot_reply_0, slot_reply_1, slot_reply_2, slot_reply_3 };
 static void (*const slot_raw[BLE_CONN_SLOTS])(unsigned char *, unsigned int) =
 	{ slot_raw_0, slot_raw_1, slot_raw_2, slot_raw_3 };
 static void (*const slot_process[BLE_CONN_SLOTS])(unsigned char *, unsigned int) =
@@ -296,6 +299,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 			if (!c) {
 				return 0; // A link refused above
 			}
+			lispif_invalidate_app_data_source(slot_reply[c - conns]);
 			c->conn = BLE_HS_CONN_HANDLE_NONE;
 			c->notify_enabled = false;
 			c->mtu = DEFAULT_BLE_MTU;

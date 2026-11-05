@@ -23,6 +23,7 @@
 #include "buffer.h"
 #include "nvs_flash.h"
 #include "esp_mmu_map.h"
+#include "esp_cache.h"
 #include "esp_log.h"
 #include "soc/soc.h"
 #include "soc/ext_mem_defs.h"
@@ -38,6 +39,7 @@ typedef struct {
 	uint32_t size;
 	uint16_t flags;
 	bool mmap_done;
+	bool fixed_map;
 	const void *addr;
 	esp_partition_mmap_handle_t handle;
 } _code_checks;
@@ -81,6 +83,7 @@ static bool perform_mmap(int ind) {
 			res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &m_code_checks[ind].addr, &m_code_checks[ind].handle);
 		} else {
 			m_code_checks[ind].addr = mapped;
+			m_code_checks[ind].fixed_map = true;
 		}
 	} else {
 		res = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &m_code_checks[ind].addr, &m_code_checks[ind].handle);
@@ -88,6 +91,33 @@ static bool perform_mmap(int ind) {
 
 	m_code_checks[ind].mmap_done = res == ESP_OK;
 	return m_code_checks[ind].mmap_done;
+}
+
+// Invalidate the cache for esp_mmu_map_virt mappings because the flash driver does not do it automatically (required for ESP32-S3)
+static void invalidate_fixed_map(int ind, const esp_partition_t *part, uint32_t offset, uint32_t len) {
+#if CONFIG_IDF_TARGET_ESP32
+	// Not needed (the driver flushes the whole cache) and esp_cache_msync M2C aborts on ESP32
+	(void)ind; (void)part; (void)offset; (void)len;
+#else
+	if (!m_code_checks[ind].fixed_map || len == 0) {
+		return;
+	}
+
+	uint32_t start = (offset / part->erase_size) * part->erase_size;
+	uint32_t end = ((offset + len + part->erase_size - 1) / part->erase_size) * part->erase_size;
+	if (end > part->size) {
+		end = part->size;
+	}
+	if (start >= end) {
+		return;
+	}
+
+	esp_err_t res = esp_cache_msync((uint8_t*)m_code_checks[ind].addr + start, end - start,
+			ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+	if (res != ESP_OK) {
+		ESP_LOGE("flash_helper", "Cache invalidate at 0x%08lx failed: %s", (unsigned long)start, esp_err_to_name(res));
+	}
+#endif
 }
 
 void flash_helper_init(void) {
@@ -154,6 +184,7 @@ bool flash_helper_erase_code(int ind, int size) {
 	// up the process erase is only performed on sectors that are not already erased.
 
 	esp_partition_erase_range(part, 0, part->erase_size);
+	invalidate_fixed_map(ind, part, 0, part->erase_size);
 	uint8_t *erased_data = malloc(part->erase_size);
 	if (!erased_data) {
 		return false;
@@ -164,6 +195,7 @@ bool flash_helper_erase_code(int ind, int size) {
 	for (uint32_t i = part->erase_size; i < part->size; i += part->erase_size) {
 		if (memcmp(m_code_checks[ind].addr + i, erased_data, part->erase_size) != 0) {
 			esp_partition_erase_range(part, i, part->erase_size);
+			invalidate_fixed_map(ind, part, i, part->erase_size);
 		}
 	}
 
@@ -221,6 +253,7 @@ bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t l
 		bool erase_ok = esp_partition_erase_range(part, sector_start, part->erase_size) == ESP_OK;
 		bool write_ok = esp_partition_write(part, sector_start, buf, buf_len) == ESP_OK;
 		free(buf);
+		invalidate_fixed_map(ind, part, sector_start, part->erase_size);
 
 		if (m_stats.sector_last != sector_start) {
 			m_stats.sector_last = sector_start;
@@ -236,7 +269,9 @@ bool flash_helper_write_code(int ind, uint32_t offset, uint8_t *data, uint32_t l
 
 		return erase_ok && write_ok;
 	} else {
-		return esp_partition_write(part, offset, data, len) == ESP_OK;
+		bool write_ok = esp_partition_write(part, offset, data, len) == ESP_OK;
+		invalidate_fixed_map(ind, part, offset, len);
+		return write_ok;
 	}
 }
 

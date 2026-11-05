@@ -39,7 +39,11 @@
 #define GC_STACK_SIZE			160
 #define PRINT_STACK_SIZE		128
 #ifndef EXTENSION_STORAGE_SIZE
-#define EXTENSION_STORAGE_SIZE	397
+#define EXTENSION_STORAGE_SIZE	461
+#endif
+// Keep package slots separate from built-ins and hardware-specific extensions.
+#ifndef PACKAGE_EXTENSION_STORAGE_SIZE
+#define PACKAGE_EXTENSION_STORAGE_SIZE 50
 #endif
 #ifndef USER_EXTENSION_STORAGE_SIZE
 #define USER_EXTENSION_STORAGE_SIZE 0
@@ -54,7 +58,7 @@ static size_t bitmap_size = 0;
 static lbm_cons_t *heap;
 static uint32_t *memory_array;
 static uint32_t *bitmap_array;
-static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE];
+static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE + PACKAGE_EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE];
 
 static bool string_tok_valid = false;
 static volatile lbm_uint *image_ptr = 0;
@@ -595,9 +599,12 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 							repl_cid = -1;
 						}
 					} else {
+						lbm_continue_eval();
 						commands_printf_lisp("Not enough memory");
 					}
 				} else {
+					// Cancel the pending pause when the request times out.
+					lbm_continue_eval();
 					commands_printf_lisp("Could not pause");
 				}
 			}
@@ -767,6 +774,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 }
 
 static void done_callback(eval_context_t *ctx) {
+	lispif_clear_app_data_reply(ctx->id);
 	lbm_cid cid = ctx->id;
 	lbm_value t = ctx->r;
 
@@ -875,7 +883,7 @@ bool lispif_restart(bool print, bool load_code) {
 					bitmap_size,
 					GC_STACK_SIZE,
 					PRINT_STACK_SIZE, extension_storage,
-					EXTENSION_STORAGE_SIZE + USER_EXTENSION_STORAGE_SIZE);
+					sizeof(extension_storage) / sizeof(extension_storage[0]));
 
 			if (!lbm_ok) {
 				commands_printf_lisp("lbm_init failed (heap=%p mem=%p bmp=%p free=%u)",
