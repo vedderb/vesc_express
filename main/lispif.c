@@ -595,9 +595,12 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 							repl_cid = -1;
 						}
 					} else {
+						lbm_continue_eval();
 						commands_printf_lisp("Not enough memory");
 					}
 				} else {
+					// Cancel the pending pause when the request times out.
+					lbm_continue_eval();
 					commands_printf_lisp("Could not pause");
 				}
 			}
