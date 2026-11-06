@@ -260,6 +260,8 @@ void lbm_kill_eval(void);
  * \return Current state of the evaluator.
  */
 uint32_t lbm_get_eval_state(void);
+/** Get the requested state, which may not have taken effect yet. */
+uint32_t lbm_get_eval_state_requested(void);
 /** Provide a description of an error as a string.
  *  Use when implementing for example extensions to
  *  report an error message to the programmer in case
