@@ -774,6 +774,7 @@ void lispif_process_cmd(unsigned char *data, unsigned int len,
 }
 
 static void done_callback(eval_context_t *ctx) {
+	lispif_clear_app_data_reply(ctx->id);
 	lbm_cid cid = ctx->id;
 	lbm_value t = ctx->r;
 
