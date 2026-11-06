@@ -7,6 +7,7 @@
 
 volatile bool event_can_sid_en = false;
 volatile bool event_can_eid_en = false;
+volatile bool event_data_rx_source_en = false;
 volatile bool event_data_rx_en = false;
 volatile bool event_esp_now_rx_en = false;
 volatile bool event_ble_rx_en = false;
@@ -24,6 +25,7 @@ volatile bool event_bms_zero_ofs_en = false;
 
 lbm_uint sym_event_can_sid = 0;
 lbm_uint sym_event_can_eid = 0;
+lbm_uint sym_event_data_rx_source = 0;
 lbm_uint sym_event_data_rx = 0;
 lbm_uint sym_event_esp_now_rx = 0;
 lbm_uint sym_event_ble_rx = 0;
@@ -43,6 +45,7 @@ void lispif_events_load_symbols() {
     lbm_add_symbol_const("event-can-sid", &sym_event_can_sid);
 	lbm_add_symbol_const("event-can-eid", &sym_event_can_eid);
 	lbm_add_symbol_const("event-data-rx", &sym_event_data_rx);
+	lbm_add_symbol_const("event-data-rx-source", &sym_event_data_rx_source);
 	lbm_add_symbol_const("event-esp-now-rx", &sym_event_esp_now_rx);
 	lbm_add_symbol_const("event-ble-rx", &sym_event_ble_rx);
 	lbm_add_symbol_const("event-wifi-disconnect", &sym_event_wifi_disconnect);
