@@ -22,6 +22,8 @@ if(NOT DEFINED HW_NAME OR "${HW_NAME}" STREQUAL "")
             set(HW_NAME "Devkit C6 FH4")
         elseif(IDF_TARGET STREQUAL "esp32p4_nrw32n16")
             set(HW_NAME "P4 NRW32N16")
+        elseif(IDF_TARGET STREQUAL "esp32s31")
+            set(HW_NAME "Devkit S31 N16R16V")
         endif()
     endif()
 

@@ -105,7 +105,7 @@
 
 #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	#define LBM_EVENTS_TASK_STACK_SIZE 1280
-#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
+#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
 	#define LBM_EVENTS_TASK_STACK_SIZE 640
 #else
 	#error "Unsupported target"
@@ -3650,6 +3650,11 @@ static lbm_value ext_sleep_config_wakeup_pin(lbm_value *args, lbm_uint argn) {
 #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	esp_sleep_enable_ext0_wakeup(pin, mode ? 1 : 0);
 	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+#elif CONFIG_IDF_TARGET_ESP32S31
+	if (esp_sleep_enable_ext1_wakeup_io(UINT64_C(1) << pin,
+			mode ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ANY_LOW) != ESP_OK) {
+		return ENC_SYM_EERROR;
+	}
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	if (esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(UINT64_C(1) << pin, mode ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW)
 		!= ESP_OK) {

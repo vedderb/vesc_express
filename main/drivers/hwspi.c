@@ -35,6 +35,13 @@
 #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
 	#define SET_CS() 		(GPIO.out_w1ts.val = 1 << m_pin_cs)
 	#define CLEAR_CS()		(GPIO.out_w1tc.val = 1 << m_pin_cs)
+#elif CONFIG_IDF_TARGET_ESP32S31
+	#define SET_CS() (m_pin_cs < 32 ? \
+		(GPIO.out_w1ts.val = 1U << m_pin_cs) : \
+		(GPIO.out1_w1ts.val = 1U << (m_pin_cs - 32)))
+	#define CLEAR_CS() (m_pin_cs < 32 ? \
+		(GPIO.out_w1tc.val = 1U << m_pin_cs) : \
+		(GPIO.out1_w1tc.val = 1U << (m_pin_cs - 32)))
 #else
 	#error "Unsupported target"
 #endif
@@ -86,7 +93,7 @@ void hwspi_init(int clk_mhz, int mode,
 	m_devcfg.pre_cb = NULL;
 
 	gpio_config_t gpconf = {0};
-	gpconf.pin_bit_mask = BIT(m_pin_cs);
+	gpconf.pin_bit_mask = BIT64(m_pin_cs);
 	gpconf.mode = GPIO_MODE_OUTPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
 	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;

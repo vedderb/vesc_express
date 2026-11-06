@@ -20,15 +20,24 @@ static int m_pin_dc = -1;
 #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S3
 	#define DISP_REG_SET		GPIO.out_w1ts
 	#define DISP_REG_CLR		GPIO.out_w1tc
-#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
+#elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
 	#define DISP_REG_SET		GPIO.out_w1ts.val
 	#define DISP_REG_CLR		GPIO.out_w1tc.val
 #else
 	#error "Unsupported target"
 #endif
 
+#if CONFIG_IDF_TARGET_ESP32S31
+#define COMMAND() (m_pin_dc < 32 ? \
+    (DISP_REG_CLR = 1U << m_pin_dc) : \
+    (GPIO.out1_w1tc.val = 1U << (m_pin_dc - 32)))
+#define DATA() (m_pin_dc < 32 ? \
+    (DISP_REG_SET = 1U << m_pin_dc) : \
+    (GPIO.out1_w1ts.val = 1U << (m_pin_dc - 32)))
+#else
 #define COMMAND() 		(DISP_REG_CLR = 1 << m_pin_dc)
 #define DATA() 			(DISP_REG_SET = 1 << m_pin_dc)
+#endif
 
 static void command_start(uint8_t command) {
 	COMMAND();
@@ -337,7 +346,7 @@ void disp_sh8601_init(int pin_sd0, int pin_clk, int pin_cs, int pin_reset, int p
 	m_pin_dc = pin_dc;
 
 	gpio_config_t gpconf = {0};
-	gpconf.pin_bit_mask = BIT(m_pin_dc) | BIT(m_pin_reset);
+	gpconf.pin_bit_mask = BIT64(m_pin_dc) | BIT64(m_pin_reset);
 	gpconf.mode = GPIO_MODE_OUTPUT;
 	gpconf.pull_down_en = GPIO_PULLDOWN_DISABLE;
 	gpconf.pull_up_en = GPIO_PULLUP_DISABLE;

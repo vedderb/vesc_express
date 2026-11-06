@@ -26,13 +26,19 @@
 static adc_oneshot_unit_handle_t adc_unit;
 static adc_cali_handle_t adc_cal[SOC_ADC_MAX_CHANNEL_NUM];
 
+#if SOC_ADC_ATTEN_NUM == 1
+#define HW_ADC_ATTEN ADC_ATTEN_DB_0
+#else
+#define HW_ADC_ATTEN ADC_ATTEN_DB_12
+#endif
+
 static void configure_channel(adc_channel_t channel) {
 	if (adc_cal[channel]) {
 		return;
 }
 
 	adc_oneshot_chan_cfg_t config = {
-		.atten = ADC_ATTEN_DB_12,
+		.atten = HW_ADC_ATTEN,
 		.bitwidth = ADC_BITWIDTH_DEFAULT,
 	};
 	ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_unit, channel, &config));
@@ -40,18 +46,20 @@ static void configure_channel(adc_channel_t channel) {
 	adc_cali_curve_fitting_config_t calibration = {
 		.unit_id = ADC_UNIT_1,
 		.chan = channel,
-		.atten = ADC_ATTEN_DB_12,
+		.atten = HW_ADC_ATTEN,
 		.bitwidth = ADC_BITWIDTH_DEFAULT,
 	};
 	adc_cali_create_scheme_curve_fitting(&calibration, &adc_cal[channel]);
-#else
+#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
 	adc_cali_line_fitting_config_t calibration = {
 		.unit_id = ADC_UNIT_1,
-		.atten = ADC_ATTEN_DB_12,
+		.atten = HW_ADC_ATTEN,
 		.bitwidth = ADC_BITWIDTH_DEFAULT,
 	};
 	adc_cali_create_scheme_line_fitting(&calibration, &adc_cal[channel]);
 	#endif
+	// Targets without an IDF calibration scheme keep a null handle;
+	// adc_get_voltage reports unavailable (-1) rather than an uncalibrated voltage.
 }
 
 void adc_init(void) {
