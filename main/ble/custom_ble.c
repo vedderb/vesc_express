@@ -808,7 +808,6 @@ bool custom_ble_started(void) {
 }
 
 static unsigned int client_capacity(void) {
-	// Incoming links: the VESC clients, or one for the LBM server on its own.
 	unsigned int server = comm_ble_max_connections();
 	if (server == 0 && server_enabled) {
 		server = 1;

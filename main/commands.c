@@ -93,18 +93,15 @@ static send_func_t send_func_can_fwd = 0;
 static send_func_t send_func_blocking = 0;
 static void(* volatile appdata_func)(unsigned char *data, unsigned int len) = 0;
 
-// Several clients can be connected at once (USB, WiFi, several BLE links). Each has its
-// own reply function, which is used as the client identity below.
+// Reply callbacks identify clients
 static SemaphoreHandle_t route_mutex;
 
-// Replies from CAN devices carry no request id and go to send_func_can_fwd, so a forward
-// from another client waits until the previous forward got a reply or timed out.
+// CAN replies have no request ID. Wait for a reply or timeout before switching clients.
 #define CAN_FWD_REPLY_TIMEOUT_MS	20
 static bool can_fwd_reply_pending = false;
 static TickType_t can_fwd_time = 0;
 
-// Uploads keep state between packets (OTA handle, code offsets, open file), so only one
-// client may upload at a time. Others are refused until the owner has been idle.
+// Upload state is shared. Keep one owner until it has been idle for this long.
 #define UPLOAD_LOCK_IDLE_MS			5000
 static send_func_t upload_owner = 0;
 static TickType_t upload_time = 0;
@@ -284,7 +281,7 @@ static bool upload_claim(send_func_t func) {
 	return ok;
 }
 
-// Failure reply in each command's own format, so the client sees a normal failed write.
+// Use each command's failure reply format
 static void upload_reject(COMM_PACKET_ID id, unsigned char *data, unsigned int len, send_func_t reply_func) {
 	int32_t ind = 0;
 	int32_t rind = 0;

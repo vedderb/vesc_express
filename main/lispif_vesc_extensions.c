@@ -952,7 +952,7 @@ static bool app_data_bind_reply(lbm_cid cid, uint32_t token) {
 	return valid && (slot >= 0 || token == 0);
 }
 
-// A stale explicit route drops the reply; it must never fall back to another client.
+// Drop replies to disconnected sources instead of sending them to another client.
 static send_func_t app_data_reply_for_context(lbm_cid cid) {
 	send_func_t reply = commands_send_packet;
 	portENTER_CRITICAL(&app_data_mux);

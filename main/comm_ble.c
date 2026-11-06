@@ -51,10 +51,8 @@
 
 #define GATTS_CHAR_VAL_LEN_MAX 255
 #define DEFAULT_BLE_MTU        20
-// Upper bound for backup.config.ble_max_conn. Each slot needs its own reply function.
 #define BLE_CONN_SLOTS         4
 #define BLE_TX_QUEUE_LEN       32
-// Includes packet headers and the packet currently being transmitted.
 #define BLE_TX_BYTES_LIMIT     4096
 
 typedef struct {
@@ -63,7 +61,7 @@ typedef struct {
 	uint8_t data[];
 } ble_tx_packet_t;
 
-// One incoming VESC connection. Keep one slot ready and allocate others on connect.
+// Keep one slot allocated; allocate more as clients connect
 typedef struct {
 	uint16_t conn;
 	bool notify_enabled;
@@ -85,8 +83,7 @@ static uint16_t char2_len = GATTS_CHAR_VAL_LEN_MAX;
 static void slot_send_raw(ble_conn_t *c, unsigned char *buffer, unsigned int len);
 static void slot_send_packet(ble_conn_t *c, unsigned char *data, unsigned int len);
 
-// send_func_t has no context argument, so every slot gets its own functions. commands.c
-// keys reply routing on the function pointer, so each connection must have a distinct one.
+// Reply routing identifies clients by callback, so each slot needs its own callbacks
 #define SLOT_FUNCS(i) \
 	static void slot_reply_##i(unsigned char *d, unsigned int l) { slot_send_packet(&conns[i], d, l); } \
 	static void slot_raw_##i(unsigned char *d, unsigned int l) { slot_send_raw(&conns[i], d, l); } \
@@ -128,7 +125,7 @@ static int active_count(void) {
 	return n;
 }
 
-// The LBM BLE server (custom_ble.c) tracks a single connection.
+// The Lisp BLE server supports one connection
 static int active_limit(void) {
 	return custom_ble_started() ? 1 : conn_limit;
 }
@@ -297,7 +294,7 @@ static void start_advertising(void) {
 	}
 }
 
-// Sends one fragment for a slot. Returns true if the slot needs another pass.
+// Send one fragment; return true if more work remains
 static bool slot_service(ble_conn_t *c) {
 	if (xSemaphoreTake(send_mutex, 0) != pdTRUE) {
 		return true;
@@ -357,7 +354,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 				break;
 			}
 			if (conn_limit == 0) {
-				break; // VESC service disabled: the link belongs to the LBM server
+				break; // Connection belongs to the Lisp BLE server
 			}
 			ble_conn_t *c = slot_connect(event->connect.conn_handle);
 			if (!c) {
@@ -368,7 +365,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 			if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
 				comm_ble_host_secure(c->conn);
 			}
-			// Advertising stops on connect; keep accepting until the limit is reached.
+			// Connecting stops advertising; restart if there is room
 			start_advertising();
 		} break;
 		case BLE_GAP_EVENT_DISCONNECT: {
@@ -378,7 +375,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 			ble_conn_t *c = slot_find(event->disconnect.conn.conn_handle);
 			if (!c) {
 				start_advertising();
-				return 0; // A link refused above
+				return 0; // Connection was rejected
 			}
 			slot_disconnect(c);
 			if (active_count() == 0) {
@@ -408,7 +405,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 	return 0;
 }
 
-// First active connection. Used by the LBM BLE server, which tracks a single connection.
+// The Lisp BLE server uses the first active connection
 uint16_t comm_ble_conn_handle(void) {
 	for (int i = 0; i < conn_limit; i++) {
 		if (conns[i].conn != BLE_HS_CONN_HANDLE_NONE) {
@@ -581,7 +578,7 @@ int comm_ble_connection_count(void) {
 	return active_count();
 }
 
-// Connections reserved for VESC clients. Depends only on the config, so it can be used before init.
+// Configured VESC connection limit; available before initialization
 int comm_ble_max_connections(void) {
 	return backup.config.ble_mode == BLE_MODE_DISABLED ? 0 : configured_max_conn();
 }
@@ -590,7 +587,7 @@ int comm_ble_mtu_now(void) {
 	return payload_mtu(comm_ble_conn_handle());
 }
 
-// Sends to every connected client, e.g. for send-data from LispBM.
+// Broadcast to all connected clients
 void comm_ble_send_packet(unsigned char *data, unsigned int len) {
 	for (int i = 0; i < conn_limit; i++) {
 		if (conns[i].conn != BLE_HS_CONN_HANDLE_NONE) {
