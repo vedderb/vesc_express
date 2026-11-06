@@ -100,8 +100,8 @@ static SemaphoreHandle_t route_mutex;
 // Replies from CAN devices carry no request id and go to send_func_can_fwd, so a forward
 // from another client waits until the previous forward got a reply or timed out.
 #define CAN_FWD_REPLY_TIMEOUT_MS	20
-static volatile bool can_fwd_reply_pending = false;
-static volatile TickType_t can_fwd_time = 0;
+static bool can_fwd_reply_pending = false;
+static TickType_t can_fwd_time = 0;
 
 // Uploads keep state between packets (OTA handle, code offsets, open file), so only one
 // client may upload at a time. Others are refused until the owner has been idle.
@@ -216,6 +216,18 @@ static void block_task(void *arg) {
 	}
 
 	vTaskDelete(NULL);
+}
+
+static void can_fwd_set_default(send_func_t func) {
+	if (route_mutex) {
+		xSemaphoreTake(route_mutex, portMAX_DELAY);
+	}
+	if (!send_func_can_fwd) {
+		send_func_can_fwd = func;
+	}
+	if (route_mutex) {
+		xSemaphoreGive(route_mutex);
+	}
 }
 
 static void can_fwd_claim(send_func_t func) {
@@ -335,9 +347,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		send_func = reply_func;
 	}
 
-	if (!send_func_can_fwd) {
-		send_func_can_fwd = reply_func;
-	}
+	can_fwd_set_default(reply_func);
 
 	// Avoid calling invalid function pointer if it is null.
 	if (!reply_func && packet_id != COMM_LISP_REPL_CMD) {
@@ -1240,10 +1250,17 @@ void commands_process_packet(unsigned char *data, unsigned int len,
  * The data length.
  */
 void commands_send_packet_can_last(unsigned char *data, unsigned int len) {
-	if (send_func_can_fwd) {
-		send_func_can_fwd(data, len);
+	if (route_mutex) {
+		xSemaphoreTake(route_mutex, portMAX_DELAY);
 	}
+	send_func_t reply = send_func_can_fwd;
 	can_fwd_reply_pending = false;
+	if (route_mutex) {
+		xSemaphoreGive(route_mutex);
+	}
+	if (reply) {
+		reply(data, len);
+	}
 }
 
 void commands_send_packet(unsigned char *data, unsigned int len) {
