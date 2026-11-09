@@ -156,6 +156,18 @@ void lispif_init(void) {
 	#endif
 	}
 
+	// Lets the hardware config set the LispBM heap size (cons cells) and
+	// memory size (KB) regardless of the Wi-Fi and BLE modes. Used when the
+	// smaller NimBLE stack leaves enough RAM for a bigger heap than the
+	// defaults above.
+#ifdef HW_LBM_HEAP_SIZE
+	heap_size = HW_LBM_HEAP_SIZE;
+#endif
+#ifdef HW_LBM_MEMORY_KB
+	mem_size = LBM_MEMORY_SIZE_KB(HW_LBM_MEMORY_KB);
+	bitmap_size = LBM_BITMAP_SIZE_KB(HW_LBM_MEMORY_KB);
+#endif
+
 #endif
 
 #ifdef CONFIG_SPIRAM
