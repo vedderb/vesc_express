@@ -464,7 +464,23 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 		.scan_time   = {.active = {scan_time, scan_time}, .passive = scan_time},
 	};
 
+	// Wait for the result before starting the scan. A scan can end right
+	// away, for instance while the station is still disconnecting, and a
+	// WIFI_EVENT_SCAN_DONE arriving before is_waiting is set is ignored,
+	// leaving the context blocked forever. Blocking holds the blocking
+	// extension mutex until the context is blocked, so an early unblock from
+	// the event listener waits for it.
+	waiting_cid = lbm_get_current_cid();
+	waiting_op = WAITING_OP_SCAN_AP;
+	is_waiting = true;
+	lbm_block_ctx_from_extension();
+
 	esp_err_t result = esp_wifi_scan_start(&config, false);
+	if (result != ESP_OK) {
+		lbm_undo_block_ctx_from_extension();
+		is_waiting = false;
+	}
+
 	switch (result) {
 		case ESP_OK: {
 			break;
@@ -482,11 +498,6 @@ static lbm_value ext_wifi_scan_networks(lbm_value *args, lbm_uint argn) {
 			return ENC_SYM_EERROR;
 		}
 	}
-
-	waiting_cid = lbm_get_current_cid();
-	lbm_block_ctx_from_extension();
-	waiting_op = WAITING_OP_SCAN_AP;
-	is_waiting = true;
 
 	return ENC_SYM_NIL;
 }
@@ -1591,6 +1602,11 @@ void lispif_load_wifi_extensions(void) {
 	}
 
 	custom_socket_now = 0;
+
+	// A context blocked in a WIFI command doesn't survive a Lisp restart, so
+	// nothing would clear this, and every WIFI command would fail until a
+	// reboot.
+	is_waiting = false;
 
 	register_symbols();
 
