@@ -17,4 +17,4 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	*/
 
-void lispif_load_wifi_extensions();
+void lispif_load_wifi_extensions(bool main_found);

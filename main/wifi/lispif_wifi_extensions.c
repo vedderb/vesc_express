@@ -1580,7 +1580,7 @@ static lbm_value ext_tcp_recv_to_char(lbm_value *args, lbm_uint argn) {
 	}
 }
 
-void lispif_load_wifi_extensions(void) {
+void lispif_load_wifi_extensions(bool main_found) {
 	if (!init_done) {
 		comm_wifi_set_event_listener(event_listener);
 		s_ftm_event_group = xEventGroupCreate();
@@ -1608,22 +1608,24 @@ void lispif_load_wifi_extensions(void) {
 	// reboot.
 	is_waiting = false;
 
-	register_symbols();
+	if (!main_found) {
+		register_symbols();
 
-	lbm_add_extension("wifi-scan-networks", ext_wifi_scan_networks);
-	lbm_add_extension("wifi-connect", ext_wifi_connect);
-	lbm_add_extension("wifi-connect-last", ext_wifi_connect_last);
-	lbm_add_extension("wifi-disconnect", ext_wifi_disconnect);
-	lbm_add_extension("wifi-status", ext_wifi_status);
-	lbm_add_extension("wifi-max-tx-power", ext_wifi_max_tx_power);
-	lbm_add_extension("wifi-auto-reconnect", ext_wifi_auto_reconnect);
-	lbm_add_extension("wifi-ftm-measure", ext_wifi_ftm_measure);
-	lbm_add_extension("tcp-connect", ext_tcp_connect);
-	lbm_add_extension("tcp-close", ext_tcp_close);
-	lbm_add_extension("tcp-status", ext_tcp_status);
-	lbm_add_extension("tcp-send", ext_tcp_send);
-	lbm_add_extension("tcp-recv", ext_tcp_recv);
-	lbm_add_extension("tcp-recv-to-char", ext_tcp_recv_to_char);
+		lbm_add_extension("wifi-scan-networks", ext_wifi_scan_networks);
+		lbm_add_extension("wifi-connect", ext_wifi_connect);
+		lbm_add_extension("wifi-connect-last", ext_wifi_connect_last);
+		lbm_add_extension("wifi-disconnect", ext_wifi_disconnect);
+		lbm_add_extension("wifi-status", ext_wifi_status);
+		lbm_add_extension("wifi-max-tx-power", ext_wifi_max_tx_power);
+		lbm_add_extension("wifi-auto-reconnect", ext_wifi_auto_reconnect);
+		lbm_add_extension("wifi-ftm-measure", ext_wifi_ftm_measure);
+		lbm_add_extension("tcp-connect", ext_tcp_connect);
+		lbm_add_extension("tcp-close", ext_tcp_close);
+		lbm_add_extension("tcp-status", ext_tcp_status);
+		lbm_add_extension("tcp-send", ext_tcp_send);
+		lbm_add_extension("tcp-recv", ext_tcp_recv);
+		lbm_add_extension("tcp-recv-to-char", ext_tcp_recv_to_char);
+	}
 }
 
 #else

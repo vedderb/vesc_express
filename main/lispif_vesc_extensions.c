@@ -7160,13 +7160,8 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("load-native-lib", ext_load_native_lib);
 		lbm_add_extension("unload-native-lib", ext_unload_native_lib);
 
-		lispif_load_rgbled_extensions();
-
 		lispif_load_disp_extensions();
 		lispif_load_touch_extensions();
-		#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
-		lispif_load_wifi_extensions();
-		#endif
 
 		// CAN-Messages
 		lbm_add_extension("canmsg-recv", ext_canmsg_recv);
@@ -7297,9 +7292,15 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_string_extensions_init();
 	}
 
-	#if CONFIG_BT_NIMBLE_ENABLED
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_ESP_WIFI_REMOTE_ENABLED
+	lispif_load_wifi_extensions(main_found);
+#endif
+
+	lispif_load_rgbled_extensions(main_found);
+
+#if CONFIG_BT_NIMBLE_ENABLED
 	lispif_load_ble_extensions(backup.config.ble_mode_lbm);
-	#endif
+#endif
 
 	lbm_set_dynamic_load_callback(dynamic_loader);
 }

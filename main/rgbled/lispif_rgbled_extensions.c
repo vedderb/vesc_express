@@ -772,14 +772,16 @@ static lbm_value ext_rgbled_update(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-void lispif_load_rgbled_extensions(void) {
+void lispif_load_rgbled_extensions(bool main_found) {
 	if (led_mtx == NULL) {
 		led_mtx = xSemaphoreCreateRecursiveMutexStatic(&led_mtx_buf);
 	}
 
-	lbm_add_extension("rgbled-init", ext_rgbled_init);
-	lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
-	lbm_add_extension("rgbled-buffer", ext_rgbled_color_buffer);
-	lbm_add_extension("rgbled-color", ext_rgbled_color);
-	lbm_add_extension("rgbled-update", ext_rgbled_update);
+	if (!main_found) {
+		lbm_add_extension("rgbled-init", ext_rgbled_init);
+		lbm_add_extension("rgbled-deinit", ext_rgbled_deinit);
+		lbm_add_extension("rgbled-buffer", ext_rgbled_color_buffer);
+		lbm_add_extension("rgbled-color", ext_rgbled_color);
+		lbm_add_extension("rgbled-update", ext_rgbled_update);
+	}
 }

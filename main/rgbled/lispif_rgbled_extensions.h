@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-void lispif_load_rgbled_extensions();
+void lispif_load_rgbled_extensions(bool main_found);
 
 bool rgbled_init(int pin, unsigned int timing_preset);
 void rgbled_deinit(int pin);
