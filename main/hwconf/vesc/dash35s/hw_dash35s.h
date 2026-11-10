@@ -40,6 +40,10 @@
 #define CAN_TX_GPIO_NUM             57
 #define CAN_RX_GPIO_NUM             56
 
+// SDMMC
+#define HW_SDMMC_SLOT               0
+#define HW_SDMMC_WIDTH              4
+
 // Buttons
 #define BTN1_GPIO                   48
 #define BTN2_GPIO                   49
