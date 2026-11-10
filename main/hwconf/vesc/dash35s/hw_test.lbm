@@ -1,0 +1,105 @@
+(import "pkg::jpg_test_320_240@://vesc_packages/lib_files/files.vescpkg" 'jpg_test)
+(import "pkg::font_16_26@://vesc_packages/lib_files/files.vescpkg" 'font)
+
+(disp-reset)
+(disp-orientation 3)
+(disp-set-bl 60)
+
+(def v0 0)
+(def v1 0)
+(def btn '(0 0))
+(def usb 0)
+(def zero nil)
+
+(loopwhile-thd 100 t {
+        (if (not (connected-usb)) {
+                (setq usb 0)
+                (btn-pull-en true)
+                (sleep 0.005)
+                (var raw (btn-read))
+                (btn-pull-en false)
+                (setq v0 (ix raw 0))
+                (setq v1 (ix raw 1))
+                (if (not zero) (setq zero raw))
+                (setq btn (list
+                        (if (> (abs (- v0 (ix zero 0))) 64) 1 0)
+                (if (> (abs (- v1 (ix zero 1))) 64) 1 0)))
+                } {
+                (setq usb 1)
+                (btn-pull-en false)
+                (setq zero nil)
+                (setq btn '(0 0))
+        })
+        (sleep 0.02)
+})
+
+(def img (img-buffer 'rgb565 480 320))
+(img-clear img)
+(img-render-jpg img jpg_test 0 0)
+
+(defun line (x0 y0 x1 y1)
+(img-line img (+ x0 320) y0 (+ x1 320) y1 0xff0000 '(thickness 1)))
+
+(def nodes '((-1 -1 -1) (-1 -1 1) (-1 1 -1) (-1 1 1) (1 -1 -1) (1 -1 1) (1 1 -1) (1 1 1)))
+(def edges '((0 1) (1 3) (3 2) (2 0) (4 5) (5 7) (7 6) (6 4) (0 4) (1 5) (2 6) (3 7)))
+
+(defun draw-edges () {
+        (var scale 45.0)
+        (var ofs-x (/ 80 scale))
+        (var ofs-y (/ 110 scale))
+
+        (loopforeach e edges {
+                (var na (ix nodes (ix e 0)))
+                (var nb (ix nodes (ix e 1)))
+                (apply line (map (fn (x) (to-i (* x scale))) (list
+                            (+ ofs-x (ix na 0)) (+ ofs-y (ix na 1))
+                (+ ofs-x (ix nb 0)) (+ ofs-y (ix nb 1)))))
+        })
+})
+
+(defun rotate-cube (ax ay) {
+        (var sx (sin ax))
+        (var cx (cos ax))
+        (var sy (sin ay))
+        (var cy (cos ay))
+
+        (loopforeach n nodes {
+                (var x (ix n 0))
+                (var y (ix n 1))
+                (var z (ix n 2))
+
+                (setix n 0 (- (* x cx) (* z sx)))
+                (setix n 2 (+ (* z cx) (* x sx)))
+                (setq z (ix n 2))
+                (setix n 1 (- (* y cy) (* z sy)))
+                (setix n 2 (+ (* z cy) (* y sy)))
+        })
+})
+
+(def fps 0)
+
+(loopwhile t {
+        (var t-start (systime))
+        (img-rectangle img 320 0 160 240 0 '(filled))
+        (img-rectangle img 0 250 480 70 0 '(filled))
+        (draw-edges)
+        (rotate-cube 0.1 0.05)
+        (img-text img 330 210 0xff0000 0 font (str-from-n fps "FPS %.1f"))
+
+        (var ofs 20)
+        (var names '("BTN1" "BTN2"))
+
+        (looprange i 0 2 {
+                (img-text img ofs 250 0xff0000 0 font (ix names i))
+                (img-text img (+ ofs 100) 250 0xff0000 0 font
+                (if (= usb 1) "USB" (str-from-n (ix (list v0 v1) i) "%d")))
+
+                (if (= (ix btn i) 1)
+                    (img-rectangle img ofs 283 200 30 0xff0000 '(rounded 8) '(filled))
+                (img-rectangle img ofs 283 200 30 0xff0000 '(rounded 8)))
+                (setq ofs (+ ofs 240))
+        })
+
+        (disp-render img 0 0)
+        (setq fps (/ 1.0 (secs-since t-start)))
+})
