@@ -25,6 +25,7 @@
 
 static adc_oneshot_unit_handle_t adc_unit;
 static adc_cali_handle_t adc_cal[SOC_ADC_MAX_CHANNEL_NUM];
+static bool adc_configured[SOC_ADC_MAX_CHANNEL_NUM];
 
 #if SOC_ADC_ATTEN_NUM == 1
 #define HW_ADC_ATTEN ADC_ATTEN_DB_0
@@ -33,7 +34,7 @@ static adc_cali_handle_t adc_cal[SOC_ADC_MAX_CHANNEL_NUM];
 #endif
 
 static void configure_channel(adc_channel_t channel) {
-	if (adc_cal[channel]) {
+	if (channel < 0 || channel >= SOC_ADC_MAX_CHANNEL_NUM || adc_configured[channel]) {
 		return;
 }
 
@@ -42,6 +43,7 @@ static void configure_channel(adc_channel_t channel) {
 		.bitwidth = ADC_BITWIDTH_DEFAULT,
 	};
 	ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_unit, channel, &config));
+	adc_configured[channel] = true;
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
 	adc_cali_curve_fitting_config_t calibration = {
 		.unit_id = ADC_UNIT_1,
@@ -84,6 +86,15 @@ void adc_init(void) {
 	configure_channel(HW_ADC_CH4);
 		#endif
 	}
+
+int adc_get_raw(adc_channel_t channel) {
+	int raw;
+	if (!adc_unit || channel < 0 || channel >= SOC_ADC_MAX_CHANNEL_NUM || !adc_configured[channel] ||
+		adc_oneshot_read(adc_unit, channel, &raw) != ESP_OK) {
+		return -1;
+	}
+	return raw;
+}
 
 float adc_get_voltage(adc_channel_t channel) {
 	int raw;

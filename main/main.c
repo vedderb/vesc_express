@@ -172,7 +172,9 @@ void app_main(void) {
 
 	nmea_init();
 	log_init();
-#ifdef SD_PIN_MOSI
+#ifdef HW_SDMMC_SLOT
+	log_mount_card_sdmmc(HW_SDMMC_SLOT, HW_SDMMC_WIDTH, SDMMC_FREQ_DEFAULT);
+#elif defined(SD_PIN_MOSI)
 	log_mount_card(SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK, SD_PIN_CS, SDMMC_FREQ_DEFAULT);
 #endif
 #ifdef NAND_PIN_MOSI

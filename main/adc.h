@@ -24,6 +24,7 @@
 
 // Functions
 void adc_init(void);
+int adc_get_raw(adc_channel_t channel);
 float adc_get_voltage(adc_channel_t channel);
 
 #endif /* MAIN_ADC_H_ */

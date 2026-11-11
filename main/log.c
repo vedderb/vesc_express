@@ -26,6 +26,10 @@
 #include "esp_spiffs.h"
 #endif
 #include "sdmmc_cmd.h"
+#include "soc/soc_caps.h"
+#if SOC_SDMMC_HOST_SUPPORTED
+#include "driver/sdmmc_host.h"
+#endif
 #include "esp_vfs.h"
 #include "buffer.h"
 #include "utils.h"
@@ -56,6 +60,7 @@ char *file_basepath = "/sdcard/";
 // Private variables
 static sdmmc_host_t m_host = SDSPI_HOST_DEFAULT();
 static sdmmc_card_t *m_card = 0;
+static bool m_spi_bus_initialized = false;
 static spi_nand_flash_device_t *nand_flash_device_handle = 0;
 #ifdef HW_INTERNAL_FS
 static bool m_storage_mounted = false;
@@ -327,13 +332,46 @@ esp_err_t log_mount_card(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, in
 		return ret;
 	}
 
+	m_spi_bus_initialized = true;
+
 	sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
 	slot_config.gpio_cs = pin_cs;
 	slot_config.host_id = m_host.slot;
 
 	file_basepath = "/sdcard/";
-	return esp_vfs_fat_sdspi_mount("/sdcard", &m_host, &slot_config, &mount_config, &m_card);
+	ret = esp_vfs_fat_sdspi_mount("/sdcard", &m_host, &slot_config, &mount_config, &m_card);
+	if (ret != ESP_OK) {
+		log_unmount_card();
+	}
+	return ret;
 }
+
+#if SOC_SDMMC_HOST_SUPPORTED
+esp_err_t log_mount_card_sdmmc(int slot, int width, int freq) {
+	if (slot < 0 || slot >= SOC_SDMMC_NUM_SLOTS || (width != 1 && width != 4) || freq <= 0) {
+		return ESP_ERR_INVALID_ARG;
+	}
+
+	log_unmount_card();
+
+	sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+	host.slot = slot;
+	host.max_freq_khz = freq;
+
+	sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+	slot_config.width = width;
+	slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+
+	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+		.format_if_mount_failed = false,
+		.max_files = 5,
+		.allocation_unit_size = 8192
+	};
+
+	file_basepath = "/sdcard/";
+	return esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &m_card);
+}
+#endif
 
 void log_unmount_card(void) {
 	if (m_card) {
@@ -341,7 +379,10 @@ void log_unmount_card(void) {
 		m_card = 0;
 	}
 
-	spi_bus_free(m_host.slot);
+	if (m_spi_bus_initialized) {
+		spi_bus_free(m_host.slot);
+		m_spi_bus_initialized = false;
+	}
 }
 
 bool log_mount_nand_flash(int pin_mosi, int pin_miso, int pin_sck, int pin_cs, int freq) {

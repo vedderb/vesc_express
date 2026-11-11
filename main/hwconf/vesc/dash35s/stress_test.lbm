@@ -1,0 +1,74 @@
+(import "pkg::font_16_26@://vesc_packages/lib_files/files.vescpkg" 'font)
+
+(disp-reset)
+(disp-orientation 3)
+(disp-set-bl 60)
+
+(def img (img-buffer 'rgb565 480 320))
+(def palette '(0xff0000 0x00ff00 0x0000ff 0xffff00 0xff00ff 0x00ffff))
+(def started (systime))
+(def sample (systime))
+(def frames 0)
+(def draw-total 0.0)
+(def submit-total 0.0)
+(def fps 0.0)
+(def draw-ms 0.0)
+(def submit-ms 0.0)
+(def previous -1)
+
+(loopwhile t {
+	(var elapsed (secs-since started))
+	(var phase (mod (to-i (/ elapsed 8.0)) 4))
+	(var objects (ix '(0 16 48 96) phase))
+
+	(if (!= phase previous) {
+		(setq previous phase)
+		(setq sample (systime))
+		(setq frames 0)
+		(setq draw-total 0.0)
+		(setq submit-total 0.0)
+		(setq fps 0.0)
+		(setq draw-ms 0.0)
+		(setq submit-ms 0.0)
+	})
+
+	(var draw-start (systime))
+	(img-clear img)
+
+	(looprange i 0 objects {
+		(var x (+ 24 (mod (+ (* i 67) (to-i (* elapsed (+ 30 (mod i 7))))) 432)))
+		(var y (+ 104 (mod (+ (* i 43) (to-i (* elapsed (+ 17 (mod i 11))))) 188)))
+		(var color (ix palette (mod i 6)))
+		(var shape (mod i 4))
+
+		(cond
+			((= shape 0) (img-circle img x y 12 color '(filled)))
+			((= shape 1) (img-rectangle img (- x 16) (- y 10) 32 20 color '(rounded 5) '(filled)))
+			((= shape 2) (img-line img (- x 18) (- y 12) (+ x 18) (+ y 12) color '(thickness 3)))
+			(t (img-arc img x y 16 (mod (to-i (* elapsed 90)) 360) (+ (mod (to-i (* elapsed 90)) 360) 240) color '(thickness 3)))
+		)
+	})
+
+	(img-rectangle img 0 0 480 90 0 '(filled))
+	(img-text img 8 4 0xffffff 0 font (str-from-n objects "OBJECTS %d"))
+	(img-text img 280 4 0xffffff 0 font (str-from-n fps "FPS %.1f"))
+	(img-text img 8 32 0xffffff 0 font (str-from-n draw-ms "DRAW %.1f ms"))
+	(img-text img 8 60 0xffffff 0 font (str-from-n submit-ms "SUBMIT %.1f ms"))
+	(setq draw-total (+ draw-total (secs-since draw-start)))
+
+	(var submit-start (systime))
+	(disp-render img 0 0)
+	(setq submit-total (+ submit-total (secs-since submit-start)))
+	(setq frames (+ frames 1))
+
+	(var duration (secs-since sample))
+	(if (>= duration 0.5) {
+		(setq fps (/ frames duration))
+		(setq draw-ms (/ (* draw-total 1000.0) frames))
+		(setq submit-ms (/ (* submit-total 1000.0) frames))
+		(setq sample (systime))
+		(setq frames 0)
+		(setq draw-total 0.0)
+		(setq submit-total 0.0)
+	})
+})
