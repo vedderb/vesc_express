@@ -30,6 +30,9 @@
 #if SOC_SDMMC_HOST_SUPPORTED
 #include "driver/sdmmc_host.h"
 #endif
+#ifdef HW_SDMMC_LDO_CHANNEL
+#include "sd_pwr_ctrl_by_on_chip_ldo.h"
+#endif
 #include "esp_vfs.h"
 #include "buffer.h"
 #include "utils.h"
@@ -61,6 +64,9 @@ char *file_basepath = "/sdcard/";
 static sdmmc_host_t m_host = SDSPI_HOST_DEFAULT();
 static sdmmc_card_t *m_card = 0;
 static bool m_spi_bus_initialized = false;
+#ifdef HW_SDMMC_LDO_CHANNEL
+static sd_pwr_ctrl_handle_t m_sd_power = NULL;
+#endif
 static spi_nand_flash_device_t *nand_flash_device_handle = 0;
 #ifdef HW_INTERNAL_FS
 static bool m_storage_mounted = false;
@@ -358,6 +364,17 @@ esp_err_t log_mount_card_sdmmc(int slot, int width, int freq) {
 	host.slot = slot;
 	host.max_freq_khz = freq;
 
+#ifdef HW_SDMMC_LDO_CHANNEL
+	const sd_pwr_ctrl_ldo_config_t power_config = {
+		.ldo_chan_id = HW_SDMMC_LDO_CHANNEL,
+	};
+	esp_err_t ret = sd_pwr_ctrl_new_on_chip_ldo(&power_config, &m_sd_power);
+	if (ret != ESP_OK) {
+		return ret;
+	}
+	host.pwr_ctrl_handle = m_sd_power;
+#endif
+
 	sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
 	slot_config.width = width;
 	slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
@@ -369,7 +386,11 @@ esp_err_t log_mount_card_sdmmc(int slot, int width, int freq) {
 	};
 
 	file_basepath = "/sdcard/";
-	return esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &m_card);
+	esp_err_t result = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &m_card);
+	if (result != ESP_OK) {
+		log_unmount_card();
+	}
+	return result;
 }
 #endif
 
@@ -378,6 +399,13 @@ void log_unmount_card(void) {
 		esp_vfs_fat_sdcard_unmount("/sdcard", m_card);
 		m_card = 0;
 	}
+
+#ifdef HW_SDMMC_LDO_CHANNEL
+	if (m_sd_power) {
+		sd_pwr_ctrl_del_on_chip_ldo(m_sd_power);
+		m_sd_power = NULL;
+	}
+#endif
 
 	if (m_spi_bus_initialized) {
 		spi_bus_free(m_host.slot);
