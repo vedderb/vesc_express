@@ -356,10 +356,10 @@ static lbm_value ext_command(lbm_value *args, lbm_uint argn) {
 }
 
 static void button_pulls(bool enabled) {
-	gpio_set_level(BTN1_PULL_GPIO, 1);
-	gpio_set_level(BTN2_PULL_GPIO, 1);
-	gpio_set_direction(BTN1_PULL_GPIO, enabled ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT);
-	gpio_set_direction(BTN2_PULL_GPIO, enabled ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT);
+	gpio_set_direction(BTN1_PULL_GPIO, GPIO_MODE_INPUT);
+	gpio_set_direction(BTN2_PULL_GPIO, GPIO_MODE_INPUT);
+	gpio_set_pull_mode(BTN1_PULL_GPIO, enabled ? GPIO_PULLUP_ONLY : GPIO_FLOATING);
+	gpio_set_pull_mode(BTN2_PULL_GPIO, enabled ? GPIO_PULLUP_ONLY : GPIO_FLOATING);
 }
 
 static lbm_value ext_button_pulls(lbm_value *args, lbm_uint argn) {
@@ -371,14 +371,12 @@ static lbm_value ext_button_pulls(lbm_value *args, lbm_uint argn) {
 
 static lbm_value ext_button_read(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(0);
-	int first = adc_get_raw(HW_ADC_CH0);
-	int second = adc_get_raw(HW_ADC_CH1);
-
-	if (first < 0 || second < 0) {
+	float first = adc_get_voltage(HW_ADC_CH0);
+	float second = adc_get_voltage(HW_ADC_CH1);
+	if (first < 0.0f || second < 0.0f) {
 		return ENC_SYM_EERROR;
 	}
-
-	return lbm_heap_allocate_list_init(2, lbm_enc_i(first), lbm_enc_i(second));
+	return lbm_heap_allocate_list_init(2, lbm_enc_float(first), lbm_enc_float(second));
 }
 
 static void load_extensions(bool main_found) {
