@@ -1,105 +1,163 @@
-(import "pkg::jpg_test_320_240@://vesc_packages/lib_files/files.vescpkg" 'jpg_test)
-(import "pkg::font_16_26@://vesc_packages/lib_files/files.vescpkg" 'font)
+(import "vesc_labs.bin" 'logo)
 
 (disp-reset)
-(disp-orientation 3)
-(disp-set-bl 60)
-
-(def v0 0)
-(def v1 0)
-(def btn '(0 0))
-(def usb 0)
-(def zero nil)
-
-(loopwhile-thd 100 t {
-        (if (not (connected-usb)) {
-                (setq usb 0)
-                (btn-pull-en true)
-                (sleep 0.005)
-                (var raw (btn-read))
-                (btn-pull-en false)
-                (setq v0 (ix raw 0))
-                (setq v1 (ix raw 1))
-                (if (not zero) (setq zero raw))
-                (setq btn (list
-                        (if (> (abs (- v0 (ix zero 0))) 64) 1 0)
-                (if (> (abs (- v1 (ix zero 1))) 64) 1 0)))
-                } {
-                (setq usb 1)
-                (btn-pull-en false)
-                (setq zero nil)
-                (setq btn '(0 0))
-        })
-        (sleep 0.02)
-})
+(disp-orientation 1)
+(disp-set-bl 70)
 
 (def img (img-buffer 'rgb565 480 320))
-(img-clear img)
-(img-render-jpg img jpg_test 0 0)
+(def logos nil)
+(looprange zoom-index 0 10 {
+    (var scale (+ 0.94 (* zoom-index 0.0165)))
+    (var width (to-i (* 320 scale)))
+    (var height (to-i (* 96 scale)))
+    (var scaled (img-buffer 'rgb565 width height))
+    (img-clear scaled 0x050a12)
+    (img-blit scaled logo 0 0 -1 (list 'scale scale))
+    (var strips nil)
+    (looprange row 0 48 {
+        (var row-start (to-i (/ (* row height) 48)))
+        (var row-end (to-i (/ (* (+ row 1) height) 48)))
+        (var strip (img-buffer 'rgb565 width (- row-end row-start)))
+        (bufcpy strip 5 scaled (+ 5 (* row-start width 2)) (* (- row-end row-start) width 2))
+        (setq strips (append strips (list (list row-start strip))))
+    })
+    (setq logos (append logos (list (list width height strips))))
+    (setq scaled nil)
+    (gc)
+})
+(gc)
 
-(defun line (x0 y0 x1 y1)
-(img-line img (+ x0 320) y0 (+ x1 320) y1 0xff0000 '(thickness 1)))
-
-(def nodes '((-1 -1 -1) (-1 -1 1) (-1 1 -1) (-1 1 1) (1 -1 -1) (1 -1 1) (1 1 -1) (1 1 1)))
-(def edges '((0 1) (1 3) (3 2) (2 0) (4 5) (5 7) (7 6) (6 4) (0 4) (1 5) (2 6) (3 7)))
-
-(defun draw-edges () {
-        (var scale 45.0)
-        (var ofs-x (/ 80 scale))
-        (var ofs-y (/ 110 scale))
-
-        (loopforeach e edges {
-                (var na (ix nodes (ix e 0)))
-                (var nb (ix nodes (ix e 1)))
-                (apply line (map (fn (x) (to-i (* x scale))) (list
-                            (+ ofs-x (ix na 0)) (+ ofs-y (ix na 1))
-                (+ ofs-x (ix nb 0)) (+ ofs-y (ix nb 1)))))
-        })
+(def waves (bufcreate 12288))
+(looprange phase 0 128 {
+    (looprange row 0 48 {
+        (var offset (* (+ (* phase 48) row) 2))
+        (bufset-u8 waves offset
+            (+ 128 (to-i (* 10 (sin (+ (* phase 0.049087) (* row 0.11)))))))
+        (bufset-u8 waves (+ offset 1)
+            (+ 128 (to-i (* 4 (sin (+ (* phase 0.049087) (* row 0.16)))))))
+    })
+})
+(def snow (bufcreate 92160))
+(looprange phase 0 960 {
+    (looprange i 0 24 {
+        (var offset (* (+ (* phase 24) i) 4))
+        (var x (mod (+ (* i 137) (* i i 17) 10 (* 7 (sin (+ (* phase 0.006545) i)))) 480))
+        (var y (mod (+ (* i 73) (* i i 23) (* phase (+ 1 (mod i 2)))) 320))
+        (bufset-u16 snow offset (to-i x))
+        (bufset-u16 snow (+ offset 2) y)
+    })
 })
 
-(defun rotate-cube (ax ay) {
-        (var sx (sin ax))
-        (var cx (cos ax))
-        (var sy (sin ay))
-        (var cy (cos ay))
-
-        (loopforeach n nodes {
-                (var x (ix n 0))
-                (var y (ix n 1))
-                (var z (ix n 2))
-
-                (setix n 0 (- (* x cx) (* z sx)))
-                (setix n 2 (+ (* z cx) (* x sx)))
-                (setq z (ix n 2))
-                (setix n 1 (- (* y cy) (* z sy)))
-                (setix n 2 (+ (* z cy) (* y sy)))
-        })
+(def volts '(0.0 0.0))
+(def buttons '(0 0 0 0))
+(def levels '(0 0 0 0))
+(def usb nil)
+(loopwhile-thd 100 t {
+    (var previous buttons)
+    (setq usb (connected-usb))
+    (if usb {
+        (btn-pull-en nil)
+        (setq buttons '(0 0 0 0))
+    } {
+        (btn-pull-en t)
+        (sleep 0.03)
+        (setq volts (btn-read))
+        (btn-pull-en nil)
+        (var a (ix volts 0))
+        (var b (ix volts 1))
+        (setq buttons (list
+            (if (< a 0.3) 1 0)
+            (if (and (> b 1.0) (< b 1.6)) 1 0)
+            (if (and (> b 0.57) (< b 1.0)) 1 0)
+            (if (and (> b 0.2) (< b 0.57)) 1 0)))
+    })
+    (var next-levels nil)
+    (looprange i 0 4 {
+        (var level (ix levels i))
+        (if (and (= (ix buttons i) 1) (= (ix previous i) 0))
+            (setq level (mod (+ level 1) 4)))
+        (setq next-levels (append next-levels (list level)))
+    })
+    (setq levels next-levels)
+    (sleep 0.05)
 })
 
-(def fps 0)
+
+
+(def started (systime))
+(def sample (systime))
+(def frames 0)
+(def fps 0.0)
+(def next-glitch 3.7)
+(def glitch-until 0.0)
+(print 'DASH-TEST-RUNNING)
 
 (loopwhile t {
-        (var t-start (systime))
-        (img-rectangle img 320 0 160 240 0 '(filled))
-        (img-rectangle img 0 250 480 70 0 '(filled))
-        (draw-edges)
-        (rotate-cube 0.1 0.05)
-        (img-text img 330 210 0xff0000 0 font (str-from-n fps "FPS %.1f"))
+    (var time (secs-since started))
+    (var keys levels)
+    (var boost (ix keys 0))
+    (var split (ix keys 1))
+    (var tear (ix keys 2))
+    (var storm (ix keys 3))
+    (var pulse (* 0.5 (+ 1 (sin (* time 1.2)))))
+    (var variant (ix logos (to-i (* pulse 9))))
+    (var x (+ (- 240 (* 0.5 (ix variant 0))) (* 3 (sin (* time 0.5)))))
+    (var y (+ (- 156 (* 0.5 (ix variant 1))) (* 2 (sin (* time 0.7)))))
+    (var spread (* (+ 1 (* boost 0.5)) (+ 1 (* 1.2 pulse pulse pulse pulse))))
+    (if (> time next-glitch) {
+        (setq glitch-until (+ time 0.055))
+        (setq next-glitch (+ time 2.5 (* 0.1 (mod (to-i (* time 733)) 31))))
+    })
+    (var glitch (or (< time glitch-until)
+        (and (> tear 0) (< (mod (to-i (* time 24)) (- 50 (* tear 10))) (+ 1 tear)))))
+    (var cut (mod (to-i (* time (+ 11 (* tear 8)))) 44))
+    (var wave (* (mod (to-i (* time (+ 24 (* boost 8)))) 128) 96))
+    (img-clear img 0x050a12)
 
-        (var ofs 20)
-        (var names '("BTN1" "BTN2"))
-
-        (looprange i 0 2 {
-                (img-text img ofs 250 0xff0000 0 font (ix names i))
-                (img-text img (+ ofs 100) 250 0xff0000 0 font
-                (if (= usb 1) "USB" (str-from-n (ix (list v0 v1) i) "%d")))
-
-                (if (= (ix btn i) 1)
-                    (img-rectangle img ofs 283 200 30 0xff0000 '(rounded 8) '(filled))
-                (img-rectangle img ofs 283 200 30 0xff0000 '(rounded 8)))
-                (setq ofs (+ ofs 240))
+    (var row 0)
+    (loopforeach strip (ix variant 2) {
+        (var offset (+ wave (* row 2)))
+        (var dx (* spread (- (bufget-u8 waves offset) 128)))
+        (var dy (- (bufget-u8 waves (+ offset 1)) 128))
+        (if (> split 0) {
+            (setq dx (* dx (+ 1 (* split 0.3))))
+            (setq dy (+ dy (* (- row 24) split 0.3)))
         })
+        (if (and glitch (>= row cut) (< row (+ cut 3)))
+            (setq dx (+ dx (+ 8 (* tear 8)))))
+        (img-blit img (ix strip 1) (+ x dx) (+ y (ix strip 0) dy) -1)
+        (setq row (+ row 1))
+    })
 
-        (disp-render img 0 0)
-        (setq fps (/ 1.0 (secs-since t-start)))
+    (var snow-frame (* (mod (to-i (* time (+ 30 (* storm 12)))) 960) 96))
+    (looprange i 0 (* 24 (+ storm 1)) {
+        (var offset (+ snow-frame (* (mod i 24) 4)))
+        (var layer (to-i (/ i 24)))
+        (setq offset (mod (+ offset (* layer 9600)) 92160))
+        (var sx (mod (+ (bufget-u16 snow offset) (* layer 53)) 480))
+        (var sy (bufget-u16 snow (+ offset 2)))
+        (var color (ix '(0x4b6473 0x8099a8 0xb9ced8) (mod i 3)))
+        (img-rectangle img sx sy (if (= (mod i 4) 0) 2 1) (if (> storm 0) 3 2) color '(filled))
+        (if (= (mod i 8) 0) (img-line img (- sx 1) (+ sy 1) (+ sx 2) (+ sy 1) color))
+    })
+
+    (img-text img 12 10 0xffffff 0x050a12 (str-from-n fps "%.1f FPS") '(magnify 3))
+    (looprange i 0 4 {
+        (var x (+ 18 (* i 116)))
+        (var level (ix keys i))
+        (img-text img x 270 0x8faabb 0x050a12 (str-from-n (+ i 1) "BTN%d"))
+        (img-text img (+ x 48) 270 0xffffff 0x050a12 (str-from-n level "%d/3"))
+        (img-rectangle img x 289 98 4 0x203443 '(filled))
+        (if (> level 0) (img-rectangle img x 289 (* level 32) 4 0xff5919 '(filled)))
+    })
+
+    (disp-render img 0 0)
+    (setq frames (+ frames 1))
+    (var duration (secs-since sample))
+    (if (> duration 0.7) {
+        (setq fps (/ frames duration))
+        (setq frames 0)
+        (setq sample (systime))
+    })
+    (sleep 0.001)
 })

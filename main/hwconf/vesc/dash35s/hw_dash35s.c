@@ -31,6 +31,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 
 #include "lispif.h"
 #include "lispif_disp_extensions.h"
@@ -44,38 +45,48 @@
 #define DISP_RD                     40
 #define DISP_RESET                  6
 #define DISP_IM0                    2
-#define DISP_FMARK                  5
 #define DISP_BL                     4
 #define DISP_DATA_PINS              {7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 35, 38, 39}
 #define DISP_CLOCK_HZ               10000000
 
 #define DISPLAY_PIXELS             (320 * 480)
+#define RENDER_SLOTS                3
+#define RENDER_CORE                 1
+
+typedef struct {
+	uint16_t *pixels;
+	uint16_t x, y, width, height;
+	bool clear;
+	uint32_t color;
+} render_job_t;
+
+static QueueHandle_t render_queue;
+static QueueHandle_t free_jobs;
+static SemaphoreHandle_t render_idle;
+static render_job_t jobs[RENDER_SLOTS];
 
 static esp_lcd_panel_io_handle_t display_io;
 static ppa_client_handle_t fill_client;
 static SemaphoreHandle_t display_mutex;
 static SemaphoreHandle_t transfer_done;
-static SemaphoreHandle_t frame_ready;
-static bool tearing_enabled;
 static uint16_t *framebuffer;
 static uint16_t *transfer_buffer;
 static bool transfer_pending;
+static render_job_t *dma_job;
 static unsigned display_width = 480;
 static unsigned display_height = 320;
 static unsigned orientation = 3;
+
+static void sync_renderer(void) {
+	render_job_t *barrier = NULL;
+	xQueueSend(render_queue, &barrier, portMAX_DELAY);
+	xSemaphoreTake(render_idle, portMAX_DELAY);
+}
 
 static bool transfer_finished(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *event, void *ctx) {
 	BaseType_t wake = pdFALSE;
 	xSemaphoreGiveFromISR(transfer_done, &wake);
 	return wake == pdTRUE;
-}
-
-static void frame_mark(void *arg) {
-	BaseType_t wake = pdFALSE;
-	xSemaphoreGiveFromISR(frame_ready, &wake);
-	if (wake == pdTRUE) {
-		portYIELD_FROM_ISR();
-	}
 }
 
 static void wait_transfer(void) {
@@ -85,6 +96,10 @@ static void wait_transfer(void) {
 
 	xSemaphoreTake(transfer_done, portMAX_DELAY);
 	transfer_pending = false;
+	if (dma_job) {
+		xQueueSend(free_jobs, &dma_job, portMAX_DELAY);
+		dma_job = NULL;
+	}
 }
 
 static bool command(uint8_t cmd, const void *data, size_t bytes) {
@@ -92,10 +107,10 @@ static bool command(uint8_t cmd, const void *data, size_t bytes) {
 	return esp_lcd_panel_io_tx_param(display_io, cmd, data, bytes) == ESP_OK;
 }
 
-static bool write_region(unsigned x, unsigned y, unsigned width, unsigned height) {
-	unsigned right = (x + width + 63) / 64 * 64;
+static bool write_region(unsigned x, unsigned y, unsigned width, unsigned height, const uint16_t *pixels) {
+	unsigned right = pixels ? x + width : (x + width + 63) / 64 * 64;
 	unsigned bottom = y + height;
-	x = x / 64 * 64;
+	x = pixels ? x : x / 64 * 64;
 
 	if (right > display_width) {
 		x = 0;
@@ -109,19 +124,17 @@ static bool write_region(unsigned x, unsigned y, unsigned width, unsigned height
 	height = bottom - y;
 	wait_transfer();
 
-	for (unsigned row = 0; row < height; row++) {
-		memcpy(transfer_buffer + row * width, framebuffer + (y + row) * display_width + x, width * 2);
-	}
-
-	if (tearing_enabled && !gpio_get_level(DISP_FMARK)) {
-		xSemaphoreTake(frame_ready, 0);
-		xSemaphoreTake(frame_ready, pdMS_TO_TICKS(25));
+	if (!pixels) {
+		for (unsigned row = 0; row < height; row++) {
+			memcpy(transfer_buffer + row * width, framebuffer + (y + row) * display_width + x, width * 2);
+		}
+		pixels = transfer_buffer;
 	}
 
 	uint8_t col[] = {x >> 8, x, (right - 1) >> 8, right - 1};
 	uint8_t row[] = {y >> 8, y, (bottom - 1) >> 8, bottom - 1};
 	if (!command(0x2a, col, sizeof(col)) || !command(0x2b, row, sizeof(row)) ||
-		esp_lcd_panel_io_tx_color(display_io, 0x2c, transfer_buffer, width * height * 2) != ESP_OK) {
+		esp_lcd_panel_io_tx_color(display_io, 0x2c, pixels, width * height * 2) != ESP_OK) {
 		return false;
 	}
 
@@ -130,7 +143,7 @@ static bool write_region(unsigned x, unsigned y, unsigned width, unsigned height
 }
 
 static bool write_rows(unsigned first, unsigned last) {
-	return write_region(0, first, display_width, last - first);
+	return write_region(0, first, display_width, last - first, NULL);
 }
 
 static uint16_t rgb565_color(uint32_t color) {
@@ -190,36 +203,38 @@ static bool render_image(image_buffer_t *img, uint16_t x, uint16_t y, color_t *c
 		return false;
 	}
 
-	if (img->fmt == rgb565 && img->width == display_width) {
-		memcpy(framebuffer + y * display_width, img->data, img->width * img->height * 2);
-		bool ok = write_region(x, y, img->width, img->height);
-		xSemaphoreGive(display_mutex);
-		return ok;
-	}
+	render_job_t *job;
+	xQueueReceive(free_jobs, &job, portMAX_DELAY);
 
-	for (unsigned row = 0; row < img->height; row++) {
-		size_t first = row * img->width;
-		uint16_t *pixels = framebuffer + (y + row) * display_width + x;
+	job->x = x;
+	job->y = y;
+	job->width = img->width;
+	job->height = img->height;
+	job->clear = false;
 
-		switch (img->fmt) {
-		case rgb565:
-			memcpy(pixels, img->data + first * 2, img->width * 2);
-			break;
-		case rgb888:
-			blast_rgb888(img->data + first * 3, pixels, img->width);
-			break;
-		case rgb332:
-			blast_rgb332(img->data + first, pixels, img->width);
-			break;
-		default:
-			blast_indexed(img, colors, row, pixels);
-			break;
+	if (img->fmt == rgb565) {
+		memcpy(job->pixels, img->data, (size_t)img->width * img->height * 2);
+	} else {
+		for (unsigned row = 0; row < img->height; row++) {
+			size_t first = (size_t)row * img->width;
+			uint16_t *pixels = job->pixels + first;
+			switch (img->fmt) {
+			case rgb888:
+				blast_rgb888(img->data + first * 3, pixels, img->width);
+				break;
+			case rgb332:
+				blast_rgb332(img->data + first, pixels, img->width);
+				break;
+			default:
+				blast_indexed(img, colors, row, pixels);
+				break;
+			}
 		}
 	}
 
-	bool ok = write_region(x, y, img->width, img->height);
+	xQueueSend(render_queue, &job, portMAX_DELAY);
 	xSemaphoreGive(display_mutex);
-	return ok;
+	return true;
 }
 
 static void fill_framebuffer(uint32_t color) {
@@ -247,10 +262,55 @@ static void fill_framebuffer(uint32_t color) {
 	}
 }
 
+static void display_worker(void *arg) {
+	for (;;) {
+		render_job_t *job;
+		if (xQueueReceive(render_queue, &job, transfer_pending ? 1 : portMAX_DELAY) != pdTRUE) {
+			if (uxSemaphoreGetCount(transfer_done)) {
+				wait_transfer();
+			}
+			continue;
+		}
+		if (!job) {
+			wait_transfer();
+			xSemaphoreGive(render_idle);
+			continue;
+		}
+		bool direct = !job->clear && job->width == display_width && job->height == display_height;
+		bool ok;
+
+		if (job->clear) {
+			fill_framebuffer(job->color);
+			ok = write_rows(0, display_height);
+		} else {
+			if (job->width == display_width) {
+				memcpy(framebuffer + job->y * display_width, job->pixels, (size_t)job->width * job->height * 2);
+			} else {
+				for (unsigned row = 0; row < job->height; row++) {
+					memcpy(framebuffer + (job->y + row) * display_width + job->x, job->pixels + row * job->width, job->width * 2);
+				}
+			}
+
+			ok = write_region(job->x, job->y, job->width, job->height, direct ? job->pixels : NULL);
+		}
+
+		if (direct && ok) {
+			dma_job = job;
+		} else {
+			xQueueSend(free_jobs, &job, portMAX_DELAY);
+		}
+	}
+}
+
 static void clear_display(uint32_t color) {
 	xSemaphoreTake(display_mutex, portMAX_DELAY);
-	fill_framebuffer(color);
-	write_rows(0, display_height);
+	render_job_t *job;
+	xQueueReceive(free_jobs, &job, portMAX_DELAY);
+
+	job->clear = true;
+	job->color = color;
+
+	xQueueSend(render_queue, &job, portMAX_DELAY);
 	xSemaphoreGive(display_mutex);
 }
 
@@ -283,8 +343,8 @@ static const uint8_t init_cmds[][16] = {
 
 static void reset_display(void) {
 	xSemaphoreTake(display_mutex, portMAX_DELAY);
+	sync_renderer();
 	wait_transfer();
-	tearing_enabled = false;
 	gpio_set_level(DISP_RESET, 0);
 	vTaskDelay(pdMS_TO_TICKS(100));
 	gpio_set_level(DISP_RESET, 1);
@@ -330,6 +390,7 @@ static lbm_value ext_backlight(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_orientation(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN_NUMBER(1);
 	xSemaphoreTake(display_mutex, portMAX_DELAY);
+	sync_renderer();
 	bool ok = set_orientation(lbm_dec_as_u32(args[0]));
 	xSemaphoreGive(display_mutex);
 
@@ -349,6 +410,7 @@ static lbm_value ext_command(lbm_value *args, lbm_uint argn) {
 	}
 
 	xSemaphoreTake(display_mutex, portMAX_DELAY);
+	sync_renderer();
 	bool ok = command(lbm_dec_as_u32(args[0]), data, argn - 1);
 	xSemaphoreGive(display_mutex);
 
@@ -396,8 +458,10 @@ static void load_extensions(bool main_found) {
 void hw_init(void) {
 	display_mutex = xSemaphoreCreateMutex();
 	transfer_done = xSemaphoreCreateBinary();
-	frame_ready = xSemaphoreCreateBinary();
-	ESP_ERROR_CHECK(display_mutex && transfer_done && frame_ready ? ESP_OK : ESP_ERR_NO_MEM);
+	render_idle = xSemaphoreCreateBinary();
+	render_queue = xQueueCreate(RENDER_SLOTS + 1, sizeof(render_job_t *));
+	free_jobs = xQueueCreate(RENDER_SLOTS, sizeof(render_job_t *));
+	ESP_ERROR_CHECK(display_mutex && transfer_done && render_idle && render_queue && free_jobs ? ESP_OK : ESP_ERR_NO_MEM);
 
 	gpio_config_t pins = {
 		.pin_bit_mask = BIT64(DISP_RESET) | BIT64(DISP_RD) | BIT64(DISP_IM0),
@@ -409,18 +473,6 @@ void hw_init(void) {
 	gpio_set_level(DISP_RD, 1);
 	gpio_set_level(DISP_IM0, 0);
 	button_pulls(false);
-
-	gpio_config_t fmark = {
-		.pin_bit_mask = BIT64(DISP_FMARK),
-		.mode = GPIO_MODE_INPUT,
-		.pull_down_en = GPIO_PULLDOWN_ENABLE,
-		.intr_type = GPIO_INTR_POSEDGE,
-	};
-	ESP_ERROR_CHECK(gpio_config(&fmark));
-
-	esp_err_t isr = gpio_install_isr_service(0);
-	ESP_ERROR_CHECK(isr == ESP_ERR_INVALID_STATE ? ESP_OK : isr);
-	ESP_ERROR_CHECK(gpio_isr_handler_add(DISP_FMARK, frame_mark, NULL));
 
 	ledc_timer_config_t timer = {
 		.speed_mode = LEDC_LOW_SPEED_MODE,
@@ -472,6 +524,15 @@ void hw_init(void) {
 
 	ppa_client_config_t fill_config = {.oper_type = PPA_OPERATION_FILL};
 	ESP_ERROR_CHECK(ppa_register_client(&fill_config, &fill_client));
+
+	for (unsigned i = 0; i < RENDER_SLOTS; i++) {
+		render_job_t *job = &jobs[i];
+		job->pixels = heap_caps_aligned_calloc(128, DISPLAY_PIXELS, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+		ESP_ERROR_CHECK(job->pixels ? ESP_OK : ESP_ERR_NO_MEM);
+		xQueueSend(free_jobs, &job, 0);
+	}
+
+	ESP_ERROR_CHECK(xTaskCreatePinnedToCore(display_worker, "display_worker", 4096, NULL, 5, NULL, RENDER_CORE) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
 	lispif_add_ext_load_callback(load_extensions);
 }
