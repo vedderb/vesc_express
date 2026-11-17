@@ -58,7 +58,3 @@ idf.py build -DHW_NAME="VESC Express T"
 ```
 
 **Note:** If you ever change the environment variables, or if when you first start using them, you need to first run `idf.py reconfigure` before building (with the environment variables still set of course!), as the build system unfortunately can't automatically detect this change. Running `idf.py fullclean` has the same effect as this forces cmake to rebuild the build configurations.
-
-### ESP32-S31 N16R16V
-
-ESP-IDF currently provides no S31 ADC calibration scheme, so ADC voltage reads return unavailable (`-1`).
