@@ -85,7 +85,7 @@ typedef struct {
 } can_state_t;
 
 static DRAM_ATTR can_state_t can_state;
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 static DRAM_ATTR can_state_t can2_state;
 #endif
 
@@ -99,33 +99,66 @@ static SemaphoreHandle_t ping_sem;
 static SemaphoreHandle_t proc_sem;
 static SemaphoreHandle_t status_sem;
 static volatile HW_TYPE ping_hw_last = HW_TYPE_VESC;
-static uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
-static int rx_buffer_offset[RX_BUFFER_NUM];
-static volatile unsigned int rx_buffer_last_id;
-static volatile unsigned int rx_buffer_response_type = 1;
+
+typedef struct {
+	uint8_t buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
+	int offset[RX_BUFFER_NUM];
+	volatile unsigned int last_id;
+	volatile unsigned int response_type;
+} can_rx_state_t;
+
+typedef struct {
+	can_rx_state_t *rx;
+	void (*reply)(unsigned char *data, unsigned int len);
+	void (*transmit)(uint32_t id, const uint8_t *data, uint8_t len);
+} can_decoder_t;
+
+static can_rx_state_t can_rx_state;
 
 static volatile bool use_vesc_decoder = true;
 
 static bool (*sid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
 static bool (*eid_callback)(uint32_t id, uint8_t *data, uint8_t len) = 0;
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 static volatile bool can2_use_vesc_dec = true;
 static volatile bool can2_init_done = false;
+static can_rx_state_t can2_rx_state;
+
+static void send_packet_wrapper_can2(unsigned char *data, unsigned int len) {
+	comm_can2_send_buffer(can2_rx_state.last_id, data, len, can2_rx_state.response_type);
+}
 #endif
 
 static void send_packet_wrapper(unsigned char *data, unsigned int len) {
-	comm_can_send_buffer(rx_buffer_last_id, data, len, rx_buffer_response_type);
+	comm_can_send_buffer(can_rx_state.last_id, data, len, can_rx_state.response_type);
 }
 
-static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) {
+static const can_decoder_t can_decoder = {
+	.rx = &can_rx_state,
+	.reply = send_packet_wrapper,
+	.transmit = comm_can_transmit_eid,
+};
+
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
+static const can_decoder_t can2_decoder = {
+	.rx = &can2_rx_state,
+	.reply = send_packet_wrapper_can2,
+	.transmit = comm_can2_transmit_eid,
+};
+#endif
+
+static void decode_msg(const can_decoder_t *dec, can_message_t *msg, bool is_replaced) {
+	can_rx_state_t *rx = dec->rx;
+	uint8_t *data8 = msg->data;
+	int len = msg->data_length_code;
 	int32_t ind = 0;
 	uint8_t crc_low;
 	uint8_t crc_high;
 	uint8_t commands_send;
 
-	uint8_t id = eid & 0xFF;
-	CAN_PACKET_ID cmd = eid >> 8;
+	uint8_t id = msg->identifier & 0xFF;
+	CAN_PACKET_ID cmd = msg->identifier >> 8;
 
 	if (id == 255 || id == backup.config.controller_id) {
 		switch (cmd) {
@@ -136,7 +169,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			len--;
 
 			for (int i = 0; i < RX_BUFFER_NUM;i++) {
-				if ((rx_buffer_offset[i]) == offset ) {
+				if ((rx->offset[i]) == offset ) {
 					buf_ind = i;
 					break;
 				}
@@ -150,8 +183,8 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 			}
 
-			memcpy(rx_buffer[buf_ind] + offset, data8, len);
-			rx_buffer_offset[buf_ind] = offset + len;
+			memcpy(rx->buffer[buf_ind] + offset, data8, len);
+			rx->offset[buf_ind] = offset + len;
 		} break;
 
 		case CAN_PACKET_FILL_RX_BUFFER_LONG: {
@@ -162,7 +195,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			len -= 2;
 
 			for (int i = 0; i < RX_BUFFER_NUM;i++) {
-				if ((rx_buffer_offset[i]) == offset ) {
+				if ((rx->offset[i]) == offset ) {
 					buf_ind = i;
 					break;
 				}
@@ -177,8 +210,8 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			}
 
 			if ((offset + len) <= RX_BUFFER_SIZE) {
-				memcpy(rx_buffer[buf_ind] + offset, data8, len);
-				rx_buffer_offset[buf_ind] = offset + len;
+				memcpy(rx->buffer[buf_ind] + offset, data8, len);
+				rx->offset[buf_ind] = offset + len;
 			}
 		} break;
 
@@ -188,13 +221,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			commands_send = data8[ind++];
 
 			if (commands_send == 0 || commands_send == 3) {
-				rx_buffer_last_id = last_id;
+				rx->last_id = last_id;
 			}
 
 			if (commands_send == 3) {
-				rx_buffer_response_type = 0;
+				rx->response_type = 0;
 			} else {
-				rx_buffer_response_type = 1;
+				rx->response_type = 1;
 			}
 
 			int rxbuf_len = (int)data8[ind++] << 8;
@@ -206,7 +239,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 			int buf_ind = -1;
 			for (int i = 0; i < RX_BUFFER_NUM;i++) {
-				if ((rx_buffer_offset[i]) == rxbuf_len ) {
+				if ((rx->offset[i]) == rxbuf_len ) {
 					buf_ind = i;
 					break;
 				}
@@ -215,26 +248,26 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			// Something is wrong, reset all buffers
 			if (buf_ind < 0) {
 				for (int i = 0; i < RX_BUFFER_NUM;i++) {
-					rx_buffer_offset[i] = 0;
+					rx->offset[i] = 0;
 				}
 				break;
 			}
 
-			rx_buffer_offset[buf_ind] = 0;
+			rx->offset[buf_ind] = 0;
 
 			crc_high = data8[ind++];
 			crc_low = data8[ind++];
 
-			if (crc16(rx_buffer[buf_ind], rxbuf_len)
+			if (crc16(rx->buffer[buf_ind], rxbuf_len)
 					== ((unsigned short) crc_high << 8
 							| (unsigned short) crc_low)) {
 
 				if (is_replaced) {
-					if (rx_buffer[buf_ind][0] == COMM_JUMP_TO_BOOTLOADER ||
-							rx_buffer[buf_ind][0] == COMM_ERASE_NEW_APP ||
-							rx_buffer[buf_ind][0] == COMM_WRITE_NEW_APP_DATA ||
-							rx_buffer[buf_ind][0] == COMM_WRITE_NEW_APP_DATA_LZO ||
-							rx_buffer[buf_ind][0] == COMM_ERASE_BOOTLOADER) {
+					if (rx->buffer[buf_ind][0] == COMM_JUMP_TO_BOOTLOADER ||
+							rx->buffer[buf_ind][0] == COMM_ERASE_NEW_APP ||
+							rx->buffer[buf_ind][0] == COMM_WRITE_NEW_APP_DATA ||
+							rx->buffer[buf_ind][0] == COMM_WRITE_NEW_APP_DATA_LZO ||
+							rx->buffer[buf_ind][0] == COMM_ERASE_BOOTLOADER) {
 						break;
 					}
 				}
@@ -242,13 +275,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				switch (commands_send) {
 				case 0:
 				case 3:
-					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, send_packet_wrapper);
+					commands_process_packet(rx->buffer[buf_ind], rxbuf_len, dec->reply);
 					break;
 				case 1:
-					commands_send_packet_can_last(rx_buffer[buf_ind], rxbuf_len);
+					commands_send_packet_can_last(rx->buffer[buf_ind], rxbuf_len);
 					break;
 				case 2:
-					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, 0);
+					commands_process_packet(rx->buffer[buf_ind], rxbuf_len, 0);
 					break;
 				default:
 					break;
@@ -262,13 +295,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			commands_send = data8[ind++];
 
 			if (commands_send == 0 || commands_send == 3) {
-				rx_buffer_last_id = last_id;
+				rx->last_id = last_id;
 			}
 
 			if (commands_send == 3) {
-				rx_buffer_response_type = 0;
+				rx->response_type = 0;
 			} else {
-				rx_buffer_response_type = 1;
+				rx->response_type = 1;
 			}
 
 			if (is_replaced) {
@@ -284,7 +317,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			switch (commands_send) {
 			case 0:
 			case 3:
-				commands_process_packet(data8 + ind, len - ind, send_packet_wrapper);
+				commands_process_packet(data8 + ind, len - ind, dec->reply);
 				break;
 			case 1:
 				commands_send_packet_can_last(data8 + ind, len - ind);
@@ -301,10 +334,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				uint8_t buffer[2];
 				buffer[0] = backup.config.controller_id;
 				buffer[1] = HW_TYPE_CUSTOM_MODULE;
-				comm_can_transmit_eid(data8[0] | ((uint32_t)CAN_PACKET_PONG << 8), buffer, 2);
+				dec->transmit(data8[0] | ((uint32_t)CAN_PACKET_PONG << 8), buffer, 2);
 			} break;
 
 			case CAN_PACKET_PONG:
+				if (rx != &can_rx_state || !ping_sem) {
+					break;
+				}
 				// data8[0]; // Sender ID
 				xSemaphoreGive(ping_sem);
 				if (len >= 2) {
@@ -565,6 +601,9 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 	} break;
 
 	case CAN_PACKET_UPDATE_BAUD: {
+		if (rx != &can_rx_state) {
+			break;
+		}
 		ind = 0;
 		int kbits = buffer_get_int16(data8, &ind);
 		int delay_msec = buffer_get_int16(data8, &ind);
@@ -735,14 +774,14 @@ static void process_task(void *arg) {
 	for (;;) {
 		bool reclaim = can_state.recover_pending;
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 		reclaim = reclaim || can2_state.recover_pending;
 #endif
 
 		xSemaphoreTake(proc_sem, reclaim ? pdMS_TO_TICKS(10) : portMAX_DELAY);
 
 		can_recover(&can_state);
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 		can_recover(&can2_state);
 #endif
 
@@ -768,13 +807,13 @@ static void process_task(void *arg) {
 			if (!consumed && use_vesc_decoder) {
 				if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
 					if (msg->extd) {
-						decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+						decode_msg(&can_decoder, msg, false);
 					}
 				}
 			}
 		}
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 		while (can2_state.rx_queue && xQueueReceive(can2_state.rx_queue, &rx_message, 0) == pdTRUE) {
 			can_message_t *m = &rx_message;
 
@@ -783,7 +822,7 @@ static void process_task(void *arg) {
 			if (can2_use_vesc_dec) {
 				if (!bms_process_can_frame(m->identifier, m->data, m->data_length_code, m->extd)) {
 					if (m->extd) {
-						decode_msg(m->identifier, m->data, m->data_length_code, false);
+						decode_msg(&can2_decoder, m, false);
 					}
 				}
 			}
@@ -1488,7 +1527,7 @@ void comm_can_update_pid_pos_offset(int id, float angle_now, bool store) {
 	comm_can_transmit_eid(id | ((uint32_t)CAN_PACKET_UPDATE_PID_POS_OFFSET << 8), buffer, send_index);
 }
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 
 void comm_can2_start(int pin_tx, int pin_rx, int baud_kbits) {
 	if (!proc_started) {
@@ -1594,4 +1633,4 @@ void comm_can2_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int le
 			((uint32_t)CAN_PACKET_PROCESS_RX_BUFFER << 8), buf, ind++);
 }
 
-#endif /* CONFIG_IDF_TARGET_ESP32C6 */
+#endif /* ESP32C6 || ESP32S31 */

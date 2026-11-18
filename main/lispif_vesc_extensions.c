@@ -1615,7 +1615,7 @@ static lbm_value ext_can_send_eid(lbm_value *args, lbm_uint argn) {
 static volatile lbm_cid can_recv_sid_cid = -1;
 static volatile lbm_cid can_recv_eid_cid = -1;
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 static volatile lbm_cid can2_recv_sid_cid = -1;
 static volatile lbm_cid can2_recv_eid_cid = -1;
 #endif
@@ -1662,7 +1662,7 @@ static lbm_value ext_can_recv_eid(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 
 static lbm_value ext_can2_start(lbm_value *args, lbm_uint argn) {
 	if (argn < 2 || argn > 3) {
@@ -1820,7 +1820,7 @@ static lbm_value ext_can2_recv_eid(lbm_value *args, lbm_uint argn) {
 	return ENC_SYM_TRUE;
 }
 
-#endif /* CONFIG_IDF_TARGET_ESP32C6 */
+#endif /* ESP32C6 || ESP32S31 */
 
 static lbm_value ext_can_current(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_NUMBER_ALL();
@@ -7045,7 +7045,7 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("can-local-id", ext_can_local_id);
 		lbm_add_extension("can-update-baud", ext_can_update_baud);
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 		lbm_add_extension("can2-start",       ext_can2_start);
 		lbm_add_extension("can2-stop",        ext_can2_stop);
 		lbm_add_extension("can2-use-vesc",    ext_can2_use_vesc);
@@ -7342,7 +7342,7 @@ void lispif_disable_all_events(void) {
 	#endif
 	can_recv_sid_cid = -1;
 	can_recv_eid_cid = -1;
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 	can2_recv_sid_cid = -1;
 	can2_recv_eid_cid = -1;
 #endif
@@ -7417,7 +7417,7 @@ void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 	}
 }
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 void lispif_process_can2(uint32_t can_id, uint8_t *data8, int len, bool is_ext) {
 	if (is_ext) {
 		if (can2_recv_eid_cid < 0 && !event_can2_eid_en) return;
@@ -7460,7 +7460,7 @@ void lispif_process_can2(uint32_t can_id, uint8_t *data8, int len, bool is_ext) 
 		}
 	}
 }
-#endif /* CONFIG_IDF_TARGET_ESP32C6 */
+#endif /* ESP32C6 || ESP32S31 */
 
 void lispif_process_custom_app_data(unsigned char *data, unsigned int len) {
 	if (!event_data_rx_en && recv_data_cid < 0) {
