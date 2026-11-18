@@ -115,6 +115,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 "config"
 "hwconf"
 "hwconf/devkits"
+"hwconf/tartan"
 "hwconf/trampa"
 "hwconf/trampa/bms_rb"
 "hwconf/vesc"
