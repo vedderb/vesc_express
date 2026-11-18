@@ -87,21 +87,12 @@ void adc_init(void) {
 		#endif
 	}
 
-int adc_get_raw(adc_channel_t channel) {
-	int raw;
-	if (!adc_unit || channel < 0 || channel >= SOC_ADC_MAX_CHANNEL_NUM || !adc_configured[channel] ||
-		adc_oneshot_read(adc_unit, channel, &raw) != ESP_OK) {
-		return -1;
-	}
-	return raw;
-}
-
 float adc_get_voltage(adc_channel_t channel) {
 	int raw;
 	int voltage_mv;
 	if (channel < 0 || channel >= SOC_ADC_MAX_CHANNEL_NUM || !adc_cal[channel]
 		|| adc_oneshot_read(adc_unit, channel, &raw) != ESP_OK
-		|| adc_cali_raw_to_voltage(adc_cal[channel], raw, &voltage_mv) != ESP_OK) {
+		|| adc_cali_chan_raw_to_voltage(adc_cal[channel], channel, raw, &voltage_mv) != ESP_OK) {
 		return -1.0;
 }
 
