@@ -93,6 +93,11 @@
 #define CONF_BLE_PIN 123456
 #endif
 
+// Bluetooth Max Connections
+#ifndef CONF_BLE_MAX_CONN
+#define CONF_BLE_MAX_CONN 1
+#endif
+
 // BLE Service Capacity
 #ifndef CONF_BLE_SERVICE_CAPACITY
 #define CONF_BLE_SERVICE_CAPACITY 0

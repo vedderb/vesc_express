@@ -22,6 +22,7 @@
 #include <string.h>
 #include "packet.h"
 #include "commands.h"
+#include "lispif.h"
 #include "conf_general.h"
 #include "main.h"
 
@@ -50,6 +51,9 @@
 
 #define GATTS_CHAR_VAL_LEN_MAX 255
 #define DEFAULT_BLE_MTU        20
+#define BLE_CONN_SLOTS         4
+#define BLE_TX_QUEUE_LEN       32
+#define BLE_TX_BYTES_LIMIT     4096
 
 typedef struct {
 	unsigned int len;
@@ -57,19 +61,163 @@ typedef struct {
 	uint8_t data[];
 } ble_tx_packet_t;
 
-static QueueHandle_t send_queue;
-static struct ble_npl_callout send_callout;
-static ble_tx_packet_t *send_current;
+// Keep one slot allocated; allocate more as clients connect
+typedef struct {
+	uint16_t conn;
+	bool notify_enabled;
+	PACKET_STATE_t *packet_state;
+	QueueHandle_t send_queue;
+	ble_tx_packet_t *send_current;
+	unsigned int send_bytes;
+} ble_conn_t;
+
+static ble_conn_t conns[BLE_CONN_SLOTS];
+static int conn_limit;
 static SemaphoreHandle_t send_mutex;
-static bool is_connected;
-static bool notify_enabled;
-static uint16_t ble_current_mtu = DEFAULT_BLE_MTU;
-static uint16_t notify_conn_id = BLE_HS_CONN_HANDLE_NONE;
+static struct ble_npl_callout send_callout;
 static uint16_t char2_handle;
-static PACKET_STATE_t *packet_state;
 static uint8_t *char1_str;
 static uint8_t *char2_str;
 static uint16_t char2_len = GATTS_CHAR_VAL_LEN_MAX;
+
+static void slot_send_raw(ble_conn_t *c, unsigned char *buffer, unsigned int len);
+static void slot_send_packet(ble_conn_t *c, unsigned char *data, unsigned int len);
+
+// Reply routing identifies clients by callback, so each slot needs its own callbacks
+#define SLOT_FUNCS(i) \
+	static void slot_reply_##i(unsigned char *d, unsigned int l) { slot_send_packet(&conns[i], d, l); } \
+	static void slot_raw_##i(unsigned char *d, unsigned int l) { slot_send_raw(&conns[i], d, l); } \
+	static void slot_process_##i(unsigned char *d, unsigned int l) { commands_process_packet(d, l, slot_reply_##i); }
+SLOT_FUNCS(0)
+SLOT_FUNCS(1)
+SLOT_FUNCS(2)
+SLOT_FUNCS(3)
+
+static void (*const slot_reply[BLE_CONN_SLOTS])(unsigned char *, unsigned int) =
+	{ slot_reply_0, slot_reply_1, slot_reply_2, slot_reply_3 };
+static void (*const slot_raw[BLE_CONN_SLOTS])(unsigned char *, unsigned int) =
+	{ slot_raw_0, slot_raw_1, slot_raw_2, slot_raw_3 };
+static void (*const slot_process[BLE_CONN_SLOTS])(unsigned char *, unsigned int) =
+	{ slot_process_0, slot_process_1, slot_process_2, slot_process_3 };
+
+static ble_conn_t *slot_find(uint16_t conn) {
+	for (int i = 0; i < conn_limit; i++) {
+		if (conns[i].conn == conn && conn != BLE_HS_CONN_HANDLE_NONE) {
+			return &conns[i];
+		}
+	}
+	return NULL;
+}
+
+static uint16_t payload_mtu(uint16_t conn) {
+	uint16_t mtu = conn == BLE_HS_CONN_HANDLE_NONE ? 0 : ble_att_mtu(conn);
+	mtu = mtu > 3 ? mtu - 3 : DEFAULT_BLE_MTU;
+	return mtu > GATTS_CHAR_VAL_LEN_MAX ? GATTS_CHAR_VAL_LEN_MAX : mtu;
+}
+
+static int active_count(void) {
+	int n = 0;
+	for (int i = 0; i < conn_limit; i++) {
+		if (conns[i].conn != BLE_HS_CONN_HANDLE_NONE) {
+			n++;
+		}
+	}
+	return n;
+}
+
+// The Lisp BLE server supports one connection
+static int active_limit(void) {
+	return custom_ble_started() ? 1 : conn_limit;
+}
+
+static void slot_free_packet(ble_conn_t *c, ble_tx_packet_t *packet) {
+	c->send_bytes -= sizeof(*packet) + packet->len;
+	free(packet);
+}
+
+static void slot_flush(ble_conn_t *c) {
+	if (c->send_current) {
+		slot_free_packet(c, c->send_current);
+		c->send_current = NULL;
+	}
+	ble_tx_packet_t *packet;
+	while (c->send_queue && xQueueReceive(c->send_queue, &packet, 0) == pdTRUE) {
+		slot_free_packet(c, packet);
+	}
+}
+
+static void slot_reset(ble_conn_t *c, uint16_t conn) {
+	if (c->conn != BLE_HS_CONN_HANDLE_NONE) {
+		lispif_invalidate_app_data_source(slot_reply[c - conns]);
+	}
+	slot_flush(c);
+	if (c->packet_state) {
+		packet_reset(c->packet_state);
+	}
+	c->conn = conn;
+	c->notify_enabled = false;
+}
+
+static void slot_free(ble_conn_t *c) {
+	slot_reset(c, BLE_HS_CONN_HANDLE_NONE);
+	free(c->packet_state);
+	c->packet_state = NULL;
+	if (c->send_queue) {
+		vQueueDelete(c->send_queue);
+		c->send_queue = NULL;
+	}
+}
+
+static bool slot_alloc(ble_conn_t *c) {
+	if (c->packet_state) {
+		return true;
+	}
+	c->send_queue = xQueueCreate(BLE_TX_QUEUE_LEN, sizeof(ble_tx_packet_t *));
+	c->packet_state = calloc(1, sizeof(PACKET_STATE_t));
+	if (!c->send_queue || !c->packet_state) {
+		slot_free(c);
+		return false;
+	}
+	int i = c - conns;
+	packet_init(slot_raw[i], slot_process[i], c->packet_state);
+	slot_reset(c, BLE_HS_CONN_HANDLE_NONE);
+	return true;
+}
+
+static ble_conn_t *slot_connect(uint16_t conn) {
+	ble_conn_t *c = NULL;
+	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	if (active_count() < active_limit()) {
+		for (int i = 0; i < conn_limit; i++) {
+			if (conns[i].conn == BLE_HS_CONN_HANDLE_NONE) {
+				if (!c || conns[i].packet_state) {
+					c = &conns[i];
+				}
+				if (conns[i].packet_state) {
+					break;
+				}
+			}
+		}
+		if (c && !slot_alloc(c)) {
+			c = NULL;
+		}
+		if (c) {
+			slot_reset(c, conn);
+		}
+	}
+	xSemaphoreGive(send_mutex);
+	return c;
+}
+
+static void slot_disconnect(ble_conn_t *c) {
+	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	if (active_count() > 1) {
+		slot_free(c);
+	} else {
+		slot_reset(c, BLE_HS_CONN_HANDLE_NONE);
+	}
+	xSemaphoreGive(send_mutex);
+}
 
 static const ble_uuid128_t ble_service_uuid128 = BLE_UUID128_INIT(
 	0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E);
@@ -95,18 +243,21 @@ typedef struct {
 } ble_call_t;
 
 static int char1_write_handler(uint16_t conn_id, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
-	(void)conn_id;
 	(void)attr_handle;
 	(void)arg;
 	uint16_t len;
 	if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
 		return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
 	}
+	ble_conn_t *c = slot_find(conn_id);
+	if (!c) {
+		return BLE_ATT_ERR_UNLIKELY;
+	}
 	if (ble_hs_mbuf_to_flat(ctxt->om, char1_str, GATTS_CHAR_VAL_LEN_MAX, &len) != 0) {
 		return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
 	}
 	for (int i = 0; i < len; i++) {
-		packet_process_byte(char1_str[i], packet_state);
+		packet_process_byte(char1_str[i], c->packet_state);
 	}
 	return 0;
 }
@@ -119,7 +270,8 @@ static int char2_read_handler(uint16_t conn_id, uint16_t attr_handle, struct ble
 }
 
 static void start_advertising(void) {
-	if (backup.config.ble_mode == BLE_MODE_DISABLED || is_connected || custom_ble_started()) {
+	if (backup.config.ble_mode == BLE_MODE_DISABLED || conn_limit == 0 || active_count() >= active_limit() ||
+			custom_ble_started() || ble_gap_adv_active()) {
 		return;
 	}
 	uint8_t adv_data[21] = { 2, BLE_HS_ADV_TYPE_FLAGS, BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP, 17,
@@ -142,93 +294,103 @@ static void start_advertising(void) {
 	}
 }
 
-static void send_queued_packets(struct ble_npl_event *event) {
-	(void)event;
-	if (!is_connected || !notify_enabled || char2_handle == 0) {
-		free(send_current);
-		send_current = NULL;
-		ble_tx_packet_t *packet;
-		while (xQueueReceive(send_queue, &packet, 0) == pdTRUE) {
-			free(packet);
-		}
-		return;
+// Send one fragment; return true if more work remains
+static bool slot_service(ble_conn_t *c) {
+	if (xSemaphoreTake(send_mutex, 0) != pdTRUE) {
+		return true;
+	}
+	bool more;
+	if (c->conn == BLE_HS_CONN_HANDLE_NONE || !c->notify_enabled || char2_handle == 0) {
+		slot_flush(c);
+		goto done;
 	}
 	if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
 		struct ble_gap_conn_desc desc;
-		if (ble_gap_conn_find(notify_conn_id, &desc) != 0 || !desc.sec_state.encrypted || !desc.sec_state.authenticated) {
-			ble_npl_callout_reset(&send_callout, 1);
-			return;
+		if (ble_gap_conn_find(c->conn, &desc) != 0 || !desc.sec_state.encrypted || !desc.sec_state.authenticated) {
+			goto done;
 		}
 	}
-	if (!send_current && xQueueReceive(send_queue, &send_current, 0) != pdTRUE) {
-		return;
+	if (!c->send_current && xQueueReceive(c->send_queue, &c->send_current, 0) != pdTRUE) {
+		goto done;
 	}
-	uint16_t mtu = ble_att_mtu(notify_conn_id);
-	ble_current_mtu = mtu > 3 ? mtu - 3 : DEFAULT_BLE_MTU;
-	if (ble_current_mtu > GATTS_CHAR_VAL_LEN_MAX) {
-		ble_current_mtu = GATTS_CHAR_VAL_LEN_MAX;
-	}
-	unsigned int remaining = send_current->len - send_current->pos;
-	uint16_t length = remaining > ble_current_mtu ? ble_current_mtu : remaining;
-	uint8_t *data = send_current->data + send_current->pos;
+	uint16_t mtu = payload_mtu(c->conn);
+	unsigned int remaining = c->send_current->len - c->send_current->pos;
+	uint16_t length = remaining > mtu ? mtu : remaining;
+	uint8_t *data = c->send_current->data + c->send_current->pos;
 	struct os_mbuf *om = ble_hs_mbuf_from_flat(data, length);
-	if (om && ble_gatts_notify_custom(notify_conn_id, char2_handle, om) == 0) {
+	if (om && ble_gatts_notify_custom(c->conn, char2_handle, om) == 0) {
 		memcpy(char2_str, data, length);
 		char2_len = length;
-		send_current->pos += length;
-		if (send_current->pos == send_current->len) {
-			free(send_current);
-			send_current = NULL;
+		c->send_current->pos += length;
+		if (c->send_current->pos == c->send_current->len) {
+			slot_free_packet(c, c->send_current);
+			c->send_current = NULL;
 		}
 	}
+done:
+	more = c->send_bytes > 0;
+	xSemaphoreGive(send_mutex);
+	return more;
+}
+
+static void send_queued_packets(struct ble_npl_event *event) {
+	(void)event;
+	bool more = false;
+	for (int i = 0; i < conn_limit; i++) {
+		more = slot_service(&conns[i]) || more;
+	}
 	// Yield to the host between fragments. Retry when transport buffers are full.
-	ble_npl_callout_reset(&send_callout, 1);
+	if (more) {
+		ble_npl_callout_reset(&send_callout, 1);
+	}
 }
 
 static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 	(void)arg;
 	switch (event->type) {
-		case BLE_GAP_EVENT_CONNECT:
+		case BLE_GAP_EVENT_CONNECT: {
 			if (event->connect.status != 0) {
 				start_advertising();
 				break;
 			}
-			if (is_connected) {
+			if (conn_limit == 0) {
+				break; // Connection belongs to the Lisp BLE server
+			}
+			ble_conn_t *c = slot_connect(event->connect.conn_handle);
+			if (!c) {
 				ble_gap_terminate(event->connect.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
 				return 0;
 			}
-			notify_conn_id = event->connect.conn_handle;
-			ble_current_mtu = DEFAULT_BLE_MTU;
-			is_connected = true;
 			LED_BLUE_ON();
 			if (backup.config.ble_mode == BLE_MODE_ENCRYPTED) {
-				comm_ble_host_secure(notify_conn_id);
+				comm_ble_host_secure(c->conn);
 			}
-			break;
-		case BLE_GAP_EVENT_DISCONNECT:
-			if (event->disconnect.conn.conn_handle != notify_conn_id) {
-				return 0;
-			}
-			is_connected = false;
-			notify_enabled = false;
-			notify_conn_id = BLE_HS_CONN_HANDLE_NONE;
-			ble_current_mtu = DEFAULT_BLE_MTU;
-			if (packet_state) {
-				packet_reset(packet_state);
-				send_queued_packets(NULL);
-			}
-			LED_BLUE_OFF();
+			// Connecting stops advertising; restart if there is room
 			start_advertising();
-			break;
-		case BLE_GAP_EVENT_MTU:
-			if (event->mtu.channel_id == BLE_L2CAP_CID_ATT) {
-				uint16_t mtu = event->mtu.value > 3 ? event->mtu.value - 3 : DEFAULT_BLE_MTU;
-				ble_current_mtu = mtu > GATTS_CHAR_VAL_LEN_MAX ? GATTS_CHAR_VAL_LEN_MAX : mtu;
+		} break;
+		case BLE_GAP_EVENT_DISCONNECT: {
+			if (conn_limit == 0) {
+				break;
 			}
-			break;
+			ble_conn_t *c = slot_find(event->disconnect.conn.conn_handle);
+			if (!c) {
+				start_advertising();
+				return 0; // Connection was rejected
+			}
+			slot_disconnect(c);
+			if (active_count() == 0) {
+				LED_BLUE_OFF();
+			}
+			start_advertising();
+		} break;
 		case BLE_GAP_EVENT_SUBSCRIBE:
 			if (event->subscribe.attr_handle == char2_handle) {
-				notify_enabled = event->subscribe.cur_notify;
+				ble_conn_t *c = slot_find(event->subscribe.conn_handle);
+				if (c) {
+					xSemaphoreTake(send_mutex, portMAX_DELAY);
+					c->notify_enabled = event->subscribe.cur_notify;
+					xSemaphoreGive(send_mutex);
+				}
 			}
 			break;
 		case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -243,34 +405,55 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 	return 0;
 }
 
+// The Lisp BLE server uses the first active connection
 uint16_t comm_ble_conn_handle(void) {
-	return notify_conn_id;
+	for (int i = 0; i < conn_limit; i++) {
+		if (conns[i].conn != BLE_HS_CONN_HANDLE_NONE) {
+			return conns[i].conn;
+		}
+	}
+	return BLE_HS_CONN_HANDLE_NONE;
 }
 
 bool comm_ble_service_uuid_reserved(const ble_uuid_t *uuid) {
 	return ble_uuid_cmp(uuid, &ble_service_uuid128.u) == 0;
 }
 
-static void process_packet(unsigned char *data, unsigned int len) {
-	commands_process_packet(data, len, comm_ble_send_packet);
-}
-
-static void send_packet_raw(unsigned char *buffer, unsigned int len) {
-	if (!is_connected || !notify_enabled) {
+static void slot_send_raw(ble_conn_t *c, unsigned char *buffer, unsigned int len) {
+	if (c->conn == BLE_HS_CONN_HANDLE_NONE || !c->notify_enabled) {
 		return;
 	}
-	ble_tx_packet_t *packet = malloc(sizeof(*packet) + len);
+	if (len > BLE_TX_BYTES_LIMIT - sizeof(ble_tx_packet_t)) {
+		return;
+	}
+	unsigned int size = sizeof(ble_tx_packet_t) + len;
+	if (c->send_bytes > BLE_TX_BYTES_LIMIT - size) {
+		return;
+	}
+	ble_tx_packet_t *packet = malloc(size);
 	if (!packet) {
 		return;
 	}
 	packet->len = len;
 	packet->pos = 0;
 	memcpy(packet->data, buffer, len);
-	if (xQueueSend(send_queue, &packet, 0) != pdTRUE) {
+	if (xQueueSend(c->send_queue, &packet, 0) != pdTRUE) {
 		free(packet);
 		return;
 	}
+	c->send_bytes += size;
 	ble_npl_callout_reset(&send_callout, 1);
+}
+
+static void slot_send_packet(ble_conn_t *c, unsigned char *data, unsigned int len) {
+	if (!send_mutex) {
+		return;
+	}
+	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	if (c->packet_state) {
+		packet_send_packet(data, len, c->packet_state);
+	}
+	xSemaphoreGive(send_mutex);
 }
 
 static struct ble_gatt_chr_def ble_chars[] = {
@@ -298,36 +481,67 @@ static const struct ble_gatt_svc_def ble_services[] = {
 };
 
 static void free_packet_resources(void) {
-	free(packet_state);
-	packet_state = NULL;
-	free(char1_str);
-	char1_str = NULL;
-	char2_str = NULL;
-	if (send_queue) {
-		vQueueDelete(send_queue);
-		send_queue = NULL;
-	}
 	if (send_mutex) {
+		xSemaphoreTake(send_mutex, portMAX_DELAY);
+	}
+	for (int i = 0; i < BLE_CONN_SLOTS; i++) {
+		slot_free(&conns[i]);
+	}
+	conn_limit = 0;
+	if (send_mutex) {
+		xSemaphoreGive(send_mutex);
 		vSemaphoreDelete(send_mutex);
 		send_mutex = NULL;
 	}
+	free(char1_str);
+	char1_str = NULL;
+	char2_str = NULL;
+}
+
+static int configured_max_conn(void) {
+#if defined(HW_BLE_MAX_CONN)
+	int n = HW_BLE_MAX_CONN;
+#elif defined(OVR_CONF_MAIN_CONFIG)
+	int n = 1; // Board-specific config without ble_max_conn
+#else
+	int n = backup.config.ble_max_conn;
+#endif
+	if (n < 1) {
+		n = 1;
+	}
+	if (n > BLE_CONN_SLOTS) {
+		n = BLE_CONN_SLOTS;
+	}
+	if (n > CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
+		n = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
+	}
+	return n;
+}
+
+static bool alloc_packet_resources(int slots) {
+	send_mutex = xSemaphoreCreateMutex();
+	char1_str = calloc(2, GATTS_CHAR_VAL_LEN_MAX);
+	if (!send_mutex || !char1_str) {
+		return false;
+	}
+	char2_str = char1_str + GATTS_CHAR_VAL_LEN_MAX;
+	xSemaphoreTake(send_mutex, portMAX_DELAY);
+	bool ok = slot_alloc(&conns[0]);
+	if (ok) {
+		conn_limit = slots;
+	}
+	xSemaphoreGive(send_mutex);
+	return ok;
 }
 
 void comm_ble_init(void) {
+	for (int i = 0; i < BLE_CONN_SLOTS; i++) {
+		conns[i].conn = BLE_HS_CONN_HANDLE_NONE;
+	}
 	bool vesc_enabled = backup.config.ble_mode != BLE_MODE_DISABLED;
-	if (vesc_enabled) {
-		send_mutex = xSemaphoreCreateMutex();
-		// A Lisp error report can enqueue several packets before the host drains it.
-		send_queue = xQueueCreate(32, sizeof(ble_tx_packet_t *));
-
-		packet_state = calloc(1, sizeof(PACKET_STATE_t));
-		char1_str = calloc(2, GATTS_CHAR_VAL_LEN_MAX);
-		if (!packet_state || !char1_str || !send_mutex || !send_queue) {
-			free_packet_resources();
-			return;
-		}
-		char2_str = char1_str + GATTS_CHAR_VAL_LEN_MAX;
-		packet_init(send_packet_raw, process_packet, packet_state);
+	if (vesc_enabled && !alloc_packet_resources(configured_max_conn())) {
+		free_packet_resources();
+		return;
 	}
 	bool encrypted = backup.config.ble_mode == BLE_MODE_ENCRYPTED;
 	if (encrypted) {
@@ -357,18 +571,28 @@ void comm_ble_init(void) {
 }
 
 bool comm_ble_is_connected(void) {
-	return is_connected;
+	return active_count() > 0;
+}
+
+int comm_ble_connection_count(void) {
+	return active_count();
+}
+
+// Configured VESC connection limit; available before initialization
+int comm_ble_max_connections(void) {
+	return backup.config.ble_mode == BLE_MODE_DISABLED ? 0 : configured_max_conn();
 }
 
 int comm_ble_mtu_now(void) {
-	return ble_current_mtu;
+	return payload_mtu(comm_ble_conn_handle());
 }
 
+// Broadcast to all connected clients
 void comm_ble_send_packet(unsigned char *data, unsigned int len) {
-	if (packet_state) {
-		xSemaphoreTake(send_mutex, portMAX_DELAY);
-		packet_send_packet(data, len, packet_state);
-		xSemaphoreGive(send_mutex);
+	for (int i = 0; i < conn_limit; i++) {
+		if (conns[i].conn != BLE_HS_CONN_HANDLE_NONE) {
+			slot_send_packet(&conns[i], data, len);
+		}
 	}
 }
 
@@ -523,6 +747,12 @@ void comm_ble_init(void) {
 }
 bool comm_ble_is_connected(void) {
 	return false;
+}
+int comm_ble_connection_count(void) {
+	return 0;
+}
+int comm_ble_max_connections(void) {
+	return 0;
 }
 int comm_ble_mtu_now(void) {
 	return 0;

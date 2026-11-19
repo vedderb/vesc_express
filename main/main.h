@@ -44,6 +44,7 @@ typedef struct {
 	BLE_MODE_LBM ble_mode_lbm;
 	char ble_name[9];
 	uint32_t ble_pin;
+	uint8_t ble_max_conn;
 	uint32_t ble_service_capacity;
 	uint32_t ble_chr_descr_capacity;
 } main_config_t;

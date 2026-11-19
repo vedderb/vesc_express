@@ -26,6 +26,8 @@
 
 void comm_ble_init(void);
 bool comm_ble_is_connected(void);
+int comm_ble_connection_count(void);
+int comm_ble_max_connections(void);
 int comm_ble_mtu_now(void);
 void comm_ble_send_packet(unsigned char *data, unsigned int len);
 
