@@ -79,7 +79,7 @@ psw_status *comm_can_get_psw_status_id(int id);
 void comm_can_psw_switch(int id, bool is_on, bool plot);
 void comm_can_update_pid_pos_offset(int id, float angle_now, bool store);
 
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 void comm_can2_start(int pin_tx, int pin_rx, int baud_kbits);
 void comm_can2_stop(void);
 void comm_can2_use_vesc_decoder(bool use);

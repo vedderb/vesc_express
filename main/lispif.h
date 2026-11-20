@@ -42,7 +42,7 @@ void lispif_free(void *ptr);
 void lispif_process_cmd(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len));
 void lispif_process_can(uint32_t can_id, uint8_t *data8, int len, bool is_ext);
-#ifdef CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S31)
 void lispif_process_can2(uint32_t can_id, uint8_t *data8, int len, bool is_ext);
 #endif
 void lispif_process_custom_app_data(unsigned char *data, unsigned int len);
