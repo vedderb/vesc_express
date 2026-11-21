@@ -3,6 +3,7 @@
 
 extern volatile bool event_can_sid_en;
 extern volatile bool event_can_eid_en;
+extern volatile bool event_data_rx_source_en;
 extern volatile bool event_data_rx_en;
 extern volatile bool event_esp_now_rx_en;
 extern volatile bool event_ble_rx_en;
@@ -20,6 +21,7 @@ extern volatile bool event_bms_zero_ofs_en;
 
 extern lbm_uint sym_event_can_sid;
 extern lbm_uint sym_event_can_eid;
+extern lbm_uint sym_event_data_rx_source;
 extern lbm_uint sym_event_data_rx;
 extern lbm_uint sym_event_esp_now_rx;
 extern lbm_uint sym_event_ble_rx;

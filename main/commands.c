@@ -975,7 +975,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if (appdata_func) {
 			appdata_func(data, len);
 		}
-		lispif_process_custom_app_data(data, len);
+		lispif_process_custom_app_data(data, len, reply_func);
 		break;
 
 	case COMM_BMS_GET_VALUES:

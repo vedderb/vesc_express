@@ -22,6 +22,7 @@
 #include <string.h>
 #include "packet.h"
 #include "commands.h"
+#include "lispif.h"
 #include "conf_general.h"
 #include "main.h"
 
@@ -209,6 +210,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 			if (event->disconnect.conn.conn_handle != notify_conn_id) {
 				return 0;
 			}
+			lispif_invalidate_app_data_source(comm_ble_send_packet);
 			is_connected = false;
 			notify_enabled = false;
 			notify_conn_id = BLE_HS_CONN_HANDLE_NONE;
